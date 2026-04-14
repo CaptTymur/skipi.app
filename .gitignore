@@ -1,0 +1,9 @@
+src-tauri/target/
+node_modules/
+*.log
+.DS_Store
+
+# Internal business / financial docs — never commit
+investment/
+.~lock.*
+docs/

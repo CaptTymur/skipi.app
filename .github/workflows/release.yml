@@ -1,0 +1,244 @@
+# Skipi — Cross-platform release build
+#
+# Trigger: push a git tag like `v0.1.0` or `v0.2.0-beta.1`
+#   git tag v0.1.0
+#   git push origin v0.1.0
+#
+# What happens:
+#   1. Builds Skipi on macOS (arm64 + x64), Windows (x64), Linux (x64)
+#   2. Creates a GitHub Release with all installers attached
+#   3. Testers go to https://github.com/<owner>/<repo>/releases and download
+#
+# Cost: $0 (GitHub gives 2,000 free CI minutes/month for private repos,
+#        unlimited for public repos).
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+# One release at a time
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS — universal binary (arm64 + x86_64)
+          - platform: macos-latest
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+            tauri_args: --target universal-apple-darwin
+            name: macOS
+
+          # Windows
+          - platform: windows-latest
+            rust_targets: x86_64-pc-windows-msvc
+            tauri_args: ""
+            name: Windows
+
+          # Linux (Ubuntu 22.04)
+          - platform: ubuntu-22.04
+            rust_targets: x86_64-unknown-linux-gnu
+            tauri_args: ""
+            name: Linux
+
+    runs-on: ${{ matrix.platform }}
+    name: Build (${{ matrix.name }})
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Linux: install system dependencies for Tauri + WebKitGTK
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            libgtk-3-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev
+
+      # Install Rust with required targets
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      # Cache Cargo registry only (not target — stale artifacts cause build failures)
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+
+      # Build the Tauri app
+      - name: Build Skipi
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Updater signing — REQUIRED for auto-updates:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # macOS signing (optional — set these secrets if you have an Apple Developer cert):
+          # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # APPLE_ID: ${{ secrets.APPLE_ID }}
+          # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Skipi ${{ github.ref_name }}"
+          releaseBody: |
+            ## Skipi ${{ github.ref_name }}
+
+            Maritime Document Management for Seafarers.
+
+            ### Download
+
+            | Platform | File |
+            |----------|------|
+            | macOS (Apple Silicon + Intel) | `.dmg` |
+            | Windows | `.msi` |
+            | Linux (Debian/Ubuntu) | `.deb` |
+            | Linux (universal) | `.AppImage` |
+
+            ### What's new
+
+            See [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
+
+            ---
+
+            > **Beta build.** This is a pre-release version for invited testers.
+            > All data stays on your computer — Skipi does not have a server yet.
+            >
+            > **Auto-update:** Existing Skipi installations will be notified about this update automatically.
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.tauri_args }}
+
+  # After all platform builds finish, assemble latest.json and attach it to the release.
+  # tauri-action itself does NOT aggregate per-platform signatures into one manifest
+  # when running across a matrix, so we have to do it in a follow-up job.
+  publish-latest-json:
+    name: Publish latest.json
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build latest.json from release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          VERSION="${TAG#v}"
+          PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
+
+          mkdir -p sigs
+          cd sigs
+
+          # Pull every .sig asset from the release so we can embed the signatures
+          gh release download "${TAG}" --repo "${REPO}" --pattern '*.sig' || true
+          ls -la
+
+          # Read a signature file if present, otherwise return empty string.
+          read_sig() {
+            local f="$1"
+            if [ -f "$f" ]; then cat "$f"; else echo ""; fi
+          }
+
+          # Asset filenames follow tauri-action conventions.
+          MAC_SIG="$(read_sig "Skipi_universal.app.tar.gz.sig")"
+          MAC_URL="${BASE_URL}/Skipi_universal.app.tar.gz"
+
+          # Windows: prefer the NSIS .exe updater; fall back to .msi.
+          WIN_SIG=""
+          WIN_URL=""
+          if [ -f "Skipi_${VERSION}_x64-setup.exe.sig" ]; then
+            WIN_SIG="$(read_sig "Skipi_${VERSION}_x64-setup.exe.sig")"
+            WIN_URL="${BASE_URL}/Skipi_${VERSION}_x64-setup.exe"
+          elif [ -f "Skipi_${VERSION}_x64_en-US.msi.sig" ]; then
+            WIN_SIG="$(read_sig "Skipi_${VERSION}_x64_en-US.msi.sig")"
+            WIN_URL="${BASE_URL}/Skipi_${VERSION}_x64_en-US.msi"
+          fi
+
+          # Linux: prefer AppImage (self-contained, portable for updater).
+          LINUX_SIG=""
+          LINUX_URL=""
+          APPIMG="$(ls Skipi_${VERSION}_amd64*.AppImage.sig 2>/dev/null | head -n1 || true)"
+          if [ -n "$APPIMG" ]; then
+            LINUX_SIG="$(read_sig "$APPIMG")"
+            LINUX_URL="${BASE_URL}/${APPIMG%.sig}"
+          fi
+
+          cd ..
+
+          # Build the manifest with jq so strings with newlines/special chars are escaped correctly.
+          jq -n \
+            --arg version "$VERSION" \
+            --arg pub_date "$PUB_DATE" \
+            --arg notes "Skipi $VERSION" \
+            --arg mac_sig "$MAC_SIG" \
+            --arg mac_url "$MAC_URL" \
+            --arg win_sig "$WIN_SIG" \
+            --arg win_url "$WIN_URL" \
+            --arg linux_sig "$LINUX_SIG" \
+            --arg linux_url "$LINUX_URL" \
+            '
+            def plat(sig; url):
+              if (sig|length) > 0 and (url|length) > 0
+              then {signature: sig, url: url}
+              else null end;
+
+            {
+              version: $version,
+              pub_date: $pub_date,
+              notes: $notes,
+              platforms: (
+                {
+                  "darwin-aarch64": plat($mac_sig; $mac_url),
+                  "darwin-x86_64":  plat($mac_sig; $mac_url),
+                  "windows-x86_64": plat($win_sig; $win_url),
+                  "linux-x86_64":   plat($linux_sig; $linux_url)
+                }
+                | with_entries(select(.value != null))
+              )
+            }
+            ' > latest.json
+
+          echo "--- latest.json ---"
+          cat latest.json
+
+      - name: Upload latest.json to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          # --clobber replaces the file if it already exists (e.g. on re-runs).
+          gh release upload "${TAG}" latest.json --repo "${REPO}" --clobber

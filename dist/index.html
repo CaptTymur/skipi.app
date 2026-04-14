@@ -1,0 +1,2515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skipi</title>
+<script>
+var APP_VERSION='0.4.11';
+function updateTitlebar(vaultName){
+    var t=vaultName?'Skipi v'+APP_VERSION+' — '+vaultName:'Skipi v'+APP_VERSION;
+    document.title=t;
+    var el=document.getElementById('titlebar-text');if(el)el.textContent=t;
+}
+document.addEventListener('DOMContentLoaded',function(){updateTitlebar();});
+// Early top-level error trap — shows a visible red bar at the top of the
+// window even before the main script block runs or if it fails to parse.
+// Without this, a script error would silently kill all onclick handlers.
+(function(){
+    function earlyErr(msg){
+        try{
+            var d=document.getElementById('__early_err__');
+            if(!d){
+                d=document.createElement('div');
+                d.id='__early_err__';
+                d.style.cssText='position:fixed;top:0;left:0;right:0;background:#c53030;color:#fff;padding:6px 12px;font:11px/1.4 monospace;z-index:999999;white-space:pre-wrap;';
+                (document.body||document.documentElement).appendChild(d);
+            }
+            d.textContent='[Skipi v'+APP_VERSION+'] '+msg;
+        }catch(_){/* nothing we can do */}
+    }
+    window.__earlyErr=earlyErr;
+    window.addEventListener('error',function(ev){
+        earlyErr('JS error: '+(ev.message||ev.error||'unknown')+' @ '+(ev.filename||'?')+':'+(ev.lineno||'?'));
+    });
+    window.addEventListener('unhandledrejection',function(ev){
+        earlyErr('Unhandled: '+(ev.reason&&ev.reason.message?ev.reason.message:ev.reason));
+    });
+})();
+</script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+:root, [data-theme="dark"] {
+    --bg: #1e1e1e;
+    --surface: #252525;
+    --surface2: #2d2d2d;
+    --editor-bg: #1e1e1e;
+    --text: #dcddde;
+    --text2: #888;
+    --accent: #7c6ff7;
+    --accent-bg: rgba(124,111,247,0.15);
+    --accent-bg2: rgba(124,111,247,0.3);
+    --border: #333;
+    --hover: rgba(255,255,255,0.05);
+    --green: #4ec970;
+    --red: #e55561;
+    --yellow: #e2b93d;
+    --orange: #d89b65;
+    --statusbar: #1a1a1a;
+    --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+[data-theme="light"] {
+    --bg: #ffffff;
+    --surface: #f6f6f6;
+    --surface2: #eeeeee;
+    --editor-bg: #ffffff;
+    --text: #1e1e1e;
+    --text2: #666;
+    --accent: #6c5ce7;
+    --accent-bg: rgba(108,92,231,0.1);
+    --accent-bg2: rgba(108,92,231,0.2);
+    --border: #ddd;
+    --hover: rgba(0,0,0,0.04);
+    --green: #27ae60;
+    --red: #e74c3c;
+    --yellow: #f39c12;
+    --orange: #e67e22;
+    --statusbar: #f0f0f0;
+}
+body { background:var(--bg); color:var(--text); font-family:var(--font-ui); font-size:13px; height:100vh; display:flex; flex-direction:column; overflow:hidden; }
+::selection { background:var(--accent-bg2); }
+input, select, button { font-family:var(--font-ui); }
+
+/* Title bar */
+.titlebar { height:28px; background:var(--surface); display:flex; align-items:center; justify-content:center; -webkit-app-region:drag; border-bottom:1px solid var(--border); }
+.titlebar span { font-size:11px; color:var(--text2); }
+
+/* App layout */
+.app { display:flex; flex:1; overflow:hidden; }
+.modules-bar { display:flex; align-items:center; height:34px; background:var(--surface); border-bottom:1px solid var(--border); padding:0 8px; gap:2px; flex-shrink:0; }
+.modules-bar .mod-tab { display:flex; align-items:center; gap:6px; height:26px; padding:0 10px; border-radius:5px; cursor:pointer; color:var(--text2); font-size:12px; }
+.modules-bar .mod-tab:hover { color:var(--text); background:var(--hover); }
+.modules-bar .mod-tab.active { color:#fff; background:var(--accent); font-weight:600; box-shadow:0 1px 0 var(--accent); }
+.modules-bar .mod-tab .mi { font-size:14px; }
+.modules-bar .mb-spacer { flex:1; }
+.panel-footer { border-top:1px solid var(--border); padding:6px 8px; display:flex; align-items:center; gap:6px; background:var(--surface); }
+.panel-footer .pf-vault { flex:1; min-width:0; display:flex; align-items:center; gap:6px; padding:4px 8px; border-radius:5px; cursor:pointer; color:var(--text); font-size:12px; background:var(--bg); border:1px solid var(--border); overflow:hidden; }
+.panel-footer .pf-vault:hover { border-color:var(--accent); }
+.panel-footer .pf-vault .pf-vault-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.panel-footer .pf-vault .pf-caret { opacity:.6; }
+.panel-footer .pf-gear { width:28px; height:28px; display:flex; align-items:center; justify-content:center; border-radius:5px; cursor:pointer; color:var(--text2); font-size:14px; }
+.panel-footer .pf-gear:hover { color:var(--text); background:var(--hover); }
+
+/* Ribbon (icon strip) */
+.ribbon { width:40px; background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; align-items:center; padding:8px 0; gap:4px; }
+.ribbon-icon { width:32px; height:32px; display:flex; align-items:center; justify-content:center; border-radius:4px; cursor:pointer; font-size:16px; color:var(--text2); }
+.ribbon-icon:hover { color:var(--text); background:var(--hover); }
+.ribbon-icon.active { color:var(--accent); }
+.ribbon-spacer { flex:1; }
+
+/* Left panel */
+.left-panel { width:260px; background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; }
+.panel-header { height:28px; display:flex; align-items:center; padding:0 12px; font-size:11px; color:var(--text2); text-transform:uppercase; letter-spacing:.05em; border-bottom:1px solid var(--border); }
+.panel-header .actions { margin-left:auto; display:flex; gap:4px; }
+.panel-header .actions span { cursor:pointer; opacity:.5; }
+.panel-header .actions span:hover { opacity:1; }
+.panel-search { padding:6px 8px; border-bottom:1px solid var(--border); }
+.panel-search input { width:100%; padding:4px 8px; background:var(--bg); border:1px solid var(--border); border-radius:4px; color:var(--text); font-size:12px; outline:none; }
+.panel-search input:focus { border-color:var(--accent); }
+.panel-tree { flex:1; overflow-y:auto; padding:4px 0; }
+
+/* Tree */
+.tree-folder { cursor:pointer; }
+.tree-folder-header { height:26px; display:flex; align-items:center; padding:0 8px 0 12px; gap:4px; font-size:12px; color:var(--text2); font-weight:600; }
+.tree-folder-header:hover { background:var(--hover); }
+.tree-folder-header .arrow { font-size:9px; width:12px; transition:transform .12s; }
+.tree-folder-header .arrow.open { transform:rotate(90deg); }
+.tree-folder-header .cnt { margin-left:auto; font-size:10px; font-weight:400; }
+.tree-folder-header .dot { width:6px; height:6px; border-radius:50%; margin-left:auto; margin-right:4px; }
+.tree-items { display:none; }
+.tree-items.open { display:block; }
+.tree-file { height:26px; display:flex; align-items:center; padding:0 8px 0 32px; gap:6px; font-size:12px; cursor:pointer; color:var(--text); }
+.tree-file:hover { background:var(--hover); }
+.tree-file.active { background:var(--accent); color:#fff; font-weight:600; box-shadow:inset 3px 0 0 #fff; }
+.tree-file.active .icon, .tree-file.active .st { color:#fff; }
+.tree-file .icon { font-size:11px; color:var(--text2); width:14px; text-align:center; }
+.tree-file .name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tree-file .st { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+.tree-file.pkg-sel { background:rgba(78,201,112,.12); }
+
+/* Center */
+.center { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+
+/* Tabs */
+.tabs { height:36px; background:var(--bg); display:flex; align-items:stretch; border-bottom:1px solid var(--border); }
+.tab { padding:0 16px; display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text2); cursor:pointer; border-right:1px solid var(--border); }
+.tab:hover { color:var(--text); }
+.tab.active { background:var(--surface2); color:var(--accent); border-bottom:2px solid var(--accent); }
+
+/* Editor area */
+.editor { flex:1; overflow-y:auto; padding:40px 60px; }
+.editor-narrow { max-width:700px; }
+
+/* Right panel */
+.right-panel { width:260px; background:var(--surface); border-left:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; display:none; }
+
+/* Status bar */
+.statusbar { height:22px; background:var(--statusbar); border-top:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; padding:0 12px; font-size:11px; color:#666; }
+
+/* Document detail */
+.doc-title { font-size:22px; font-weight:700; margin-bottom:4px; line-height:1.3; }
+.doc-meta { font-size:12px; color:var(--text2); margin-bottom:24px; }
+.field-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px 12px; margin-bottom:20px; }
+.field label { display:flex; align-items:center; gap:5px; font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--text2); margin-bottom:3px; }
+.field input { width:100%; padding:5px 8px; background:var(--bg); border:1px solid var(--border); border-radius:3px; color:var(--text); font-size:13px; outline:none; }
+.field-dot { width:8px; height:8px; border-radius:50%; display:inline-block; cursor:pointer; flex-shrink:0; transition:background 0.2s; }
+.field-dot.empty { background:var(--red); }
+.field-dot.ai { background:var(--yellow); }
+.field-dot.verified { background:var(--green); }
+.field input:focus { border-color:var(--accent); }
+.badge { display:inline-block; padding:2px 8px; border-radius:3px; font-size:11px; font-weight:600; }
+.badge-expired { background:rgba(229,85,97,.15); color:var(--red); }
+.badge-critical { background:rgba(216,155,101,.15); color:var(--orange); }
+.badge-warning { background:rgba(226,185,61,.15); color:var(--yellow); }
+.badge-valid { background:rgba(78,201,112,.15); color:var(--green); }
+.badge-none { background:rgba(136,136,136,.15); color:var(--text2); }
+
+/* File preview */
+.file-drop { margin-top:16px; padding:20px; border:2px dashed var(--border); border-radius:6px; text-align:center; cursor:pointer; color:var(--text2); font-size:12px; }
+.file-drop:hover { border-color:var(--accent); color:var(--accent); }
+.file-preview { margin-top:12px; border:1px solid var(--border); border-radius:6px; overflow:hidden; background:#111; min-height:200px; display:flex; align-items:center; justify-content:center; }
+.file-info { display:flex; align-items:center; justify-content:space-between; margin-top:12px; font-size:12px; }
+.file-info .fname { color:var(--green); }
+
+/* AI buttons */
+.ai-row { display:flex; gap:6px; align-items:center; margin-bottom:16px; }
+.ai-status { font-size:11px; color:var(--text2); }
+
+/* Dashboard */
+.dash-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(120px,1fr)); gap:8px; margin-bottom:24px; }
+.dash-card { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:12px; text-align:center; cursor:pointer; }
+.dash-card:hover { border-color:var(--accent); }
+.dash-card .num { font-size:28px; font-weight:700; }
+.dash-card .lbl { font-size:10px; color:var(--text2); text-transform:uppercase; }
+.urgent-item { height:30px; display:flex; align-items:center; gap:8px; padding:0 4px; cursor:pointer; font-size:12px; }
+.urgent-item:hover { background:var(--hover); }
+
+/* Buttons */
+.btn { padding:4px 12px; border:none; border-radius:4px; cursor:pointer; font-size:12px; font-weight:600; }
+.btn-accent { background:var(--accent); color:#fff; }
+.btn-green { background:var(--green); color:var(--bg); }
+.btn-outline { background:transparent; border:1px solid var(--border); color:var(--text); }
+.btn-sm { padding:3px 8px; font-size:11px; }
+.btn-red { color:var(--red); border-color:var(--red); }
+.btn:hover { opacity:.85; }
+
+/* Update banner */
+.update-banner { display:none; position:fixed; top:28px; left:0; right:0; background:linear-gradient(90deg, var(--accent), #5b4fd6); color:#fff; padding:8px 16px; font-size:12px; z-index:90; display:none; align-items:center; gap:10px; }
+.update-banner .ub-msg { flex:1; }
+.update-banner .ub-progress { height:3px; background:rgba(255,255,255,.2); border-radius:2px; overflow:hidden; margin-top:4px; }
+.update-banner .ub-bar { height:100%; background:#fff; border-radius:2px; transition:width .3s; width:0%; }
+.update-banner button { padding:3px 10px; border:1px solid rgba(255,255,255,.5); background:transparent; color:#fff; border-radius:3px; cursor:pointer; font-size:11px; font-weight:600; }
+.update-banner button:hover { background:rgba(255,255,255,.15); }
+.update-banner .ub-close { cursor:pointer; opacity:.6; font-size:16px; }
+.update-banner .ub-close:hover { opacity:1; }
+
+/* Generic centered modal */
+.modal-overlay { position:fixed; inset:0; z-index:120; background:rgba(0,0,0,0.55); align-items:center; justify-content:center; display:none; }
+.modal-overlay.open { display:flex; }
+.modal-panel { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:20px 22px; box-shadow:0 20px 60px rgba(0,0,0,0.5); width:min(500px, 92vw); max-height:85vh; overflow-y:auto; }
+.modal-panel h3 { color:var(--accent); }
+.modal-panel .field { margin-bottom:12px; }
+.modal-panel .field label { display:block; font-size:11px; color:var(--text2); margin-bottom:4px; text-transform:uppercase; letter-spacing:0.5px; }
+.modal-panel .field input[type="text"], .modal-panel .field select { width:100%; padding:8px 10px; background:var(--bg); border:1px solid var(--border); border-radius:5px; color:var(--text); font-size:13px; box-sizing:border-box; }
+.modal-panel .field input:focus, .modal-panel .field select:focus { outline:none; border-color:var(--accent); }
+.modal-panel .actions .btn { margin-left:8px; }
+
+/* Panel header "+" button */
+.panel-header .actions span { cursor:pointer; opacity:0.55; padding:0 4px; transition:opacity 0.15s; }
+.panel-header .actions span:hover { opacity:1; color:var(--accent); }
+
+/* Package tip callout */
+.pkg-tip { background:linear-gradient(90deg, rgba(100,108,255,0.12), rgba(100,108,255,0.04)); border-left:3px solid var(--accent); padding:10px 14px; margin:12px 0 16px; border-radius:0 6px 6px 0; font-size:12px; color:var(--text); display:flex; gap:10px; align-items:flex-start; }
+.pkg-tip-icon { font-size:16px; flex-shrink:0; }
+.pkg-tip-body { line-height:1.5; }
+.pkg-tip-body b { color:var(--accent); }
+
+/* Settings modal (Obsidian-style) */
+.settings-overlay { display:none; position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.5); align-items:center; justify-content:center; }
+.settings-overlay.open { display:flex; }
+.settings-modal { width:min(860px, 90vw); height:min(600px, 85vh); background:var(--surface); border-radius:12px; display:flex; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,0.4); border:1px solid var(--border); }
+.settings-nav { width:210px; background:var(--bg); border-right:1px solid var(--border); padding:12px 0; overflow-y:auto; flex-shrink:0; }
+.settings-nav-title { font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--text2); padding:12px 16px 4px; font-weight:600; }
+.settings-nav-item { padding:7px 16px; font-size:13px; cursor:pointer; color:var(--text); display:flex; align-items:center; gap:8px; border-radius:0; }
+.settings-nav-item:hover { background:var(--hover); }
+.settings-nav-item.active { background:var(--accent-bg); color:var(--accent); }
+.settings-nav-item .nav-icon { width:18px; text-align:center; font-size:14px; opacity:0.7; }
+.settings-body { flex:1; overflow-y:auto; padding:28px 32px; }
+.settings-section { margin-bottom:32px; }
+.settings-section h3 { font-size:20px; font-weight:600; margin-bottom:4px; }
+.settings-section .section-desc { font-size:12px; color:var(--text2); margin-bottom:20px; }
+.setting-row { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--border); background:var(--bg); }
+.setting-row:first-of-type { border-radius:8px 8px 0 0; }
+.setting-row:last-of-type { border-bottom:none; border-radius:0 0 8px 8px; }
+.setting-row:only-of-type { border-radius:8px; }
+.setting-info { flex:1; margin-right:16px; }
+.setting-info .setting-label { font-size:13px; font-weight:500; }
+.setting-info .setting-desc { font-size:11px; color:var(--text2); margin-top:2px; line-height:1.4; }
+.setting-control { flex-shrink:0; }
+.setting-control select { padding:5px 10px; background:var(--surface2); border:1px solid var(--border); border-radius:4px; color:var(--text); font-size:12px; cursor:pointer; }
+.setting-control input[type="text"], .setting-control input[type="password"] { padding:5px 10px; background:var(--surface); border:1px solid var(--border); border-radius:4px; color:var(--text); font-size:12px; width:220px; }
+.setting-control input:focus { border-color:var(--accent); outline:none; }
+.settings-close { position:absolute; top:12px; right:16px; width:28px; height:28px; display:flex; align-items:center; justify-content:center; cursor:pointer; border-radius:4px; color:var(--text2); font-size:18px; z-index:101; }
+.settings-close:hover { background:var(--hover); color:var(--text); }
+/* Toggle switch */
+.toggle { position:relative; width:36px; height:20px; cursor:pointer; }
+.toggle input { display:none; }
+.toggle .slider { position:absolute; inset:0; background:var(--border); border-radius:10px; transition:.2s; }
+.toggle .slider:before { content:''; position:absolute; height:16px; width:16px; left:2px; bottom:2px; background:var(--text2); border-radius:50%; transition:.2s; }
+.toggle input:checked + .slider { background:var(--accent); }
+.toggle input:checked + .slider:before { transform:translateX(16px); background:#fff; }
+
+/* Welcome */
+.welcome { text-align:center; margin-top:15vh; }
+.welcome h1 { font-size:32px; color:var(--accent); margin-bottom:8px; }
+.welcome p { color:var(--text2); margin-bottom:32px; font-size:14px; }
+.welcome .btn { margin:0 6px; padding:8px 20px; font-size:14px; }
+
+/* Setup */
+.setup { max-width:360px; margin:40px auto; }
+.setup h2 { text-align:center; color:var(--accent); margin-bottom:20px; font-size:18px; }
+.setup .field { margin-bottom:12px; }
+.setup .field label { font-size:11px; }
+.setup .actions { text-align:center; margin-top:20px; }
+.wizard-card { border:1px solid var(--border); border-radius:6px; padding:10px 12px; margin-bottom:8px; cursor:pointer; transition:all 0.15s; }
+.wizard-card:hover { border-color:var(--accent); background:var(--bg2); }
+.profile-bar { background:var(--bg2); height:8px; border-radius:4px; overflow:hidden; margin:8px 0; }
+.profile-bar-fill { background:var(--green); height:100%; transition:width 0.3s; }
+.reg-basis { display:inline-block; background:var(--bg2); color:var(--text2); font-size:10px; padding:2px 6px; border-radius:3px; margin-left:6px; font-family:var(--font-mono); }
+.missing-card { border-left:3px solid var(--red); padding:8px 12px; background:var(--bg2); margin:6px 0; border-radius:4px; cursor:pointer; }
+.missing-card:hover { background:var(--surface); }
+
+/* Package list */
+.pkg-table { width:100%; border-collapse:collapse; font-size:12px; }
+.pkg-table th { text-align:left; padding:6px 8px; font-size:10px; text-transform:uppercase; color:var(--text2); border-bottom:1px solid var(--border); }
+.pkg-table td { padding:6px 8px; border-bottom:1px solid rgba(255,255,255,.03); }
+
+/* Wizard two-column layout */
+.wizard-wrap { display:flex; gap:24px; max-width:1180px; margin:20px auto; align-items:flex-start; padding:0 16px; }
+.wizard-col-left { flex:1; min-width:0; max-width:600px; }
+.wizard-col-left.setup { margin:0; max-width:600px; }
+.wizard-col-right { flex:1; min-width:0; max-width:480px; position:sticky; top:12px; max-height:calc(100vh - 24px); overflow-y:auto; }
+
+/* Applicable framework panel */
+.fw-panel { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:14px 16px; font-size:12px; }
+.fw-panel-title { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:1.2px; color:var(--accent); margin-bottom:8px; }
+.fw-subject { font-size:13px; color:var(--text); font-weight:600; margin-bottom:12px; padding-bottom:8px; border-bottom:1px solid var(--border); }
+.fw-placeholder { color:var(--text2); font-size:12px; font-style:italic; padding:10px 0; }
+.fw-section-title { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:var(--text2); margin-bottom:6px; }
+.fw-item { background:var(--bg); border:1px solid var(--border); border-radius:5px; padding:8px 10px; margin-bottom:6px; }
+.fw-item summary { cursor:pointer; list-style:none; outline:none; }
+.fw-item summary::-webkit-details-marker { display:none; }
+.fw-item[open] { background:var(--surface); }
+.fw-chip { display:inline-block; background:var(--accent); color:#fff; font-size:10px; font-weight:700; padding:2px 7px; border-radius:3px; margin-right:8px; font-family:var(--font-mono); text-transform:uppercase; }
+.fw-full { color:var(--text); font-size:12px; }
+.fw-note { color:var(--text2); font-size:11px; margin-top:4px; margin-left:0; font-style:italic; }
+.fw-explanation { color:var(--text); font-size:12px; margin-top:6px; line-height:1.5; background:var(--bg2); padding:8px 10px; border-radius:4px; border-left:3px solid var(--accent); }
+.fw-requires-label { margin-top:8px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; color:var(--accent); }
+.fw-requires { margin:4px 0 0 0; padding-left:18px; color:var(--text); font-size:11px; }
+.fw-requires li { margin:3px 0; }
+.fw-articles-label { margin-top:8px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; color:var(--text2); }
+.fw-articles { margin:4px 0 0 0; padding-left:18px; color:var(--text2); font-size:11px; }
+.fw-articles li { margin:2px 0; }
+.fw-cat { font-size:11px; font-weight:700; color:var(--text); margin:10px 0 4px; text-transform:uppercase; letter-spacing:0.6px; }
+.fw-cat-cnt { display:inline-block; background:var(--bg); color:var(--text2); font-size:10px; padding:1px 6px; border-radius:8px; margin-left:4px; font-weight:500; }
+.fw-doc { background:var(--bg); border-left:2px solid var(--accent); padding:5px 8px; margin:3px 0; border-radius:0 3px 3px 0; }
+.fw-doc-title { font-size:11px; color:var(--text); }
+.fw-doc-basis { font-size:10px; color:var(--text2); font-family:var(--font-mono); margin-top:2px; }
+</style>
+</head>
+<body>
+
+<div class="titlebar"><span id="titlebar-text">Skipi v0.4.11</span></div>
+
+<!-- Top horizontal modules bar (replaces old left ribbon) -->
+<div class="modules-bar" id="modules-bar" style="display:none;">
+    <div class="mod-tab active" onclick="showView('files')" id="mt-files" title="Files"><span class="mi">&#128451;</span><span>Files</span></div>
+    <div class="mod-tab" onclick="showView('dashboard')" id="mt-dash" title="Dashboard"><span class="mi">&#9632;</span><span>Dashboard</span></div>
+    <div class="mod-tab" onclick="showView('cv')" id="mt-cv" title="CV"><span class="mi">&#128100;</span><span>CV</span></div>
+    <div class="mod-tab" onclick="showView('experience')" id="mt-exp" title="Work Experience"><span class="mi">&#9875;</span><span>Experience</span></div>
+    <div class="mod-tab" onclick="showView('packages')" id="mt-pkg" title="Packages"><span class="mi">&#128230;</span><span>Packages</span></div>
+    <div class="mod-tab" onclick="showView('dispatch')" id="mt-disp" title="Dispatch"><span class="mi">&#128231;</span><span>Dispatch</span></div>
+    <div class="mb-spacer"></div>
+</div>
+
+<div class="app">
+    <!-- Legacy ribbon kept hidden for back-compat with showView() logic -->
+    <div class="ribbon" id="ribbon" style="display:none !important;">
+        <div class="ribbon-icon active" onclick="showView('files')" id="ri-files" title="Files">&#128451;</div>
+        <div class="ribbon-icon" onclick="showView('dashboard')" id="ri-dash" title="Dashboard">&#9632;</div>
+        <div class="ribbon-icon" onclick="showView('cv')" id="ri-cv" title="CV">&#128100;</div>
+        <div class="ribbon-icon" onclick="showView('experience')" id="ri-exp" title="Work Experience">&#9875;</div>
+        <div class="ribbon-icon" onclick="showView('packages')" id="ri-pkg" title="Packages">&#128230;</div>
+        <div class="ribbon-icon" onclick="showView('dispatch')" id="ri-disp" title="Dispatch (Рассылка)">&#128231;</div>
+        <div class="ribbon-spacer"></div>
+        <div class="ribbon-icon" onclick="openSettings()" id="ri-set" title="Settings">&#9881;</div>
+    </div>
+
+    <!-- Left panel -->
+    <div class="left-panel" id="left-panel" style="display:none;">
+        <div class="panel-header"><span id="panel-title">Files</span><span class="actions"><span id="btn-add-custom" title="Add custom certificate" onclick="showAddCustomDoc()" style="font-size:11px;font-weight:600;padding:2px 8px;border:1px solid var(--border);border-radius:4px;">+ Add</span></span></div>
+        <div class="panel-search"><input type="text" placeholder="Search..." id="search-input" oninput="onSearch(this.value)"></div>
+        <div class="panel-tree" id="panel-tree"></div>
+        <div class="panel-footer">
+            <div class="pf-vault" id="pf-vault" onclick="openVaultSwitcher(event)" title="Switch vault">
+                <span>&#128451;</span>
+                <span class="pf-vault-name" id="pf-vault-name">Vault</span>
+                <span class="pf-caret">&#9662;</span>
+            </div>
+            <div class="pf-gear" id="pf-gear" onclick="openSettings()" title="Settings">&#9881;</div>
+        </div>
+    </div>
+
+    <!-- Add Custom Certificate modal -->
+    <div id="add-custom-overlay" class="modal-overlay" style="display:none;" onclick="if(event.target===this)hideAddCustomDoc();">
+        <div class="modal-panel" style="max-width:420px;">
+            <h3 style="margin-top:0;margin-bottom:4px;font-size:16px;">Add Custom Certificate</h3>
+            <p style="color:var(--text2);font-size:12px;margin-top:0;margin-bottom:14px;">Add a certificate that isn't in the standard template — e.g. a company-specific training, a local endorsement, or an extra course you took.</p>
+            <div class="field"><label>Title *</label><input type="text" id="ac-title" placeholder="e.g. Dangerous Goods by Air (IATA DGR)"></div>
+            <div class="field"><label>Category</label><select id="ac-category"></select></div>
+            <div class="field"><label><input type="checkbox" id="ac-has-expiry" checked style="margin-right:6px;">This certificate has an expiry date</label></div>
+            <div class="actions" style="margin-top:18px;text-align:right;">
+                <button class="btn btn-outline" onclick="hideAddCustomDoc()">Cancel</button>
+                <button class="btn btn-accent" onclick="doAddCustomDoc()">Add Certificate</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Center -->
+    <div class="center">
+        <div class="tabs" id="tabs" style="display:none;"></div>
+        <div class="editor" id="editor">
+            <div class="welcome" id="scr-welcome">
+                <h1>Skipi</h1>
+                <p>Maritime Document Management</p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.11</span></p>
+                <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
+                <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
+                <div style="margin-top:18px;font-size:12px;color:var(--text2);">
+                    Just exploring? <a href="#" onclick="loadDemoVault();return false;" style="color:var(--accent);">Load demo seafarer</a>
+                </div>
+            </div>
+            <div id="scr-setup" style="display:none;"></div>
+            <div id="scr-content" style="display:none;"></div>
+        </div>
+    </div>
+
+    <!-- Right panel (future: outline, properties) -->
+    <div class="right-panel" id="right-panel"></div>
+</div>
+
+<div class="statusbar" id="statusbar" style="display:none;">
+    <span id="st-left"></span>
+    <span id="st-right"></span>
+</div>
+
+<!-- Settings modal -->
+<div class="settings-overlay" id="settings-overlay" onclick="if(event.target===this)closeSettings();">
+    <div class="settings-modal" style="position:relative;">
+        <div class="settings-close" onclick="closeSettings()">&#10005;</div>
+        <div class="settings-nav" id="settings-nav"></div>
+        <div class="settings-body" id="settings-body"></div>
+    </div>
+</div>
+
+<!-- Forced profile onboarding overlay (Seafarer) — blocks app until all required fields are filled -->
+<div id="forced-profile-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9998;align-items:flex-start;justify-content:center;overflow:auto;padding:40px 20px;">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;max-width:720px;width:100%;padding:24px;box-shadow:0 10px 40px rgba(0,0,0,.4);">
+        <h2 style="margin:0 0 4px;font-size:18px;">Complete your Seafarer Profile</h2>
+        <p style="margin:0 0 14px;color:var(--text2);font-size:12px;">These details are required before you can start using Skipi. They live only inside this vault on disk. Photo is optional.</p>
+        <div id="fp-err" style="display:none;background:var(--red);color:#fff;padding:6px 10px;border-radius:4px;font-size:12px;margin-bottom:12px;"></div>
+        <div class="field-grid">
+            <div class="field"><label>Surname *</label><input id="fp-surname"></div>
+            <div class="field"><label>First name *</label><input id="fp-first_name"></div>
+            <div class="field"><label>Date of birth *</label><input id="fp-date_of_birth" type="date"></div>
+            <div class="field"><label>Place of birth *</label><input id="fp-place_of_birth"></div>
+            <div class="field"><label>Nationality *</label><select id="fp-nationality"></select></div>
+            <div class="field"><label>Phones *</label><input id="fp-phones" placeholder="+XX XXX..."></div>
+            <div class="field"><label>Email *</label><input id="fp-email" type="email"></div>
+            <div class="field"><label>Rank *</label><select id="fp-rank"></select></div>
+            <div class="field"><label>Nearest airport *</label><input id="fp-nearest_airport" list="airport-hubs" placeholder="Start typing…"></div>
+            <div class="field"><label>Nearest intl airport *</label><input id="fp-nearest_intl_airport" list="airport-hubs" placeholder="Start typing…"></div>
+            <div class="field"><label>Available for joining *</label><input id="fp-available_from" type="date"></div>
+            <div class="field"><label>Minimum salary per month *</label>
+                <div style="display:flex;gap:6px;"><input id="fp-min_salary" type="number" min="0" placeholder="e.g. 4500" style="flex:1;min-width:0;"><select id="fp-min_salary_currency" style="width:80px;flex:0 0 80px;"></select></div>
+            </div>
+        </div>
+        <div class="field" style="margin-top:8px;"><label>Home address *</label><input id="fp-home_address" placeholder="Street, city, country, ZIP"></div>
+        <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end;">
+            <button class="btn btn-accent" onclick="fpSubmit()">Save &amp; Continue</button>
+        </div>
+    </div>
+</div>
+
+<div class="update-banner" id="update-banner">
+    <span class="ub-msg" id="ub-msg">A new version of Skipi is available!</span>
+    <button id="ub-action" onclick="doUpdate()">Update now</button>
+    <span class="ub-close" onclick="hideUpdateBanner()">&#10005;</span>
+</div>
+<div id="err" style="display:none; position:fixed; top:28px; left:0; right:0; background:var(--red); color:#fff; padding:4px 12px; font-size:11px; font-family:var(--font-mono); z-index:99;"></div>
+<datalist id="airport-hubs"></datalist>
+
+<script>
+var invoke, open, saveDlg, convertFileSrc;
+var types = {vessel_types:[], ranks:[]};
+var allDocs = [], selectedDocId = null, searchTerm = '', currentView = 'files';
+var pkgMode = false, pkgSelected = [];
+var currentAccountType = '';
+
+function err(m) { var e=document.getElementById('err'); e.textContent=m; e.style.display='block'; }
+
+/* ── Toast notification system ── */
+var _toastContainer=null;
+function showToast(msg,type){
+    if(!_toastContainer){_toastContainer=document.createElement('div');_toastContainer.style.cssText='position:fixed;top:12px;right:12px;z-index:99999;display:flex;flex-direction:column;gap:6px;pointer-events:none;';document.body.appendChild(_toastContainer);}
+    var t=document.createElement('div');
+    var bg=type==='error'?'var(--red)':type==='success'?'var(--green)':'var(--yellow)';
+    t.style.cssText='padding:8px 14px;border-radius:6px;font-size:12px;color:#fff;background:'+bg+';pointer-events:auto;cursor:pointer;max-width:360px;word-break:break-word;box-shadow:0 2px 8px rgba(0,0,0,0.3);opacity:0;transition:opacity .2s;';
+    t.textContent=msg;
+    _toastContainer.appendChild(t);
+    requestAnimationFrame(function(){t.style.opacity='1';});
+    var dismiss=function(){t.style.opacity='0';setTimeout(function(){t.remove();},200);};
+    t.onclick=dismiss;
+    setTimeout(dismiss,type==='error'?6000:3500);
+}
+
+/* ── Local error log (kept in memory, exportable from Settings) ── */
+var _errorLog=[];
+function logError(context,err){
+    var entry={ts:new Date().toISOString(),ctx:context,msg:String(err)};
+    _errorLog.push(entry);
+    if(_errorLog.length>500)_errorLog.shift();
+    console.error('[Skipi]',context,err);
+}
+function getErrorLog(){return _errorLog.map(function(e){return e.ts+' ['+e.ctx+'] '+e.msg;}).join('\n');}
+
+/* ── Safe invoke wrapper ── */
+async function safeInvoke(cmd,args,opts){
+    opts=opts||{};
+    try{return await invoke(cmd,args||{});}
+    catch(e){
+        logError('invoke:'+cmd,e);
+        if(opts.silent)return opts.fallback!==undefined?opts.fallback:null;
+        showToast((opts.userMsg||'Operation failed')+': '+e,'error');
+        throw e;
+    }
+}
+
+/* ── Double-click guard for long operations ── */
+var _busyOps={};
+function guardOp(key,fn){
+    return async function(){
+        if(_busyOps[key])return;
+        _busyOps[key]=true;
+        var btn=event&&event.target;
+        if(btn&&btn.tagName==='BUTTON'){btn.disabled=true;btn.style.opacity='0.5';}
+        try{await fn.apply(this,arguments);}
+        finally{_busyOps[key]=false;if(btn&&btn.tagName==='BUTTON'){btn.disabled=false;btn.style.opacity='';}}
+    };
+}
+
+/* ── Auto-updater ── */
+var _pendingUpdate = null;
+
+function _resetCheckUpdateBtn(){
+    var b=document.getElementById('btn-check-update');
+    if(b){b.textContent='Check for updates';b.disabled=false;}
+}
+function _withTimeout(p,ms,label){
+    return new Promise(function(resolve,reject){
+        var done=false;
+        var t=setTimeout(function(){if(done)return;done=true;reject(new Error((label||'Operation')+' timed out after '+Math.round(ms/1000)+'s'));},ms);
+        p.then(function(v){if(done)return;done=true;clearTimeout(t);resolve(v);},
+               function(e){if(done)return;done=true;clearTimeout(t);reject(e);});
+    });
+}
+async function checkForUpdate(silent){
+    try{
+        if(!window.__TAURI__){
+            if(!silent)showToast('Tauri API unavailable','error');
+            return;
+        }
+        // Tauri v2 plugin exposes the check via the updater namespace.
+        var check=(window.__TAURI__.updater&&window.__TAURI__.updater.check)||
+                  (window.__TAURI__.__UPDATER_INTERNALS__&&window.__TAURI__.__UPDATER_INTERNALS__.check);
+        var update;
+        if(check){
+            update=await _withTimeout(check(),20000,'Update check');
+        } else {
+            // Fallback: plugin invoke. Returns {available, version, ...} shape.
+            var result=await _withTimeout(invoke('plugin:updater|check'),20000,'Update check');
+            update=(result&&result.available)?{version:result.version,body:result.body||'',date:result.date||''}:null;
+        }
+        if(update){
+            _pendingUpdate=update;
+            showUpdateBanner('Skipi '+update.version+' is available!');
+            if(!silent)showToast('Update '+update.version+' available.','success');
+        } else if(!silent){
+            showToast('You are on the latest version.','success');
+        }
+    }catch(e){
+        logError('updater:check',e);
+        if(!silent) showToast('Update check failed: '+(e&&e.message?e.message:e),'error');
+    }finally{
+        _resetCheckUpdateBtn();
+    }
+}
+
+function showUpdateBanner(msg){
+    var b=document.getElementById('update-banner');
+    if(b){b.style.display='flex';document.getElementById('ub-msg').textContent=msg;
+        document.getElementById('ub-action').textContent='Update now';
+        document.getElementById('ub-action').disabled=false;}
+}
+function hideUpdateBanner(){
+    var b=document.getElementById('update-banner');if(b)b.style.display='none';
+    _pendingUpdate=null;
+}
+
+async function doUpdate(){
+    if(!_pendingUpdate)return;
+    var btn=document.getElementById('ub-action');
+    var msg=document.getElementById('ub-msg');
+    if(btn){btn.disabled=true;btn.textContent='Downloading…';}
+    if(msg)msg.textContent='Downloading update…';
+    try{
+        if(_pendingUpdate.downloadAndInstall){
+            // Plugin JS API available
+            await _pendingUpdate.downloadAndInstall(function(ev){
+                if(ev.event==='Started'&&ev.data&&ev.data.contentLength){
+                    // could show progress
+                } else if(ev.event==='Progress'){
+                    // progress event
+                } else if(ev.event==='Finished'){
+                    if(msg)msg.textContent='Update installed! Restarting…';
+                }
+            });
+            // Relaunch via process plugin
+            if(window.__TAURI__.process&&window.__TAURI__.process.relaunch){
+                await window.__TAURI__.process.relaunch();
+            } else {
+                await invoke('plugin:process|restart');
+            }
+        } else {
+            // Fallback: invoke plugin commands directly
+            await invoke('plugin:updater|download_and_install');
+            if(msg)msg.textContent='Update installed! Restarting…';
+            await invoke('plugin:process|restart');
+        }
+    }catch(e){
+        logError('updater:install',e);
+        showToast('Update failed: '+e,'error');
+        if(btn){btn.disabled=false;btn.textContent='Retry';}
+        if(msg)msg.textContent='Update failed. Click Retry to try again.';
+    }
+}
+
+window.onerror = function(m,s,l){logError('window.onerror','JS:'+m+' L'+l);err('JS:'+m+' L'+l);};
+window.onunhandledrejection = function(e){logError('unhandledrejection',e.reason);err(''+e.reason);};
+
+async function init() {
+    for(var i=0;i<10;i++){if(window.__TAURI__&&window.__TAURI__.core)break;await new Promise(r=>setTimeout(r,300));}
+    if(!window.__TAURI__||!window.__TAURI__.core){err('Tauri API not available');return;}
+    invoke=window.__TAURI__.core.invoke;
+    if(window.__TAURI__.dialog){open=window.__TAURI__.dialog.open;saveDlg=window.__TAURI__.dialog.save;}
+    convertFileSrc=window.__TAURI__.core.convertFileSrc||function(p){return p;};
+    try{types=await invoke('get_vault_types');document.getElementById('err').style.display='none';
+        var lv=await invoke('get_last_vault');
+        if(lv){try{var info=await invoke('open_vault',{path:lv});await loadVault(info);return;}catch(e){}}
+    }catch(e){err('Init:'+e);}
+    // No vault opened — show welcome screen with Create / Open buttons
+    showWelcome();
+    // Check for updates even without a vault open
+    setTimeout(function(){checkForUpdate(true);},3000);
+}
+
+// ========== Profile taxonomy (STCW levels, vessel tree, positions) ==========
+var profileTax = null; // loaded lazily
+var wizardState = {step:1,name:'',level:'',vessel_root:'',vessel_leaf:'',position:'',positionCustom:''};
+
+async function loadTaxonomy(){
+    if(!profileTax){profileTax=await invoke('get_profile_taxonomy');}
+    return profileTax;
+}
+
+function showSetup(){
+    hide('scr-welcome');
+    var h='<div class="setup"><h2>Create Vault</h2>';
+    h+='<div class="field"><label>Entity type</label><select id="s-type" onchange="onType(this.value)">'
+        +'<option value="">-- Select --</option>'
+        +'<option value="seafarer">Seafarer</option>'
+        +'<option value="crewing" disabled>Crewing (coming soon)</option>'
+        +'<option value="vessel" disabled>Vessel (coming soon)</option>'
+        +'<option value="manager" disabled>Ship Manager (coming soon)</option>'
+        +'<option value="agent" disabled>Agent (coming soon)</option>'
+        +'</select></div>';
+    h+='<p style="color:var(--text2);font-size:12px;margin-top:-4px;margin-bottom:14px;">Only Seafarer is enabled in this beta. Other entity types are under development.</p>';
+    h+='<div class="actions"><button class="btn btn-outline" onclick="showWelcome()">Cancel</button></div></div>';
+    document.getElementById('scr-setup').innerHTML=h;show('scr-setup');
+}
+async function onType(v){
+    if(!v)return;
+    if(v==='seafarer'){await startSeafarerWizard();return;}
+    // All other entity types are disabled in v0.4.11; no-op.
+    showToast('This entity type is coming soon — only Seafarer is available right now.','info');
+}
+function showWelcome(){show('scr-welcome');hide('scr-setup');hide('scr-content');hide('ribbon');hide('left-panel');hide('tabs');hide('statusbar');var mb=document.getElementById('modules-bar');if(mb)mb.style.display='none';}
+
+async function doLegacyCreate(t){
+    var n=document.getElementById('s-name').value.trim();if(!n){alert('Enter name');return;}
+    var vt=document.getElementById('s-vt').value||null;
+    var dir=await open({directory:true,title:'Choose folder'});if(!dir)return;
+    var path=dir+'/Skipi - '+n.replace(/[^a-zA-Z0-9 _-]/g,'_');
+    try{var info=await invoke('create_vault',{path:path,accountType:t,name:n,rank:null,vesselType:vt});await loadVault(info);}catch(e){showToast('Could not create vault: '+e,'error');logError('create_vault',e);}
+}
+
+// ========== Applicable regulatory framework panel (shared) ==========
+// Renders the right-hand column of both seafarer and vessel wizards.
+// `frameworks` = list of Framework structs from backend
+// `docs` = list of DocTemplate rows from backend (already filtered)
+// `meta` = { scopeLabel, subjectLabel, placeholder } for the header copy
+function renderFrameworkPanel(frameworks, docs, meta){
+    var placeholder=meta&&meta.placeholder;
+    if(placeholder){
+        return '<div class="fw-panel"><div class="fw-panel-title">Applicable regulatory framework</div>'+
+               '<div class="fw-placeholder">'+placeholder+'</div></div>';
+    }
+    var h='<div class="fw-panel">';
+    h+='<div class="fw-panel-title">Applicable regulatory framework</div>';
+    if(meta&&meta.subjectLabel){
+        h+='<div class="fw-subject">'+meta.subjectLabel+'</div>';
+    }
+
+    // Conventions / codes
+    if(frameworks&&frameworks.length){
+        h+='<div class="fw-section-title">Conventions &amp; codes ('+frameworks.length+')</div>';
+        frameworks.forEach(function(f){
+            h+='<details class="fw-item">';
+            h+='<summary><span class="fw-chip">'+f.short_name+'</span><span class="fw-full">'+f.full_name+'</span></summary>';
+            if(f.explanation){
+                h+='<div class="fw-explanation">'+f.explanation+'</div>';
+            } else if(f.note){
+                h+='<div class="fw-note">'+f.note+'</div>';
+            }
+            if(f.requires&&f.requires.length){
+                h+='<div class="fw-requires-label">'+f.short_name+' requires:</div>';
+                h+='<ul class="fw-requires">';
+                f.requires.forEach(function(r){h+='<li>'+r+'</li>';});
+                h+='</ul>';
+            }
+            if(f.articles&&f.articles.length){
+                h+='<div class="fw-articles-label">Key articles / chapters:</div>';
+                h+='<ul class="fw-articles">';
+                f.articles.forEach(function(a){h+='<li>'+a+'</li>';});
+                h+='</ul>';
+            }
+            if(f.explanation&&f.note&&f.note!==f.explanation){
+                h+='<div class="fw-note">'+f.note+'</div>';
+            }
+            h+='</details>';
+        });
+    }
+
+    // Documents grouped by category
+    if(docs&&docs.length){
+        var grouped={};
+        docs.forEach(function(d){if(!grouped[d.category])grouped[d.category]=[];grouped[d.category].push(d);});
+        h+='<div class="fw-section-title" style="margin-top:14px;">Documents to be generated ('+docs.length+')</div>';
+        Object.keys(grouped).forEach(function(cat){
+            h+='<div class="fw-cat">'+cat+' <span class="fw-cat-cnt">'+grouped[cat].length+'</span></div>';
+            grouped[cat].forEach(function(d){
+                h+='<div class="fw-doc">';
+                h+='<div class="fw-doc-title">'+d.title+'</div>';
+                if(d.regulatory_basis)h+='<div class="fw-doc-basis">'+d.regulatory_basis+'</div>';
+                h+='</div>';
+            });
+        });
+    }
+
+    h+='</div>';
+    return h;
+}
+
+async function refreshSeafarerFramework(){
+    var el=document.getElementById('w-framework-panel');
+    if(!el)return;
+    var levelLabel='',vessLabel='',posLabel='';
+    if(profileTax){
+        if(wizardState.level){
+            var lv=profileTax.levels.find(function(l){return l.id===wizardState.level;});
+            if(lv)levelLabel=lv.label;
+        }
+        var vessId=wizardState.vessel_leaf||wizardState.vessel_root;
+        if(vessId){
+            var vs=profileTax.vessel_tree.find(function(v){return v.id===vessId;});
+            if(vs)vessLabel=vs.label;
+        }
+        if(wizardState.position&&wizardState.position.indexOf('other_')!==0){
+            var ps=profileTax.positions.find(function(p){return p.id===wizardState.position;});
+            if(ps)posLabel=ps.label;
+        } else if(wizardState.position&&wizardState.position.indexOf('other_')===0){
+            posLabel=(wizardState.positionCustom||'Custom position');
+        }
+    }
+    // Until an STCW level is chosen, we can't resolve the framework.
+    if(!wizardState.level){
+        el.innerHTML=renderFrameworkPanel(null,null,{placeholder:'Applicable requirements will appear as you choose STCW level, vessel type and position.'});
+        return;
+    }
+    var subject=[levelLabel,vessLabel,posLabel].filter(function(x){return x;}).join(' · ');
+    try{
+        var vessId=wizardState.vessel_leaf||wizardState.vessel_root||'';
+        var posId=wizardState.position&&wizardState.position.indexOf('other_')!==0?wizardState.position:'';
+        var frameworks=await invoke('get_seafarer_frameworks',{levelId:wizardState.level,vesselId:vessId,positionId:posId});
+        var docs=[];
+        if(vessId&&posId){
+            docs=await invoke('get_required_docs',{levelId:wizardState.level,vesselId:vessId,positionId:posId});
+        }
+        el.innerHTML=renderFrameworkPanel(frameworks,docs,{subjectLabel:subject});
+    }catch(e){
+        el.innerHTML='<div class="fw-panel"><div class="fw-panel-title">Applicable regulatory framework</div><div class="fw-placeholder">Error: '+e+'</div></div>';
+    }
+}
+
+// ========== Seafarer onboarding wizard ==========
+async function startSeafarerWizard(){
+    try{
+        await loadTaxonomy();
+    }catch(e){
+        showToast('Could not load profile taxonomy: '+e,'error');
+        logError('startSeafarerWizard/loadTaxonomy',e);
+        return;
+    }
+    wizardState={step:1,name:'',level:'',vessel_root:'',vessel_leaf:'',position:'',positionCustom:''};
+    renderWizard();
+}
+
+function renderWizard(){
+    var s=wizardState.step;
+    var stepDot=function(n,label){return'<span style="display:inline-block;padding:4px 10px;border-radius:10px;margin-right:6px;font-size:11px;'+(n===s?'background:var(--accent);color:#fff':(n<s?'background:var(--green);color:#fff':'background:var(--bg2);color:var(--text2)'))+'">'+n+'. '+label+'</span>';};
+    var header='<div style="margin-bottom:14px;">'+stepDot(1,'Name')+stepDot(2,'STCW level')+stepDot(3,'Vessel type')+stepDot(4,'Position')+stepDot(5,'Review')+'</div>';
+    var h='<div class="wizard-wrap">';
+    h+='<div class="wizard-col-left setup"><h2>Seafarer Profile — Setup</h2>'+header;
+
+    if(s===1){
+        h+='<p style="color:var(--text2);font-size:12px;margin-bottom:14px;">Let\'s build your profile step by step. Start with your name as it appears in your seaman\'s book.</p>';
+        h+='<div class="field"><label>Full Name</label><input id="w-name" value="'+(wizardState.name||'')+'" placeholder="e.g. Tymur Rudov" autofocus></div>';
+        h+='<div class="actions"><button class="btn btn-accent" onclick="wNext()">Next &rarr;</button> <button class="btn btn-outline" onclick="showSetup()">Cancel</button></div>';
+    } else if(s===2){
+        h+='<p style="color:var(--text2);font-size:12px;margin-bottom:14px;">Choose your STCW responsibility level. This follows the international Standards of Training, Certification and Watchkeeping Convention.</p>';
+        profileTax.levels.forEach(function(l){
+            var sel=wizardState.level===l.id?' style="border-color:var(--accent);background:var(--bg2);"':'';
+            var desc=l.id==='support'?'Ratings: AB, OS, Bosun, Motorman, Cook...':(l.id==='operational'?'Watchkeeping officers: 2nd/3rd Officer, 3rd/4th Engineer, ETO':'Senior officers: Master, Chief Officer, Chief/2nd Engineer');
+            h+='<div class="wizard-card" onclick="wPick(\'level\',\''+l.id+'\')"'+sel+'><div style="font-weight:600;">'+l.label+'</div><div style="color:var(--text2);font-size:12px;">'+desc+'</div></div>';
+        });
+        h+='<div class="actions" style="margin-top:14px;"><button class="btn btn-outline" onclick="wBack()">&larr; Back</button> <button class="btn btn-accent" onclick="wNext()" id="w-next">Next &rarr;</button></div>';
+    } else if(s===3){
+        h+='<p style="color:var(--text2);font-size:12px;margin-bottom:14px;">Choose the vessel type you specialize on. Start with a category, then drill down if needed.</p>';
+        var roots=profileTax.vessel_tree.filter(function(v){return !v.parent;});
+        if(!wizardState.vessel_root){
+            // No category chosen yet — show all top-level categories
+            roots.forEach(function(r){
+                h+='<div class="wizard-card" onclick="wPickRoot(\''+r.id+'\')"><div style="font-weight:600;">'+r.label+'</div></div>';
+            });
+        } else {
+            // Category chosen — show ONLY that category as a header, plus its subtypes
+            var chosen=roots.find(function(r){return r.id===wizardState.vessel_root;});
+            var kids=profileTax.vessel_tree.filter(function(v){return v.parent===wizardState.vessel_root;});
+            h+='<div class="wizard-card" style="border-color:var(--accent);background:var(--bg2);display:flex;align-items:center;justify-content:space-between;cursor:default;">';
+            h+='<div style="font-weight:600;">'+(chosen?chosen.label:'')+'</div>';
+            h+='<button class="btn btn-outline btn-sm" onclick="wResetVesselRoot()" style="cursor:pointer;">Change</button>';
+            h+='</div>';
+            if(kids.length){
+                h+='<div style="margin:14px 0 6px;font-size:12px;color:var(--text2);">Select subtype:</div>';
+                kids.forEach(function(k){
+                    var sel=wizardState.vessel_leaf===k.id?' style="border-color:var(--accent);background:var(--bg2);"':'';
+                    h+='<div class="wizard-card" onclick="wPick(\'vessel_leaf\',\''+k.id+'\')"'+sel+'><div>'+k.label+'</div></div>';
+                });
+            } else {
+                h+='<div style="margin:14px 0 6px;font-size:12px;color:var(--text2);">No subtypes — this category is specific enough on its own.</div>';
+            }
+        }
+        h+='<div class="actions" style="margin-top:14px;"><button class="btn btn-outline" onclick="wBack()">&larr; Back</button> <button class="btn btn-accent" onclick="wNext()">Next &rarr;</button></div>';
+    } else if(s===4){
+        h+='<p style="color:var(--text2);font-size:12px;margin-bottom:14px;">Choose your position. Only positions that match your chosen STCW level are shown.</p>';
+        var posList=profileTax.positions.filter(function(p){return p.level===wizardState.level;});
+        var byDept={};
+        posList.forEach(function(p){if(!byDept[p.dept])byDept[p.dept]=[];byDept[p.dept].push(p);});
+        var deptLabels={deck:'Deck Department',engine:'Engine Department',catering:'Catering Department',electrical:'Electrical Department'};
+        // Make sure every known department shows an Other card, even if byDept is sparse
+        var allDepts=['deck','engine','electrical','catering'];
+        allDepts.forEach(function(d){ if(!byDept[d]) byDept[d]=[]; });
+        ['deck','engine','electrical','catering'].forEach(function(dept){
+            if(!byDept[dept])return;
+            var dLabel=deptLabels[dept]||dept.charAt(0).toUpperCase()+dept.slice(1);
+            h+='<div style="margin:22px 0 10px;padding:8px 12px;background:var(--bg2);border-left:3px solid var(--accent);border-radius:3px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--accent);letter-spacing:1.2px;">'+dLabel+'</div>';
+            byDept[dept].forEach(function(p){
+                var sel=wizardState.position===p.id?' style="border-color:var(--accent);background:var(--bg2);"':'';
+                h+='<div class="wizard-card" onclick="wPickPosition(\''+p.id+'\')"'+sel+'><div>'+p.label+'</div></div>';
+            });
+            // "Other position" card per department
+            var otherId='other_'+dept;
+            var isOther=wizardState.position===otherId;
+            var otherSel=isOther?' style="border-color:var(--accent);background:var(--bg2);"':'';
+            h+='<div class="wizard-card" onclick="wPickPosition(\''+otherId+'\')"'+otherSel+'>';
+            h+='<div style="color:var(--text2);font-style:italic;">Other position corresponding to this level&hellip;</div>';
+            if(isOther){
+                h+='<input type="text" id="w-pos-custom-'+dept+'" value="'+(wizardState.positionCustom||'').replace(/"/g,'&quot;')+'" placeholder="e.g. Staff Captain, 4th Officer, Supernumerary" oninput="wizardState.positionCustom=this.value" onclick="event.stopPropagation();" style="margin-top:8px;width:100%;padding:8px 10px;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:4px;font-size:13px;box-sizing:border-box;">';
+            }
+            h+='</div>';
+        });
+        h+='<div class="actions" style="margin-top:14px;"><button class="btn btn-outline" onclick="wBack()">&larr; Back</button> <button class="btn btn-accent" onclick="wNext()">Next &rarr;</button></div>';
+    } else if(s===5){
+        var levelLabel=(profileTax.levels.find(function(l){return l.id===wizardState.level;})||{}).label||'';
+        var vessId=wizardState.vessel_leaf||wizardState.vessel_root;
+        var vessLabel=(profileTax.vessel_tree.find(function(v){return v.id===vessId;})||{}).label||'';
+        var posLabel;
+        if(wizardState.position.indexOf('other_')===0){
+            posLabel=wizardState.positionCustom+' (custom — '+wizardState.position.slice(6)+')';
+        } else {
+            posLabel=(profileTax.positions.find(function(p){return p.id===wizardState.position;})||{}).label||'';
+        }
+        h+='<p style="color:var(--text2);font-size:12px;margin-bottom:14px;">Review your profile. Skipi will generate the required set of documents based on these choices. See the right panel for the full regulatory scope.</p>';
+        h+='<div style="background:var(--bg2);padding:12px;border-radius:6px;margin-bottom:12px;">';
+        h+='<div><b>Name:</b> '+wizardState.name+'</div>';
+        h+='<div><b>STCW level:</b> '+levelLabel+'</div>';
+        h+='<div><b>Vessel:</b> '+vessLabel+'</div>';
+        h+='<div><b>Position:</b> '+posLabel+'</div>';
+        h+='</div>';
+        h+='<div class="actions"><button class="btn btn-accent" onclick="wFinish()">Create Vault &amp; Generate Structure</button> <button class="btn btn-outline" onclick="wBack()">&larr; Back</button></div>';
+    }
+    h+='</div>'; // close wizard-col-left
+    h+='<div id="w-framework-panel" class="wizard-col-right"></div>';
+    h+='</div>'; // close wizard-wrap
+    document.getElementById('scr-setup').innerHTML=h;show('scr-setup');
+    refreshSeafarerFramework();
+}
+
+function wPick(key,val){wizardState[key]=val;renderWizard();}
+function wPickPosition(id){
+    wizardState.position=id;
+    if(id.indexOf('other_')!==0) wizardState.positionCustom='';
+    renderWizard();
+    // Focus the custom input if Other was just picked
+    if(id.indexOf('other_')===0){
+        var el=document.getElementById('w-pos-custom-'+id.slice(6));
+        if(el){el.focus();}
+    }
+}
+function wResetVesselRoot(){
+    wizardState.vessel_root='';
+    wizardState.vessel_leaf='';
+    renderWizard();
+}
+function wPickRoot(id){
+    wizardState.vessel_root=id;
+    wizardState.vessel_leaf='';
+    // If this is a leaf itself (e.g. passenger), mark it as the leaf too
+    var node=profileTax.vessel_tree.find(function(v){return v.id===id;});
+    if(node&&node.is_leaf)wizardState.vessel_leaf=id;
+    renderWizard();
+}
+function wBack(){if(wizardState.step>1){wizardState.step--;renderWizard();}}
+function wNext(){
+    var s=wizardState.step;
+    if(s===1){var n=document.getElementById('w-name').value.trim();if(!n){alert('Enter your name');return;}wizardState.name=n;}
+    if(s===2&&!wizardState.level){alert('Choose an STCW level');return;}
+    if(s===3){
+        if(!wizardState.vessel_root){alert('Choose a vessel category');return;}
+        var root=profileTax.vessel_tree.find(function(v){return v.id===wizardState.vessel_root;});
+        if(root&&!root.is_leaf&&!wizardState.vessel_leaf){alert('Choose a vessel subtype');return;}
+    }
+    if(s===4){
+        if(!wizardState.position){alert('Choose a position');return;}
+        if(wizardState.position.indexOf('other_')===0){
+            var custom=(wizardState.positionCustom||'').trim();
+            if(!custom){alert('Please type your position name in the Other field');return;}
+            wizardState.positionCustom=custom;
+        }
+    }
+    wizardState.step++;renderWizard();
+}
+
+async function wFinish(){
+    var dir=await open({directory:true,title:'Choose folder for the vault'});if(!dir)return;
+    var path=dir+'/Skipi - '+wizardState.name.replace(/[^a-zA-Z0-9 _-]/g,'_');
+    var vessId=wizardState.vessel_leaf||wizardState.vessel_root;
+    try{
+        var info=await invoke('create_profile_vault',{
+            path:path,
+            name:wizardState.name,
+            stcwLevel:wizardState.level,
+            vesselCategory:vessId,
+            position:wizardState.position,
+            positionLabel:wizardState.position.indexOf('other_')===0?wizardState.positionCustom:null
+        });
+        await loadVault(info);
+        // Force the seafarer to complete the profile before using the app.
+        if((info&&info.account_type)==='seafarer'){ setTimeout(function(){ openForcedProfile(true); },100); }
+    }catch(e){showToast('Error: '+e,'error');logError('op',e);}
+}
+
+// ========== Nationality list (ISO-style) ==========
+var NATIONALITIES = [
+    "Afghan","Albanian","Algerian","American","Andorran","Angolan","Argentine","Armenian","Australian","Austrian",
+    "Azerbaijani","Bahamian","Bahraini","Bangladeshi","Barbadian","Belarusian","Belgian","Belizean","Beninese","Bhutanese",
+    "Bolivian","Bosnian","Botswanan","Brazilian","British","Bruneian","Bulgarian","Burkinabe","Burmese","Burundian",
+    "Cambodian","Cameroonian","Canadian","Cape Verdean","Central African","Chadian","Chilean","Chinese","Colombian","Comoran",
+    "Congolese","Costa Rican","Croatian","Cuban","Cypriot","Czech","Danish","Djiboutian","Dominican","Dutch",
+    "East Timorese","Ecuadorian","Egyptian","Emirati","Equatorial Guinean","Eritrean","Estonian","Ethiopian","Fijian","Filipino",
+    "Finnish","French","Gabonese","Gambian","Georgian","German","Ghanaian","Greek","Grenadian","Guatemalan",
+    "Guinean","Guinea-Bissauan","Guyanese","Haitian","Honduran","Hungarian","Icelandic","Indian","Indonesian","Iranian",
+    "Iraqi","Irish","Israeli","Italian","Ivorian","Jamaican","Japanese","Jordanian","Kazakhstani","Kenyan",
+    "Kiribati","North Korean","South Korean","Kosovar","Kuwaiti","Kyrgyz","Lao","Latvian","Lebanese","Liberian",
+    "Libyan","Liechtensteiner","Lithuanian","Luxembourger","Macedonian","Malagasy","Malawian","Malaysian","Maldivian","Malian",
+    "Maltese","Marshallese","Mauritanian","Mauritian","Mexican","Micronesian","Moldovan","Monacan","Mongolian","Montenegrin",
+    "Moroccan","Mozambican","Namibian","Nauruan","Nepalese","New Zealander","Nicaraguan","Nigerian","Nigerien","Norwegian",
+    "Omani","Pakistani","Palauan","Palestinian","Panamanian","Papua New Guinean","Paraguayan","Peruvian","Polish","Portuguese",
+    "Qatari","Romanian","Russian","Rwandan","Saint Lucian","Salvadoran","Samoan","San Marinese","Saudi","Senegalese",
+    "Serbian","Seychellois","Sierra Leonean","Singaporean","Slovak","Slovenian","Solomon Islander","Somali","South African","South Sudanese",
+    "Spanish","Sri Lankan","Sudanese","Surinamese","Swazi","Swedish","Swiss","Syrian","Taiwanese","Tajik",
+    "Tanzanian","Thai","Togolese","Tongan","Trinidadian","Tunisian","Turkish","Turkmen","Tuvaluan","Ugandan",
+    "Ukrainian","Uruguayan","Uzbek","Vanuatuan","Venezuelan","Vietnamese","Yemeni","Zambian","Zimbabwean","Other"
+];
+
+function populateNationalitySelect(selectEl, currentVal){
+    if(!selectEl)return;
+    var h='<option value="">-- Select --</option>';
+    NATIONALITIES.forEach(function(n){ h+='<option value="'+n+'"'+(n===currentVal?' selected':'')+'>'+n+'</option>'; });
+    selectEl.innerHTML=h;
+}
+
+// ========== Maritime rank list (hard dropdown for Rank field) ==========
+var RANKS = [
+    "Master","Chief Officer","Second Officer","Third Officer","Deck Cadet",
+    "Chief Engineer","Second Engineer","Third Engineer","Fourth Engineer","Engine Cadet",
+    "Electro-Technical Officer","Electrician",
+    "Bosun","Able Seaman","Ordinary Seaman",
+    "Pumpman","Fitter","Motorman","Oiler","Wiper",
+    "Chief Cook","Cook","Steward","Messman",
+    "Radio Officer","Gas Engineer","Cargo Engineer","Reefer Engineer",
+    "Other"
+];
+function populateSelect(selectEl, list, currentVal, placeholder){
+    if(!selectEl)return;
+    var h='<option value="">'+(placeholder||'-- Select --')+'</option>';
+    list.forEach(function(n){ h+='<option value="'+n+'"'+(n===currentVal?' selected':'')+'>'+n+'</option>'; });
+    selectEl.innerHTML=h;
+}
+
+// ========== Currencies (next to min salary) ==========
+var CURRENCIES = ["USD","EUR","GBP","CHF","JPY","AUD","NOK","SEK","DKK"];
+
+var _airportDatalistFilled=false;
+function populateAirportDatalist(){
+    if(_airportDatalistFilled)return;
+    var dl=document.getElementById('airport-hubs');
+    if(!dl)return;
+    var h='';
+    AIRPORT_HUBS.forEach(function(a){h+='<option value="'+a+'"></option>';});
+    dl.innerHTML=h;
+    _airportDatalistFilled=true;
+}
+
+// ========== Common seafarer airport hubs (datalist for airport fields) ==========
+var AIRPORT_HUBS = [
+    "Kyiv (KBP)","Odesa (ODS)","Lviv (LWO)",
+    "Manila (MNL)","Cebu (CEB)","Davao (DVO)",
+    "Mumbai (BOM)","Delhi (DEL)","Chennai (MAA)","Kochi (COK)","Kolkata (CCU)",
+    "Istanbul (IST)","Istanbul Sabiha (SAW)","Ankara (ESB)","Izmir (ADB)",
+    "Moscow (SVO)","Moscow (DME)","St Petersburg (LED)","Novorossiysk/Krasnodar (KRR)",
+    "Warsaw (WAW)","Gdansk (GDN)","Krakow (KRK)",
+    "Bucharest (OTP)","Constanta (CND)",
+    "Sofia (SOF)","Varna (VAR)","Burgas (BOJ)",
+    "Athens (ATH)","Piraeus — Athens (ATH)","Thessaloniki (SKG)",
+    "Rotterdam (RTM)","Amsterdam (AMS)",
+    "Hamburg (HAM)","Frankfurt (FRA)","Munich (MUC)",
+    "London Heathrow (LHR)","London Gatwick (LGW)","Manchester (MAN)",
+    "Singapore (SIN)","Hong Kong (HKG)","Shanghai (PVG)","Busan (PUS)","Incheon (ICN)",
+    "Dubai (DXB)","Abu Dhabi (AUH)","Doha (DOH)","Jeddah (JED)",
+    "Casablanca (CMN)","Lagos (LOS)",
+    "Rio de Janeiro (GIG)","Santos/São Paulo (GRU)",
+    "Houston (IAH)","New York (JFK)","Miami (MIA)","Los Angeles (LAX)",
+    "Cape Town (CPT)","Durban (DUR)","Johannesburg (JNB)"
+];
+
+// ========== Forced seafarer profile ==========
+var _forcedProfileActive=false;
+function fpRequiredKeys(){
+    return ['surname','first_name','date_of_birth','place_of_birth','nationality','phones','email','rank','nearest_airport','nearest_intl_airport','available_from','min_salary','home_address'];
+}
+async function openForcedProfile(forceOpen){
+    // If already complete, don't force (unless forceOpen=true).
+    try{
+        var data=await invoke('get_seafarer_personal');
+        var minSal=localStorage.getItem('skipi-sp-min_salary')||'';
+        if(!forceOpen){
+            var allSet=true;
+            fpRequiredKeys().forEach(function(k){
+                var v=k==='min_salary'?minSal:(data[k]||'');
+                if(!v||!String(v).trim())allSet=false;
+            });
+            if(allSet)return;
+        }
+        var overlay=document.getElementById('forced-profile-overlay');
+        if(!overlay)return;
+        _forcedProfileActive=true;
+        overlay.style.display='flex';
+        // Populate
+        var natSel=document.getElementById('fp-nationality');
+        populateNationalitySelect(natSel,data.nationality||'');
+        populateSelect(document.getElementById('fp-rank'),RANKS,data.rank||'','-- Select rank --');
+        populateAirportDatalist();
+        var curSel=document.getElementById('fp-min_salary_currency');
+        populateSelect(curSel,CURRENCIES,localStorage.getItem('skipi-sp-min_salary_currency')||'USD','');
+        ['surname','first_name','date_of_birth','place_of_birth','phones','email','nearest_airport','nearest_intl_airport','available_from','home_address'].forEach(function(k){
+            var el=document.getElementById('fp-'+k);
+            if(el)el.value=data[k]||'';
+        });
+        var ms=document.getElementById('fp-min_salary');
+        if(ms)ms.value=minSal;
+    }catch(e){logError('openForcedProfile',e);}
+}
+async function fpSubmit(){
+    var fields={};
+    var missing=[];
+    var labelMap={surname:'Surname',first_name:'First name',date_of_birth:'Date of birth',place_of_birth:'Place of birth',nationality:'Nationality',phones:'Phones',email:'Email',rank:'Rank',nearest_airport:'Nearest airport',nearest_intl_airport:'Nearest intl airport',available_from:'Available from',home_address:'Home address',min_salary:'Minimum salary'};
+    fpRequiredKeys().forEach(function(k){
+        var el=document.getElementById('fp-'+k);
+        var v=el?(el.value||'').trim():'';
+        if(!v)missing.push(labelMap[k]||k);
+        if(k!=='min_salary')fields[k]=v;
+    });
+    var errEl=document.getElementById('fp-err');
+    if(missing.length){
+        if(errEl){errEl.style.display='block';errEl.textContent='Please fill required fields: '+missing.join(', ');}
+        return;
+    }
+    if(errEl)errEl.style.display='none';
+    try{
+        await invoke('set_seafarer_personal',{fields:fields});
+        var ms=document.getElementById('fp-min_salary');
+        localStorage.setItem('skipi-sp-min_salary',ms?ms.value.trim():'');
+        var cs=document.getElementById('fp-min_salary_currency');
+        if(cs&&cs.value)localStorage.setItem('skipi-sp-min_salary_currency',cs.value);
+        _forcedProfileActive=false;
+        var overlay=document.getElementById('forced-profile-overlay');
+        if(overlay)overlay.style.display='none';
+        showToast('Profile saved','success');
+    }catch(e){
+        if(errEl){errEl.style.display='block';errEl.textContent='Save error: '+e;}
+        logError('fpSubmit',e);
+    }
+}
+
+// ========== Vessel onboarding wizard ==========
+// Mirror of the seafarer wizard. 5 steps: Name → Category → Size → Trade → Review.
+// Right panel shows applicable conventions + documents as choices are made.
+var vesselTax=null; // {vessel_tree, sizes, trades}
+var vesselWizardState={step:1,name:'',category_root:'',category_leaf:'',size:'',trade:'',flag:'',imo:''};
+
+async function loadVesselTaxonomy(){
+    if(vesselTax)return vesselTax;
+    vesselTax=await invoke('get_vessel_taxonomy');
+    return vesselTax;
+}
+
+async function startVesselWizard(){
+    await loadVesselTaxonomy();
+    vesselWizardState={step:1,name:'',category_root:'',category_leaf:'',size:'',trade:'',flag:'',imo:''};
+    renderVesselWizard();
+}
+
+function renderVesselWizard(){
+    var s=vesselWizardState.step;
+    var stepDot=function(n,label){return'<span style="display:inline-block;padding:4px 10px;border-radius:10px;margin-right:6px;font-size:11px;'+(n===s?'background:var(--accent);color:#fff':(n<s?'background:var(--green);color:#fff':'background:var(--bg2);color:var(--text2)'))+'">'+n+'. '+label+'</span>';};
+    var header='<div style="margin-bottom:14px;">'+stepDot(1,'Name')+stepDot(2,'Category')+stepDot(3,'Size')+stepDot(4,'Trade')+stepDot(5,'Review')+'</div>';
+    var h='<div class="wizard-wrap">';
+    h+='<div class="wizard-col-left setup"><h2>Vessel Profile — Setup</h2>'+header;
+
+    if(s===1){
+        h+='<p style="color:var(--text2);font-size:12px;margin-bottom:14px;">Start with the vessel\'s name as it appears on the Certificate of Registry.</p>';
+        h+='<div class="field"><label>Vessel Name</label><input id="vw-name" value="'+(vesselWizardState.name||'').replace(/"/g,'&quot;')+'" placeholder="e.g. MV Seahawk" autofocus></div>';
+        h+='<div class="field"><label>Flag State (optional)</label><input id="vw-flag" value="'+(vesselWizardState.flag||'').replace(/"/g,'&quot;')+'" placeholder="e.g. Marshall Islands"></div>';
+        h+='<div class="field"><label>IMO Number (optional)</label><input id="vw-imo" value="'+(vesselWizardState.imo||'').replace(/"/g,'&quot;')+'" placeholder="e.g. 9123456"></div>';
+        h+='<div class="actions"><button class="btn btn-accent" onclick="vwNext()">Next &rarr;</button> <button class="btn btn-outline" onclick="showSetup()">Cancel</button></div>';
+    } else if(s===2){
+        h+='<p style="color:var(--text2);font-size:12px;margin-bottom:14px;">Choose the vessel category. This determines which type-specific codes and certificates apply (IBC, IGC, Grain, SAR, etc.).</p>';
+        var roots=vesselTax.vessel_tree.filter(function(v){return !v.parent;});
+        if(!vesselWizardState.category_root){
+            roots.forEach(function(r){
+                h+='<div class="wizard-card" onclick="vwPickRoot(\''+r.id+'\')"><div style="font-weight:600;">'+r.label+'</div></div>';
+            });
+        } else {
+            var chosen=roots.find(function(r){return r.id===vesselWizardState.category_root;});
+            var kids=vesselTax.vessel_tree.filter(function(v){return v.parent===vesselWizardState.category_root;});
+            h+='<div class="wizard-card" style="border-color:var(--accent);background:var(--bg2);display:flex;align-items:center;justify-content:space-between;cursor:default;">';
+            h+='<div style="font-weight:600;">'+(chosen?chosen.label:'')+'</div>';
+            h+='<button class="btn btn-outline btn-sm" onclick="vwResetRoot()" style="cursor:pointer;">Change</button>';
+            h+='</div>';
+            if(kids.length){
+                h+='<div style="margin:14px 0 6px;font-size:12px;color:var(--text2);">Select subtype:</div>';
+                kids.forEach(function(k){
+                    var sel=vesselWizardState.category_leaf===k.id?' style="border-color:var(--accent);background:var(--bg2);"':'';
+                    h+='<div class="wizard-card" onclick="vwPick(\'category_leaf\',\''+k.id+'\')"'+sel+'><div>'+k.label+'</div></div>';
+                });
+            } else {
+                h+='<div style="margin:14px 0 6px;font-size:12px;color:var(--text2);">No subtypes — this category is specific enough on its own.</div>';
+            }
+        }
+        h+='<div class="actions" style="margin-top:14px;"><button class="btn btn-outline" onclick="vwBack()">&larr; Back</button> <button class="btn btn-accent" onclick="vwNext()">Next &rarr;</button></div>';
+    } else if(s===3){
+        h+='<p style="color:var(--text2);font-size:12px;margin-bottom:14px;">Choose the gross-tonnage band. SOLAS applicability and enhanced survey requirements depend on GT.</p>';
+        vesselTax.sizes.forEach(function(sz){
+            var sel=vesselWizardState.size===sz.id?' style="border-color:var(--accent);background:var(--bg2);"':'';
+            h+='<div class="wizard-card" onclick="vwPick(\'size\',\''+sz.id+'\')"'+sel+'><div style="font-weight:600;">'+sz.label+'</div></div>';
+        });
+        h+='<div class="actions" style="margin-top:14px;"><button class="btn btn-outline" onclick="vwBack()">&larr; Back</button> <button class="btn btn-accent" onclick="vwNext()">Next &rarr;</button></div>';
+    } else if(s===4){
+        h+='<p style="color:var(--text2);font-size:12px;margin-bottom:14px;">Choose the trade area. International voyages trigger the full SOLAS/MARPOL/MLC regime; domestic ships follow flag-state rules only.</p>';
+        vesselTax.trades.forEach(function(tr){
+            var sel=vesselWizardState.trade===tr.id?' style="border-color:var(--accent);background:var(--bg2);"':'';
+            var desc=tr.id==='international'?'Full SOLAS / MARPOL / MLC applies':(tr.id==='coastal'?'Limited to flag-state coastal waters':'Inland or sheltered waters only');
+            h+='<div class="wizard-card" onclick="vwPick(\'trade\',\''+tr.id+'\')"'+sel+'><div style="font-weight:600;">'+tr.label+'</div><div style="color:var(--text2);font-size:12px;">'+desc+'</div></div>';
+        });
+        h+='<div class="actions" style="margin-top:14px;"><button class="btn btn-outline" onclick="vwBack()">&larr; Back</button> <button class="btn btn-accent" onclick="vwNext()">Next &rarr;</button></div>';
+    } else if(s===5){
+        var catId=vesselWizardState.category_leaf||vesselWizardState.category_root;
+        var catLabel=(vesselTax.vessel_tree.find(function(v){return v.id===catId;})||{}).label||'';
+        var szLabel=(vesselTax.sizes.find(function(x){return x.id===vesselWizardState.size;})||{}).label||'';
+        var trLabel=(vesselTax.trades.find(function(x){return x.id===vesselWizardState.trade;})||{}).label||'';
+        h+='<p style="color:var(--text2);font-size:12px;margin-bottom:14px;">Review the vessel profile. See the right panel for the full regulatory scope.</p>';
+        h+='<div style="background:var(--bg2);padding:12px;border-radius:6px;margin-bottom:12px;">';
+        h+='<div><b>Vessel:</b> '+vesselWizardState.name+'</div>';
+        h+='<div><b>Category:</b> '+catLabel+'</div>';
+        h+='<div><b>Size:</b> '+szLabel+'</div>';
+        h+='<div><b>Trade:</b> '+trLabel+'</div>';
+        if(vesselWizardState.flag)h+='<div><b>Flag:</b> '+vesselWizardState.flag+'</div>';
+        if(vesselWizardState.imo)h+='<div><b>IMO:</b> '+vesselWizardState.imo+'</div>';
+        h+='</div>';
+        h+='<div class="actions"><button class="btn btn-accent" onclick="vwFinish()">Create Vault &amp; Generate Structure</button> <button class="btn btn-outline" onclick="vwBack()">&larr; Back</button></div>';
+    }
+    h+='</div>'; // close wizard-col-left
+    h+='<div id="w-framework-panel" class="wizard-col-right"></div>';
+    h+='</div>'; // close wizard-wrap
+    document.getElementById('scr-setup').innerHTML=h;show('scr-setup');
+    refreshVesselFramework();
+}
+
+async function refreshVesselFramework(){
+    var el=document.getElementById('w-framework-panel');
+    if(!el)return;
+    var catId=vesselWizardState.category_leaf||vesselWizardState.category_root||'';
+    if(!catId){
+        el.innerHTML=renderFrameworkPanel(null,null,{placeholder:'Applicable requirements will appear as you choose vessel category, size and trade area.'});
+        return;
+    }
+    // Use sensible defaults when size/trade not yet chosen so the user sees something
+    var sizeId=vesselWizardState.size||'over_50000';
+    var tradeId=vesselWizardState.trade||'international';
+    var catLabel='',sizeLabel='',tradeLabel='';
+    if(vesselTax){
+        var c=vesselTax.vessel_tree.find(function(v){return v.id===catId;});if(c)catLabel=c.label;
+        var sz=vesselTax.sizes.find(function(x){return x.id===sizeId;});if(sz)sizeLabel=sz.label;
+        var tr=vesselTax.trades.find(function(x){return x.id===tradeId;});if(tr)tradeLabel=tr.label;
+    }
+    var subject=[catLabel,sizeLabel,tradeLabel].filter(function(x){return x;}).join(' · ');
+    if(!vesselWizardState.size||!vesselWizardState.trade){
+        subject+=' (preview — using defaults)';
+    }
+    try{
+        var frameworks=await invoke('get_vessel_frameworks',{vesselId:catId,sizeId:sizeId,tradeId:tradeId});
+        var docs=await invoke('get_vessel_required_docs',{vesselId:catId,sizeId:sizeId,tradeId:tradeId});
+        el.innerHTML=renderFrameworkPanel(frameworks,docs,{subjectLabel:subject});
+    }catch(e){
+        el.innerHTML='<div class="fw-panel"><div class="fw-panel-title">Applicable regulatory framework</div><div class="fw-placeholder">Error: '+e+'</div></div>';
+    }
+}
+
+function vwPick(key,val){vesselWizardState[key]=val;renderVesselWizard();}
+function vwPickRoot(id){
+    vesselWizardState.category_root=id;
+    vesselWizardState.category_leaf='';
+    var node=vesselTax.vessel_tree.find(function(v){return v.id===id;});
+    if(node&&node.is_leaf)vesselWizardState.category_leaf=id;
+    renderVesselWizard();
+}
+function vwResetRoot(){
+    vesselWizardState.category_root='';
+    vesselWizardState.category_leaf='';
+    renderVesselWizard();
+}
+function vwBack(){if(vesselWizardState.step>1){vesselWizardState.step--;renderVesselWizard();}}
+function vwNext(){
+    var s=vesselWizardState.step;
+    if(s===1){
+        var n=document.getElementById('vw-name').value.trim();if(!n){alert('Enter the vessel name');return;}
+        vesselWizardState.name=n;
+        vesselWizardState.flag=(document.getElementById('vw-flag').value||'').trim();
+        vesselWizardState.imo=(document.getElementById('vw-imo').value||'').trim();
+    }
+    if(s===2){
+        if(!vesselWizardState.category_root){alert('Choose a vessel category');return;}
+        var root=vesselTax.vessel_tree.find(function(v){return v.id===vesselWizardState.category_root;});
+        if(root&&!root.is_leaf&&!vesselWizardState.category_leaf){alert('Choose a vessel subtype');return;}
+    }
+    if(s===3&&!vesselWizardState.size){alert('Choose a size band');return;}
+    if(s===4&&!vesselWizardState.trade){alert('Choose a trade area');return;}
+    vesselWizardState.step++;renderVesselWizard();
+}
+
+async function vwFinish(){
+    var dir=await open({directory:true,title:'Choose folder for the vault'});if(!dir)return;
+    var path=dir+'/Skipi - '+vesselWizardState.name.replace(/[^a-zA-Z0-9 _-]/g,'_');
+    var catId=vesselWizardState.category_leaf||vesselWizardState.category_root;
+    try{
+        var info=await invoke('create_vessel_profile_vault',{
+            path:path,
+            name:vesselWizardState.name,
+            vesselCategory:catId,
+            vesselSize:vesselWizardState.size,
+            tradeArea:vesselWizardState.trade,
+            flag:vesselWizardState.flag||null,
+            imo:vesselWizardState.imo||null
+        });
+        await loadVault(info);
+    }catch(e){showToast('Error: '+e,'error');logError('op',e);}
+}
+
+async function openExisting(){
+    var dir=await open({directory:true,title:'Select Skipi vault'});if(!dir)return;
+    try{var info=await invoke('open_vault',{path:dir});await loadVault(info);}catch(e){showToast('Could not open vault: '+e,'error');logError('open_vault',e);}
+}
+
+async function loadVault(info){
+    hide('scr-welcome');hide('scr-setup');show('scr-content');show('left-panel');show('tabs');show('statusbar');
+    var mb=document.getElementById('modules-bar');if(mb)mb.style.display='flex';
+    updateTitlebar(info.name);
+    currentAccountType=info.account_type||'';
+    // Update bottom-left vault name
+    var vn=document.getElementById('pf-vault-name');if(vn)vn.textContent=info.name||'Vault';
+    var expIcon=document.getElementById('ri-exp');
+    var cvIcon=document.getElementById('ri-cv');
+    var dispIcon=document.getElementById('ri-disp');
+    var isSeafarer=currentAccountType==='seafarer';
+    if(expIcon)expIcon.style.display=isSeafarer?'flex':'none';
+    if(cvIcon)cvIcon.style.display=isSeafarer?'flex':'none';
+    if(dispIcon)dispIcon.style.display=isSeafarer?'flex':'none';
+    // Same for new top module tabs
+    var mtExp=document.getElementById('mt-exp');if(mtExp)mtExp.style.display=isSeafarer?'flex':'none';
+    var mtCv=document.getElementById('mt-cv');if(mtCv)mtCv.style.display=isSeafarer?'flex':'none';
+    var mtDisp=document.getElementById('mt-disp');if(mtDisp)mtDisp.style.display=isSeafarer?'flex':'none';
+    allDocs=await invoke('get_documents');
+    renderTree();showDashboard();updateStatus();
+    // Check for updates silently after vault loads
+    setTimeout(function(){checkForUpdate(true);},3000);
+    // If this is a Seafarer vault with an incomplete profile, force completion.
+    if(isSeafarer){ setTimeout(function(){ openForcedProfile(false); },400); }
+}
+
+function classify(d){if(!d.has_expiry||!d.valid_to)return'none';var dl=Math.floor((new Date(d.valid_to)-new Date())/864e5);if(dl<0)return'expired';if(dl<30)return'critical';if(dl<90)return'warning';return'valid';}
+function days(d){if(!d.valid_to)return null;return Math.floor((new Date(d.valid_to)-new Date())/864e5);}
+function stColor(s){return{expired:'var(--red)',critical:'var(--orange)',warning:'var(--yellow)',valid:'var(--green)',none:'var(--text2)'}[s]||'var(--text2)';}
+
+function showView(v){
+    currentView=v;
+    document.querySelectorAll('.ribbon-icon').forEach(function(el){el.classList.remove('active');});
+    document.querySelectorAll('.modules-bar .mod-tab').forEach(function(el){el.classList.remove('active');});
+    var shortMap={files:'files',dashboard:'dash',cv:'cv',experience:'exp',packages:'pkg',dispatch:'disp',settings:'set'};
+    var ri=document.getElementById('ri-'+shortMap[v]);
+    if(ri)ri.classList.add('active');
+    var mt=document.getElementById('mt-'+shortMap[v]);
+    if(mt)mt.classList.add('active');
+    document.getElementById('panel-title').textContent={files:'Files',dashboard:'Dashboard',cv:'CV',experience:'Sea Service',packages:'Packages',dispatch:'Dispatch',settings:'Settings'}[v]||v;
+    document.getElementById('left-panel').style.display=(v==='dashboard'||v==='cv'||v==='experience'||v==='dispatch')?'none':'';
+    var addBtn=document.getElementById('btn-add-custom');
+    if(addBtn)addBtn.style.display=(v==='files')?'inline':'none';
+    pkgMode=v==='packages';pkgSelected=[];
+    renderTree();
+    if(v==='dashboard')showDashboard();
+    else if(v==='cv')showCv();
+    else if(v==='experience')showWorkHistory();
+    else if(v==='packages')showPackages();
+    else if(v==='dispatch')showDispatch();
+    else if(v==='settings')openSettings();
+}
+
+function onSearch(v){searchTerm=v.toLowerCase();renderTree();}
+
+function renderTree(){
+    var cats={};
+    allDocs.forEach(function(d){
+        if(searchTerm&&d.title.toLowerCase().indexOf(searchTerm)===-1)return;
+        if(!cats[d.category])cats[d.category]={docs:[],worst:'none'};
+        cats[d.category].docs.push(d);
+        var s=classify(d),p={expired:4,critical:3,warning:2,valid:1,none:0};
+        if(p[s]>p[cats[d.category].worst])cats[d.category].worst=s;
+    });
+    var h='';
+    for(var cat in cats){var data=cats[cat];
+        h+='<div class="tree-folder"><div class="tree-folder-header" onclick="toggleF(this)"><span class="arrow open">&#9654;</span>'+cat+'<span class="dot" style="background:'+stColor(data.worst)+'"></span><span class="cnt">'+data.docs.length+'</span></div><div class="tree-items open">';
+        data.docs.forEach(function(d){
+            var a=d.id===selectedDocId?' active':'';
+            var ic=d.file_name?'&#128196;':'&#128195;';
+            if(pkgMode){
+                var hasFile=!!d.file_name;
+                var sel=pkgSelected.indexOf(d.id)!==-1;
+                var bg=sel?' pkg-sel':'';
+                if(!hasFile){
+                    h+='<div class="tree-file" style="opacity:0.45;cursor:not-allowed;" title="No file attached — upload one first" onclick="showToast(\'Upload a file before packaging\',\'warn\')"><span class="icon" style="font-size:18px;line-height:1;">&#9744;</span><span class="name">'+d.title+'</span><span class="st" style="background:'+stColor(classify(d))+'"></span></div>';
+                }else{
+                    h+='<div class="tree-file'+bg+'" onclick="togglePkg(\''+d.id+'\')"><span class="icon" style="font-size:18px;line-height:1;">'+(sel?'&#9745;':'&#9744;')+'</span><span class="name">'+d.title+'</span><span class="st" style="background:'+stColor(classify(d))+'"></span></div>';
+                }
+            }else{
+                h+='<div class="tree-file'+a+'" onclick="selDoc(\''+d.id+'\')"><span class="icon">'+ic+'</span><span class="name">'+d.title+'</span><span class="st" style="background:'+stColor(classify(d))+'"></span></div>';
+            }
+        });
+        h+='</div></div>';
+    }
+    document.getElementById('panel-tree').innerHTML=h;
+}
+
+function toggleF(el){var a=el.querySelector('.arrow'),d=el.nextElementSibling;d.classList.toggle('open');a.classList.toggle('open');}
+
+async function selDoc(id){
+    selectedDocId=id;renderTree();
+    var d=allDocs.find(function(x){return x.id===id;});if(!d)return;
+    await renderDoc(d);
+}
+
+async function renderDoc(d){
+    var s=classify(d),dl=days(d),bc='badge-'+s;
+    var st={expired:'Expired',critical:'Expiring soon',warning:'Attention',valid:'Valid',none:'No expiry'}[s];
+    var dlt=dl!==null?(dl<0?Math.abs(dl)+'d overdue':dl+'d left'):'';
+    var esc=function(v){return(v||'').replace(/"/g,'&quot;');};
+
+    var h='<div class="editor-narrow">';
+    h+='<div class="doc-title">'+d.title+'</div>';
+    h+='<div class="doc-meta">'+d.category+' <span class="badge '+bc+'">'+st+'</span>'+(dlt?' <span style="margin-left:6px;">'+dlt+'</span>':'')+(d.regulatory_basis?' <span class="reg-basis" title="Regulatory basis">'+d.regulatory_basis+'</span>':'')+'</div>';
+
+    // AI scan buttons removed per UX decision (v0.4.11) — keep hidden status span
+    // if(d.file_name){
+    //     h+='<div class="ai-row"><button class="btn btn-green btn-sm" id="ai-local" onclick="aiRec(\''+d.id+'\',true)">&#9733; Local AI</button><button class="btn btn-outline btn-sm" onclick="aiRec(\''+d.id+'\',false)" style="border-color:var(--accent);color:var(--accent);">Cloud AI</button><span class="ai-status" id="ai-st"></span></div>';
+    // }
+    if(d.file_name){ h+='<div style="display:none;"><span id="ai-st"></span></div>'; }
+
+    var fs={}; try{fs=JSON.parse(d.field_statuses||'{}');}catch(e){}
+    function fdot(fld,val){
+        var s=val?((fs[fld]==='ai')?'ai':'verified'):'empty';
+        var tip=s==='empty'?'No data':s==='ai'?'AI-recognized, click to verify':'Verified';
+        return '<span class="field-dot '+s+'" title="'+tip+'" onclick="verifyField(\''+d.id+'\',\''+fld+'\',this)"></span>';
+    }
+    h+='<div class="field-grid">';
+    h+='<div class="field"><label>'+fdot('doc_number',d.doc_number)+'Document No.</label><input placeholder="e.g. UA-12345" value="'+esc(d.doc_number)+'" onchange="saveF(\''+d.id+'\',\'doc_number\',this.value)"></div>';
+    h+='<div class="field"><label>'+fdot('issued_by',d.issued_by)+'Issued By</label><input placeholder="e.g. Maritime Admin" value="'+esc(d.issued_by)+'" onchange="saveF(\''+d.id+'\',\'issued_by\',this.value)"></div>';
+    h+='<div class="field"><label>'+fdot('valid_from',d.valid_from)+'Issue Date</label><input type="date" value="'+(d.valid_from||'')+'" onchange="saveF(\''+d.id+'\',\'valid_from\',this.value)"></div>';
+    h+='<div class="field"><label>'+fdot('valid_to',d.valid_to)+'Expiry Date</label><input type="date" value="'+(d.valid_to||'')+'" onchange="updExp(\''+d.id+'\',this.value)"></div>';
+    h+='</div>';
+
+    if(d.notes)h+='<p style="color:var(--text2);font-size:12px;margin-bottom:16px;">'+d.notes+'</p>';
+
+    if(d.file_name){
+        h+='<div class="file-info"><span class="fname">&#128196; '+d.file_name+'</span><button class="btn btn-outline btn-sm" onclick="attachF(\''+d.id+'\')">Replace</button></div>';
+        h+='<div class="file-preview" id="fprev"><span style="color:var(--text2)">Loading...</span></div>';
+    }else{
+        h+='<div class="file-drop" onclick="attachF(\''+d.id+'\')">&#128194; Click to attach file<br><small>PDF, JPG, PNG</small></div>';
+    }
+    h+='</div>';
+
+    document.getElementById('scr-content').innerHTML=h;show('scr-content');
+    updateTabs(d.title);
+
+    if(d.file_name){
+        try{
+            var r=await invoke('read_file_base64',{docId:d.id});var b64=r[0],mime=r[1];var el=document.getElementById('fprev');if(!el)return;
+            if(mime.startsWith('image/'))el.innerHTML='<img src="data:'+mime+';base64,'+b64+'" style="max-width:100%;max-height:70vh;object-fit:contain;">';
+            else if(mime==='application/pdf'){
+                var bin=atob(b64);var arr=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
+                var blob=new Blob([arr],{type:'application/pdf'});var burl=URL.createObjectURL(blob);
+                el.innerHTML='<iframe src="'+burl+'" style="width:100%;height:70vh;border:none;"></iframe>';
+            }
+            else el.innerHTML='<span style="color:var(--text2);padding:20px;">Preview not available</span>';
+        }catch(e){var pe=document.getElementById('fprev');if(pe)pe.innerHTML='<span style="color:var(--red);padding:12px;">'+e+'</span>';}
+    }
+}
+
+function updateTabs(title){
+    document.getElementById('tabs').innerHTML='<div class="tab active"><span style="font-size:11px;">&#128196;</span> '+(title||'Dashboard')+'</div>';
+}
+
+var lastAiResult={};
+
+async function verifyField(docId,field,el){
+    if(el.classList.contains('ai')){
+        el.classList.remove('ai');
+        el.classList.add('verified');
+        el.title='Verified';
+        // Update status in DB
+        var doc=allDocs.find(function(x){return x.id===docId;});
+        var fs={}; try{fs=JSON.parse(doc.field_statuses||'{}');}catch(e){}
+        fs[field]='verified';
+        try{await invoke('update_field_statuses',{id:docId,statuses:JSON.stringify(fs)});}catch(e){}
+        doc.field_statuses=JSON.stringify(fs);
+    }
+}
+
+async function saveF(id,f,v){
+    try{
+        // Check if user is correcting an AI result. Key corrections by the document's
+        // TEMPLATE_ID (stable catalog id like `passport`, `sid`, `seamans_book`) — so
+        // lessons learned from one SID transfer to all SIDs. Fall back to category for
+        // legacy documents that don't have a template_id.
+        if(lastAiResult[id] && lastAiResult[id][f] !== undefined && lastAiResult[id][f] !== v && v){
+            var doc=allDocs.find(function(x){return x.id===id;});
+            var docType=doc?(doc.template_id||doc.category||doc.title||'Unknown'):'Unknown';
+            try{await invoke('save_ai_correction',{docType:docType,fieldName:f,aiValue:lastAiResult[id][f]||'',correctValue:v});}catch(e2){}
+        }
+        await invoke('update_doc_field',{id:id,field:f,value:v});
+        // Mark field as verified (user touched it)
+        var doc2=allDocs.find(function(x){return x.id===id;});
+        var fs2={}; try{fs2=JSON.parse(doc2.field_statuses||'{}');}catch(e){}
+        fs2[f]='verified';
+        try{await invoke('update_field_statuses',{id:id,statuses:JSON.stringify(fs2)});}catch(e){}
+        allDocs=await invoke('get_documents');renderTree();
+    }catch(e){showToast(''+e,'error');logError('op',e);}
+}
+async function updExp(id,v){if(!v)return;try{await invoke('update_expiry',{id:id,validTo:v});allDocs=await invoke('get_documents');renderTree();var d=allDocs.find(function(x){return x.id===id;});if(d)await renderDoc(d);updateStatus();}catch(e){showToast(''+e,'error');logError('op',e);}}
+async function attachF(id){var f=await open({multiple:false,title:'Select file',filters:[{name:'Documents',extensions:['pdf','jpg','jpeg','png','doc','docx']}]});if(!f)return;try{await invoke('attach_file',{docId:id,sourcePath:f});allDocs=await invoke('get_documents');renderTree();var d=allDocs.find(function(x){return x.id===id;});if(d)await renderDoc(d);updateStatus();
+    // Auto-scan with AI after file upload — only if AI is configured
+    if(localStorage.getItem('skipi-ai-autoscan')!=='off'&&await aiIsConfigured()){
+        setTimeout(function(){aiRec(id,true);},500);
+    }
+}catch(e){showToast(''+e,'error');logError('op',e);}}
+
+// Check whether any AI backend (local Ollama or cloud API key) is reachable/configured.
+// Used to guard auto-scan so first-run users don't get error toasts on every upload.
+async function aiIsConfigured(){
+    try{
+        var key=await invoke('get_api_key');
+        if(key&&key.length>10)return true;
+    }catch(e){}
+    var endpoint=localStorage.getItem('skipi-ollama-endpoint')||'http://127.0.0.1:11434';
+    try{
+        var ctrl=new AbortController();
+        var t=setTimeout(function(){ctrl.abort();},800);
+        var r=await fetch(endpoint+'/api/tags',{signal:ctrl.signal});
+        clearTimeout(t);
+        return r.ok;
+    }catch(e){return false;}
+}
+
+var _aiRec=async function(id,local){
+    var st=document.getElementById('ai-st');var key='';
+    if(!local){try{key=await invoke('get_api_key');}catch(e){}if(!key){key=prompt('Anthropic API key:');if(!key)return;try{await invoke('save_api_key',{key:key});}catch(e){}}}
+    var beforeDoc=allDocs.find(function(x){return x.id===id;});
+    var docTitle=beforeDoc?beforeDoc.title:'';
+    // Use template_id if available (stable catalog id like 'passport', 'sid',
+    // 'seamans_book'), otherwise fall back to category.
+    var tplKey=beforeDoc?(beforeDoc.template_id||beforeDoc.category||''):'';
+    // Check if a curated layout template exists for this document type
+    var hasTpl=false;
+    try{hasTpl=await invoke('category_has_template',{category:tplKey});}catch(e){}
+    st.textContent=(local?'Local AI analyzing':'Cloud AI analyzing')+(hasTpl?' (with layout template)':'')+'...';
+    st.style.color='var(--yellow)';
+    var model=localStorage.getItem('skipi-ollama-model')||'qwen2.5vl:32b';
+    var endpoint=localStorage.getItem('skipi-ollama-endpoint')||'http://127.0.0.1:11434';
+    try{
+        await invoke('ai_recognize',{docId:id,apiKey:key,useLocal:local,ollamaModel:model,ollamaEndpoint:endpoint,docTitle:docTitle});
+        st.textContent='Done!'+(hasTpl?' (template used)':'');st.style.color='var(--green)';
+        allDocs=await invoke('get_documents');
+        var afterDoc=allDocs.find(function(x){return x.id===id;});
+        if(afterDoc){
+            lastAiResult[id]={doc_number:afterDoc.doc_number||'',issued_by:afterDoc.issued_by||'',valid_from:afterDoc.valid_from||'',valid_to:afterDoc.valid_to||''};
+        }
+        renderTree();if(afterDoc)await renderDoc(afterDoc);
+    }catch(e){st.textContent='Error: '+e;st.style.color='var(--red)';logError('ai_recognize',e);}
+};
+var aiRec=guardOp('ai_recognize',_aiRec);
+
+async function showDashboard(){
+    selectedDocId=null;
+    var c={expired:0,critical:0,warning:0,valid:0,none:0,nofile:0,total:allDocs.length};
+    allDocs.forEach(function(d){c[classify(d)]++;if(!d.file_name)c.nofile++;});
+    var h='<h2 style="font-size:18px;margin-bottom:16px;">Dashboard</h2>';
+
+    // Profile completeness header (if seafarer profile is set)
+    var profile=null;
+    try{profile=await invoke('get_profile_status');}catch(e){}
+    if(profile&&profile.stcw_level&&profile.position){
+        var pct=Math.round(profile.completeness_pct||0);
+        h+='<div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:12px 14px;margin-bottom:16px;">';
+        h+='<div style="display:flex;justify-content:space-between;align-items:center;">';
+        h+='<div><div style="font-weight:600;">Profile completeness</div><div style="font-size:11px;color:var(--text2);">'+profile.required.length+' required documents</div></div>';
+        h+='<div style="font-size:24px;font-weight:700;color:var(--accent)">'+pct+'%</div>';
+        h+='</div>';
+        h+='<div class="profile-bar"><div class="profile-bar-fill" style="width:'+pct+'%;background:'+(pct>=80?'var(--green)':pct>=50?'var(--yellow)':'var(--orange)')+'"></div></div>';
+        if(profile.missing_ids&&profile.missing_ids.length){
+            h+='<div style="margin-top:8px;font-size:11px;color:var(--text2);">'+profile.missing_ids.length+' documents still needed. <a href="#" onclick="showMissing();return false;" style="color:var(--accent);">Show missing</a></div>';
+        }
+        h+='<div style="margin-top:6px;font-size:11px;"><a href="#" onclick="showWorkHistory();return false;" style="color:var(--accent);">Work history</a> &middot; <a href="#" onclick="showMissing();return false;" style="color:var(--accent);">Missing documents</a></div>';
+        h+='</div>';
+    }
+
+    h+='<div class="dash-grid">';
+    h+='<div class="dash-card" onclick="filterSt(\'expired\')"><div class="num" style="color:var(--red)">'+c.expired+'</div><div class="lbl">Expired</div></div>';
+    h+='<div class="dash-card" onclick="filterSt(\'critical\')"><div class="num" style="color:var(--orange)">'+c.critical+'</div><div class="lbl">&lt;30 days</div></div>';
+    h+='<div class="dash-card" onclick="filterSt(\'warning\')"><div class="num" style="color:var(--yellow)">'+c.warning+'</div><div class="lbl">&lt;90 days</div></div>';
+    h+='<div class="dash-card" onclick="filterSt(\'valid\')"><div class="num" style="color:var(--green)">'+c.valid+'</div><div class="lbl">Valid</div></div>';
+    h+='<div class="dash-card"><div class="num" style="color:var(--text2)">'+c.nofile+'</div><div class="lbl">No file</div></div>';
+    h+='</div>';
+    var urg=allDocs.filter(function(d){var s=classify(d);return s==='expired'||s==='critical';});
+    if(urg.length){h+='<h3 style="color:var(--red);font-size:14px;margin:16px 0 8px;">Attention Required</h3>';
+        urg.forEach(function(d){var dl=days(d),t=dl<0?Math.abs(dl)+'d overdue':dl+'d';
+            h+='<div class="urgent-item" onclick="showView(\'files\');selDoc(\''+d.id+'\')"><span class="st" style="background:'+stColor(classify(d))+'"></span><span style="flex:1">'+d.title+'</span><span style="color:var(--text2)">'+t+'</span></div>';
+        });
+    }
+    document.getElementById('scr-content').innerHTML=h;show('scr-content');updateTabs('Dashboard');
+}
+
+async function showMissing(){
+    var profile=null;
+    try{profile=await invoke('get_profile_status');}catch(e){showToast('Error: '+e,'error');logError('op',e);return;}
+    if(!profile||!profile.required){showToast('No profile set','warn');return;}
+    var missing=profile.required.filter(function(r){return !r.has;});
+    var h='<h2 style="font-size:18px;margin-bottom:8px;">Missing Documents</h2>';
+    h+='<p style="color:var(--text2);font-size:12px;margin-bottom:16px;">Documents still required for your profile. Click a document in the sidebar to add its data.</p>';
+    if(!missing.length){h+='<p style="color:var(--green)">Your profile is complete.</p>';}
+    else{
+        var grouped={};
+        missing.forEach(function(m){if(!grouped[m.category])grouped[m.category]=[];grouped[m.category].push(m);});
+        for(var cat in grouped){
+            h+='<h3 style="font-size:13px;margin:14px 0 6px;color:var(--accent);">'+cat+'</h3>';
+            grouped[cat].forEach(function(m){
+                h+='<div class="missing-card"><div style="font-weight:500;">'+m.title+'</div><div style="font-size:10px;color:var(--text2);font-family:var(--font-mono);">'+m.regulatory_basis+'</div></div>';
+            });
+        }
+    }
+    document.getElementById('scr-content').innerHTML=h;show('scr-content');updateTabs('Missing');
+}
+
+// ========== Work history ==========
+function escAttr(s){return String(s||'').replace(/'/g,"&#39;").replace(/"/g,'&quot;');}
+async function showWorkHistory(){
+    var entries=[];
+    try{entries=await invoke('get_work_history');}catch(e){showToast('Error: '+e,'error');logError('op',e);return;}
+    var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">';
+    h+='<h2 style="font-size:18px;">Sea Service Record</h2>';
+    h+='<button class="btn btn-accent" onclick="showAddWork()">+ Add Entry</button>';
+    h+='</div>';
+    h+='<p style="color:var(--text2);font-size:12px;margin-bottom:16px;">Your career track. Add each contract with dates and vessel details. Attach supporting documents (contract, discharge letter, sea service letter, flight tickets) to build a verifiable record.</p>';
+    if(!entries.length){
+        h+='<p style="color:var(--text2)">No entries yet. Click "Add Entry" to start building your sea service record.</p>';
+    }else{
+        for(var i=0;i<entries.length;i++){
+            var e=entries[i];
+            var period=(e.sign_on||'?')+' → '+(e.sign_off||'present');
+            var files=[];
+            try{files=await invoke('get_work_files',{entryId:e.id});}catch(err){files=[];}
+            h+='<div style="border:1px solid var(--border);border-radius:6px;padding:12px 14px;margin-bottom:10px;">';
+            h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">';
+            h+='<div style="flex:1;min-width:0;"><div style="font-weight:600;">'+e.vessel_name+(e.imo?' <span style="color:var(--text2);font-size:11px;">IMO '+e.imo+'</span>':'')+'</div>';
+            h+='<div style="font-size:12px;color:var(--text2);">'+e.position+(e.vessel_type?' &middot; '+e.vessel_type:'')+(e.flag?' &middot; '+e.flag:'')+'</div>';
+            if(e.company)h+='<div style="font-size:11px;color:var(--text2);">'+e.company+'</div>';
+            h+='<div style="font-size:11px;color:var(--text2);margin-top:2px;">'+period+'</div>';
+            if(e.notes)h+='<div style="font-size:11px;margin-top:4px;">'+e.notes+'</div>';
+            h+='</div>';
+            h+='<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;">';
+            h+='<button class="btn btn-sm btn-outline" onclick="attachWorkFile(\''+e.id+'\')">+ Attach</button>';
+            h+='<button class="btn btn-sm btn-outline btn-red" onclick="delWork(\''+e.id+'\')">Delete</button>';
+            h+='</div>';
+            h+='</div>';
+            // Attached files list
+            if(files.length){
+                h+='<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);">';
+                h+='<div style="font-size:11px;color:var(--text2);margin-bottom:6px;">Supporting documents ('+files.length+')</div>';
+                files.forEach(function(f){
+                    var kind=f.kind?' <span style="color:var(--text2);font-size:10px;">['+f.kind+']</span>':'';
+                    h+='<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:12px;">';
+                    h+='<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">&#128196; '+f.file_name+kind+'</span>';
+                    h+='<span style="display:flex;gap:4px;">';
+                    h+='<button class="btn btn-sm btn-outline" onclick="openWorkFile(\''+f.id+'\')">Open</button>';
+                    h+='<button class="btn btn-sm btn-outline btn-red" onclick="delWorkFile(\''+f.id+'\')">&times;</button>';
+                    h+='</span>';
+                    h+='</div>';
+                });
+                h+='</div>';
+            }
+            h+='</div>';
+        }
+    }
+    document.getElementById('scr-content').innerHTML=h;show('scr-content');updateTabs('Sea Service');
+}
+
+async function attachWorkFile(entryId){
+    if(!open){showToast('File dialog not available','error');return;}
+    var f=await open({multiple:false,title:'Select supporting document',filters:[{name:'Documents',extensions:['pdf','jpg','jpeg','png','doc','docx','txt']}]});
+    if(!f)return;
+    var kind=prompt('Document type (optional): e.g. contract, sea_service_letter, discharge_letter, flight_ticket','');
+    try{
+        await invoke('attach_work_file',{entryId:entryId,sourcePath:f,kind:kind||null});
+        await showWorkHistory();
+    }catch(err){showToast('Error: '+err,'error');logError('op',err);}
+}
+
+async function openWorkFile(id){
+    try{await invoke('open_work_file',{id:id});}catch(err){showToast('Error: '+err,'error');logError('op',err);}
+}
+
+async function delWorkFile(id){
+    if(!confirm('Remove this attachment?'))return;
+    try{await invoke('delete_work_file',{id:id});await showWorkHistory();}catch(err){showToast('Error: '+err,'error');logError('op',err);}
+}
+
+function showAddWork(){
+    var h='<h2 style="font-size:18px;margin-bottom:16px;">Add Work Entry</h2>';
+    h+='<div style="max-width:480px;">';
+    h+='<div class="field-grid">';
+    h+='<div class="field"><label>Vessel Name *</label><input id="wh-vessel" placeholder="M/V Example"></div>';
+    h+='<div class="field"><label>IMO Number</label><input id="wh-imo" placeholder="1234567"></div>';
+    h+='<div class="field"><label>Vessel Type</label><select id="wh-type"></select></div>';
+    h+='<div class="field"><label>Flag</label><input id="wh-flag" placeholder="Panama"></div>';
+    h+='<div class="field"><label>Company</label><input id="wh-company" placeholder="Shipping Co."></div>';
+    h+='<div class="field"><label>Position *</label><select id="wh-position"></select></div>';
+    h+='<div class="field"><label>Sign On</label><input id="wh-on" type="date"></div>';
+    h+='<div class="field"><label>Sign Off</label><input id="wh-off" type="date"></div>';
+    h+='</div>';
+    h+='<div class="field"><label>Notes</label><input id="wh-notes" placeholder="Route, remarks..."></div>';
+    h+='<p style="color:var(--text2);font-size:11px;margin:8px 0 0;">After saving, you can attach supporting documents (contract, sea service letter, discharge, flight ticket) from the list view.</p>';
+    h+='<div class="actions" style="margin-top:12px;"><button class="btn btn-accent" onclick="saveWork()">Save</button> <button class="btn btn-outline" onclick="showWorkHistory()">Cancel</button></div>';
+    h+='</div>';
+    document.getElementById('scr-content').innerHTML=h;show('scr-content');
+    // Populate dropdowns from loaded taxonomies
+    var vList=(types&&types.vessel_types&&types.vessel_types.length)?types.vessel_types:
+        ["Bulk Carrier","Container Ship","Tanker","Oil Tanker","Chemical Tanker","Product Tanker","LNG Carrier","LPG Carrier","General Cargo","Ro-Ro","Car Carrier","Reefer","Passenger","Cruise Ship","Ferry","Offshore Support","AHTS","PSV","Tug","OSV","Yacht","Other"];
+    var pList=(types&&types.ranks&&types.ranks.length)?types.ranks:RANKS;
+    populateSelect(document.getElementById('wh-type'),vList,'','-- Select type --');
+    populateSelect(document.getElementById('wh-position'),pList,'','-- Select position --');
+}
+
+async function saveWork(){
+    var v=function(id){return document.getElementById(id).value.trim()||null;};
+    var vessel=v('wh-vessel'),pos=v('wh-position');
+    if(!vessel||!pos){alert('Vessel name and Position are required');return;}
+    try{
+        await invoke('add_work_history',{
+            vesselName:vessel,
+            vesselType:v('wh-type'),
+            imo:v('wh-imo'),
+            flag:v('wh-flag'),
+            company:v('wh-company'),
+            position:pos,
+            signOn:v('wh-on'),
+            signOff:v('wh-off'),
+            notes:v('wh-notes')
+        });
+        await showWorkHistory();
+    }catch(e){showToast('Error: '+e,'error');logError('op',e);}
+}
+
+async function delWork(id){
+    if(!confirm('Delete this entry?'))return;
+    try{await invoke('delete_work_entry',{id:id});await showWorkHistory();}catch(e){showToast('Error: '+e,'error');logError('op',e);}
+}
+
+// ========== Demo vault ==========
+async function loadDemoVault(){
+    if(!open){showToast('File dialog not available','error');return;}
+    var dir=await open({directory:true,title:'Pick a folder for the demo vault'});
+    if(!dir)return;
+    try{
+        var info=await invoke('create_demo_vault',{path:dir});
+        await loadVault(info);
+    }catch(e){showToast('Demo error: '+e,'error');logError('Demo error',e);}
+}
+
+// ========== CV view ==========
+function cvStatusColor(s){return{valid:'var(--green)',warning:'var(--yellow)',expired:'var(--red)',none:'var(--text2)'}[s]||'var(--text2)';}
+function cvStatusLabel(s){return{valid:'valid',warning:'expiring',expired:'expired',none:'—'}[s]||s;}
+
+async function showCv(){
+    var data;
+    try{data=await invoke('get_cv_data');}catch(e){
+        document.getElementById('scr-content').innerHTML='<p style="color:var(--text2)">Cannot build CV: '+e+'</p>';
+        show('scr-content');updateTabs('CV');return;
+    }
+    var p=data.personal||{};
+    var certs=data.certificates||[];
+    var work=data.work_history||[];
+
+    var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">';
+    h+='<h2 style="font-size:18px;">Curriculum Vitae</h2>';
+    h+='<button class="btn btn-accent" onclick="exportCvPdf()">Export .pdf</button> ';
+    h+='<button class="btn btn-outline" onclick="exportCvDocx()">Export .docx</button>';
+    h+='</div>';
+
+    // Personal details
+    h+='<div style="border:1px solid var(--border);border-radius:6px;padding:14px 16px;margin-bottom:16px;">';
+    h+='<div style="font-size:20px;font-weight:700;">'+(p.name||'Seafarer')+'</div>';
+    var sub=[];
+    if(p.rank)sub.push(p.rank);
+    if(p.stcw_level)sub.push('STCW '+p.stcw_level);
+    if(p.vessel_type)sub.push(p.vessel_type);
+    if(sub.length)h+='<div style="color:var(--text2);font-size:13px;margin-top:4px;">'+sub.join(' &middot; ')+'</div>';
+    if(data.total_sea_days>0){
+        var months=Math.round(data.total_sea_days/30);
+        h+='<div style="font-size:12px;color:var(--text2);margin-top:6px;">Total recorded sea time: '+data.total_sea_days+' days ('+months+' months)</div>';
+    }
+    h+='</div>';
+
+    // Certificates grouped by category
+    h+='<h3 style="font-size:14px;margin:16px 0 8px;">Certificates &amp; qualifications</h3>';
+    if(!certs.length){
+        h+='<p style="color:var(--text2);font-size:12px;">No certificates on file yet.</p>';
+    }else{
+        var byCat={};
+        certs.forEach(function(c){if(!byCat[c.category])byCat[c.category]=[];byCat[c.category].push(c);});
+        Object.keys(byCat).sort().forEach(function(cat){
+            h+='<div style="font-weight:600;margin-top:10px;margin-bottom:4px;">'+cat+'</div>';
+            byCat[cat].forEach(function(c){
+                h+='<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">';
+                h+='<span class="st" style="background:'+cvStatusColor(c.status)+';margin-top:6px;"></span>';
+                h+='<div style="flex:1;">';
+                h+='<div style="font-size:13px;">'+c.title;
+                if(c.doc_number)h+=' <span style="color:var(--text2);font-size:11px;">№'+c.doc_number+'</span>';
+                h+='</div>';
+                var meta=[];
+                if(c.issued_by)meta.push(c.issued_by);
+                if(c.valid_from&&c.valid_to)meta.push(c.valid_from+' → '+c.valid_to);
+                else if(c.valid_to)meta.push('valid until '+c.valid_to);
+                if(meta.length)h+='<div style="font-size:11px;color:var(--text2);">'+meta.join(' &middot; ')+'</div>';
+                if(c.regulatory_basis)h+='<div style="font-size:10px;color:var(--text2);">'+c.regulatory_basis+'</div>';
+                h+='</div>';
+                h+='<span style="font-size:10px;color:'+cvStatusColor(c.status)+';text-transform:uppercase;letter-spacing:0.04em;">'+cvStatusLabel(c.status)+'</span>';
+                h+='</div>';
+            });
+        });
+    }
+
+    // Work history
+    h+='<h3 style="font-size:14px;margin:16px 0 8px;">Sea-going experience</h3>';
+    if(!work.length){
+        h+='<p style="color:var(--text2);font-size:12px;">No work history recorded. Add entries via Dashboard → Work history.</p>';
+    }else{
+        work.forEach(function(w){
+            var period=(w.sign_on||'?')+' → '+(w.sign_off||'present');
+            h+='<div style="border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:8px;">';
+            h+='<div style="font-weight:600;">'+w.vessel_name+' — '+w.position+'</div>';
+            var bits=[period];
+            if(w.vessel_type)bits.push(w.vessel_type);
+            if(w.flag)bits.push('flag '+w.flag);
+            if(w.imo)bits.push('IMO '+w.imo);
+            h+='<div style="font-size:11px;color:var(--text2);">'+bits.join(' &middot; ')+'</div>';
+            if(w.company)h+='<div style="font-size:11px;color:var(--text2);">'+w.company+'</div>';
+            h+='</div>';
+        });
+    }
+
+    document.getElementById('scr-content').innerHTML=h;
+    show('scr-content');updateTabs('CV');
+}
+
+async function exportCvPdf(){
+    if(!open){showToast('File dialog not available','error');return;}
+    var defName='Skipi_CV.pdf';
+    try{
+        var data=await invoke('get_cv_data');
+        var nm='';
+        if(data&&data.personal){
+            var s=(data.personal.surname||'').trim();
+            var fn=(data.personal.first_name||'').trim();
+            if(s||fn)nm=(s+' '+fn).trim();
+            else nm=data.personal.name||'';
+        }
+        if(nm){
+            nm=nm.replace(/[^A-Za-z0-9 _\-]/g,'').trim().replace(/\s+/g,'_');
+            if(nm)defName=nm+'_CV.pdf';
+        }
+    }catch(e){}
+    try{
+        var d=await open({save:true,title:'Save CV as PDF',defaultPath:defName,filters:[{name:'PDF document',extensions:['pdf']}]});
+        if(!d)return;
+        if(!/\.pdf$/i.test(d))d=d+'.pdf';
+        await invoke('export_cv_pdf',{outputPath:d});
+        showToast('CV exported successfully','success');
+    }catch(e){showToast('Export error: '+e,'error');logError('Export error',e);}
+}
+
+async function exportCvDocx(){
+    if(!open){showToast('File dialog not available','error');return;}
+    var defName='Skipi_CV.docx';
+    try{
+        var data=await invoke('get_cv_data');
+        if(data&&data.personal&&data.personal.name){
+            defName=data.personal.name.replace(/[^A-Za-z0-9 _\-]/g,'').trim().replace(/\s+/g,'_')+'_CV.docx';
+            if(defName==='_CV.docx')defName='Skipi_CV.docx';
+        }
+    }catch(e){}
+    try{
+        var d=await open({save:true,title:'Save CV as...',defaultPath:defName,filters:[{name:'Word document',extensions:['docx']}]});
+        if(!d)return;
+        if(!/\.docx$/i.test(d))d=d+'.docx';
+        await invoke('export_cv_docx',{outputPath:d});
+        showToast('CV exported successfully','success');
+    }catch(e){showToast('Export error: '+e,'error');logError('Export error',e);}
+}
+
+function filterSt(s){
+    var ds=allDocs.filter(function(d){return classify(d)===s;});
+    var titles={expired:'Expired',critical:'Expiring &lt;30 days',warning:'Expiring &lt;90 days',valid:'Valid'};
+    var h='<h2 style="font-size:18px;margin-bottom:12px;">'+titles[s]+'</h2>';
+    ds.forEach(function(d){var dl=days(d),t=dl!==null?(dl<0?Math.abs(dl)+'d overdue':dl+'d'):'';
+        h+='<div class="urgent-item" onclick="showView(\'files\');selDoc(\''+d.id+'\')"><span class="st" style="background:'+stColor(s)+'"></span><span style="flex:1">'+d.title+'</span><span style="color:var(--text2)">'+t+'</span></div>';
+    });
+    document.getElementById('scr-content').innerHTML=h;show('scr-content');
+}
+
+// Packages
+function togglePkg(id){
+    var d=allDocs.find(function(x){return x.id===id;});
+    if(!d||!d.file_name){alert('This document has no file attached. Upload a file before packaging.');return;}
+    var i=pkgSelected.indexOf(id);if(i===-1)pkgSelected.push(id);else pkgSelected.splice(i,1);
+    renderTree();
+    var el=document.getElementById('pkg-count');if(el)el.textContent=pkgSelected.length+' selected';
+}
+
+// ========== Add Custom Certificate modal ==========
+function showAddCustomDoc(){
+    // Populate the category dropdown from the existing categories in the vault,
+    // plus an "Other (type below)" escape hatch.
+    var sel=document.getElementById('ac-category');
+    if(!sel)return;
+    var seen={};
+    var opts='';
+    allDocs.forEach(function(d){
+        if(d.category && !seen[d.category]){seen[d.category]=true;opts+='<option value="'+d.category.replace(/"/g,'&quot;')+'">'+d.category+'</option>';}
+    });
+    opts+='<option value="Custom">Custom</option>';
+    sel.innerHTML=opts;
+    document.getElementById('ac-title').value='';
+    document.getElementById('ac-has-expiry').checked=true;
+    var ov=document.getElementById('add-custom-overlay');
+    ov.classList.add('open');
+    ov.style.display='flex';
+    setTimeout(function(){var ti=document.getElementById('ac-title');if(ti)ti.focus();},50);
+}
+function hideAddCustomDoc(){
+    var ov=document.getElementById('add-custom-overlay');
+    ov.classList.remove('open');
+    ov.style.display='none';
+}
+async function doAddCustomDoc(){
+    var title=document.getElementById('ac-title').value.trim();
+    if(!title){alert('Enter a title for the certificate');return;}
+    var category=document.getElementById('ac-category').value||'Custom';
+    var hasExpiry=document.getElementById('ac-has-expiry').checked;
+    try{
+        var rec=await invoke('add_custom_doc',{title:title,category:category,hasExpiry:hasExpiry});
+        allDocs=await invoke('get_documents');
+        renderTree();
+        hideAddCustomDoc();
+        if(rec&&rec.id){
+            selectedDocId=rec.id;
+            await selDoc(rec.id);
+        }
+    }catch(e){showToast('Error: '+e,'error');logError('op',e);}
+}
+
+// ========== Dispatch (Рассылка) ==========
+// Combines a generated Package (ZIP) + a freshly-rendered CV PDF and sends them
+// to one or more email recipients via the OS default mail client.
+async function showDispatch(){
+    var pkgs=[], dispatches=[];
+    try{pkgs=await invoke('get_packages');}catch(e){}
+    try{dispatches=await invoke('get_dispatches');}catch(e){}
+    var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;"><h2 style="font-size:18px;">Dispatch &middot; Рассылка</h2></div>';
+    h+='<p style="color:var(--text2);font-size:12px;margin-bottom:16px;">Send a package (ZIP with selected documents) together with a freshly generated CV PDF to one or more email addresses. A draft is opened in your default mail client with both files attached.</p>';
+    if(!pkgs.length){
+        h+='<div style="padding:14px;border:1px dashed var(--border);border-radius:6px;color:var(--text2);">No packages yet. Go to <b>Packages</b> and create one first &mdash; only then you\'ll have something to dispatch.</div>';
+    }else{
+        // Compose form
+        h+='<div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:20px;background:var(--bg);">';
+        h+='<div class="field"><label>Package</label><select id="disp-pkg">';
+        pkgs.forEach(function(p){
+            var exp=new Date(p.expires_on),dead=exp<new Date();
+            var lbl=p.title+' ('+p.file_count+' files'+(dead?' — EXPIRED':'')+')';
+            h+='<option value="'+p.id+'"'+(dead?' disabled':'')+'>'+lbl+'</option>';
+        });
+        h+='</select></div>';
+        h+='<div style="padding:10px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);font-size:12px;color:var(--text2);margin-bottom:12px;">&#128196; <b>CV PDF</b> will be generated from your current Seafarer Profile + Files + Sea Service, and attached alongside the package.</div>';
+        h+='<div class="field"><label>Recipients (one email per line or comma-separated)</label><textarea id="disp-to" rows="3" style="width:100%;font-family:var(--font-mono);font-size:12px;" placeholder="crewing@example.com&#10;manager@example.com"></textarea></div>';
+        h+='<div class="field"><label>Subject</label><input id="disp-subj" value="Application — Seafarer CV &amp; Documents"></div>';
+        h+='<div class="field"><label>Message</label><textarea id="disp-body" rows="5" style="width:100%;">Dear Sir/Madam,\n\nPlease find attached my updated CV and supporting documents for your consideration.\n\nBest regards,</textarea></div>';
+        h+='<div style="display:flex;gap:8px;justify-content:flex-end;"><button class="btn btn-accent" onclick="doDispatch()">Send &#128231;</button></div>';
+        h+='</div>';
+    }
+    // History
+    h+='<h3 style="font-size:14px;margin-bottom:8px;">Recent dispatches</h3>';
+    if(!dispatches.length){
+        h+='<p style="color:var(--text2);font-size:12px;">No dispatches yet.</p>';
+    }else{
+        h+='<table class="pkg-table"><thead><tr><th>Date</th><th>Package</th><th>To</th></tr></thead><tbody>';
+        dispatches.forEach(function(d){
+            var dt=new Date(d.created_at);
+            h+='<tr><td>'+dt.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})+' '+dt.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})+'</td>';
+            h+='<td>'+(d.package_title||'<span style="color:var(--text2)">(deleted)</span>')+'</td>';
+            h+='<td style="font-family:var(--font-mono);font-size:11px;color:var(--text2);">'+d.recipients+'</td></tr>';
+        });
+        h+='</tbody></table>';
+    }
+    document.getElementById('scr-content').innerHTML=h;show('scr-content');updateTabs('Dispatch');
+}
+
+async function doDispatch(){
+    var pkgId=document.getElementById('disp-pkg').value;
+    var toRaw=document.getElementById('disp-to').value||'';
+    var subject=document.getElementById('disp-subj').value||'';
+    var body=document.getElementById('disp-body').value||'';
+    if(!pkgId){alert('Select a package');return;}
+    // Split on commas, semicolons, newlines; trim; validate; dedupe (case-insensitive).
+    var rawTokens=toRaw.split(/[\n,;]+/).map(function(s){return s.trim();}).filter(function(s){return s;});
+    var emailRe=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    var seen={};
+    var recipients=[];
+    var invalid=[];
+    var dupCount=0;
+    rawTokens.forEach(function(tok){
+        if(!emailRe.test(tok)){invalid.push(tok);return;}
+        var key=tok.toLowerCase();
+        if(seen[key]){dupCount++;return;}
+        seen[key]=true;
+        recipients.push(tok);
+    });
+    if(invalid.length){
+        if(!confirm('Skipping '+invalid.length+' invalid address(es):\n'+invalid.slice(0,5).join('\n')+(invalid.length>5?'\n…':'')+'\n\nContinue?'))return;
+    }
+    if(!recipients.length){alert('Enter at least one valid recipient');return;}
+    if(dupCount>0){
+        if(!confirm('Sending to '+recipients.length+' unique recipient(s); removed '+dupCount+' duplicate(s).\n\nContinue?'))return;
+    }
+    try{
+        await invoke('dispatch_package',{
+            packageId:pkgId,
+            recipients:recipients,
+            subject:subject,
+            body:body
+        });
+        if(typeof uiToast==='function')uiToast('Dispatch draft opened in your mail client');
+        else alert('Dispatch draft opened. Check your mail client.');
+        await showDispatch();
+    }catch(e){showToast('Dispatch error: '+e,'error');logError('Dispatch error',e);}
+}
+
+async function showPackages(){
+    var pkgs=[];try{pkgs=await invoke('get_packages');}catch(e){}
+    var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;"><h2 style="font-size:18px;">Packages</h2><button class="btn btn-accent" onclick="startPkg()">+ Create</button></div>';
+    if(!pkgs.length)h+='<p style="color:var(--text2);font-size:13px;">No packages. Select documents in the sidebar and create a package.</p>';
+    else{
+        h+='<table class="pkg-table"><thead><tr><th>Title</th><th>Files</th><th>Expires</th><th></th></tr></thead><tbody>';
+        pkgs.forEach(function(p){var exp=new Date(p.expires_on),now=new Date(),dead=exp<now;
+            h+='<tr><td>'+p.title+'</td><td>'+p.file_count+'</td><td style="color:'+(dead?'var(--red)':'var(--text2)')+'">'+exp.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})+'</td>';
+            h+='<td style="text-align:right;white-space:nowrap;">';
+            if(!dead)h+='<button class="btn btn-sm btn-accent" onclick="emailPkg(\''+p.id+'\',\''+p.title.replace(/'/g,"\\'")+'\')">Email</button> <button class="btn btn-sm btn-outline" onclick="exportPkg(\''+p.id+'\',\''+p.title.replace(/'/g,"\\'")+'\')">Save</button> ';
+            h+='<button class="btn btn-sm btn-outline btn-red" onclick="delPkg(\''+p.id+'\')">Del</button></td></tr>';
+        });
+        h+='</tbody></table>';
+    }
+    document.getElementById('scr-content').innerHTML=h;show('scr-content');updateTabs('Packages');
+}
+
+function startPkg(){
+    pkgMode=true;pkgSelected=[];renderTree();
+    var h='<h2 style="font-size:18px;margin-bottom:8px;">Create Package</h2>';
+    h+='<p style="color:var(--text2);font-size:12px;margin-bottom:12px;">Share a subset of your documents with a third party via a single ZIP file.</p>';
+    h+='<div class="pkg-tip">';
+    h+='<span class="pkg-tip-icon">&#128161;</span>';
+    h+='<div class="pkg-tip-body"><b>How it works:</b> tick the documents you want to share in the <b>left sidebar</b> &mdash; only those will be included in the package. Only documents with attached files can be packaged. You can then email the ZIP, set an expiry and a download limit.</div>';
+    h+='</div>';
+    h+='<div id="pkg-count" style="color:var(--accent);font-size:12px;margin-bottom:12px;font-weight:600;">0 selected</div>';
+    h+='<div style="max-width:360px;"><div class="field"><label>Title</label><input id="pkg-title" value="Document Package" placeholder="Package title"></div>';
+    h+='<div class="field-grid"><div class="field"><label>Expires (days)</label><input type="number" id="pkg-exp" value="7" min="1" max="90"></div><div class="field"><label>Download limit</label><input type="number" id="pkg-lim" value="10" min="1"></div></div>';
+    h+='<button class="btn btn-accent" onclick="doPkg()">Create</button> <button class="btn btn-outline" onclick="showPackages()">Cancel</button></div>';
+    document.getElementById('scr-content').innerHTML=h;show('scr-content');
+}
+
+async function doPkg(){
+    var title=document.getElementById('pkg-title').value.trim();if(!title){alert('Enter title');return;}
+    var withFile=[];
+    var missing=[];
+    pkgSelected.forEach(function(id){
+        var d=allDocs.find(function(x){return x.id===id;});
+        if(!d)return;
+        if(d.file_name)withFile.push(id);
+        else missing.push(d.title);
+    });
+    if(missing.length){
+        alert('Cannot package — these documents have no file attached:\n\n• '+missing.join('\n• ')+'\n\nUpload files first or untick them.');
+        return;
+    }
+    if(!withFile.length){alert('Select at least one document with an attached file.');return;}
+    try{await invoke('create_package',{title:title,docIds:withFile,expiryDays:parseInt(document.getElementById('pkg-exp').value)||7,downloadLimit:parseInt(document.getElementById('pkg-lim').value)||10});pkgMode=false;await showPackages();}catch(e){showToast(''+e,'error');logError('op',e);}
+}
+
+async function emailPkg(id,title){
+    // Show inline email input instead of prompt()
+    var row=document.getElementById('email-row-'+id);
+    if(row){row.style.display='flex';return;}
+    var btn=event.target;
+    var container=btn.parentElement;
+    var div=document.createElement('div');
+    div.id='email-row-'+id;
+    div.style.cssText='display:flex;gap:4px;align-items:center;margin-top:4px;';
+    div.innerHTML='<input type="email" id="email-to-'+id+'" placeholder="recipient@email.com" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text);width:180px;"><button class="btn btn-sm btn-accent" onclick="doEmail(\''+id+'\',\''+title.replace(/'/g,"\\'")+'\')">Send</button>';
+    container.appendChild(div);
+    document.getElementById('email-to-'+id).focus();
+}
+async function doEmail(id,title){
+    var to=document.getElementById('email-to-'+id).value.trim();
+    if(!to){return;}
+    try{var p=await invoke('open_email_with_attachment',{packageId:id,to:to,subject:'Documents: '+title});}catch(e){showToast(''+e,'error');logError('op',e);}
+}
+async function exportPkg(id,title){var d=await open({save:true,title:'Save as...',defaultPath:title+'.zip',filters:[{name:'ZIP',extensions:['zip']}]});if(!d)return;try{await invoke('export_package',{packageId:id,destPath:d});}catch(e){showToast(''+e,'error');logError('op',e);}}
+async function delPkg(id){if(!confirm('Delete?'))return;try{await invoke('delete_package',{packageId:id});await showPackages();}catch(e){showToast(''+e,'error');logError('op',e);}}
+
+var settingsTab = 'general';
+
+function openSettings(tab){
+    if(tab) settingsTab = tab;
+    // Guard: Seafarer tab only makes sense for seafarer vaults
+    if(settingsTab==='seafarer' && currentAccountType!=='seafarer'){
+        settingsTab='general';
+    }
+    renderSettingsNav();
+    renderSettingsBody();
+    document.getElementById('settings-overlay').classList.add('open');
+}
+
+function closeSettings(){
+    document.getElementById('settings-overlay').classList.remove('open');
+}
+
+function renderSettingsNav(){
+    var h = '';
+    h += '<div class="settings-nav-title">Settings</div>';
+    h += '<div class="settings-nav-item'+(settingsTab==='general'?' active':'')+'" onclick="openSettings(\'general\')"><span class="nav-icon">&#9881;</span> General</div>';
+    h += '<div class="settings-nav-item'+(settingsTab==='vaults'?' active':'')+'" onclick="openSettings(\'vaults\')"><span class="nav-icon">&#128451;</span> Vaults</div>';
+    if(currentAccountType==='seafarer'){
+        h += '<div class="settings-nav-item'+(settingsTab==='seafarer'?' active':'')+'" onclick="openSettings(\'seafarer\')"><span class="nav-icon">&#128100;</span> Seafarer Profile</div>';
+    }
+    h += '<div class="settings-nav-item'+(settingsTab==='appearance'?' active':'')+'" onclick="openSettings(\'appearance\')"><span class="nav-icon">&#127912;</span> Appearance</div>';
+    h += '<div class="settings-nav-item'+(settingsTab==='ai'?' active':'')+'" onclick="openSettings(\'ai\')"><span class="nav-icon">&#9733;</span> AI Recognition</div>';
+    h += '<div class="settings-nav-title" style="margin-top:12px;">About</div>';
+    h += '<div class="settings-nav-item'+(settingsTab==='about'?' active':'')+'" onclick="openSettings(\'about\')"><span class="nav-icon">&#9432;</span> About Skipi</div>';
+    document.getElementById('settings-nav').innerHTML = h;
+}
+
+function renderSettingsBody(){
+    var cur = document.documentElement.getAttribute('data-theme')||'dark';
+    var h = '';
+
+    if(settingsTab === 'general'){
+        h += '<div class="settings-section"><h3>General</h3><div class="section-desc">Basic application settings.</div>';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Language</div><div class="setting-desc">Interface language.</div></div>';
+        h += '<div class="setting-control"><select><option>English</option></select></div></div>';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Auto-open last vault</div><div class="setting-desc">Automatically open the last used vault on startup.</div></div>';
+        h += '<div class="setting-control"><label class="toggle"><input type="checkbox" checked disabled><span class="slider"></span></label></div></div>';
+        h += '</div>';
+    }
+
+    if(settingsTab === 'vaults'){
+        h += '<div class="settings-section"><h3>Vaults</h3><div class="section-desc">Manage your Skipi vaults. Each vault is a separate folder on your computer containing documents and metadata.</div>';
+        h += '<div id="vault-current-row" class="setting-row"><div class="setting-info"><div class="setting-label">Current vault</div><div class="setting-desc" id="vault-current-path" style="font-family:var(--font-mono);font-size:11px;word-break:break-all;">Loading…</div></div>';
+        h += '<div class="setting-control"><button class="btn btn-outline btn-sm" onclick="closeCurrentVault(false)">Close</button></div></div>';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Open another vault</div><div class="setting-desc">Choose an existing Skipi vault folder to switch to.</div></div>';
+        h += '<div class="setting-control"><button class="btn btn-outline btn-sm" onclick="switchVault()">Open&hellip;</button></div></div>';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Create new vault</div><div class="setting-desc">Close the current vault and start the setup flow for a new one.</div></div>';
+        h += '<div class="setting-control"><button class="btn btn-outline btn-sm" onclick="createNewVault()">Create&hellip;</button></div></div>';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Forget last vault</div><div class="setting-desc">Stop auto-opening the last vault on startup. The vault files on disk are not touched.</div></div>';
+        h += '<div class="setting-control"><button class="btn btn-outline btn-sm" onclick="closeCurrentVault(true)">Forget</button></div></div>';
+        h += '</div>';
+    }
+
+    if(settingsTab === 'seafarer'){
+        h += '<div class="settings-section"><h3>Seafarer Profile</h3><div class="section-desc">Personal details used to generate your CV/Application Form PDF. Stored only inside this vault on disk.</div>';
+        h += '<div style="display:flex;gap:20px;align-items:flex-start;">';
+        // Photo panel
+        h += '<div style="flex:0 0 120px;">';
+        h += '<div id="sp-photo-box" style="width:120px;height:160px;border:1px dashed var(--border);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:11px;text-align:center;padding:6px;background:var(--bg);overflow:hidden;">No photo</div>';
+        h += '<button class="btn btn-outline btn-sm" style="margin-top:8px;width:120px;" onclick="spUploadPhoto()">Upload photo…</button>';
+        h += '<button class="btn btn-outline btn-sm btn-red" style="margin-top:4px;width:120px;" onclick="spRemovePhoto()">Remove</button>';
+        h += '</div>';
+        // Form panel
+        h += '<div style="flex:1;min-width:0;">';
+        h += '<div class="field-grid">';
+        h += spField('sp-surname','Surname');
+        h += spField('sp-first_name','First name');
+        h += spField('sp-date_of_birth','Date of birth','date');
+        h += spField('sp-place_of_birth','Place of birth');
+        h += '<div class="field"><label>Nationality</label><select id="sp-nationality"></select></div>';
+        h += spField('sp-phones','Phones');
+        h += spField('sp-email','Email','email');
+        h += '<div class="field"><label>Rank</label><select id="sp-rank"></select></div>';
+        h += '<div class="field"><label>Nearest airport</label><input id="sp-nearest_airport" list="airport-hubs" placeholder="Start typing…"></div>';
+        h += '<div class="field"><label>Nearest intl airport</label><input id="sp-nearest_intl_airport" list="airport-hubs" placeholder="Start typing…"></div>';
+        h += spField('sp-available_from','Available for joining','date');
+        h += '<div class="field"><label>Minimum salary per month</label><div style="display:flex;gap:6px;"><input id="sp-min_salary" type="number" min="0" style="flex:1;min-width:0;"><select id="sp-min_salary_currency" style="width:80px;flex:0 0 80px;"></select></div></div>';
+        h += '</div>';
+        h += '<div class="field"><label>Home address</label><input id="sp-home_address" placeholder="Street, city, country, ZIP"></div>';
+        h += '<div style="margin-top:16px;display:flex;gap:8px;"><button class="btn btn-accent btn-sm" onclick="spSave()">Save</button><button class="btn btn-outline btn-sm" onclick="spLoad()">Reload</button></div>';
+        h += '</div>';
+        h += '</div></div>';
+    }
+
+    if(settingsTab === 'appearance'){
+        h += '<div class="settings-section"><h3>Appearance</h3><div class="section-desc">Customize how Skipi looks.</div>';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Theme</div><div class="setting-desc">Choose between light and dark mode.</div></div>';
+        h += '<div class="setting-control"><select onchange="setTheme(this.value)"><option value="dark"'+(cur==='dark'?' selected':'')+'>Dark</option><option value="light"'+(cur==='light'?' selected':'')+'>Light</option></select></div></div>';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Accent color</div><div class="setting-desc">Primary accent color used throughout the app.</div></div>';
+        h += '<div class="setting-control"><div style="width:24px;height:24px;border-radius:50%;background:var(--accent);border:2px solid var(--border);cursor:pointer;"></div></div></div>';
+        h += '</div>';
+    }
+
+    if(settingsTab === 'ai'){
+        h += '<div class="settings-section"><h3>AI Recognition</h3><div class="section-desc">Configure AI-powered document scanning and data extraction.</div>';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Default AI provider</div><div class="setting-desc">Choose between local Ollama or cloud Claude API.</div></div>';
+        h += '<div class="setting-control"><select id="set-ai-provider"><option value="local">Local (Ollama)</option><option value="cloud">Cloud (Claude API)</option></select></div></div>';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Ollama model</div><div class="setting-desc">Vision model for document scanning. qwen2.5vl:32b is the strongest model your home server can run.</div></div>';
+        var cur = localStorage.getItem('skipi-ollama-model') || 'qwen2.5vl:32b';
+        var opts = [
+            ['qwen2.5vl:32b', 'qwen2.5vl:32b (best — home server max)'],
+            ['qwen2.5vl:7b',  'qwen2.5vl:7b (fast)'],
+            ['internvl2:8b',  'internvl2:8b (OCR-focused)'],
+            ['llama3.2-vision:11b', 'llama3.2-vision:11b'],
+            ['minicpm-v:12b', 'minicpm-v:12b'],
+            ['minicpm-v',     'minicpm-v (7B, legacy)'],
+            ['llava:7b',      'llava:7b (legacy)']
+        ];
+        var sel = '<select id="set-ollama-model" onchange="localStorage.setItem(\'skipi-ollama-model\',this.value)">';
+        opts.forEach(function(o){ sel += '<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>'; });
+        sel += '</select>';
+        h += '<div class="setting-control">'+sel+'</div></div>';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Ollama endpoint</div><div class="setting-desc">URL of Ollama server (local or remote).</div></div>';
+        h += '<div class="setting-control"><input type="text" id="set-ollama-endpoint" value="'+(localStorage.getItem('skipi-ollama-endpoint')||'http://127.0.0.1:11434')+'" onchange="localStorage.setItem(\'skipi-ollama-endpoint\',this.value)" style="width:220px;"></div></div>';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Anthropic API Key</div><div class="setting-desc">Required for Cloud AI. Get yours at console.anthropic.com.</div></div>';
+        h += '<div class="setting-control"><input type="password" id="set-key" placeholder="sk-ant-..." style="width:200px;"></div></div>';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Auto-scan on upload</div><div class="setting-desc">Automatically run AI recognition when a file is attached.</div></div>';
+        h += '<div class="setting-control"><label class="toggle"><input type="checkbox"><span class="slider"></span></label></div></div>';
+        h += '<div style="margin-top:16px;"><button class="btn btn-accent btn-sm" onclick="saveKey()">Save API Key</button></div>';
+        h += '</div>';
+    }
+
+    if(settingsTab === 'about'){
+        h += '<div class="settings-section"><h3>About Skipi</h3><div class="section-desc">Maritime Document Management</div>';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Version</div><div class="setting-desc">Current application version.</div></div>';
+        h += '<div class="setting-control" style="font-size:13px;color:var(--text2);" id="about-version">'+APP_VERSION+'</div></div>';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Platform</div><div class="setting-desc">Detected host platform.</div></div>';
+        h += '<div class="setting-control" style="font-size:13px;color:var(--text2);" id="about-platform">…</div></div>';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Author</div><div class="setting-desc">Developed by Tymur Rudov, Master Mariner.</div></div>';
+        h += '<div class="setting-control" style="font-size:13px;color:var(--text2);">CaptTymur</div></div>';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Website</div><div class="setting-desc">Official product page.</div></div>';
+        h += '<div class="setting-control"><span style="color:var(--accent);font-size:12px;cursor:pointer;">skipi.app</span></div></div>';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">License</div><div class="setting-desc">Closed beta build — free for invited seafarers.</div></div>';
+        h += '<div class="setting-control" style="font-size:13px;color:var(--text2);">Beta</div></div>';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Updates</div><div class="setting-desc">Check for a newer version of Skipi.</div></div>';
+        h += '<div class="setting-control"><button class="btn btn-outline btn-sm" id="btn-check-update" onclick="checkForUpdate(false);this.textContent=\'Checking…\';this.disabled=true;">Check for updates</button></div></div>';
+        h += '<div style="margin-top:16px;display:flex;gap:8px;"><button class="btn btn-accent btn-sm" onclick="reportIssue()">Сообщить о проблеме</button></div>';
+        h += '</div>';
+    }
+
+    document.getElementById('settings-body').innerHTML = h;
+    if(settingsTab === 'seafarer'){ spLoad(); }
+    if(settingsTab === 'ai'){
+        invoke('get_api_key').then(function(k){var el=document.getElementById('set-key');if(el)el.value=k;}).catch(function(){});
+    }
+    if(settingsTab === 'vaults'){
+        invoke('get_current_vault_path').then(function(p){
+            var el=document.getElementById('vault-current-path');
+            if(el) el.textContent = p || '(no vault open)';
+        }).catch(function(){});
+    }
+    if(settingsTab === 'about'){
+        invoke('get_app_version').then(function(v){
+            var el=document.getElementById('about-version');
+            if(el) el.textContent = v || '(unknown)';
+        }).catch(function(){});
+        invoke('get_platform').then(function(p){
+            var el=document.getElementById('about-platform');
+            if(el) el.textContent = p || '(unknown)';
+        }).catch(function(){});
+    }
+}
+
+// ========== Seafarer profile (Settings → Seafarer) ==========
+function spField(id,label,type){
+    type = type||'text';
+    return '<div class="field"><label>'+label+'</label><input id="'+id+'" type="'+type+'"></div>';
+}
+async function spLoad(){
+    try{
+        var data=await invoke('get_seafarer_personal');
+        // Populate dropdowns before assigning values
+        populateNationalitySelect(document.getElementById('sp-nationality'),data.nationality||'');
+        populateSelect(document.getElementById('sp-rank'),RANKS,data.rank||'','-- Select rank --');
+        populateAirportDatalist();
+        populateSelect(document.getElementById('sp-min_salary_currency'),CURRENCIES,localStorage.getItem('skipi-sp-min_salary_currency')||'USD','');
+        // Nationality + rank are populated above; the loop below handles free-text / date fields only.
+        var keys=['surname','first_name','date_of_birth','place_of_birth','phones','email','nearest_airport','nearest_intl_airport','available_from','home_address'];
+        keys.forEach(function(k){
+            var el=document.getElementById('sp-'+k);
+            if(el)el.value=data[k]||'';
+        });
+        // Minimum salary — stored in localStorage (not yet persisted server-side)
+        var ms=document.getElementById('sp-min_salary');
+        if(ms)ms.value=localStorage.getItem('skipi-sp-min_salary')||'';
+        // Photo
+        var box=document.getElementById('sp-photo-box');
+        if(box){
+            try{
+                var abs=await invoke('get_profile_photo_abs_path');
+                if(abs){
+                    var src=convertFileSrc?convertFileSrc(abs):abs;
+                    box.innerHTML='<img src="'+src+'?t='+Date.now()+'" style="width:100%;height:100%;object-fit:cover;border-radius:5px;">';
+                } else {
+                    box.innerHTML='No photo';
+                }
+            }catch(e){box.innerHTML='No photo';}
+        }
+    }catch(e){showToast('Load error: '+e,'error');logError('Load error',e);}
+}
+async function spSave(){
+    var keys=['surname','first_name','date_of_birth','place_of_birth','nationality','phones','email','rank','nearest_airport','nearest_intl_airport','available_from','home_address'];
+    var fields={};
+    keys.forEach(function(k){
+        var el=document.getElementById('sp-'+k);
+        fields[k]=el?el.value:'';
+    });
+    try{
+        await invoke('set_seafarer_personal',{fields:fields});
+        var ms=document.getElementById('sp-min_salary');
+        if(ms)localStorage.setItem('skipi-sp-min_salary',ms.value.trim());
+        var cs=document.getElementById('sp-min_salary_currency');
+        if(cs&&cs.value)localStorage.setItem('skipi-sp-min_salary_currency',cs.value);
+        showToast('Saved','success');
+    }catch(e){showToast('Save error: '+e,'error');logError('Save error',e);}
+}
+async function spUploadPhoto(){
+    if(typeof open!=='function'){
+        alert('Dialog not available (open is '+(typeof open)+'). Reload the app.');
+        return;
+    }
+    var f;
+    try{
+        f=await open({multiple:false,title:'Select photo',filters:[{name:'Images',extensions:['jpg','jpeg','png']}]});
+    }catch(e){
+        alert('Picker error: '+(e&&e.message?e.message:e));
+        return;
+    }
+    if(!f)return;
+    // Dialog may return an array if multiple was true elsewhere — coerce to string.
+    if(Array.isArray(f))f=f[0];
+    if(typeof f!=='string'){
+        alert('Unexpected picker result: '+JSON.stringify(f));
+        return;
+    }
+    try{
+        await invoke('upload_profile_photo',{sourcePath:f});
+    }catch(e){
+        alert('Upload failed: '+(e&&e.message?e.message:e));
+        return;
+    }
+    try{
+        await spLoad();
+    }catch(e){
+        alert('Reload failed: '+(e&&e.message?e.message:e));
+    }
+}
+async function spRemovePhoto(){
+    if(!confirm('Remove current photo?'))return;
+    try{
+        await invoke('clear_profile_photo');
+        await spLoad();
+    }catch(e){showToast('Remove error: '+e,'error');logError('Remove error',e);}
+}
+
+// ========== Beta feedback ==========
+// Opens the user's default mail client with a pre-filled bug report.
+// We pre-fill version + platform + current vault type so Tymur can triage without asking.
+async function reportIssue(){
+    var version='(unknown)', platform='(unknown)';
+    try{version=await invoke('get_app_version');}catch(e){}
+    try{platform=await invoke('get_platform');}catch(e){}
+    var body=''+
+        'What happened:\n'+
+        '(describe the issue)\n\n'+
+        'Steps to reproduce:\n'+
+        '1. \n2. \n3. \n\n'+
+        'Expected:\n\n\n'+
+        '--- auto ---\n'+
+        'Skipi version: '+version+'\n'+
+        'Platform: '+platform+'\n'+
+        'Timestamp: '+new Date().toISOString()+'\n';
+    var subject='[Skipi beta] ';
+    var mailto='mailto:beta@skipi.app'+
+        '?subject='+encodeURIComponent(subject)+
+        '&body='+encodeURIComponent(body);
+    try{
+        // Prefer the Tauri shell open if available (it survives strict CSP)
+        if(window.__TAURI__&&window.__TAURI__.shell&&window.__TAURI__.shell.open){
+            await window.__TAURI__.shell.open(mailto);
+        }else{
+            window.location.href=mailto;
+        }
+    }catch(e){
+        alert('Не удалось открыть почтовый клиент. Напишите на beta@skipi.app вручную.\n\nVersion: '+version+'\nPlatform: '+platform);
+    }
+}
+
+// ========== UI feedback (toast) ==========
+// Non-blocking snackbar replacement for window.alert. Slides in from top-right.
+// Multiple toasts stack. Auto-dismisses after 5s (errors) or 3s (info).
+function uiToast(msg, kind){
+    kind = kind || 'error';
+    var host = document.getElementById('skipi-toast-host');
+    if(!host){
+        host = document.createElement('div');
+        host.id = 'skipi-toast-host';
+        host.style.cssText = 'position:fixed;top:20px;right:20px;z-index:10001;display:flex;flex-direction:column;gap:8px;max-width:360px;';
+        document.body.appendChild(host);
+    }
+    var t = document.createElement('div');
+    var bg = kind === 'error' ? 'var(--red)' : (kind === 'success' ? 'var(--green)' : 'var(--accent)');
+    t.style.cssText = 'background:'+bg+';color:#fff;padding:10px 14px;border-radius:6px;font-size:13px;box-shadow:0 4px 20px rgba(0,0,0,0.3);cursor:pointer;line-height:1.4;word-wrap:break-word;';
+    t.textContent = String(msg);
+    t.onclick = function(){ if(t.parentNode) t.parentNode.removeChild(t); };
+    host.appendChild(t);
+    var ttl = kind === 'error' ? 5000 : 3000;
+    setTimeout(function(){ if(t.parentNode) t.parentNode.removeChild(t); }, ttl);
+}
+// Route all legacy window.alert calls through the toast so we don't have to edit
+// ~29 catch handlers individually. Error-type toasts are appropriate for catches.
+window.alert = function(msg){ uiToast(msg, 'error'); };
+
+// ========== Vault management ==========
+// Simple in-DOM confirm (Tauri blocks window.confirm)
+function uiConfirm(msg){
+    return new Promise(function(resolve){
+        var ov=document.createElement('div');
+        ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:10000;display:flex;align-items:center;justify-content:center;';
+        var box=document.createElement('div');
+        box.style.cssText='background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:20px 22px;max-width:420px;box-shadow:0 10px 40px rgba(0,0,0,0.4);';
+        box.innerHTML='<div style="font-size:13px;color:var(--text);margin-bottom:16px;line-height:1.5;">'+msg+'</div>'+
+            '<div style="display:flex;gap:8px;justify-content:flex-end;">'+
+            '<button class="btn btn-outline btn-sm" id="uic-cancel">Cancel</button>'+
+            '<button class="btn btn-accent btn-sm" id="uic-ok">OK</button></div>';
+        ov.appendChild(box);document.body.appendChild(ov);
+        var done=function(v){document.body.removeChild(ov);resolve(v);};
+        box.querySelector('#uic-cancel').onclick=function(){done(false);};
+        box.querySelector('#uic-ok').onclick=function(){done(true);};
+        ov.onclick=function(e){if(e.target===ov)done(false);};
+    });
+}
+
+async function closeCurrentVault(forget){
+    var msg = forget
+        ? 'Forget the current vault? It will no longer auto-open on startup. Files on disk are kept.'
+        : 'Close the current vault and return to the welcome screen?';
+    var ok = await uiConfirm(msg);
+    if(!ok) return;
+    try{
+        await invoke('close_vault',{forget:!!forget});
+    }catch(e){showToast('Error: '+e,'error');logError('op',e);return;}
+    resetToWelcome();
+}
+
+function resetToWelcome(){
+    closeSettings();
+    allDocs=[];selectedDocId=null;searchTerm='';
+    pkgMode=false;pkgSelected=[];
+    var tabs=document.getElementById('tabs');if(tabs){tabs.innerHTML='';tabs.style.display='none';}
+    var tree=document.getElementById('panel-tree');if(tree)tree.innerHTML='';
+    var content=document.getElementById('scr-content');if(content)content.innerHTML='';
+    hide('scr-content');hide('ribbon');hide('left-panel');hide('tabs');hide('statusbar');hide('scr-setup');
+    show('scr-welcome');
+    updateTitlebar();
+}
+
+// Bottom-left vault switcher (Obsidian-style): quick menu to Open…/Create…/Forget.
+function openVaultSwitcher(ev){
+    if(ev)ev.stopPropagation();
+    var existing=document.getElementById('vault-popover');
+    if(existing){existing.remove();return;}
+    var anchor=document.getElementById('pf-vault');
+    if(!anchor)return;
+    var r=anchor.getBoundingClientRect();
+    var pop=document.createElement('div');
+    pop.id='vault-popover';
+    pop.style.cssText='position:fixed;left:'+r.left+'px;bottom:'+(window.innerHeight-r.top+4)+'px;min-width:'+Math.max(r.width,200)+'px;background:var(--surface);border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,.35);z-index:9999;padding:4px;font-size:12px;';
+    pop.innerHTML=
+        '<div class="vp-item" style="padding:6px 10px;border-radius:4px;cursor:pointer;">Open another vault&hellip;</div>'+
+        '<div class="vp-item" style="padding:6px 10px;border-radius:4px;cursor:pointer;">Create new vault&hellip;</div>';
+    document.body.appendChild(pop);
+    var items=pop.querySelectorAll('.vp-item');
+    items.forEach(function(el){el.onmouseenter=function(){el.style.background='var(--hover)';};el.onmouseleave=function(){el.style.background='';};});
+    items[0].onclick=function(){pop.remove();switchVault();};
+    items[1].onclick=function(){pop.remove();createNewVault();};
+    setTimeout(function(){
+        var off=function(e){if(!pop.contains(e.target)){pop.remove();document.removeEventListener('click',off);}};
+        document.addEventListener('click',off);
+    },0);
+}
+
+async function switchVault(){
+    try{
+        var dir=await open({directory:true,title:'Select Skipi vault'});
+        if(!dir)return;
+        try{await invoke('close_vault',{forget:false});}catch(e){}
+        var info=await invoke('open_vault',{path:dir});
+        closeSettings();
+        await loadVault(info);
+    }catch(e){showToast('Error: '+e,'error');logError('op',e);}
+}
+
+async function createNewVault(){
+    try{await invoke('close_vault',{forget:false});}catch(e){}
+    resetToWelcome();
+    showSetup();
+}
+
+function setTheme(t){
+    document.documentElement.setAttribute('data-theme',t);
+    localStorage.setItem('skipi-theme',t);
+    renderSettingsBody();
+}
+
+function loadTheme(){
+    var t=localStorage.getItem('skipi-theme')||'dark';
+    document.documentElement.setAttribute('data-theme',t);
+}
+
+async function saveKey(){try{await invoke('save_api_key',{key:document.getElementById('set-key').value});showToast('Saved','success');}catch(e){showToast(''+e,'error');logError('op',e);}}
+
+function updateStatus(){
+    var c={expired:0,total:allDocs.length,nofile:0};
+    allDocs.forEach(function(d){if(classify(d)==='expired')c.expired++;if(!d.file_name)c.nofile++;});
+    document.getElementById('st-left').textContent=c.total+' documents'+(c.expired?' · '+c.expired+' expired':'');
+    document.getElementById('st-right').textContent=c.nofile+' missing files';
+}
+
+function show(id){document.getElementById(id).style.display='';}
+function hide(id){document.getElementById(id).style.display='none';}
+
+try{loadTheme();}catch(e){if(window.__earlyErr)window.__earlyErr('loadTheme failed: '+e);}
+try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() rejected: '+(e&&e.message?e.message:e));});}catch(e){if(window.__earlyErr)window.__earlyErr('init() threw: '+e);}
+</script>
+</body>
+</html>

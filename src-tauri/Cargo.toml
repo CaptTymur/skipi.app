@@ -1,0 +1,52 @@
+[package]
+name = "skipi"
+version = "0.4.11"
+description = "Skipi — Maritime Document Management"
+authors = ["Tymur Rudov"]
+license = "Proprietary"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5.6", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+tauri = { version = "2.10.3", features = ["devtools"] }
+tauri-plugin-log = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-process = "2"
+
+[target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
+tauri-plugin-updater = "2"
+rusqlite = { version = "0.32", features = ["bundled"] }
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+dirs = "6"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+printpdf = { version = "0.7", default-features = false, features = ["embedded_images"] }
+# Must match the `image` version that printpdf 0.7 uses internally (0.24.x),
+# otherwise `Image::from_dynamic_image` sees a different `DynamicImage` type.
+image = { version = "0.24", default-features = false, features = ["jpeg", "png"] }
+# Phase-2 readiness (see docs/ARCHITECTURE_PHASE2.md):
+#   - ed25519-dalek: stable identity keypair per vault, created once at
+#     vault init and reused forever. Enables seamless claim of the vault
+#     on the phase-2 matchmaking server without a migration.
+#   - sha2:          content-addressable documents (sha256 of each file).
+#   - rand_core:     fresh randomness for key generation.
+#   - hex:           serialise keys / hashes into vault_info and JSON.
+#   - data-encoding: base32 encoding for deriving a compact user_id
+#                    from the sha256 of the public key.
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+sha2 = "0.10"
+hex = "0.4"
+data-encoding = "2"
