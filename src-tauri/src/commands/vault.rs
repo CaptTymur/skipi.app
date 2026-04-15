@@ -31,6 +31,55 @@ pub fn get_platform() -> String {
     }
 }
 
+/// Detects how Skipi is installed on Linux so the frontend can choose
+/// the right update path. Tauri's built-in updater only works for AppImage
+/// builds — on `.deb` installs it fails with "invalid binary format".
+///
+/// Returns one of:
+///   - "appimage"   — running from an AppImage (env APPIMAGE is set)
+///   - "deb"        — binary lives under /usr/bin, /usr/local/bin or /opt (apt/dpkg install)
+///   - "other"      — Linux, unknown packaging (dev build, manual copy, etc.)
+///   - "non-linux"  — macOS/Windows, updater works normally
+#[tauri::command]
+pub fn get_linux_install_type() -> String {
+    if !cfg!(target_os = "linux") {
+        return "non-linux".to_string();
+    }
+    if std::env::var("APPIMAGE").is_ok() {
+        return "appimage".to_string();
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        let p = exe.to_string_lossy().to_string();
+        if p.starts_with("/usr/bin/")
+            || p.starts_with("/usr/local/bin/")
+            || p.starts_with("/opt/")
+        {
+            return "deb".to_string();
+        }
+    }
+    "other".to_string()
+}
+
+/// Opens a URL in the user's default browser. Implemented via `xdg-open` /
+/// `open` / `start` so we don't need the tauri_plugin_shell dep. Used to
+/// redirect Linux `.deb` users to the release page when auto-update isn't
+/// applicable to their install type.
+#[tauri::command]
+pub fn open_external_url(url: String) -> Result<(), String> {
+    // Basic sanity check — only allow http(s) URLs so this command can't be
+    // abused to run arbitrary programs.
+    if !url.starts_with("https://") && !url.starts_with("http://") {
+        return Err("Only http(s) URLs are allowed".to_string());
+    }
+    #[cfg(target_os = "macos")]
+    let cmd = std::process::Command::new("open").arg(&url).spawn();
+    #[cfg(target_os = "windows")]
+    let cmd = std::process::Command::new("cmd").args(["/C", "start", "", &url]).spawn();
+    #[cfg(target_os = "linux")]
+    let cmd = std::process::Command::new("xdg-open").arg(&url).spawn();
+    cmd.map(|_| ()).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn get_vault_types() -> serde_json::Value {
     serde_json::json!({

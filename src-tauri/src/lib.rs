@@ -90,6 +90,8 @@ pub fn run() {
             vault::get_last_vault,
             vault::get_app_version,
             vault::get_platform,
+            vault::get_linux_install_type,
+            vault::open_external_url,
             vault::create_vault,
             vault::open_vault,
             vault::close_vault,

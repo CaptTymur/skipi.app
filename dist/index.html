@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.14';
+var APP_VERSION='0.4.15';
 function updateTitlebar(vaultName){
     var t=vaultName?'Skipi v'+APP_VERSION+' — '+vaultName:'Skipi v'+APP_VERSION;
     document.title=t;
@@ -399,7 +399,7 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.14</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.15</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div style="margin-top:18px;font-size:12px;color:var(--text2);">
@@ -528,6 +528,18 @@ function guardOp(key,fn){
 
 /* ── Auto-updater ── */
 var _pendingUpdate = null;
+// On Linux `.deb` installs the built-in Tauri updater fails with
+// "invalid binary format" (it only knows how to hot-swap AppImages).
+// We detect this at check-time and fall back to opening the release page
+// in the browser so users can download the new .deb manually.
+var _linuxInstallType = null; // 'appimage' | 'deb' | 'other' | 'non-linux'
+async function _getLinuxInstallType(){
+    if(_linuxInstallType!==null)return _linuxInstallType;
+    try{_linuxInstallType=await invoke('get_linux_install_type');}
+    catch(e){_linuxInstallType='non-linux';}
+    return _linuxInstallType;
+}
+var SKIPI_REPO_URL='https://github.com/CaptTymur/skipi.app';
 
 function _resetCheckUpdateBtn(){
     var b=document.getElementById('btn-check-update');
@@ -573,11 +585,23 @@ async function checkForUpdate(silent){
     }
 }
 
-function showUpdateBanner(msg){
+async function showUpdateBanner(msg){
     var b=document.getElementById('update-banner');
-    if(b){b.style.display='flex';document.getElementById('ub-msg').textContent=msg;
-        document.getElementById('ub-action').textContent='Update now';
-        document.getElementById('ub-action').disabled=false;}
+    if(!b)return;
+    b.style.display='flex';
+    var msgEl=document.getElementById('ub-msg');
+    var actEl=document.getElementById('ub-action');
+    if(msgEl)msgEl.textContent=msg;
+    if(actEl){actEl.disabled=false;actEl.onclick=doUpdate;}
+    // If this is a .deb install, relabel the button ahead of time so the user
+    // isn't surprised when "Update now" opens a browser instead of auto-installing.
+    var t=await _getLinuxInstallType();
+    if((t==='deb'||t==='other')&&actEl){
+        actEl.textContent='Download';
+        if(msgEl&&_pendingUpdate)msgEl.textContent='Skipi '+_pendingUpdate.version+' available — download the new .deb from the release page.';
+    } else if(actEl){
+        actEl.textContent='Update now';
+    }
 }
 function hideUpdateBanner(){
     var b=document.getElementById('update-banner');if(b)b.style.display='none';
@@ -588,6 +612,18 @@ async function doUpdate(){
     if(!_pendingUpdate)return;
     var btn=document.getElementById('ub-action');
     var msg=document.getElementById('ub-msg');
+    // Linux .deb installs: can't self-update. Send user to the release page
+    // to grab the new .deb (or switch to AppImage). This avoids the confusing
+    // "invalid binary format" failure from the built-in updater.
+    var installType=await _getLinuxInstallType();
+    if(installType==='deb'||installType==='other'){
+        var url=SKIPI_REPO_URL+'/releases/tag/v'+_pendingUpdate.version;
+        try{await invoke('open_external_url',{url:url});}
+        catch(e){logError('open_external_url',e);}
+        if(msg){msg.innerHTML='Skipi '+_pendingUpdate.version+' released. Auto-update isn\'t supported on .deb installs — your browser just opened the release page. Download <b>Skipi_'+_pendingUpdate.version+'_amd64.deb</b> and install it with <code>sudo dpkg -i</code>, or switch to the <b>.AppImage</b> build for automatic updates.';}
+        if(btn){btn.textContent='Open page again';btn.disabled=false;btn.onclick=function(){invoke('open_external_url',{url:url}).catch(function(){});};}
+        return;
+    }
     if(btn){btn.disabled=true;btn.textContent='Downloading…';}
     if(msg)msg.textContent='Downloading update…';
     try{
