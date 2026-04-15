@@ -33,23 +33,22 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macOS — universal binary (arm64 + x86_64)
-          - platform: macos-latest
-            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
-            tauri_args: --target universal-apple-darwin
-            name: macOS
-
-          # Windows
-          - platform: windows-latest
-            rust_targets: x86_64-pc-windows-msvc
-            tauri_args: ""
-            name: Windows
-
-          # Linux (Ubuntu 22.04)
+          # Linux only — for now, to save Actions minutes (macOS costs 10x, Windows 2x).
           - platform: ubuntu-22.04
             rust_targets: x86_64-unknown-linux-gnu
             tauri_args: ""
             name: Linux
+
+          # macOS — re-enable when ready for cross-platform distribution
+          # - platform: macos-latest
+          #   rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+          #   tauri_args: --target universal-apple-darwin
+          #   name: macOS
+
+          # - platform: windows-latest
+          #   rust_targets: x86_64-pc-windows-msvc
+          #   tauri_args: ""
+          #   name: Windows
 
     runs-on: ${{ matrix.platform }}
     name: Build (${{ matrix.name }})
