@@ -2265,14 +2265,23 @@ async function doDispatch(){
 
 async function showPackages(){
     var pkgs=[];try{pkgs=await invoke('get_packages');}catch(e){}
+    // Auto-create "All Documents" package if none exist and there are uploaded files
+    var uploadedDocs=allDocs.filter(function(d){return !!d.file_name;});
+    if(!pkgs.length&&uploadedDocs.length){
+        try{
+            var ids=uploadedDocs.map(function(d){return d.id;});
+            await invoke('create_package',{title:'All Documents',docIds:ids,expiryDays:365,downloadLimit:999});
+            pkgs=await invoke('get_packages');
+        }catch(e){logError('auto-pkg',e);}
+    }
     var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;"><h2 style="font-size:18px;">Packages</h2><button class="btn btn-accent" onclick="startPkg()">+ Create</button></div>';
-    if(!pkgs.length)h+='<p style="color:var(--text2);font-size:13px;">No packages. Select documents in the sidebar and create a package.</p>';
+    if(!pkgs.length)h+='<p style="color:var(--text2);font-size:13px;">No packages yet. Upload documents first, then a package will be created automatically.</p>';
     else{
-        h+='<table class="pkg-table"><thead><tr><th>Title</th><th>Files</th><th>Expires</th><th></th></tr></thead><tbody>';
-        pkgs.forEach(function(p){var exp=new Date(p.expires_on),now=new Date(),dead=exp<now;
-            h+='<tr><td>'+p.title+'</td><td>'+p.file_count+'</td><td style="color:'+(dead?'var(--red)':'var(--text2)')+'">'+exp.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})+'</td>';
+        h+='<table class="pkg-table"><thead><tr><th>Title</th><th>Files</th><th></th></tr></thead><tbody>';
+        pkgs.forEach(function(p){
+            h+='<tr><td>'+p.title+'</td><td>'+p.file_count+'</td>';
             h+='<td style="text-align:right;white-space:nowrap;">';
-            if(!dead)h+='<button class="btn btn-sm btn-accent" onclick="emailPkg(\''+p.id+'\',\''+p.title.replace(/'/g,"\\'")+'\')">Email</button> <button class="btn btn-sm btn-outline" onclick="exportPkg(\''+p.id+'\',\''+p.title.replace(/'/g,"\\'")+'\')">Save</button> ';
+            h+='<button class="btn btn-sm btn-accent" onclick="emailPkg(\''+p.id+'\',\''+p.title.replace(/'/g,"\\'")+'\')">Email</button> <button class="btn btn-sm btn-outline" onclick="exportPkg(\''+p.id+'\',\''+p.title.replace(/'/g,"\\'")+'\')">Save</button> ';
             h+='<button class="btn btn-sm btn-outline btn-red" onclick="delPkg(\''+p.id+'\')">Del</button></td></tr>';
         });
         h+='</tbody></table>';
@@ -2290,7 +2299,6 @@ function startPkg(){
     h+='</div>';
     h+='<div id="pkg-count" style="color:var(--accent);font-size:12px;margin-bottom:12px;font-weight:600;">0 selected</div>';
     h+='<div style="max-width:360px;"><div class="field"><label>Title</label><input id="pkg-title" value="Document Package" placeholder="Package title"></div>';
-    h+='<div class="field-grid"><div class="field"><label>Expires (days)</label><input type="number" id="pkg-exp" value="7" min="1" max="90"></div><div class="field"><label>Download limit</label><input type="number" id="pkg-lim" value="10" min="1"></div></div>';
     h+='<button class="btn btn-accent" onclick="doPkg()">Create</button> <button class="btn btn-outline" onclick="showPackages()">Cancel</button></div>';
     document.getElementById('scr-content').innerHTML=h;show('scr-content');
 }
@@ -2310,7 +2318,7 @@ async function doPkg(){
         return;
     }
     if(!withFile.length){alert('Select at least one document with an attached file.');return;}
-    try{await invoke('create_package',{title:title,docIds:withFile,expiryDays:parseInt(document.getElementById('pkg-exp').value)||7,downloadLimit:parseInt(document.getElementById('pkg-lim').value)||10});pkgMode=false;await showPackages();}catch(e){showToast(''+e,'error');logError('op',e);}
+    try{await invoke('create_package',{title:title,docIds:withFile,expiryDays:365,downloadLimit:999});pkgMode=false;await showPackages();}catch(e){showToast(''+e,'error');logError('op',e);}
 }
 
 async function emailPkg(id,title){
