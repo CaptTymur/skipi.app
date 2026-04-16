@@ -339,7 +339,7 @@ pub fn open_email_with_attachment(state: State<AppState>, package_id: String, to
 #[tauri::command]
 pub fn dispatch_package(
     state: State<AppState>,
-    package_id: String,
+    package_id: Option<String>,
     recipients: Vec<String>,
     subject: String,
     body: String,
@@ -351,13 +351,26 @@ pub fn dispatch_package(
     // Default to true so older callers (e.g. /api or any pre-v0.4.21 clients)
     // keep the "CV + package" behaviour they used to see.
     let include_cv = include_cv.unwrap_or(true);
+    let pkg_id_opt: Option<String> = package_id.and_then(|s| if s.is_empty() { None } else { Some(s) });
+
+    if pkg_id_opt.is_none() && !include_cv {
+        return Err("Nothing to send — tick CV or pick a package".to_string());
+    }
+
     let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
     let vault_path = vault_lock.as_ref().ok_or("No vault open")?;
 
-    let zip_path = vault_path.join("_packages").join(format!("{}.zip", package_id));
-    if !zip_path.exists() {
-        return Err("Package ZIP not found — export the package first".to_string());
-    }
+    // Validate ZIP only when a package was actually selected.
+    let zip_path_opt: Option<PathBuf> = match &pkg_id_opt {
+        Some(pid) => {
+            let p = vault_path.join("_packages").join(format!("{}.zip", pid));
+            if !p.exists() {
+                return Err("Package ZIP not found — export the package first".to_string());
+            }
+            Some(p)
+        }
+        None => None,
+    };
 
     let dispatch_dir = vault_path.join("_dispatch");
     fs::create_dir_all(&dispatch_dir).map_err(|e| e.to_string())?;
@@ -386,7 +399,7 @@ pub fn dispatch_package(
         cv::render_cv_pdf(&cv_data, &cv_pdf_path, photo_abs.as_deref())?;
     }
 
-    let zip_str = zip_path.to_string_lossy().to_string();
+    let zip_str = zip_path_opt.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
     let cv_str = cv_pdf_path.to_string_lossy().to_string();
     let to_joined = recipients.join(",");
 
@@ -395,9 +408,12 @@ pub fn dispatch_package(
         // Stage attachments into ~/Downloads/Skipi with safe ASCII names so
         // mail clients reliably pick them up (vault paths often contain
         // spaces / non-ASCII that break attach parsing).
-        let staged_zip = stage_attachment_for_mail(&zip_path, &format!("{}_documents", name_safe))
-            .unwrap_or_else(|_| zip_path.clone());
-        let mut staged_paths: Vec<std::path::PathBuf> = vec![staged_zip];
+        let mut staged_paths: Vec<std::path::PathBuf> = Vec::new();
+        if let Some(zip_path) = &zip_path_opt {
+            let staged_zip = stage_attachment_for_mail(zip_path, &format!("{}_documents", name_safe))
+                .unwrap_or_else(|_| zip_path.clone());
+            staged_paths.push(staged_zip);
+        }
         if include_cv {
             let staged_cv = stage_attachment_for_mail(&cv_pdf_path, &format!("{}_CV", name_safe))
                 .unwrap_or_else(|_| cv_pdf_path.clone());
@@ -435,6 +451,11 @@ pub fn dispatch_package(
             .iter()
             .map(|r| format!("                    make new to recipient with properties {{address:\"{}\"}}\n", r))
             .collect();
+        let zip_attach = if !zip_str.is_empty() {
+            format!("                    make new attachment with properties {{file name:POSIX file \"{}\"}}\n", zip_str)
+        } else {
+            String::new()
+        };
         let cv_attach = if include_cv {
             format!("                    make new attachment with properties {{file name:POSIX file \"{}\"}}\n", cv_str)
         } else {
@@ -444,15 +465,14 @@ pub fn dispatch_package(
             r#"tell application "Mail"
                 set newMsg to make new outgoing message with properties {{subject:"{subject}", content:"{body}", visible:true}}
                 tell newMsg
-{rec_script}                    make new attachment with properties {{file name:POSIX file "{zip}"}}
-{cv_attach}                end tell
+{rec_script}{zip_attach}{cv_attach}                end tell
                 activate
             end tell"#,
             subject = subject.replace('"', "\\\""),
             body = body.replace('"', "\\\"").replace('\n', "\\n"),
             rec_script = rec_script,
+            zip_attach = zip_attach,
             cv_attach = cv_attach,
-            zip = zip_str,
         );
         let _ = std::process::Command::new("osascript")
             .arg("-e")
@@ -473,10 +493,12 @@ pub fn dispatch_package(
                 })
                 .collect()
         }
-        let cv_hint = if include_cv { format!("\n{}", cv_str) } else { String::new() };
+        let mut hint_files = String::new();
+        if !zip_str.is_empty() { hint_files.push_str(&format!("\n{}", zip_str)); }
+        if include_cv { hint_files.push_str(&format!("\n{}", cv_str)); }
         let hint = format!(
-            "{}\n\n--- Please attach manually ---\n{}{}\n",
-            body, zip_str, cv_hint
+            "{}\n\n--- Please attach manually ---{}\n",
+            body, hint_files
         );
         let url = format!(
             "mailto:{}?subject={}&body={}",
@@ -497,10 +519,13 @@ pub fn dispatch_package(
         let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
         let conn = conn_lock.as_ref().ok_or("No vault open")?;
         let disp_id = uuid::Uuid::new_v4().to_string();
+        // "cv_only" is a sentinel for dispatches that carry no package —
+        // history view treats it as a CV-only send.
+        let pkg_ref = pkg_id_opt.as_deref().unwrap_or("cv_only");
         db::add_dispatch(
             conn,
             &disp_id,
-            &package_id,
+            pkg_ref,
             &to_joined,
             &subject,
             &cv_str,

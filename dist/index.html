@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.24';
+var APP_VERSION='0.4.25';
 // Human-readable labels for account types that go into the OS window title.
 // Unknown types fall back to the raw value so we never show something blank.
 var ACCOUNT_TYPE_LABELS={
@@ -417,7 +417,7 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.24</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.25</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div style="margin-top:18px;font-size:12px;color:var(--text2);">
@@ -2314,38 +2314,27 @@ async function doDispatchUnified(){
 
     var draft=await buildDispatchDraft(includeDocs?'docs':'cv');
 
-    // Route: CV-only uses the simple mailto path (saves a PDF first,
-    // attach manually). Anything with a package goes through dispatch_package
-    // because xdg-email / osascript can attach ZIPs for us.
+    // Both CV-only and CV+package paths go through dispatch_package: the
+    // Rust side opens the mail client with actual attachments (ZIP and/or
+    // CV PDF). `mailto:` cannot carry files, so routing CV-only through it
+    // used to leave the user with an empty draft.
+    var pkgId=null;
     if(includeDocs){
         var pkgSel=document.getElementById('disp-pkg');
-        var pkgId=pkgSel?pkgSel.value:'';
+        pkgId=pkgSel?pkgSel.value:'';
         if(!pkgId){alert('Select a package');return;}
-        try{
-            await invoke('dispatch_package',{
-                packageId:pkgId,
-                recipients:recipients,
-                subject:draft.subject,
-                body:draft.body,
-                includeCv:includeCv,
-            });
-            showToast('Dispatch draft opened. Attachments staged in ~/Downloads/Skipi/','success');
-            await showDispatch();
-        }catch(e){showToast('Dispatch error: '+e,'error');logError('Dispatch error',e);}
-        return;
     }
-
-    // CV only
     try{
-        var out=await saveDlg({defaultPath:'CV.pdf',filters:[{name:'PDF',extensions:['pdf']}]});
-        if(!out)return;
-        await invoke('export_cv_pdf',{outputPath:out});
-        showToast('CV PDF saved. Attach it manually in the mail draft that just opened.','info');
-        var mailto='mailto:'+encodeURIComponent(recipients.join(','))
-            +'?subject='+encodeURIComponent(draft.subject)
-            +'&body='+encodeURIComponent(draft.body);
-        window.location.href=mailto;
-    }catch(e){showToast('CV export error: '+e,'error');logError('export_cv_pdf',e);}
+        await invoke('dispatch_package',{
+            packageId:pkgId,
+            recipients:recipients,
+            subject:draft.subject,
+            body:draft.body,
+            includeCv:includeCv,
+        });
+        showToast('Dispatch draft opened. Attachments staged in ~/Downloads/Skipi/','success');
+        await showDispatch();
+    }catch(e){showToast('Dispatch error: '+e,'error');logError('Dispatch error',e);}
 }
 
 // Builds a professional subject + body for outgoing dispatch drafts from the
