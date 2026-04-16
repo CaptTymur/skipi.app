@@ -1787,7 +1787,12 @@ async function showMissing(){
         for(var cat in grouped){
             h+='<h3 style="font-size:13px;margin:14px 0 6px;color:var(--accent);">'+cat+'</h3>';
             grouped[cat].forEach(function(m){
-                h+='<div class="missing-card"><div style="font-weight:500;">'+m.title+'</div><div style="font-size:10px;color:var(--text2);font-family:var(--font-mono);">'+m.regulatory_basis+'</div></div>';
+                var docMatch=allDocs.find(function(d){return d.template_id===m.id;});
+                var uploadBtn='';
+                if(docMatch){
+                    uploadBtn='<button class="btn btn-accent btn-sm" onclick="attachF(\''+docMatch.id+'\');return false;" style="padding:3px 10px;font-size:11px;white-space:nowrap;">Upload</button>';
+                }
+                h+='<div class="missing-card" style="display:flex;align-items:center;justify-content:space-between;gap:10px;"><div style="flex:1;min-width:0;"><div style="font-weight:500;">'+m.title+'</div><div style="font-size:10px;color:var(--text2);font-family:var(--font-mono);">'+m.regulatory_basis+'</div></div>'+uploadBtn+'</div>';
             });
         }
     }
