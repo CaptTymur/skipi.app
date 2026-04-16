@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.21';
+var APP_VERSION='0.4.22';
 // Human-readable labels for account types that go into the OS window title.
 // Unknown types fall back to the raw value so we never show something blank.
 var ACCOUNT_TYPE_LABELS={
@@ -421,7 +421,7 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.21</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.22</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div style="margin-top:18px;font-size:12px;color:var(--text2);">
@@ -1512,24 +1512,26 @@ function renderTree(){
             if(ar!==br) return ar-br;
             return docStatusRank(b)-docStatusRank(a);
         });
-        h+='<div class="tree-folder"><div class="tree-folder-header" onclick="toggleF(this)"><span class="arrow open">&#9654;</span>'+cat+'<span class="dot" style="background:'+data.worstColor+'"></span><span class="cnt">'+data.docs.length+'</span></div><div class="tree-items open">';
+        // Category header — no dot, no count. The worst-status and required
+        // markers at the folder level added visual noise without new info
+        // (every required doc already shows its own status dot on the right
+        // of the item, and the Dashboard carries the aggregate counts).
+        h+='<div class="tree-folder"><div class="tree-folder-header" onclick="toggleF(this)"><span class="arrow open">&#9654;</span>'+cat+'</div><div class="tree-items open">';
         data.docs.forEach(function(d){
             var a=d.id===selectedDocId?' active':'';
             var ic=d.file_name?'&#128196;':'&#128195;';
             var col=docStatusColor(d);
-            // Visual marker for required certificates
-            var reqMark=d.template_id?'<span class="req-mark" title="Required">&#9733;</span>':'';
             if(pkgMode){
                 var hasFile=!!d.file_name;
                 var sel=pkgSelected.indexOf(d.id)!==-1;
                 var bg=sel?' pkg-sel':'';
                 if(!hasFile){
-                    h+='<div class="tree-file" style="opacity:0.45;cursor:not-allowed;" title="No file attached — upload one first" onclick="showToast(\'Upload a file before packaging\',\'warn\')"><span class="icon" style="font-size:18px;line-height:1;">&#9744;</span><span class="name">'+reqMark+d.title+'</span><span class="st" style="background:'+col+'"></span></div>';
+                    h+='<div class="tree-file" style="opacity:0.45;cursor:not-allowed;" title="No file attached — upload one first" onclick="showToast(\'Upload a file before packaging\',\'warn\')"><span class="icon" style="font-size:18px;line-height:1;">&#9744;</span><span class="name">'+d.title+'</span><span class="st" style="background:'+col+'"></span></div>';
                 }else{
-                    h+='<div class="tree-file'+bg+'" onclick="togglePkg(\''+d.id+'\')"><span class="icon" style="font-size:18px;line-height:1;">'+(sel?'&#9745;':'&#9744;')+'</span><span class="name">'+reqMark+d.title+'</span><span class="st" style="background:'+col+'"></span></div>';
+                    h+='<div class="tree-file'+bg+'" onclick="togglePkg(\''+d.id+'\')"><span class="icon" style="font-size:18px;line-height:1;">'+(sel?'&#9745;':'&#9744;')+'</span><span class="name">'+d.title+'</span><span class="st" style="background:'+col+'"></span></div>';
                 }
             }else{
-                h+='<div class="tree-file'+a+'" onclick="selDoc(\''+d.id+'\')"><span class="icon">'+ic+'</span><span class="name">'+reqMark+d.title+'</span><span class="st" style="background:'+col+'"></span></div>';
+                h+='<div class="tree-file'+a+'" onclick="selDoc(\''+d.id+'\')"><span class="icon">'+ic+'</span><span class="name">'+d.title+'</span><span class="st" style="background:'+col+'"></span></div>';
             }
         });
         h+='</div></div>';
@@ -2561,6 +2563,7 @@ function renderSettingsBody(){
         h += '<div class="field"><label>Phones</label><div style="display:flex;gap:6px;"><input id="sp-phones" style="flex:1;min-width:0;"><select id="sp-preferred_messenger" style="width:110px;flex:0 0 110px;"><option value="WhatsApp">WhatsApp</option><option value="Telegram">Telegram</option><option value="Viber">Viber</option><option value="Signal">Signal</option><option value="Other">Other</option></select></div></div>';
         h += spField('sp-email','Email','email');
         h += '<div class="field"><label>Rank</label><select id="sp-rank"></select></div>';
+        h += '<div class="field"><label>Vessel type</label><select id="sp-preferred_vessel_type"></select></div>';
         h += '<div class="field"><label>Marital status</label><select id="sp-marital_status"><option value="">-- Select --</option><option value="Single">Single</option><option value="Married">Married</option><option value="Divorced">Divorced</option><option value="Widowed">Widowed</option></select></div>';
         h += '<div class="field"><label>Children</label><input id="sp-children_count" type="number" min="0" step="1" placeholder="0"></div>';
         h += '<div class="field"><label>English level</label><select id="sp-english_level"><option value="">-- Select --</option><option value="Basic">Basic</option><option value="Intermediate">Intermediate</option><option value="Advanced">Advanced</option><option value="Fluent">Fluent</option><option value="Native">Native</option></select></div>';
@@ -2666,6 +2669,32 @@ async function spLoad(){
         // Populate dropdowns before assigning values
         populateNationalitySelect(document.getElementById('sp-nationality'),data.nationality||'');
         populateSelect(document.getElementById('sp-rank'),RANKS,data.rank||'','-- Select rank --');
+        // Vessel type — grouped by root (Dry Cargo / Tanker / …). We only
+        // store one primary type in the profile even though the Rust field
+        // is a csv list, so we use the first token on load.
+        var vt=document.getElementById('sp-preferred_vessel_type');
+        if(vt){
+            try{
+                if(!profileTax){profileTax=await invoke('get_profile_taxonomy');}
+                var current=(data.preferred_vessel_types||'').split(',')[0].trim();
+                var tree=(profileTax&&profileTax.vessel_tree)||[];
+                var roots=tree.filter(function(v){return !v.parent;});
+                var html='<option value="">-- Select vessel type --</option>';
+                roots.forEach(function(r){
+                    var kids=tree.filter(function(v){return v.parent===r.id;});
+                    if(kids.length===0){
+                        html+='<option value="'+r.id+'"'+(current===r.id?' selected':'')+'>'+r.label+'</option>';
+                    }else{
+                        html+='<optgroup label="'+r.label+'">';
+                        kids.forEach(function(k){
+                            html+='<option value="'+k.id+'"'+(current===k.id?' selected':'')+'>'+k.label+'</option>';
+                        });
+                        html+='</optgroup>';
+                    }
+                });
+                vt.innerHTML=html;
+            }catch(e){logError('spLoad:vessel_type',e);}
+        }
         populateAirportDatalist();
         populateSelect(document.getElementById('sp-min_salary_currency'),CURRENCIES,localStorage.getItem('skipi-sp-min_salary_currency')||'USD','');
         // Nationality + rank are populated above; the loop below handles
@@ -2712,6 +2741,8 @@ async function spSave(){
     fields.ready_for_offers=rdy&&rdy.checked?'true':'false';
     var msgr=document.getElementById('sp-preferred_messenger');
     if(msgr)fields.preferred_messenger=msgr.value;
+    var vt=document.getElementById('sp-preferred_vessel_type');
+    if(vt)fields.preferred_vessel_types=vt.value||'';
     try{
         await invoke('set_seafarer_personal',{fields:fields});
         var ms=document.getElementById('sp-min_salary');

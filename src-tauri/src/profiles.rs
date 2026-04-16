@@ -162,6 +162,16 @@ pub fn universal_base() -> Vec<DocTemplate> {
         DocTemplate { id: "visa_schengen", title: "Schengen Visa", category: "Visas",
             regulatory_basis: "EU Regulation 810/2009 (Visa Code)", has_expiry: true, typical_years: Some(5),
             notes: "Short-stay visa covering the Schengen Area. Useful for crew changes in EU ports." },
+        // Banking — many seafarers split salary across 2+ accounts. Template
+        // slots stand in as a structured container; the user attaches a
+        // bank letter / statement as proof and records the account details
+        // in the document fields.
+        DocTemplate { id: "bank_primary", title: "Primary Bank Details", category: "Banking",
+            regulatory_basis: "", has_expiry: false, typical_years: None,
+            notes: "Bank name, IBAN / account number, SWIFT / BIC. Attach a bank letter or statement as proof." },
+        DocTemplate { id: "bank_secondary", title: "Secondary Bank Details", category: "Banking",
+            regulatory_basis: "", has_expiry: false, typical_years: None,
+            notes: "Optional second bank — useful when salary is split across accounts." },
         // Medical
         DocTemplate { id: "medical_cert", title: "Medical Fitness Certificate", category: "Medical",
             regulatory_basis: "STCW I/9; MLC 2006 A1.2", has_expiry: true, typical_years: Some(2),
