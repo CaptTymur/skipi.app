@@ -2,7 +2,7 @@ use crate::db::{self, VaultInfo};
 use crate::{frameworks, identity, AppState};
 use std::fs;
 use std::path::PathBuf;
-use tauri::State;
+use tauri::{Manager, State};
 
 #[tauri::command]
 pub fn get_last_vault() -> Option<String> {
@@ -58,6 +58,18 @@ pub fn get_linux_install_type() -> String {
         }
     }
     "other".to_string()
+}
+
+/// Sets the OS window title. Called from the frontend whenever the vault
+/// context changes so the titlebar shows `Skipi — <AccountType> — <VaultName>`.
+/// Avoids needing a `core:window:allow-set-title` capability / the JS window
+/// plugin; we already have a `Manager` handle server-side.
+#[tauri::command]
+pub fn set_window_title(app: tauri::AppHandle, title: String) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("main") {
+        win.set_title(&title).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 /// Opens a URL in the user's default browser. Implemented via `xdg-open` /

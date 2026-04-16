@@ -544,6 +544,40 @@ pub fn get_profile_photo_abs_path(state: State<AppState>) -> Result<Option<Strin
     }
 }
 
+/// Returns the profile photo encoded as a `data:image/...;base64,...` URL so
+/// the frontend can assign it straight to `<img src>`. We avoid the asset
+/// protocol here because it requires an extra capability + scope list; the
+/// photo is tiny (<200kB), so inlining is fine.
+#[tauri::command]
+pub fn get_profile_photo_data_url(state: State<AppState>) -> Result<Option<String>, String> {
+    let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
+    let vault_path = vault_lock.as_ref().ok_or("No vault open")?;
+    let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = conn_lock.as_ref().ok_or("No vault open")?;
+    let rel = match db::get_vault_info_value(conn, "personal_photo_path") {
+        Some(r) if !r.is_empty() => r,
+        _ => return Ok(None),
+    };
+    let abs = vault_path.join(&rel);
+    if !abs.exists() {
+        return Ok(None);
+    }
+    let bytes = fs::read(&abs).map_err(|e| e.to_string())?;
+    let ext = abs
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_lowercase())
+        .unwrap_or_else(|| "jpg".to_string());
+    let mime = match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        _ => "image/jpeg",
+    };
+    let b64 = crate::base64_encode(&bytes);
+    Ok(Some(format!("data:{};base64,{}", mime, b64)))
+}
+
 // ========== PROFILE STATUS =======================================
 
 #[tauri::command]

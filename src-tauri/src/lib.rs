@@ -93,6 +93,7 @@ pub fn run() {
             vault::get_linux_install_type,
             vault::open_external_url,
             vault::install_deb_update,
+            vault::set_window_title,
             vault::create_vault,
             vault::open_vault,
             vault::close_vault,
@@ -140,6 +141,7 @@ pub fn run() {
             profile::upload_profile_photo,
             profile::clear_profile_photo,
             profile::get_profile_photo_abs_path,
+            profile::get_profile_photo_data_url,
             // CV
             cv_commands::get_cv_data,
             cv_commands::export_cv_docx,

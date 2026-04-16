@@ -5,11 +5,33 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.19';
-function updateTitlebar(vaultName){
-    var t=vaultName?'Skipi v'+APP_VERSION+' — '+vaultName:'Skipi v'+APP_VERSION;
-    document.title=t;
-    var el=document.getElementById('titlebar-text');if(el)el.textContent=t;
+var APP_VERSION='0.4.20';
+// Human-readable labels for account types that go into the OS window title.
+// Unknown types fall back to the raw value so we never show something blank.
+var ACCOUNT_TYPE_LABELS={
+    seafarer:'Seafarer',
+    ship_manager:'Ship Manager',
+    vessel:'Vessel',
+    crewing:'Crewing',
+    port_agent:'Port Agent',
+};
+function updateTitlebar(vaultName,accountType){
+    var label=accountType?(ACCOUNT_TYPE_LABELS[accountType]||accountType):'';
+    // Inline titlebar inside the window — shows version + vault name so the
+    // user can tell vaults apart when running multiple instances.
+    var inner=vaultName?'Skipi v'+APP_VERSION+' — '+vaultName:'Skipi v'+APP_VERSION;
+    // OS window title — pinned to entity type so the user sees at a glance
+    // which kind of vault is open (Seafarer / Ship Manager / …).
+    var os=label?'Skipi — '+label+(vaultName?' — '+vaultName:''):'Skipi';
+    document.title=os;
+    var el=document.getElementById('titlebar-text');if(el)el.textContent=inner;
+    // Push it to the actual OS titlebar via the Rust helper. Fire-and-forget —
+    // we don't block init if the command is missing (e.g. older binary).
+    try{
+        if(typeof invoke==='function'){
+            invoke('set_window_title',{title:os}).catch(function(){});
+        }
+    }catch(e){}
 }
 document.addEventListener('DOMContentLoaded',function(){updateTitlebar();});
 // Early top-level error trap — shows a visible red bar at the top of the
@@ -398,7 +420,7 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.19</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.20</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div style="margin-top:18px;font-size:12px;color:var(--text2);">
@@ -1374,8 +1396,8 @@ async function openExisting(){
 async function loadVault(info){
     hide('scr-welcome');hide('scr-setup');show('scr-content');show('left-panel');show('tabs');show('statusbar');
     var mb=document.getElementById('modules-bar');if(mb)mb.style.display='flex';
-    updateTitlebar(info.name);
     currentAccountType=info.account_type||'';
+    updateTitlebar(info.name,currentAccountType);
     // Update bottom-left vault name
     var vn=document.getElementById('pf-vault-name');if(vn)vn.textContent=info.name||'Vault';
     var expIcon=document.getElementById('ri-exp');
@@ -1443,6 +1465,11 @@ function showView(v){
     if(mt)mt.classList.add('active');
     document.getElementById('panel-title').textContent={files:'Files',dashboard:'Dashboard',cv:'CV',experience:'Sea Service',packages:'Packages',dispatch:'Dispatch',settings:'Settings'}[v]||v;
     document.getElementById('left-panel').style.display=(v==='dashboard'||v==='cv'||v==='experience'||v==='dispatch')?'none':'';
+    // The second tabs row (breadcrumb-style tab with the current document name)
+    // is only useful in Files view — in the other panels the panel title above
+    // already says the same thing. Hide it everywhere else.
+    var tabsEl=document.getElementById('tabs');
+    if(tabsEl)tabsEl.style.display=(v==='files')?'':'none';
     var addBtn=document.getElementById('btn-add-custom');
     if(addBtn)addBtn.style.display=(v==='files')?'inline':'none';
     pkgMode=v==='packages';pkgSelected=[];
@@ -2189,8 +2216,7 @@ async function showDispatch(){
         h+='<div style="border:1px solid var(--border);border-radius:8px;padding:16px;background:var(--bg);">';
         h+='<div style="padding:10px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);font-size:12px;color:var(--text2);margin-bottom:12px;">&#128196; <b>CV PDF</b> will be generated on the fly from your Seafarer Profile + Sea Service.</div>';
         h+='<div class="field"><label>Recipients (one per line or comma-separated)</label><textarea id="disp-to" rows="3" style="width:100%;font-family:var(--font-mono);font-size:12px;" placeholder="crewing@example.com"></textarea></div>';
-        h+='<div class="field"><label>Subject</label><input id="disp-subj" value="Seafarer CV"></div>';
-        h+='<div class="field"><label>Message</label><textarea id="disp-body" rows="5" style="width:100%;">Dear Sir/Madam,\n\nPlease find attached my CV for your consideration.\n\nBest regards,</textarea></div>';
+        h+='<div style="padding:10px 12px;border:1px dashed var(--border);border-radius:6px;background:var(--bg2);font-size:12px;color:var(--text2);margin-bottom:12px;">Subject &amp; message are generated from your profile and opened in your default mail client &mdash; you can edit them before sending.</div>';
         h+='<div style="display:flex;gap:8px;justify-content:flex-end;"><button class="btn btn-accent" onclick="doDispatchCvOnly()">Send CV &#128231;</button></div>';
         h+='</div>';
         document.getElementById('scr-content').innerHTML=h;show('scr-content');updateTabs('Dispatch');return;
@@ -2222,8 +2248,7 @@ async function showDispatch(){
         h+='</select></div>';
         h+='<div style="padding:10px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);font-size:12px;color:var(--text2);margin-bottom:12px;">&#128196; <b>CV PDF</b> will be generated from your current Seafarer Profile + Files + Sea Service, and attached alongside the package.</div>';
         h+='<div class="field"><label>Recipients (one email per line or comma-separated)</label><textarea id="disp-to" rows="3" style="width:100%;font-family:var(--font-mono);font-size:12px;" placeholder="crewing@example.com&#10;manager@example.com"></textarea></div>';
-        h+='<div class="field"><label>Subject</label><input id="disp-subj" value="Application — Seafarer CV &amp; Documents"></div>';
-        h+='<div class="field"><label>Message</label><textarea id="disp-body" rows="5" style="width:100%;">Dear Sir/Madam,\n\nPlease find attached my updated CV and supporting documents for your consideration.\n\nBest regards,</textarea></div>';
+        h+='<div style="padding:10px 12px;border:1px dashed var(--border);border-radius:6px;background:var(--bg2);font-size:12px;color:var(--text2);margin-bottom:12px;">Subject &amp; message are generated from your profile and opened in your default mail client &mdash; you can edit them before sending.</div>';
         h+='<div style="display:flex;gap:8px;justify-content:flex-end;"><button class="btn btn-accent" onclick="doDispatch()">Send &#128231;</button></div>';
         h+='</div>';
     }
@@ -2244,24 +2269,49 @@ async function showDispatch(){
     document.getElementById('scr-content').innerHTML=h;show('scr-content');updateTabs('Dispatch');
 }
 
+// Builds a professional subject + body for outgoing dispatch drafts from the
+// seafarer profile. Keeps both the "Send CV" and "Send Documents" flows
+// consistent with the package-level email draft added in v0.4.19.
+async function buildDispatchDraft(kind){
+    var sp;try{sp=await invoke('get_seafarer_personal');}catch(e){sp={};}
+    var name=((sp.first_name||'')+' '+(sp.surname||'')).trim()||'Seafarer';
+    var rank=sp.rank||'';
+    var avail=sp.available_from||'';
+    var phone=sp.phones||'';
+    var email=sp.email||'';
+    // Subject reflects what the recipient will actually see first — rank +
+    // readiness date + name, so it doesn't get lost in a crewing inbox.
+    var subject='CV'+(rank?' - '+rank:'')+(avail?' - readiness '+avail:'')+' - '+name;
+    var intro=kind==='cv'
+        ? 'Please find attached my CV'+(rank?' for the position of '+rank:'')+' for your consideration.'
+        : 'Please find attached my documents package'+(rank?' for the position of '+rank:'')+'.';
+    var body='Dear Sirs,\n\n'+intro+
+        (avail?'\n\nI am available for joining from '+avail+'.':'')+
+        '\n\nI would appreciate the opportunity to discuss any suitable vacancies.\n\n'+
+        'Kind regards,\n'+name+
+        (rank?'\n'+rank:'')+
+        (phone?'\nTel: '+phone:'')+
+        (email?'\nEmail: '+email:'');
+    return {subject:subject,body:body};
+}
+
 // Send CV alone: exports the CV PDF and opens a mailto draft so the user
 // can attach it by hand (mailto: does not allow programmatic attachments).
 async function doDispatchCvOnly(){
     var toRaw=(document.getElementById('disp-to')||{}).value||'';
-    var subject=(document.getElementById('disp-subj')||{}).value||'Seafarer CV';
-    var body=(document.getElementById('disp-body')||{}).value||'';
     var rawTokens=toRaw.split(/[\n,;]+/).map(function(s){return s.trim();}).filter(function(s){return s;});
     var emailRe=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     var recipients=rawTokens.filter(function(t){return emailRe.test(t);});
     if(!recipients.length){alert('Enter at least one valid recipient');return;}
+    var draft=await buildDispatchDraft('cv');
     try{
         var out=await saveDlg({defaultPath:'CV.pdf',filters:[{name:'PDF',extensions:['pdf']}]});
         if(!out)return;
         await invoke('export_cv_pdf',{outputPath:out});
         showToast('CV PDF saved. Attach it manually in the mail draft that just opened.','info');
         var mailto='mailto:'+encodeURIComponent(recipients.join(','))
-            +'?subject='+encodeURIComponent(subject)
-            +'&body='+encodeURIComponent(body);
+            +'?subject='+encodeURIComponent(draft.subject)
+            +'&body='+encodeURIComponent(draft.body);
         window.location.href=mailto;
     }catch(e){showToast('CV export error: '+e,'error');logError('export_cv_pdf',e);}
 }
@@ -2269,8 +2319,9 @@ async function doDispatchCvOnly(){
 async function doDispatch(){
     var pkgId=document.getElementById('disp-pkg').value;
     var toRaw=document.getElementById('disp-to').value||'';
-    var subject=document.getElementById('disp-subj').value||'';
-    var body=document.getElementById('disp-body').value||'';
+    var draft=await buildDispatchDraft('docs');
+    var subject=draft.subject;
+    var body=draft.body;
     if(!pkgId){alert('Select a package');return;}
     // Split on commas, semicolons, newlines; trim; validate; dedupe (case-insensitive).
     var rawTokens=toRaw.split(/[\n,;]+/).map(function(s){return s.trim();}).filter(function(s){return s;});
@@ -2437,8 +2488,19 @@ function renderSettingsBody(){
 
     if(settingsTab === 'general'){
         h += '<div class="settings-section"><h3>General</h3><div class="section-desc">Basic application settings.</div>';
-        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Language</div><div class="setting-desc">Interface language.</div></div>';
-        h += '<div class="setting-control"><select><option>English</option></select></div></div>';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Language</div><div class="setting-desc">Interface language. Translations coming in a future release.</div></div>';
+        // Until actual translations land, all options stay disabled except
+        // English. The list is the priority set of seafarer-heavy languages
+        // (RU/UA/TL/HI/SI/ID) so users can see what's on the way.
+        h += '<div class="setting-control"><select>'+
+             '<option value="en" selected>English</option>'+
+             '<option value="ru" disabled>Русский (soon)</option>'+
+             '<option value="uk" disabled>Українська (soon)</option>'+
+             '<option value="tl" disabled>Tagalog (soon)</option>'+
+             '<option value="hi" disabled>हिन्दी / Hindi (soon)</option>'+
+             '<option value="si" disabled>සිංහල / Sinhala (soon)</option>'+
+             '<option value="id" disabled>Bahasa Indonesia (soon)</option>'+
+             '</select></div></div>';
         h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Auto-open last vault</div><div class="setting-desc">Automatically open the last used vault on startup.</div></div>';
         h += '<div class="setting-control"><label class="toggle"><input type="checkbox" checked disabled><span class="slider"></span></label></div></div>';
         h += '</div>';
@@ -2596,18 +2658,18 @@ async function spLoad(){
         var rdy=document.getElementById('sp-ready_for_offers');
         var rdyVal=(data.ready_for_offers||'')!=='false'&&(data.ready_for_offers||'')!=='';
         if(rdy){rdy.checked=rdyVal;spToggleReady(rdyVal);}
-        // Photo
+        // Photo — fetched as a data URL so we don't depend on the asset
+        // protocol (which would need an extra capability + vault scope).
         var box=document.getElementById('sp-photo-box');
         if(box){
             try{
-                var abs=await invoke('get_profile_photo_abs_path');
-                if(abs){
-                    var src=convertFileSrc?convertFileSrc(abs):abs;
-                    box.innerHTML='<img src="'+src+'?t='+Date.now()+'" style="width:100%;height:100%;object-fit:cover;border-radius:5px;">';
+                var durl=await invoke('get_profile_photo_data_url');
+                if(durl){
+                    box.innerHTML='<img src="'+durl+'" style="width:100%;height:100%;object-fit:cover;border-radius:5px;">';
                 } else {
                     box.innerHTML='No photo';
                 }
-            }catch(e){box.innerHTML='No photo';}
+            }catch(e){box.innerHTML='No photo';logError('load profile photo',e);}
         }
     }catch(e){showToast('Load error: '+e,'error');logError('Load error',e);}
 }
@@ -2633,33 +2695,38 @@ async function spSave(){
 }
 async function spUploadPhoto(){
     if(typeof open!=='function'){
-        alert('Dialog not available (open is '+(typeof open)+'). Reload the app.');
+        showToast('Dialog not available — reload the app','error');
         return;
     }
     var f;
     try{
-        f=await open({multiple:false,title:'Select photo',filters:[{name:'Images',extensions:['jpg','jpeg','png']}]});
+        f=await open({multiple:false,title:'Select photo',filters:[{name:'Images',extensions:['jpg','jpeg','png','webp']}]});
     }catch(e){
-        alert('Picker error: '+(e&&e.message?e.message:e));
+        showToast('Picker error: '+(e&&e.message?e.message:e),'error');
+        logError('spUploadPhoto:picker',e);
         return;
     }
     if(!f)return;
     // Dialog may return an array if multiple was true elsewhere — coerce to string.
     if(Array.isArray(f))f=f[0];
     if(typeof f!=='string'){
-        alert('Unexpected picker result: '+JSON.stringify(f));
+        showToast('Unexpected picker result','error');
+        logError('spUploadPhoto:picker-result',JSON.stringify(f));
         return;
     }
     try{
         await invoke('upload_profile_photo',{sourcePath:f});
+        showToast('Photo uploaded','success');
     }catch(e){
-        alert('Upload failed: '+(e&&e.message?e.message:e));
+        showToast('Upload failed: '+(e&&e.message?e.message:e),'error');
+        logError('spUploadPhoto:upload',e);
         return;
     }
     try{
         await spLoad();
     }catch(e){
-        alert('Reload failed: '+(e&&e.message?e.message:e));
+        showToast('Reload failed: '+(e&&e.message?e.message:e),'error');
+        logError('spUploadPhoto:reload',e);
     }
 }
 async function spRemovePhoto(){
