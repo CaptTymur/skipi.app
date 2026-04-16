@@ -493,6 +493,8 @@ function showToast(msg,type){
     setTimeout(dismiss,type==='error'?6000:3500);
 }
 
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
 /* ── Local error log (kept in memory, exportable from Settings) ── */
 var _errorLog=[];
 function logError(context,err){
