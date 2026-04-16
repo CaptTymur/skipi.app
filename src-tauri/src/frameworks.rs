@@ -34,6 +34,7 @@ fn make_record(t: &DocTemplate) -> DocRecord {
         file_size: None,
         content_type: None,
         visibility: "private".to_string(),
+        is_national: false,
     }
 }
 
@@ -64,6 +65,7 @@ pub fn record_from_profile_template(t: &profiles::DocTemplate) -> DocRecord {
         file_size: None,
         content_type: None,
         visibility: "private".to_string(),
+        is_national: false,
     }
 }
 

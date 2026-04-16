@@ -72,6 +72,7 @@ pub fn add_custom_doc(
         file_size: None,
         content_type: None,
         visibility: "private".to_string(),
+        is_national: false,
     };
     db::insert_doc(conn, &rec).map_err(|e| e.to_string())?;
     let payload = serde_json::json!({

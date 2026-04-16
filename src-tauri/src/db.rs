@@ -33,6 +33,10 @@ pub struct DocRecord {
     pub content_type: Option<String>,
     #[serde(default = "default_visibility")]
     pub visibility: String,
+    // Whether this is the national/primary document in its category
+    // (e.g. national seaman's book vs flag-state books).
+    #[serde(default)]
+    pub is_national: bool,
 }
 
 fn default_visibility() -> String {
@@ -161,6 +165,11 @@ fn migrations() -> Vec<(u32, &'static str)> {
                 payload_json TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
+        "#),
+        // Migration 4: is_national flag for Seaman's Books and CoCs.
+        // Only one document per category can be marked national.
+        (4, r#"
+            ALTER TABLE documents ADD COLUMN is_national INTEGER NOT NULL DEFAULT 0;
         "#),
     ]
 }
@@ -347,13 +356,13 @@ pub fn insert_doc(conn: &Connection, doc: &DocRecord) -> Result<()> {
         "INSERT OR REPLACE INTO documents
             (id, category, title, file_name, has_expiry, valid_from, valid_to,
              issued_by, doc_number, notes, field_statuses, regulatory_basis,
-             template_id, sha256, file_size, content_type, visibility)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+             template_id, sha256, file_size, content_type, visibility, is_national)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
         params![
             doc.id, doc.category, doc.title, doc.file_name, doc.has_expiry as i32,
             doc.valid_from, doc.valid_to, doc.issued_by, doc.doc_number, doc.notes,
             doc.field_statuses, doc.regulatory_basis, doc.template_id,
-            doc.sha256, doc.file_size, doc.content_type, doc.visibility,
+            doc.sha256, doc.file_size, doc.content_type, doc.visibility, doc.is_national as i32,
         ],
     )?;
     Ok(())
@@ -363,8 +372,8 @@ pub fn get_all_docs(conn: &Connection) -> Result<Vec<DocRecord>> {
     let mut stmt = conn.prepare(
         "SELECT id, category, title, file_name, has_expiry, valid_from, valid_to,
                 issued_by, doc_number, notes, field_statuses, regulatory_basis,
-                template_id, sha256, file_size, content_type, visibility
-         FROM documents ORDER BY category, title"
+                template_id, sha256, file_size, content_type, visibility, is_national
+         FROM documents ORDER BY category, is_national DESC, title"
     )?;
     let docs = stmt.query_map([], |row| {
         Ok(DocRecord {
@@ -386,6 +395,7 @@ pub fn get_all_docs(conn: &Connection) -> Result<Vec<DocRecord>> {
             content_type: row.get(15).unwrap_or(None),
             visibility: row.get::<_, Option<String>>(16).unwrap_or(None)
                 .unwrap_or_else(default_visibility),
+            is_national: row.get::<_, i32>(17).unwrap_or(0) != 0,
         })
     })?.collect::<Result<Vec<_>>>()?;
     Ok(docs)

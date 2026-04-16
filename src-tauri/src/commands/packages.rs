@@ -149,7 +149,7 @@ pub fn open_file_in_default(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn open_email_with_attachment(state: State<AppState>, package_id: String, to: String, subject: String) -> Result<String, String> {
+pub fn open_email_with_attachment(state: State<AppState>, package_id: String, to: String, subject: String, body: Option<String>) -> Result<String, String> {
     let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
     let vault_path = vault_lock.as_ref().ok_or("No vault open")?;
 
@@ -159,17 +159,22 @@ pub fn open_email_with_attachment(state: State<AppState>, package_id: String, to
     }
 
     let zip_str = zip_path.to_string_lossy().to_string();
+    let body_str = body.unwrap_or_default();
 
     #[cfg(target_os = "linux")]
     {
-        let result = std::process::Command::new("xdg-email")
-            .arg("--attach").arg(&zip_str)
-            .arg("--subject").arg(&subject)
-            .arg(&to)
-            .spawn();
+        let mut cmd = std::process::Command::new("xdg-email");
+        cmd.arg("--attach").arg(&zip_str)
+           .arg("--subject").arg(&subject);
+        if !body_str.is_empty() {
+            cmd.arg("--body").arg(&body_str);
+        }
+        cmd.arg(&to);
+        let result = cmd.spawn();
         if result.is_ok() {
             return Ok(zip_str);
         }
+        // Fallback: open mailto + open package folder
         let _ = std::process::Command::new("xdg-open")
             .arg(vault_path.join("_packages").to_string_lossy().to_string())
             .spawn();
