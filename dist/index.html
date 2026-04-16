@@ -1944,85 +1944,116 @@ function cvStatusColor(s){return{valid:'var(--green)',warning:'var(--yellow)',ex
 function cvStatusLabel(s){return{valid:'valid',warning:'expiring',expired:'expired',none:'—'}[s]||s;}
 
 async function showCv(){
-    var data;
+    var data,sp;
     try{data=await invoke('get_cv_data');}catch(e){
         document.getElementById('scr-content').innerHTML='<p style="color:var(--text2)">Cannot build CV: '+e+'</p>';
         show('scr-content');updateTabs('CV');return;
     }
+    try{sp=await invoke('get_seafarer_personal');}catch(e){sp={};}
     var p=data.personal||{};
     var certs=data.certificates||[];
     var work=data.work_history||[];
+    var e=function(v){return esc(v||'');};
+    var bdr='border:1px solid var(--border);';
+    var cellS='padding:3px 8px;font-size:12px;'+bdr;
+    var labelS=cellS+'color:var(--text2);font-weight:600;width:120px;white-space:nowrap;';
+    var valS=cellS;
+    var sectionS='font-size:13px;font-weight:700;color:var(--accent);padding:10px 0 4px;border-bottom:2px solid var(--accent);margin-top:16px;margin-bottom:0;';
 
-    var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">';
-    h+='<h2 style="font-size:18px;">Curriculum Vitae</h2>';
-    h+='<button class="btn btn-accent" onclick="exportCvPdf()">Export .pdf</button> ';
-    h+='<button class="btn btn-outline" onclick="exportCvDocx()">Export .docx</button>';
+    // Export buttons
+    var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">';
+    h+='<h2 style="font-size:18px;">Seafarer\'s Application Form</h2>';
+    h+='<div><button class="btn btn-accent" onclick="exportCvPdf()">Export .pdf</button> ';
+    h+='<button class="btn btn-outline" onclick="exportCvDocx()">Export .docx</button></div>';
     h+='</div>';
 
-    // Personal details
-    h+='<div style="border:1px solid var(--border);border-radius:6px;padding:14px 16px;margin-bottom:16px;">';
-    h+='<div style="font-size:20px;font-weight:700;">'+(p.name||'Seafarer')+'</div>';
-    var sub=[];
-    if(p.rank)sub.push(p.rank);
-    if(p.stcw_level)sub.push('STCW '+p.stcw_level);
-    if(p.vessel_type)sub.push(p.vessel_type);
-    if(sub.length)h+='<div style="color:var(--text2);font-size:13px;margin-top:4px;">'+sub.join(' &middot; ')+'</div>';
-    if(data.total_sea_days>0){
-        var months=Math.round(data.total_sea_days/30);
-        h+='<div style="font-size:12px;color:var(--text2);margin-top:6px;">Total recorded sea time: '+data.total_sea_days+' days ('+months+' months)</div>';
-    }
+    // ===== PERSONAL DETAILS + PHOTO =====
+    h+='<div style="display:flex;gap:16px;align-items:flex-start;">';
+    // Left: personal table
+    h+='<table style="flex:1;border-collapse:collapse;'+bdr+'">';
+    var row=function(l,v,l2,v2){
+        h+='<tr><td style="'+labelS+'">'+l+'</td><td style="'+valS+'">'+e(v)+'</td>';
+        if(l2!==undefined)h+='<td style="'+labelS+'">'+l2+'</td><td style="'+valS+'">'+e(v2)+'</td>';
+        h+='</tr>';
+    };
+    row('Position',p.rank||sp.rank,'Readiness',sp.available_from);
+    var seaYears=data.total_sea_days>0?Math.round(data.total_sea_days/365)+' years':'';
+    row('Experience',seaYears,'Citizenship',sp.nationality);
+    row('Last name',sp.surname,'Marital status',sp.marital_status);
+    row('First name',sp.first_name,'Children',sp.children_count);
+    row('Middle name',sp.middle_name,'Nationality',sp.nationality);
+    row('Birth date',sp.date_of_birth,'Birth place',sp.place_of_birth);
+    row('Home address',sp.home_address,'Phone',sp.phones);
+    row('English level',sp.english_level||'','Email',sp.email);
+    h+='</table>';
+    // Right: photo
+    h+='<div style="width:130px;min-width:130px;height:160px;'+bdr+'border-radius:4px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:var(--surface);" id="cv-photo-box">';
+    h+='<span style="color:var(--text2);font-size:11px;">Photo</span></div>';
     h+='</div>';
 
-    // Certificates grouped by category
-    h+='<h3 style="font-size:14px;margin:16px 0 8px;">Certificates &amp; qualifications</h3>';
+    // ===== SALARY =====
+    h+='<div style="'+sectionS+'">Salary expectations</div>';
+    var sal=sp.min_salary||localStorage.getItem('skipi-sp-min_salary')||'';
+    var cur=sp.currency||localStorage.getItem('skipi-sp-min_salary_currency')||'USD';
+    h+='<table style="border-collapse:collapse;'+bdr+'margin-top:4px;width:100%;">';
+    h+='<tr><td style="'+labelS+'">Minimum</td><td style="'+valS+'">'+(sal?e(sal)+' '+e(cur):'')+'</td>';
+    h+='<td style="'+labelS+'">Nearest airport</td><td style="'+valS+'">'+e(sp.nearest_airport)+'</td></tr>';
+    h+='</table>';
+
+    // ===== PASSPORTS, LICENSES & CERTIFICATES =====
+    h+='<div style="'+sectionS+'">Passports, Licenses &amp; Certificates</div>';
     if(!certs.length){
-        h+='<p style="color:var(--text2);font-size:12px;">No certificates on file yet.</p>';
+        h+='<p style="color:var(--text2);font-size:12px;margin-top:4px;">No certificates on file.</p>';
     }else{
         var byCat={};
         certs.forEach(function(c){if(!byCat[c.category])byCat[c.category]=[];byCat[c.category].push(c);});
+        h+='<table style="border-collapse:collapse;'+bdr+'margin-top:4px;width:100%;">';
+        h+='<thead><tr style="background:var(--surface);"><th style="'+cellS+'text-align:left;">Title</th><th style="'+cellS+'text-align:left;">Number</th><th style="'+cellS+'text-align:left;">Place of issue</th><th style="'+cellS+'text-align:left;">Issued</th><th style="'+cellS+'text-align:left;">Valid</th></tr></thead><tbody>';
         Object.keys(byCat).sort().forEach(function(cat){
-            h+='<div style="font-weight:600;margin-top:10px;margin-bottom:4px;">'+cat+'</div>';
+            h+='<tr><td colspan="5" style="'+cellS+'font-weight:700;color:var(--accent);background:var(--hover);padding:6px 8px;">'+cat+'</td></tr>';
             byCat[cat].forEach(function(c){
-                h+='<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">';
-                h+='<span class="st" style="background:'+cvStatusColor(c.status)+';margin-top:6px;"></span>';
-                h+='<div style="flex:1;">';
-                h+='<div style="font-size:13px;">'+c.title;
-                if(c.doc_number)h+=' <span style="color:var(--text2);font-size:11px;">№'+c.doc_number+'</span>';
-                h+='</div>';
-                var meta=[];
-                if(c.issued_by)meta.push(c.issued_by);
-                if(c.valid_from&&c.valid_to)meta.push(c.valid_from+' → '+c.valid_to);
-                else if(c.valid_to)meta.push('valid until '+c.valid_to);
-                if(meta.length)h+='<div style="font-size:11px;color:var(--text2);">'+meta.join(' &middot; ')+'</div>';
-                if(c.regulatory_basis)h+='<div style="font-size:10px;color:var(--text2);">'+c.regulatory_basis+'</div>';
-                h+='</div>';
-                h+='<span style="font-size:10px;color:'+cvStatusColor(c.status)+';text-transform:uppercase;letter-spacing:0.04em;">'+cvStatusLabel(c.status)+'</span>';
-                h+='</div>';
+                var vc=c.status==='expired'?'var(--red)':c.status==='warning'?'var(--yellow)':'var(--text)';
+                h+='<tr>';
+                h+='<td style="'+cellS+'">'+e(c.title)+'</td>';
+                h+='<td style="'+cellS+'font-family:var(--font-mono);font-size:11px;">'+e(c.doc_number)+'</td>';
+                h+='<td style="'+cellS+'">'+e(c.issued_by)+'</td>';
+                h+='<td style="'+cellS+'">'+e(c.valid_from)+'</td>';
+                h+='<td style="'+cellS+'color:'+vc+';">'+e(c.valid_to)+'</td>';
+                h+='</tr>';
             });
         });
+        h+='</tbody></table>';
     }
 
-    // Work history
-    h+='<h3 style="font-size:14px;margin:16px 0 8px;">Sea-going experience</h3>';
+    // ===== SEA-GOING EXPERIENCE =====
+    h+='<div style="'+sectionS+'">Sea-going experience</div>';
     if(!work.length){
-        h+='<p style="color:var(--text2);font-size:12px;">No work history recorded. Add entries via Dashboard → Work history.</p>';
+        h+='<p style="color:var(--text2);font-size:12px;margin-top:4px;">No work history recorded.</p>';
     }else{
+        h+='<table style="border-collapse:collapse;'+bdr+'margin-top:4px;width:100%;">';
+        h+='<thead><tr style="background:var(--surface);"><th style="'+cellS+'text-align:left;">Vessel</th><th style="'+cellS+'text-align:left;">Flag</th><th style="'+cellS+'text-align:left;">Type</th><th style="'+cellS+'text-align:left;">Rank</th><th style="'+cellS+'text-align:left;">From</th><th style="'+cellS+'text-align:left;">Till</th><th style="'+cellS+'text-align:left;">Company</th></tr></thead><tbody>';
         work.forEach(function(w){
-            var period=(w.sign_on||'?')+' → '+(w.sign_off||'present');
-            h+='<div style="border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:8px;">';
-            h+='<div style="font-weight:600;">'+w.vessel_name+' — '+w.position+'</div>';
-            var bits=[period];
-            if(w.vessel_type)bits.push(w.vessel_type);
-            if(w.flag)bits.push('flag '+w.flag);
-            if(w.imo)bits.push('IMO '+w.imo);
-            h+='<div style="font-size:11px;color:var(--text2);">'+bits.join(' &middot; ')+'</div>';
-            if(w.company)h+='<div style="font-size:11px;color:var(--text2);">'+w.company+'</div>';
-            h+='</div>';
+            h+='<tr>';
+            h+='<td style="'+cellS+'font-weight:500;">'+e(w.vessel_name)+'</td>';
+            h+='<td style="'+cellS+'">'+e(w.flag)+'</td>';
+            h+='<td style="'+cellS+'">'+e(w.vessel_type)+'</td>';
+            h+='<td style="'+cellS+'">'+e(w.position)+'</td>';
+            h+='<td style="'+cellS+'">'+e(w.sign_on)+'</td>';
+            h+='<td style="'+cellS+'">'+(w.sign_off?e(w.sign_off):'present')+'</td>';
+            h+='<td style="'+cellS+'">'+e(w.company)+'</td>';
+            h+='</tr>';
         });
+        h+='</tbody></table>';
     }
 
     document.getElementById('scr-content').innerHTML=h;
     show('scr-content');updateTabs('CV');
+    // Load photo async
+    try{
+        var abs=await invoke('get_profile_photo_abs_path');
+        var box=document.getElementById('cv-photo-box');
+        if(abs&&box){var src=convertFileSrc?convertFileSrc(abs):abs;box.innerHTML='<img src="'+src+'?t='+Date.now()+'" style="width:100%;height:100%;object-fit:cover;">';}
+    }catch(e){}
 }
 
 async function exportCvPdf(){
