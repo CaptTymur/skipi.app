@@ -383,7 +383,6 @@ input, select, button { font-family:var(--font-ui); }
             <h3 style="margin-top:0;margin-bottom:4px;font-size:16px;">Add Custom Certificate</h3>
             <p style="color:var(--text2);font-size:12px;margin-top:0;margin-bottom:14px;">Add a certificate that isn't in the standard template — e.g. a company-specific training, a local endorsement, or an extra course you took.</p>
             <div class="field"><label>Title *</label><input type="text" id="ac-title" placeholder="e.g. Dangerous Goods by Air (IATA DGR)"></div>
-            <div class="field"><label>Category</label><select id="ac-category"></select></div>
             <div class="field"><label><input type="checkbox" id="ac-has-expiry" checked style="margin-right:6px;">This certificate has an expiry date</label></div>
             <div class="actions" style="margin-top:18px;text-align:right;">
                 <button class="btn btn-outline" onclick="hideAddCustomDoc()">Cancel</button>
@@ -2154,7 +2153,7 @@ function hideAddCustomDoc(){
 async function doAddCustomDoc(){
     var title=document.getElementById('ac-title').value.trim();
     if(!title){alert('Enter a title for the certificate');return;}
-    var category=document.getElementById('ac-category').value||'Custom';
+    var category='Custom';
     var hasExpiry=document.getElementById('ac-has-expiry').checked;
     try{
         var rec=await invoke('add_custom_doc',{title:title,category:category,hasExpiry:hasExpiry});

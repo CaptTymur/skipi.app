@@ -143,15 +143,23 @@ pub struct DocTemplate {
 
 pub fn universal_base() -> Vec<DocTemplate> {
     vec![
-        DocTemplate { id: "passport", title: "Passport (Travel)", category: "Identity",
+        // Passport
+        DocTemplate { id: "passport", title: "Passport (Travel)", category: "Passport",
             regulatory_basis: "ICAO 9303", has_expiry: true, typical_years: Some(10),
-            notes: "Tourist/travel passport" },
-        DocTemplate { id: "sid", title: "Seafarer's Identity Document (SID)", category: "Identity",
+            notes: "National travel passport" },
+        // Seaman's Book — national (primary). Additional flag-state books can be added by user.
+        DocTemplate { id: "seamans_book", title: "Seaman's Book (Discharge Book)", category: "Seaman's Book",
+            regulatory_basis: "National (flag state)", has_expiry: false, typical_years: None,
+            notes: "National seaman's book. Additional flag-state books can be added." },
+        // Seafarer's Identity Document
+        DocTemplate { id: "sid", title: "Seafarer's Identity Document (SID)", category: "Seaman's Book",
             regulatory_basis: "ILO C185", has_expiry: true, typical_years: Some(5),
             notes: "ILO Seafarers' Identity Documents Convention" },
-        DocTemplate { id: "seamans_book", title: "Seaman's Book (Discharge Book)", category: "Identity",
-            regulatory_basis: "National (flag state)", has_expiry: false, typical_years: None,
-            notes: "Record of sea service" },
+        // Visas
+        DocTemplate { id: "visa_us", title: "USA Visa (C1/D)", category: "Visas",
+            regulatory_basis: "US Immigration and Nationality Act", has_expiry: true, typical_years: Some(10),
+            notes: "Transit/crewman visa. Required by ~50% of employers." },
+        // Medical
         DocTemplate { id: "medical_cert", title: "Medical Fitness Certificate", category: "Medical",
             regulatory_basis: "STCW I/9; MLC 2006 A1.2", has_expiry: true, typical_years: Some(2),
             notes: "ENG1 or equivalent" },

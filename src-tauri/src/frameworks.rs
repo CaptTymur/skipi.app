@@ -122,10 +122,12 @@ const TANKER_EXTRAS: &[DocTemplate] = &[
     DocTemplate { category: "Tanker Specific", title: "P&A Manual (Tanker)", has_expiry: false, typical_years: None, notes: "MARPOL Annex I" },
 ];
 
-// Seafarer base: 3 documents — minimum to be a seafarer
+// Seafarer base: minimum to be a seafarer
 const SEAFARER_BASE: &[DocTemplate] = &[
-    DocTemplate { category: "Identity", title: "Passport", has_expiry: true, typical_years: Some(10), notes: "Tourist/travel passport" },
-    DocTemplate { category: "Identity", title: "Seafarer's Identity Document (SID)", has_expiry: true, typical_years: Some(5), notes: "Seaman's book / ILO C185" },
+    DocTemplate { category: "Passport", title: "Passport (Travel)", has_expiry: true, typical_years: Some(10), notes: "National travel passport" },
+    DocTemplate { category: "Seaman's Book", title: "Seaman's Book (Discharge Book)", has_expiry: false, typical_years: None, notes: "National seaman's book" },
+    DocTemplate { category: "Seaman's Book", title: "Seafarer's Identity Document (SID)", has_expiry: true, typical_years: Some(5), notes: "ILO C185" },
+    DocTemplate { category: "Visas", title: "USA Visa (C1/D)", has_expiry: true, typical_years: Some(10), notes: "Transit/crewman visa" },
     DocTemplate { category: "Safety", title: "Basic Safety Training (BST / STCW VI/1)", has_expiry: true, typical_years: Some(5), notes: "PST, FPFF, EFA, PSSR" },
 ];
 
