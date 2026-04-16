@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.22';
+var APP_VERSION='0.4.23';
 // Human-readable labels for account types that go into the OS window title.
 // Unknown types fall back to the raw value so we never show something blank.
 var ACCOUNT_TYPE_LABELS={
@@ -17,14 +17,12 @@ var ACCOUNT_TYPE_LABELS={
 };
 function updateTitlebar(vaultName,accountType){
     var label=accountType?(ACCOUNT_TYPE_LABELS[accountType]||accountType):'';
-    // Inline titlebar inside the window — shows version + vault name so the
-    // user can tell vaults apart when running multiple instances.
-    var inner=vaultName?'Skipi v'+APP_VERSION+' — '+vaultName:'Skipi v'+APP_VERSION;
-    // OS window title — pinned to entity type so the user sees at a glance
-    // which kind of vault is open (Seafarer / Ship Manager / …).
+    // Title lives in the OS window chrome only now — the old inline strip
+    // was removed in v0.4.23 as redundant. Format:
+    //   "Skipi — Seafarer — Adrian V. Seaborne"  (with vault + type)
+    //   "Skipi"                                   (no vault)
     var os=label?'Skipi — '+label+(vaultName?' — '+vaultName:''):'Skipi';
     document.title=os;
-    var el=document.getElementById('titlebar-text');if(el)el.textContent=inner;
     // Push it to the actual OS titlebar via the Rust helper. Fire-and-forget —
     // we don't block init if the command is missing (e.g. older binary).
     try{
@@ -104,8 +102,14 @@ body { background:var(--bg); color:var(--text); font-family:var(--font-ui); font
 input, select, button { font-family:var(--font-ui); }
 
 /* Title bar */
-.titlebar { height:28px; background:var(--surface); display:flex; align-items:center; justify-content:center; -webkit-app-region:drag; border-bottom:1px solid var(--border); }
-.titlebar span { font-size:11px; color:var(--text2); }
+/* Vault switcher and settings gear live on the right of the modules bar
+   (replaces the old left-panel footer + legacy titlebar strip). */
+.modules-bar .mb-vault { display:flex; align-items:center; gap:6px; padding:4px 10px; border-radius:5px; cursor:pointer; color:var(--text); font-size:12px; background:var(--bg); border:1px solid var(--border); max-width:220px; overflow:hidden; }
+.modules-bar .mb-vault:hover { border-color:var(--accent); }
+.modules-bar .mb-vault-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.modules-bar .mb-caret { opacity:.6; font-size:10px; }
+.modules-bar .mb-gear { width:28px; height:28px; display:flex; align-items:center; justify-content:center; border-radius:5px; cursor:pointer; color:var(--text2); font-size:14px; margin-left:4px; }
+.modules-bar .mb-gear:hover { color:var(--text); background:var(--hover); }
 
 /* App layout */
 .app { display:flex; flex:1; overflow:hidden; }
@@ -115,13 +119,6 @@ input, select, button { font-family:var(--font-ui); }
 .modules-bar .mod-tab.active { color:#fff; background:var(--accent); font-weight:600; box-shadow:0 1px 0 var(--accent); }
 .modules-bar .mod-tab .mi { font-size:14px; }
 .modules-bar .mb-spacer { flex:1; }
-.panel-footer { border-top:1px solid var(--border); padding:6px 8px; display:flex; align-items:center; gap:6px; background:var(--surface); }
-.panel-footer .pf-vault { flex:1; min-width:0; display:flex; align-items:center; gap:6px; padding:4px 8px; border-radius:5px; cursor:pointer; color:var(--text); font-size:12px; background:var(--bg); border:1px solid var(--border); overflow:hidden; }
-.panel-footer .pf-vault:hover { border-color:var(--accent); }
-.panel-footer .pf-vault .pf-vault-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.panel-footer .pf-vault .pf-caret { opacity:.6; }
-.panel-footer .pf-gear { width:28px; height:28px; display:flex; align-items:center; justify-content:center; border-radius:5px; cursor:pointer; color:var(--text2); font-size:14px; }
-.panel-footer .pf-gear:hover { color:var(--text); background:var(--hover); }
 
 /* Ribbon (icon strip) */
 .ribbon { width:40px; background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; align-items:center; padding:8px 0; gap:4px; }
@@ -358,9 +355,10 @@ input, select, button { font-family:var(--font-ui); }
 </head>
 <body>
 
-<div class="titlebar"><span id="titlebar-text">Skipi v0.4.11</span></div>
-
-<!-- Top horizontal modules bar (replaces old left ribbon) -->
+<!-- Top horizontal modules bar. The OS titlebar now carries the vault
+     label (via set_window_title), so the old inline "Skipi vX.Y.Z — …"
+     strip has been removed; vault switcher + settings gear moved here
+     from the sidebar footer. -->
 <div class="modules-bar" id="modules-bar" style="display:none;">
     <div class="mod-tab active" onclick="showView('files')" id="mt-files" title="Files"><span>Files</span></div>
     <div class="mod-tab" onclick="showView('dashboard')" id="mt-dash" title="Dashboard"><span>Dashboard</span></div>
@@ -369,6 +367,12 @@ input, select, button { font-family:var(--font-ui); }
     <div class="mod-tab" onclick="showView('packages')" id="mt-pkg" title="Packages"><span>Packages</span></div>
     <div class="mod-tab" onclick="showView('dispatch')" id="mt-disp" title="Dispatch"><span class="mi">&#128231;</span><span>Dispatch</span></div>
     <div class="mb-spacer"></div>
+    <div class="mb-vault" id="mb-vault" onclick="openVaultSwitcher(event)" title="Switch vault">
+        <span>&#128451;</span>
+        <span class="mb-vault-name" id="pf-vault-name">Vault</span>
+        <span class="mb-caret">&#9662;</span>
+    </div>
+    <div class="mb-gear" id="mb-gear" onclick="openSettings()" title="Settings">&#9881;</div>
 </div>
 
 <div class="app">
@@ -389,14 +393,6 @@ input, select, button { font-family:var(--font-ui); }
         <div class="panel-header"><span id="panel-title">Files</span><span class="actions"><span id="btn-add-custom" title="Add custom certificate" onclick="showAddCustomDoc()" style="font-size:11px;font-weight:600;padding:2px 8px;border:1px solid var(--border);border-radius:4px;">+ Add</span></span></div>
         <div class="panel-search"><input type="text" placeholder="Search..." id="search-input" oninput="onSearch(this.value)"></div>
         <div class="panel-tree" id="panel-tree"></div>
-        <div class="panel-footer">
-            <div class="pf-vault" id="pf-vault" onclick="openVaultSwitcher(event)" title="Switch vault">
-                <span>&#128451;</span>
-                <span class="pf-vault-name" id="pf-vault-name">Vault</span>
-                <span class="pf-caret">&#9662;</span>
-            </div>
-            <div class="pf-gear" id="pf-gear" onclick="openSettings()" title="Settings">&#9881;</div>
-        </div>
     </div>
 
     <!-- Add Custom Certificate modal -->
@@ -421,7 +417,7 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.22</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.23</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div style="margin-top:18px;font-size:12px;color:var(--text2);">
