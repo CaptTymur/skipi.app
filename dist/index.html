@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.15';
+var APP_VERSION='0.4.16';
 function updateTitlebar(vaultName){
     var t=vaultName?'Skipi v'+APP_VERSION+' — '+vaultName:'Skipi v'+APP_VERSION;
     document.title=t;
@@ -399,7 +399,7 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.15</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.16</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div style="margin-top:18px;font-size:12px;color:var(--text2);">
@@ -441,7 +441,7 @@ input, select, button { font-family:var(--font-ui); }
             <div class="field"><label>Date of birth *</label><input id="fp-date_of_birth" type="date"></div>
             <div class="field"><label>Place of birth *</label><input id="fp-place_of_birth"></div>
             <div class="field"><label>Nationality *</label><select id="fp-nationality"></select></div>
-            <div class="field"><label>Phones *</label><input id="fp-phones" placeholder="+XX XXX..."></div>
+            <div class="field"><label>Phones *</label><div style="display:flex;gap:6px;"><input id="fp-phones" placeholder="+XX XXX..." style="flex:1;min-width:0;"><select id="fp-preferred_messenger" style="width:110px;flex:0 0 110px;"><option value="WhatsApp">WhatsApp</option><option value="Telegram">Telegram</option><option value="Viber">Viber</option><option value="Signal">Signal</option><option value="Other">Other</option></select></div></div>
             <div class="field"><label>Email *</label><input id="fp-email" type="email"></div>
             <div class="field"><label>Rank *</label><select id="fp-rank"></select></div>
             <div class="field"><label>Nearest airport *</label><input id="fp-nearest_airport" list="airport-hubs" placeholder="Start typing…"></div>
@@ -452,6 +452,9 @@ input, select, button { font-family:var(--font-ui); }
             </div>
         </div>
         <div class="field" style="margin-top:8px;"><label>Home address *</label><input id="fp-home_address" placeholder="Street, city, country, ZIP"></div>
+        <div style="margin-top:14px;display:flex;align-items:center;gap:10px;">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;"><input type="checkbox" id="fp-ready_for_offers" onchange="fpToggleReady(this.checked)" style="width:16px;height:16px;accent-color:var(--accent);"> Ready to accept job offers</label>
+        </div>
         <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end;">
             <button class="btn btn-accent" onclick="fpSubmit()">Save &amp; Continue</button>
         </div>
@@ -1099,6 +1102,14 @@ var AIRPORT_HUBS = [
 
 // ========== Forced seafarer profile ==========
 var _forcedProfileActive=false;
+function fpToggleReady(on){
+    var ids=['fp-min_salary','fp-min_salary_currency','fp-nearest_airport','fp-nearest_intl_airport','fp-available_from','fp-phones','fp-preferred_messenger'];
+    ids.forEach(function(id){var el=document.getElementById(id);if(el){el.disabled=!on;el.style.opacity=on?'1':'0.45';}});
+}
+function spToggleReady(on){
+    var ids=['sp-min_salary','sp-min_salary_currency','sp-nearest_airport','sp-nearest_intl_airport','sp-available_from','sp-phones','sp-preferred_messenger'];
+    ids.forEach(function(id){var el=document.getElementById(id);if(el){el.disabled=!on;el.style.opacity=on?'1':'0.45';}});
+}
 function fpRequiredKeys(){
     return ['surname','first_name','date_of_birth','place_of_birth','nationality','phones','email','rank','nearest_airport','nearest_intl_airport','available_from','min_salary','home_address'];
 }
@@ -1132,6 +1143,11 @@ async function openForcedProfile(forceOpen){
         });
         var ms=document.getElementById('fp-min_salary');
         if(ms)ms.value=minSal;
+        var msgr=document.getElementById('fp-preferred_messenger');
+        if(msgr)msgr.value=data.preferred_messenger||'WhatsApp';
+        var rdy=document.getElementById('fp-ready_for_offers');
+        var rdyVal=(data.ready_for_offers||'')!=='false'&&(data.ready_for_offers||'')!=='';
+        if(rdy){rdy.checked=rdyVal;fpToggleReady(rdyVal);}
     }catch(e){logError('openForcedProfile',e);}
 }
 async function fpSubmit(){
@@ -1150,6 +1166,10 @@ async function fpSubmit(){
         return;
     }
     if(errEl)errEl.style.display='none';
+    var rdy=document.getElementById('fp-ready_for_offers');
+    fields.ready_for_offers=rdy&&rdy.checked?'true':'false';
+    var msgr=document.getElementById('fp-preferred_messenger');
+    if(msgr)fields.preferred_messenger=msgr.value;
     try{
         await invoke('set_seafarer_personal',{fields:fields});
         var ms=document.getElementById('fp-min_salary');
@@ -2384,7 +2404,7 @@ function renderSettingsBody(){
         h += spField('sp-date_of_birth','Date of birth','date');
         h += spField('sp-place_of_birth','Place of birth');
         h += '<div class="field"><label>Nationality</label><select id="sp-nationality"></select></div>';
-        h += spField('sp-phones','Phones');
+        h += '<div class="field"><label>Phones</label><div style="display:flex;gap:6px;"><input id="sp-phones" style="flex:1;min-width:0;"><select id="sp-preferred_messenger" style="width:110px;flex:0 0 110px;"><option value="WhatsApp">WhatsApp</option><option value="Telegram">Telegram</option><option value="Viber">Viber</option><option value="Signal">Signal</option><option value="Other">Other</option></select></div></div>';
         h += spField('sp-email','Email','email');
         h += '<div class="field"><label>Rank</label><select id="sp-rank"></select></div>';
         h += '<div class="field"><label>Nearest airport</label><input id="sp-nearest_airport" list="airport-hubs" placeholder="Start typing…"></div>';
@@ -2393,6 +2413,7 @@ function renderSettingsBody(){
         h += '<div class="field"><label>Minimum salary per month</label><div style="display:flex;gap:6px;"><input id="sp-min_salary" type="number" min="0" style="flex:1;min-width:0;"><select id="sp-min_salary_currency" style="width:80px;flex:0 0 80px;"></select></div></div>';
         h += '</div>';
         h += '<div class="field"><label>Home address</label><input id="sp-home_address" placeholder="Street, city, country, ZIP"></div>';
+        h += '<div style="margin-top:14px;display:flex;align-items:center;gap:10px;"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;"><input type="checkbox" id="sp-ready_for_offers" onchange="spToggleReady(this.checked)" style="width:16px;height:16px;accent-color:var(--accent);"> Ready to accept job offers</label></div>';
         h += '<div style="margin-top:16px;display:flex;gap:8px;"><button class="btn btn-accent btn-sm" onclick="spSave()">Save</button><button class="btn btn-outline btn-sm" onclick="spLoad()">Reload</button></div>';
         h += '</div>';
         h += '</div></div>';
@@ -2499,6 +2520,12 @@ async function spLoad(){
         // Minimum salary — stored in localStorage (not yet persisted server-side)
         var ms=document.getElementById('sp-min_salary');
         if(ms)ms.value=localStorage.getItem('skipi-sp-min_salary')||'';
+        // Messenger + ready toggle
+        var msgr=document.getElementById('sp-preferred_messenger');
+        if(msgr)msgr.value=data.preferred_messenger||'WhatsApp';
+        var rdy=document.getElementById('sp-ready_for_offers');
+        var rdyVal=(data.ready_for_offers||'')!=='false'&&(data.ready_for_offers||'')!=='';
+        if(rdy){rdy.checked=rdyVal;spToggleReady(rdyVal);}
         // Photo
         var box=document.getElementById('sp-photo-box');
         if(box){
@@ -2521,6 +2548,10 @@ async function spSave(){
         var el=document.getElementById('sp-'+k);
         fields[k]=el?el.value:'';
     });
+    var rdy=document.getElementById('sp-ready_for_offers');
+    fields.ready_for_offers=rdy&&rdy.checked?'true':'false';
+    var msgr=document.getElementById('sp-preferred_messenger');
+    if(msgr)fields.preferred_messenger=msgr.value;
     try{
         await invoke('set_seafarer_personal',{fields:fields});
         var ms=document.getElementById('sp-min_salary');

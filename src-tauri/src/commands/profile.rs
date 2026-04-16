@@ -397,6 +397,8 @@ pub fn get_seafarer_personal(state: State<AppState>) -> Result<serde_json::Value
         "languages": g("personal_languages"),
         "english_level": g("personal_english_level"),
         "preferred_vessel_types": g("preferred_vessel_types"),
+        "ready_for_offers": g("personal_ready_for_offers"),
+        "preferred_messenger": g("personal_preferred_messenger"),
     }))
 }
 
@@ -444,6 +446,8 @@ pub fn set_seafarer_personal(
         ("languages", "personal_languages"),
         ("english_level", "personal_english_level"),
         ("preferred_vessel_types", "preferred_vessel_types"),
+        ("ready_for_offers", "personal_ready_for_offers"),
+        ("preferred_messenger", "personal_preferred_messenger"),
     ];
     let mut changed = false;
     for (k, db_key) in allowed.iter() {
