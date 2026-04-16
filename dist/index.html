@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.23';
+var APP_VERSION='0.4.24';
 // Human-readable labels for account types that go into the OS window title.
 // Unknown types fall back to the raw value so we never show something blank.
 var ACCOUNT_TYPE_LABELS={
@@ -417,7 +417,7 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.23</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.24</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div style="margin-top:18px;font-size:12px;color:var(--text2);">
@@ -2477,6 +2477,10 @@ function openSettings(tab){
     if(settingsTab==='seafarer' && currentAccountType!=='' && currentAccountType && currentAccountType!=='seafarer'){
         settingsTab='general';
     }
+    // AI Recognition is hidden in the beta — redirect any stale links to General.
+    if(settingsTab==='ai'){
+        settingsTab='general';
+    }
     renderSettingsNav();
     renderSettingsBody();
     document.getElementById('settings-overlay').classList.add('open');
@@ -2495,7 +2499,7 @@ function renderSettingsNav(){
         h += '<div class="settings-nav-item'+(settingsTab==='seafarer'?' active':'')+'" onclick="openSettings(\'seafarer\')"><span class="nav-icon">&#128100;</span> Seafarer Profile</div>';
     }
     h += '<div class="settings-nav-item'+(settingsTab==='appearance'?' active':'')+'" onclick="openSettings(\'appearance\')"><span class="nav-icon">&#127912;</span> Appearance</div>';
-    h += '<div class="settings-nav-item'+(settingsTab==='ai'?' active':'')+'" onclick="openSettings(\'ai\')"><span class="nav-icon">&#9733;</span> AI Recognition</div>';
+    // AI Recognition tab intentionally hidden — beta users shouldn't see AI provider/key config yet.
     h += '<div class="settings-nav-title" style="margin-top:12px;">About</div>';
     h += '<div class="settings-nav-item'+(settingsTab==='about'?' active':'')+'" onclick="openSettings(\'about\')"><span class="nav-icon">&#9432;</span> About Skipi</div>';
     document.getElementById('settings-nav').innerHTML = h;
@@ -2550,6 +2554,11 @@ function renderSettingsBody(){
         // Form panel
         h += '<div style="flex:1;min-width:0;">';
         h += '<div class="field-grid">';
+        // Rank + Vessel Type are the most load-bearing seafarer attributes —
+        // surface them at the top so the user can see/adjust them without
+        // scrolling past personal details first.
+        h += '<div class="field"><label>Rank</label><select id="sp-rank"></select></div>';
+        h += '<div class="field"><label>Vessel type</label><select id="sp-preferred_vessel_type"></select></div>';
         h += spField('sp-surname','Surname');
         h += spField('sp-first_name','First name');
         h += spField('sp-middle_name','Middle name');
@@ -2558,8 +2567,6 @@ function renderSettingsBody(){
         h += '<div class="field"><label>Nationality</label><select id="sp-nationality"></select></div>';
         h += '<div class="field"><label>Phones</label><div style="display:flex;gap:6px;"><input id="sp-phones" style="flex:1;min-width:0;"><select id="sp-preferred_messenger" style="width:110px;flex:0 0 110px;"><option value="WhatsApp">WhatsApp</option><option value="Telegram">Telegram</option><option value="Viber">Viber</option><option value="Signal">Signal</option><option value="Other">Other</option></select></div></div>';
         h += spField('sp-email','Email','email');
-        h += '<div class="field"><label>Rank</label><select id="sp-rank"></select></div>';
-        h += '<div class="field"><label>Vessel type</label><select id="sp-preferred_vessel_type"></select></div>';
         h += '<div class="field"><label>Marital status</label><select id="sp-marital_status"><option value="">-- Select --</option><option value="Single">Single</option><option value="Married">Married</option><option value="Divorced">Divorced</option><option value="Widowed">Widowed</option></select></div>';
         h += '<div class="field"><label>Children</label><input id="sp-children_count" type="number" min="0" step="1" placeholder="0"></div>';
         h += '<div class="field"><label>English level</label><select id="sp-english_level"><option value="">-- Select --</option><option value="Basic">Basic</option><option value="Intermediate">Intermediate</option><option value="Advanced">Advanced</option><option value="Fluent">Fluent</option><option value="Native">Native</option></select></div>';
@@ -2579,8 +2586,7 @@ function renderSettingsBody(){
         h += '<div class="settings-section"><h3>Appearance</h3><div class="section-desc">Customize how Skipi looks.</div>';
         h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Theme</div><div class="setting-desc">Choose between light and dark mode.</div></div>';
         h += '<div class="setting-control"><select onchange="setTheme(this.value)"><option value="dark"'+(cur==='dark'?' selected':'')+'>Dark</option><option value="light"'+(cur==='light'?' selected':'')+'>Light</option></select></div></div>';
-        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Accent color</div><div class="setting-desc">Primary accent color used throughout the app.</div></div>';
-        h += '<div class="setting-control"><div style="width:24px;height:24px;border-radius:50%;background:var(--accent);border:2px solid var(--border);cursor:pointer;"></div></div></div>';
+        // Accent color picker intentionally hidden — the control was a read-only swatch, not a real picker.
         h += '</div>';
     }
 
@@ -2890,6 +2896,7 @@ function resetToWelcome(){
     var tree=document.getElementById('panel-tree');if(tree)tree.innerHTML='';
     var content=document.getElementById('scr-content');if(content)content.innerHTML='';
     hide('scr-content');hide('ribbon');hide('left-panel');hide('tabs');hide('statusbar');hide('scr-setup');
+    var mb=document.getElementById('modules-bar');if(mb)mb.style.display='none';
     show('scr-welcome');
     updateTitlebar();
 }

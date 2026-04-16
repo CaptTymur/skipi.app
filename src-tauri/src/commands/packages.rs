@@ -16,6 +16,62 @@ use tauri::State;
 ///      in the path — attachments silently vanish, leaving the user with a
 ///      subject + body but no files.
 /// Returns the absolute path of the staged copy (always safe ASCII).
+/// Escape a value for Thunderbird's `-compose` single-argument syntax.
+/// Thunderbird parses `key=value,key=value,...` so any literal comma in the
+/// value must be wrapped in single quotes. Single quotes are doubled to
+/// escape them inside the quoted region.
+#[cfg(target_os = "linux")]
+fn tb_compose_escape(v: &str) -> String {
+    let needs_quote = v.contains(',') || v.contains('\'');
+    if needs_quote {
+        format!("'{}'", v.replace('\'', "''"))
+    } else {
+        v.to_string()
+    }
+}
+
+/// Launch Thunderbird with a pre-filled compose window. Returns Err if
+/// Thunderbird isn't on PATH or the spawn fails, so the caller can fall
+/// back to `xdg-email`.
+#[cfg(target_os = "linux")]
+fn spawn_thunderbird_compose(
+    to: &str,
+    subject: &str,
+    body: &str,
+    attachments: &[PathBuf],
+) -> Result<(), String> {
+    let which = std::process::Command::new("which")
+        .arg("thunderbird")
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !which.status.success() {
+        return Err("thunderbird not on PATH".to_string());
+    }
+
+    // Thunderbird expects file:// URIs for attachments; multiple URIs are
+    // comma-separated *inside* a single-quoted value.
+    let uri_list: String = attachments
+        .iter()
+        .map(|p| format!("file://{}", p.to_string_lossy()))
+        .collect::<Vec<_>>()
+        .join(",");
+
+    let compose = format!(
+        "to={},subject={},body={},attachment={}",
+        tb_compose_escape(to),
+        tb_compose_escape(subject),
+        tb_compose_escape(body),
+        tb_compose_escape(&uri_list),
+    );
+
+    std::process::Command::new("thunderbird")
+        .arg("-compose")
+        .arg(&compose)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[cfg(target_os = "linux")]
 fn stage_attachment_for_mail(src: &Path, stem_hint: &str) -> Result<PathBuf, String> {
     let downloads = dirs::download_dir()
@@ -199,25 +255,33 @@ pub fn open_email_with_attachment(state: State<AppState>, package_id: String, to
     #[cfg(target_os = "linux")]
     {
         // See stage_attachment_for_mail — vault paths with spaces break
-        // Thunderbird's attach parsing, so we stage into ~/Downloads/Skipi.
+        // mail client attach parsing, so we stage into ~/Downloads/Skipi.
         let staged = stage_attachment_for_mail(&zip_path, "documents")
             .unwrap_or_else(|_| zip_path.clone());
         let attach = staged.to_string_lossy().to_string();
-        let mut cmd = std::process::Command::new("xdg-email");
-        cmd.arg("--attach").arg(&attach)
-           .arg("--subject").arg(&subject);
-        if !body_str.is_empty() {
-            cmd.arg("--body").arg(&body_str);
+        let staged_vec = vec![staged.clone()];
+
+        // Thunderbird `-compose` first (reliably attaches under snap),
+        // xdg-email as fallback for KMail/Evolution/Geary users.
+        let tb_ok = spawn_thunderbird_compose(&to, &subject, &body_str, &staged_vec).is_ok();
+        if !tb_ok {
+            let mut cmd = std::process::Command::new("xdg-email");
+            cmd.arg("--attach").arg(&attach)
+               .arg("--subject").arg(&subject);
+            if !body_str.is_empty() {
+                cmd.arg("--body").arg(&body_str);
+            }
+            cmd.arg(&to);
+            let _ = cmd.spawn();
         }
-        cmd.arg(&to);
-        let result = cmd.spawn();
-        if result.is_ok() {
-            return Ok(attach);
+        // Always reveal the stage folder so the user can drag-drop if the
+        // mail client silently dropped the attachment.
+        if let Some(stage_dir) = staged.parent() {
+            let _ = std::process::Command::new("xdg-open")
+                .arg(stage_dir.to_string_lossy().as_ref())
+                .spawn();
         }
-        // Fallback: open mailto + open package folder
-        let _ = std::process::Command::new("xdg-open")
-            .arg(vault_path.join("_packages").to_string_lossy().to_string())
-            .spawn();
+        return Ok(attach);
     }
     #[cfg(target_os = "macos")]
     {
@@ -329,22 +393,41 @@ pub fn dispatch_package(
     #[cfg(target_os = "linux")]
     {
         // Stage attachments into ~/Downloads/Skipi with safe ASCII names so
-        // mail clients (Thunderbird in particular) reliably pick them up
-        // via `xdg-email --attach`. See stage_attachment_for_mail.
+        // mail clients reliably pick them up (vault paths often contain
+        // spaces / non-ASCII that break attach parsing).
         let staged_zip = stage_attachment_for_mail(&zip_path, &format!("{}_documents", name_safe))
             .unwrap_or_else(|_| zip_path.clone());
-        let zip_attach = staged_zip.to_string_lossy().to_string();
-        let mut cmd = std::process::Command::new("xdg-email");
-        cmd.arg("--attach").arg(&zip_attach);
+        let mut staged_paths: Vec<std::path::PathBuf> = vec![staged_zip];
         if include_cv {
             let staged_cv = stage_attachment_for_mail(&cv_pdf_path, &format!("{}_CV", name_safe))
                 .unwrap_or_else(|_| cv_pdf_path.clone());
-            cmd.arg("--attach").arg(staged_cv.to_string_lossy().to_string());
+            staged_paths.push(staged_cv);
         }
-        cmd.arg("--subject").arg(&subject)
-           .arg("--body").arg(&body)
-           .arg(&to_joined);
-        cmd.spawn().map_err(|e| e.to_string())?;
+
+        // Primary path: Thunderbird `-compose` reliably attaches multiple
+        // files even under snap confinement, unlike `xdg-email --attach`
+        // which Thunderbird snap often silently ignores.
+        let tb_ok = spawn_thunderbird_compose(&to_joined, &subject, &body, &staged_paths).is_ok();
+
+        // Fallback: xdg-email (for users on KMail, Evolution, Geary, etc.).
+        if !tb_ok {
+            let mut cmd = std::process::Command::new("xdg-email");
+            for p in &staged_paths {
+                cmd.arg("--attach").arg(p.to_string_lossy().as_ref());
+            }
+            cmd.arg("--subject").arg(&subject)
+               .arg("--body").arg(&body)
+               .arg(&to_joined);
+            cmd.spawn().map_err(|e| e.to_string())?;
+        }
+
+        // Always reveal the staged folder so the user can drag-drop as a
+        // last resort if the mail client silently dropped the attachments.
+        if let Some(stage_dir) = staged_paths.first().and_then(|p| p.parent()) {
+            let _ = std::process::Command::new("xdg-open")
+                .arg(stage_dir.to_string_lossy().as_ref())
+                .spawn();
+        }
     }
     #[cfg(target_os = "macos")]
     {
