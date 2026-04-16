@@ -2083,6 +2083,12 @@ function togglePkg(id){
     renderTree();
     var el=document.getElementById('pkg-count');if(el)el.textContent=pkgSelected.length+' selected';
 }
+function pkgSelectAll(){
+    pkgSelected=[];
+    allDocs.forEach(function(d){if(d.file_name)pkgSelected.push(d.id);});
+    renderTree();
+    var el=document.getElementById('pkg-count');if(el)el.textContent=pkgSelected.length+' selected';
+}
 
 // ========== Add Custom Certificate modal ==========
 function showAddCustomDoc(){
@@ -2297,7 +2303,7 @@ function startPkg(){
     h+='<span class="pkg-tip-icon">&#128161;</span>';
     h+='<div class="pkg-tip-body"><b>How it works:</b> tick the documents you want to share in the <b>left sidebar</b> &mdash; only those will be included in the package. Only documents with attached files can be packaged. You can then email the ZIP, set an expiry and a download limit.</div>';
     h+='</div>';
-    h+='<div id="pkg-count" style="color:var(--accent);font-size:12px;margin-bottom:12px;font-weight:600;">0 selected</div>';
+    h+='<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;"><span id="pkg-count" style="color:var(--accent);font-size:12px;font-weight:600;">0 selected</span><button class="btn btn-outline btn-sm" onclick="pkgSelectAll()" style="padding:2px 10px;font-size:11px;">Select all</button></div>';
     h+='<div style="max-width:360px;"><div class="field"><label>Title</label><input id="pkg-title" value="Document Package" placeholder="Package title"></div>';
     h+='<button class="btn btn-accent" onclick="doPkg()">Create</button> <button class="btn btn-outline" onclick="showPackages()">Cancel</button></div>';
     document.getElementById('scr-content').innerHTML=h;show('scr-content');
