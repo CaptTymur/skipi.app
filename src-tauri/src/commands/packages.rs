@@ -547,3 +547,88 @@ pub fn get_dispatches(state: State<AppState>) -> Result<Vec<serde_json::Value>, 
     let conn = lock.as_ref().ok_or("No vault open")?;
     db::get_dispatches(conn).map_err(|e| e.to_string())
 }
+
+/// Build the attachment list for a dispatch: generate CV PDF if requested,
+/// locate the package ZIP if a package id is given. Returns absolute paths.
+/// Used by the SMTP send path in the frontend — the mail-client fallback
+/// does its own staging via `dispatch_package`.
+#[tauri::command]
+pub fn prepare_dispatch_attachments(
+    state: State<AppState>,
+    package_id: Option<String>,
+    include_cv: Option<bool>,
+) -> Result<Vec<String>, String> {
+    let include_cv = include_cv.unwrap_or(false);
+    let pkg_id_opt: Option<String> =
+        package_id.and_then(|s| if s.is_empty() { None } else { Some(s) });
+    if pkg_id_opt.is_none() && !include_cv {
+        return Err("Nothing to attach — tick CV or pick a package".to_string());
+    }
+
+    let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
+    let vault_path = vault_lock.as_ref().ok_or("No vault open")?;
+
+    let mut out: Vec<String> = Vec::new();
+
+    if let Some(pid) = &pkg_id_opt {
+        let zip_path = vault_path.join("_packages").join(format!("{}.zip", pid));
+        if !zip_path.exists() {
+            return Err("Package ZIP not found — export the package first".to_string());
+        }
+        out.push(zip_path.to_string_lossy().to_string());
+    }
+
+    if include_cv {
+        let dispatch_dir = vault_path.join("_dispatch");
+        fs::create_dir_all(&dispatch_dir).map_err(|e| e.to_string())?;
+        let cv_data = {
+            let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+            let conn = conn_lock.as_ref().ok_or("No vault open")?;
+            cv::build_cv_data(conn)?
+        };
+        let name_safe: String = cv_data
+            .personal
+            .surname
+            .clone()
+            .or_else(|| cv_data.personal.first_name.clone())
+            .unwrap_or_else(|| cv_data.personal.name.clone())
+            .chars()
+            .map(|c| if c.is_alphanumeric() { c } else { '_' })
+            .collect();
+        let cv_pdf_path = dispatch_dir.join(format!("{}_CV.pdf", name_safe));
+        let photo_abs = cv_data
+            .personal
+            .photo_path
+            .as_ref()
+            .map(|rel| vault_path.join(rel))
+            .filter(|p| p.exists());
+        cv::render_cv_pdf(&cv_data, &cv_pdf_path, photo_abs.as_deref())?;
+        out.push(cv_pdf_path.to_string_lossy().to_string());
+    }
+
+    Ok(out)
+}
+
+/// Log an SMTP-sent dispatch in the vault history table so it shows up in
+/// the "Recent dispatches" list exactly like mail-client dispatches do.
+#[tauri::command]
+pub fn record_dispatch_history(
+    state: State<AppState>,
+    package_id: Option<String>,
+    recipients: Vec<String>,
+    subject: String,
+    cv_path: Option<String>,
+) -> Result<(), String> {
+    let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = lock.as_ref().ok_or("No vault open")?;
+    let disp_id = uuid::Uuid::new_v4().to_string();
+    let pkg_ref = package_id
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .unwrap_or("cv_only");
+    let to_joined = recipients.join(",");
+    let cv = cv_path.unwrap_or_default();
+    db::add_dispatch(conn, &disp_id, pkg_ref, &to_joined, &subject, &cv)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}

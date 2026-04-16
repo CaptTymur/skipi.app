@@ -62,7 +62,7 @@ pub(crate) fn base64_encode(data: &[u8]) -> String {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    use commands::{vault, documents, ai, packages, profile, cv_commands, work_history};
+    use commands::{vault, documents, ai, packages, profile, cv_commands, work_history, email};
 
     tauri::Builder::default()
         .manage(AppState {
@@ -124,6 +124,8 @@ pub fn run() {
             packages::delete_package,
             packages::open_file_in_default,
             packages::open_email_with_attachment,
+            packages::prepare_dispatch_attachments,
+            packages::record_dispatch_history,
             // Profile
             profile::get_profile_taxonomy,
             profile::get_required_docs,
@@ -154,6 +156,13 @@ pub fn run() {
             work_history::get_work_files,
             work_history::delete_work_file,
             work_history::open_work_file,
+            // SMTP outgoing mail
+            email::suggest_smtp_from_email,
+            email::get_smtp_config,
+            email::save_smtp_config,
+            email::clear_smtp_config,
+            email::test_smtp_connection,
+            email::send_email_smtp,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
