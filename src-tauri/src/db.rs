@@ -1,6 +1,8 @@
 use rusqlite::{Connection, Result, params};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+#[cfg(unix)]
+use std::{fs, os::unix::fs::PermissionsExt};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DocRecord {
@@ -234,14 +236,80 @@ fn legacy_backfill(conn: &Connection) -> Result<()> {
 
 pub fn open_db(vault_path: &Path) -> Result<Connection> {
     let db_path = vault_path.join("skipi.db");
-    let mut conn = Connection::open(db_path)?;
+    // rusqlite::Connection::open uses SQLite's normal read-write/create mode.
+    // We keep that behavior intentionally: Skipi vaults must always be writable
+    // by the local app instance.
+    let mut conn = Connection::open(&db_path)?;
+
+    // Use WAL on local vaults so normal app writes don't trip over the default
+    // rollback journal path on Linux. This also surfaces writeability problems
+    // immediately at open time instead of later on first update.
+    conn.pragma_update(None, "journal_mode", "WAL")?;
+    conn.pragma_update(None, "foreign_keys", "ON")?;
 
     // 1. Ensure schema_migrations + run any pending migrations for new vaults.
     run_migrations(&mut conn)?;
     // 2. For pre-framework vaults, backfill missing columns and mark baseline.
     legacy_backfill(&conn)?;
+    // 3. Best-effort Unix permissions. The DB file itself should be a normal
+    // owner-writable file (0644), and the vault directory must stay writable
+    // so SQLite can create sidecars like `-wal` / `-shm`.
+    let _ = ensure_vault_fs_permissions(vault_path, &db_path);
 
     Ok(conn)
+}
+
+#[cfg(unix)]
+fn ensure_vault_fs_permissions(vault_path: &Path, db_path: &Path) -> std::io::Result<()> {
+    if let Ok(meta) = fs::metadata(vault_path) {
+        let mut perms = meta.permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(vault_path, perms)?;
+    }
+    if let Ok(meta) = fs::metadata(db_path) {
+        let mut perms = meta.permissions();
+        perms.set_mode(0o644);
+        fs::set_permissions(db_path, perms)?;
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn ensure_vault_fs_permissions(_vault_path: &Path, _db_path: &Path) -> std::io::Result<()> {
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{env, fs};
+    use uuid::Uuid;
+
+    #[test]
+    fn open_db_enables_wal_and_sets_unix_permissions() {
+        let vault_path = env::temp_dir().join(format!("skipi-open-db-{}", Uuid::new_v4()));
+        fs::create_dir_all(&vault_path).unwrap();
+
+        let conn = open_db(&vault_path).unwrap();
+        let journal_mode: String = conn
+            .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(journal_mode.to_lowercase(), "wal");
+
+        let db_path = vault_path.join("skipi.db");
+        assert!(db_path.exists());
+
+        #[cfg(unix)]
+        {
+            let db_mode = fs::metadata(&db_path).unwrap().permissions().mode() & 0o777;
+            let dir_mode = fs::metadata(&vault_path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(db_mode, 0o644);
+            assert_eq!(dir_mode, 0o755);
+        }
+
+        drop(conn);
+        let _ = fs::remove_dir_all(&vault_path);
+    }
 }
 
 pub fn set_vault_info(conn: &Connection, key: &str, value: &str) -> Result<()> {
