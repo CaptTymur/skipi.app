@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.20';
+var APP_VERSION='0.4.21';
 // Human-readable labels for account types that go into the OS window title.
 // Unknown types fall back to the raw value so we never show something blank.
 var ACCOUNT_TYPE_LABELS={
@@ -405,6 +405,7 @@ input, select, button { font-family:var(--font-ui); }
             <h3 style="margin-top:0;margin-bottom:4px;font-size:16px;">Add Custom Certificate</h3>
             <p style="color:var(--text2);font-size:12px;margin-top:0;margin-bottom:14px;">Add a certificate that isn't in the standard template — e.g. a company-specific training, a local endorsement, or an extra course you took.</p>
             <div class="field"><label>Title *</label><input type="text" id="ac-title" placeholder="e.g. Dangerous Goods by Air (IATA DGR)"></div>
+            <div class="field"><label>Category</label><select id="ac-category"></select></div>
             <div class="field"><label><input type="checkbox" id="ac-has-expiry" checked style="margin-right:6px;">This certificate has an expiry date</label></div>
             <div class="actions" style="margin-top:18px;text-align:right;">
                 <button class="btn btn-outline" onclick="hideAddCustomDoc()">Cancel</button>
@@ -420,7 +421,7 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.20</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.21</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div style="margin-top:18px;font-size:12px;color:var(--text2);">
@@ -1467,9 +1468,19 @@ function showView(v){
     document.getElementById('left-panel').style.display=(v==='dashboard'||v==='cv'||v==='experience'||v==='dispatch')?'none':'';
     // The second tabs row (breadcrumb-style tab with the current document name)
     // is only useful in Files view — in the other panels the panel title above
-    // already says the same thing. Hide it everywhere else.
+    // already says the same thing. Hide it everywhere else. We also clear the
+    // innerHTML so the stale "CV"/"Packages"/etc. chip doesn't flash when we
+    // come back to Files before a document is selected.
     var tabsEl=document.getElementById('tabs');
-    if(tabsEl)tabsEl.style.display=(v==='files')?'':'none';
+    if(tabsEl){
+        if(v==='files'){
+            tabsEl.style.display='';
+            if(!selectedDocId)tabsEl.innerHTML='';
+        }else{
+            tabsEl.style.display='none';
+            tabsEl.innerHTML='';
+        }
+    }
     var addBtn=document.getElementById('btn-add-custom');
     if(addBtn)addBtn.style.display=(v==='files')?'inline':'none';
     pkgMode=v==='packages';pkgSelected=[];
@@ -2005,8 +2016,21 @@ async function showCv(){
         h+='</tr>';
     };
     row('Position',p.rank||sp.rank,'Readiness',sp.available_from);
-    var seaYears=data.total_sea_days>0?Math.round(data.total_sea_days/365)+' years':'';
-    row('Experience',seaYears,'Citizenship',sp.nationality);
+    // Show experience in both months and years+months — crewing managers
+    // often skim months to quickly gauge fit, especially for contract-based
+    // work. Pure "2 years" loses up to 11 months of precision.
+    var seaDays=data.total_sea_days||0;
+    var seaMonths=Math.floor(seaDays/30);
+    var seaExp='';
+    if(seaMonths>0){
+        var yrs=Math.floor(seaMonths/12);
+        var mos=seaMonths%12;
+        seaExp=seaMonths+' months';
+        if(yrs>0){
+            seaExp+=' ('+yrs+'y'+(mos>0?' '+mos+'m':'')+')';
+        }
+    }
+    row('Experience',seaExp,'Citizenship',sp.nationality);
     row('Last name',sp.surname,'Marital status',sp.marital_status);
     row('First name',sp.first_name,'Children',sp.children_count);
     row('Middle name',sp.middle_name,'Nationality',sp.nationality);
@@ -2076,12 +2100,13 @@ async function showCv(){
 
     document.getElementById('scr-content').innerHTML=h;
     show('scr-content');updateTabs('CV');
-    // Load photo async
+    // Load photo async — via data URL to bypass the asset protocol (same
+    // rationale as in spLoad; see get_profile_photo_data_url).
     try{
-        var abs=await invoke('get_profile_photo_abs_path');
+        var durl=await invoke('get_profile_photo_data_url');
         var box=document.getElementById('cv-photo-box');
-        if(abs&&box){var src=convertFileSrc?convertFileSrc(abs):abs;box.innerHTML='<img src="'+src+'?t='+Date.now()+'" style="width:100%;height:100%;object-fit:cover;">';}
-    }catch(e){}
+        if(durl&&box)box.innerHTML='<img src="'+durl+'" style="width:100%;height:100%;object-fit:cover;">';
+    }catch(e){logError('showCv:photo',e);}
 }
 
 async function exportCvPdf(){
@@ -2182,7 +2207,8 @@ function hideAddCustomDoc(){
 async function doAddCustomDoc(){
     var title=document.getElementById('ac-title').value.trim();
     if(!title){alert('Enter a title for the certificate');return;}
-    var category='Custom';
+    var catSel=document.getElementById('ac-category');
+    var category=(catSel&&catSel.value)?catSel.value:'Custom';
     var hasExpiry=document.getElementById('ac-has-expiry').checked;
     try{
         var rec=await invoke('add_custom_doc',{title:title,category:category,hasExpiry:hasExpiry});
@@ -2199,59 +2225,48 @@ async function doAddCustomDoc(){
 // ========== Dispatch (Рассылка) ==========
 // Combines a generated Package (ZIP) + a freshly-rendered CV PDF and sends them
 // to one or more email recipients via the OS default mail client.
-var dispatchTab='docs'; // 'cv' | 'docs' | 'contacts'
-function setDispatchTab(t){dispatchTab=t;showDispatch();}
+// Dispatch UI (v0.4.21): one unified flow — recipients on top, then
+// checkboxes for CV and/or Documents (package dropdown appears when the
+// latter is checked), then Send. No more sub-tabs or Crewing Addresses
+// placeholder. Subject + body are always auto-generated from the profile
+// and opened in the user's default mail client for final edits.
 async function showDispatch(){
     var pkgs=[], dispatches=[];
     try{pkgs=await invoke('get_packages');}catch(e){}
     try{dispatches=await invoke('get_dispatches');}catch(e){}
     var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><h2 style="font-size:18px;">Dispatch</h2></div>';
-    // Sub-tabs
-    var sub=function(id,label){var a=dispatchTab===id?'background:var(--accent);color:#fff;':'background:var(--bg2);color:var(--text);';
-        return '<span onclick="setDispatchTab(\''+id+'\')" style="padding:6px 12px;border:1px solid var(--border);border-radius:5px;cursor:pointer;font-size:12px;font-weight:600;'+a+'">'+label+'</span>';};
-    h+='<div style="display:flex;gap:6px;margin-bottom:16px;">'+sub('cv','Send CV')+sub('docs','Send Documents')+sub('contacts','Crewing Addresses')+'</div>';
+    h+='<p style="color:var(--text2);font-size:12px;margin-bottom:16px;">Enter recipients, pick what to send, then hit Send. Your default mail client opens with subject, body, and attachments ready — you can still edit everything before sending.</p>';
+    h+='<div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:20px;background:var(--bg);">';
 
-    if(dispatchTab==='cv'){
-        h+='<p style="color:var(--text2);font-size:12px;margin-bottom:16px;">Send only your CV PDF — no attachments from the vault. Useful for first-contact emails to crewing agencies.</p>';
-        h+='<div style="border:1px solid var(--border);border-radius:8px;padding:16px;background:var(--bg);">';
-        h+='<div style="padding:10px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);font-size:12px;color:var(--text2);margin-bottom:12px;">&#128196; <b>CV PDF</b> will be generated on the fly from your Seafarer Profile + Sea Service.</div>';
-        h+='<div class="field"><label>Recipients (one per line or comma-separated)</label><textarea id="disp-to" rows="3" style="width:100%;font-family:var(--font-mono);font-size:12px;" placeholder="crewing@example.com"></textarea></div>';
-        h+='<div style="padding:10px 12px;border:1px dashed var(--border);border-radius:6px;background:var(--bg2);font-size:12px;color:var(--text2);margin-bottom:12px;">Subject &amp; message are generated from your profile and opened in your default mail client &mdash; you can edit them before sending.</div>';
-        h+='<div style="display:flex;gap:8px;justify-content:flex-end;"><button class="btn btn-accent" onclick="doDispatchCvOnly()">Send CV &#128231;</button></div>';
-        h+='</div>';
-        document.getElementById('scr-content').innerHTML=h;show('scr-content');updateTabs('Dispatch');return;
-    }
+    // 1. Recipients
+    h+='<div class="field"><label>Recipients (one email per line or comma-separated)</label><textarea id="disp-to" rows="3" style="width:100%;font-family:var(--font-mono);font-size:12px;" placeholder="crewing@example.com&#10;manager@example.com"></textarea></div>';
 
-    if(dispatchTab==='contacts'){
-        h+='<p style="color:var(--text2);font-size:12px;margin-bottom:16px;">Address book of crewing agencies, managers and contacts. Select from here when composing a dispatch.</p>';
-        h+='<div style="padding:20px;border:1px dashed var(--border);border-radius:6px;color:var(--text2);text-align:center;">';
-        h+='<div style="font-size:32px;opacity:.5;margin-bottom:8px;">&#128221;</div>';
-        h+='<div style="font-weight:600;margin-bottom:4px;">Crewing Addresses</div>';
-        h+='<div style="font-size:12px;">Contact book is coming in a future release. For now, paste recipient emails directly in the Send tabs.</div>';
-        h+='</div>';
-        document.getElementById('scr-content').innerHTML=h;show('scr-content');updateTabs('Dispatch');return;
-    }
+    // 2. Send CV checkbox
+    h+='<div style="margin:12px 0 6px;"><label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px;">'+
+       '<input type="checkbox" id="disp-include-cv" checked style="margin-top:3px;width:16px;height:16px;accent-color:var(--accent);">'+
+       '<span><b>Send CV</b><div style="font-size:11px;color:var(--text2);">Seafarer\'s Application Form PDF generated from your profile + sea service.</div></span>'+
+       '</label></div>';
 
-    // dispatchTab === 'docs'
-    h+='<p style="color:var(--text2);font-size:12px;margin-bottom:16px;">Send a package (ZIP with selected documents) together with a freshly generated CV PDF to one or more email addresses. A draft is opened in your default mail client with both files attached.</p>';
-    if(!pkgs.length){
-        h+='<div style="padding:14px;border:1px dashed var(--border);border-radius:6px;color:var(--text2);">No packages yet. Go to <b>Packages</b> and create one first &mdash; only then you\'ll have something to dispatch.</div>';
-    }else{
-        // Compose form
-        h+='<div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:20px;background:var(--bg);">';
-        h+='<div class="field"><label>Package</label><select id="disp-pkg">';
+    // 3. Send Documents checkbox + package dropdown
+    h+='<div style="margin:6px 0 6px;"><label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px;">'+
+       '<input type="checkbox" id="disp-include-docs" '+(pkgs.length?'':'disabled ')+'onchange="onToggleDispatchDocs()" style="margin-top:3px;width:16px;height:16px;accent-color:var(--accent);">'+
+       '<span><b>Send documents package</b><div style="font-size:11px;color:var(--text2);">'+(pkgs.length?'ZIP with the documents you\'ve packaged.':'No packages yet — go to <b>Packages</b> to create one first.')+'</div></span>'+
+       '</label></div>';
+    if(pkgs.length){
+        h+='<div id="disp-pkg-row" style="display:none;margin:6px 0 6px 28px;">';
+        h+='<label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Package</label><select id="disp-pkg" style="width:100%;">';
         pkgs.forEach(function(p){
             var exp=new Date(p.expires_on),dead=exp<new Date();
             var lbl=p.title+' ('+p.file_count+' files'+(dead?' — EXPIRED':'')+')';
             h+='<option value="'+p.id+'"'+(dead?' disabled':'')+'>'+lbl+'</option>';
         });
         h+='</select></div>';
-        h+='<div style="padding:10px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);font-size:12px;color:var(--text2);margin-bottom:12px;">&#128196; <b>CV PDF</b> will be generated from your current Seafarer Profile + Files + Sea Service, and attached alongside the package.</div>';
-        h+='<div class="field"><label>Recipients (one email per line or comma-separated)</label><textarea id="disp-to" rows="3" style="width:100%;font-family:var(--font-mono);font-size:12px;" placeholder="crewing@example.com&#10;manager@example.com"></textarea></div>';
-        h+='<div style="padding:10px 12px;border:1px dashed var(--border);border-radius:6px;background:var(--bg2);font-size:12px;color:var(--text2);margin-bottom:12px;">Subject &amp; message are generated from your profile and opened in your default mail client &mdash; you can edit them before sending.</div>';
-        h+='<div style="display:flex;gap:8px;justify-content:flex-end;"><button class="btn btn-accent" onclick="doDispatch()">Send &#128231;</button></div>';
-        h+='</div>';
     }
+
+    // 4. Send button
+    h+='<div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end;"><button class="btn btn-accent" onclick="doDispatchUnified()">Send &#128231;</button></div>';
+    h+='</div>';
+
     // History
     h+='<h3 style="font-size:14px;margin-bottom:8px;">Recent dispatches</h3>';
     if(!dispatches.length){
@@ -2267,6 +2282,72 @@ async function showDispatch(){
         h+='</tbody></table>';
     }
     document.getElementById('scr-content').innerHTML=h;show('scr-content');updateTabs('Dispatch');
+}
+
+function onToggleDispatchDocs(){
+    var cb=document.getElementById('disp-include-docs');
+    var row=document.getElementById('disp-pkg-row');
+    if(row)row.style.display=(cb&&cb.checked)?'block':'none';
+}
+
+async function doDispatchUnified(){
+    var toRaw=(document.getElementById('disp-to')||{}).value||'';
+    var includeCv=!!(document.getElementById('disp-include-cv')||{}).checked;
+    var includeDocs=!!(document.getElementById('disp-include-docs')||{}).checked;
+    if(!includeCv&&!includeDocs){showToast('Tick at least one — CV or Documents','warn');return;}
+
+    // Validate recipients once (same dedupe + invalid rules as old flow).
+    var rawTokens=toRaw.split(/[\n,;]+/).map(function(s){return s.trim();}).filter(function(s){return s;});
+    var emailRe=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    var seen={},recipients=[],invalid=[],dupCount=0;
+    rawTokens.forEach(function(tok){
+        if(!emailRe.test(tok)){invalid.push(tok);return;}
+        var key=tok.toLowerCase();
+        if(seen[key]){dupCount++;return;}
+        seen[key]=true;recipients.push(tok);
+    });
+    if(invalid.length){
+        if(!confirm('Skipping '+invalid.length+' invalid address(es):\n'+invalid.slice(0,5).join('\n')+(invalid.length>5?'\n…':'')+'\n\nContinue?'))return;
+    }
+    if(!recipients.length){alert('Enter at least one valid recipient');return;}
+    if(dupCount>0){
+        if(!confirm('Sending to '+recipients.length+' unique recipient(s); removed '+dupCount+' duplicate(s).\n\nContinue?'))return;
+    }
+
+    var draft=await buildDispatchDraft(includeDocs?'docs':'cv');
+
+    // Route: CV-only uses the simple mailto path (saves a PDF first,
+    // attach manually). Anything with a package goes through dispatch_package
+    // because xdg-email / osascript can attach ZIPs for us.
+    if(includeDocs){
+        var pkgSel=document.getElementById('disp-pkg');
+        var pkgId=pkgSel?pkgSel.value:'';
+        if(!pkgId){alert('Select a package');return;}
+        try{
+            await invoke('dispatch_package',{
+                packageId:pkgId,
+                recipients:recipients,
+                subject:draft.subject,
+                body:draft.body,
+                includeCv:includeCv,
+            });
+            showToast('Dispatch draft opened. Attachments staged in ~/Downloads/Skipi/','success');
+            await showDispatch();
+        }catch(e){showToast('Dispatch error: '+e,'error');logError('Dispatch error',e);}
+        return;
+    }
+
+    // CV only
+    try{
+        var out=await saveDlg({defaultPath:'CV.pdf',filters:[{name:'PDF',extensions:['pdf']}]});
+        if(!out)return;
+        await invoke('export_cv_pdf',{outputPath:out});
+        showToast('CV PDF saved. Attach it manually in the mail draft that just opened.','info');
+        var mailto='mailto:'+encodeURIComponent(recipients.join(','))
+            +'?subject='+encodeURIComponent(draft.subject)
+            +'&body='+encodeURIComponent(draft.body);
+        window.location.href=mailto;
+    }catch(e){showToast('CV export error: '+e,'error');logError('export_cv_pdf',e);}
 }
 
 // Builds a professional subject + body for outgoing dispatch drafts from the
@@ -2295,67 +2376,7 @@ async function buildDispatchDraft(kind){
     return {subject:subject,body:body};
 }
 
-// Send CV alone: exports the CV PDF and opens a mailto draft so the user
-// can attach it by hand (mailto: does not allow programmatic attachments).
-async function doDispatchCvOnly(){
-    var toRaw=(document.getElementById('disp-to')||{}).value||'';
-    var rawTokens=toRaw.split(/[\n,;]+/).map(function(s){return s.trim();}).filter(function(s){return s;});
-    var emailRe=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    var recipients=rawTokens.filter(function(t){return emailRe.test(t);});
-    if(!recipients.length){alert('Enter at least one valid recipient');return;}
-    var draft=await buildDispatchDraft('cv');
-    try{
-        var out=await saveDlg({defaultPath:'CV.pdf',filters:[{name:'PDF',extensions:['pdf']}]});
-        if(!out)return;
-        await invoke('export_cv_pdf',{outputPath:out});
-        showToast('CV PDF saved. Attach it manually in the mail draft that just opened.','info');
-        var mailto='mailto:'+encodeURIComponent(recipients.join(','))
-            +'?subject='+encodeURIComponent(draft.subject)
-            +'&body='+encodeURIComponent(draft.body);
-        window.location.href=mailto;
-    }catch(e){showToast('CV export error: '+e,'error');logError('export_cv_pdf',e);}
-}
 
-async function doDispatch(){
-    var pkgId=document.getElementById('disp-pkg').value;
-    var toRaw=document.getElementById('disp-to').value||'';
-    var draft=await buildDispatchDraft('docs');
-    var subject=draft.subject;
-    var body=draft.body;
-    if(!pkgId){alert('Select a package');return;}
-    // Split on commas, semicolons, newlines; trim; validate; dedupe (case-insensitive).
-    var rawTokens=toRaw.split(/[\n,;]+/).map(function(s){return s.trim();}).filter(function(s){return s;});
-    var emailRe=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    var seen={};
-    var recipients=[];
-    var invalid=[];
-    var dupCount=0;
-    rawTokens.forEach(function(tok){
-        if(!emailRe.test(tok)){invalid.push(tok);return;}
-        var key=tok.toLowerCase();
-        if(seen[key]){dupCount++;return;}
-        seen[key]=true;
-        recipients.push(tok);
-    });
-    if(invalid.length){
-        if(!confirm('Skipping '+invalid.length+' invalid address(es):\n'+invalid.slice(0,5).join('\n')+(invalid.length>5?'\n…':'')+'\n\nContinue?'))return;
-    }
-    if(!recipients.length){alert('Enter at least one valid recipient');return;}
-    if(dupCount>0){
-        if(!confirm('Sending to '+recipients.length+' unique recipient(s); removed '+dupCount+' duplicate(s).\n\nContinue?'))return;
-    }
-    try{
-        await invoke('dispatch_package',{
-            packageId:pkgId,
-            recipients:recipients,
-            subject:subject,
-            body:body
-        });
-        if(typeof uiToast==='function')uiToast('Dispatch draft opened in your mail client');
-        else alert('Dispatch draft opened. Check your mail client.');
-        await showDispatch();
-    }catch(e){showToast('Dispatch error: '+e,'error');logError('Dispatch error',e);}
-}
 
 async function showPackages(){
     var pkgs=[];try{pkgs=await invoke('get_packages');}catch(e){}
@@ -2533,12 +2554,16 @@ function renderSettingsBody(){
         h += '<div class="field-grid">';
         h += spField('sp-surname','Surname');
         h += spField('sp-first_name','First name');
+        h += spField('sp-middle_name','Middle name');
         h += spField('sp-date_of_birth','Date of birth','date');
         h += spField('sp-place_of_birth','Place of birth');
         h += '<div class="field"><label>Nationality</label><select id="sp-nationality"></select></div>';
         h += '<div class="field"><label>Phones</label><div style="display:flex;gap:6px;"><input id="sp-phones" style="flex:1;min-width:0;"><select id="sp-preferred_messenger" style="width:110px;flex:0 0 110px;"><option value="WhatsApp">WhatsApp</option><option value="Telegram">Telegram</option><option value="Viber">Viber</option><option value="Signal">Signal</option><option value="Other">Other</option></select></div></div>';
         h += spField('sp-email','Email','email');
         h += '<div class="field"><label>Rank</label><select id="sp-rank"></select></div>';
+        h += '<div class="field"><label>Marital status</label><select id="sp-marital_status"><option value="">-- Select --</option><option value="Single">Single</option><option value="Married">Married</option><option value="Divorced">Divorced</option><option value="Widowed">Widowed</option></select></div>';
+        h += '<div class="field"><label>Children</label><input id="sp-children_count" type="number" min="0" step="1" placeholder="0"></div>';
+        h += '<div class="field"><label>English level</label><select id="sp-english_level"><option value="">-- Select --</option><option value="Basic">Basic</option><option value="Intermediate">Intermediate</option><option value="Advanced">Advanced</option><option value="Fluent">Fluent</option><option value="Native">Native</option></select></div>';
         h += '<div class="field"><label>Nearest airport</label><input id="sp-nearest_airport" list="airport-hubs" placeholder="Start typing…"></div>';
         h += '<div class="field"><label>Nearest intl airport</label><input id="sp-nearest_intl_airport" list="airport-hubs" placeholder="Start typing…"></div>';
         h += spField('sp-available_from','Available for joining','date');
@@ -2643,8 +2668,11 @@ async function spLoad(){
         populateSelect(document.getElementById('sp-rank'),RANKS,data.rank||'','-- Select rank --');
         populateAirportDatalist();
         populateSelect(document.getElementById('sp-min_salary_currency'),CURRENCIES,localStorage.getItem('skipi-sp-min_salary_currency')||'USD','');
-        // Nationality + rank are populated above; the loop below handles free-text / date fields only.
-        var keys=['surname','first_name','date_of_birth','place_of_birth','phones','email','nearest_airport','nearest_intl_airport','available_from','home_address'];
+        // Nationality + rank are populated above; the loop below handles
+        // free-text / date / simple-select fields. Select elements (marital
+        // status, english level) accept assignment to `.value` the same way
+        // as inputs, so they share this loop.
+        var keys=['surname','first_name','middle_name','date_of_birth','place_of_birth','phones','email','nearest_airport','nearest_intl_airport','available_from','home_address','marital_status','children_count','english_level'];
         keys.forEach(function(k){
             var el=document.getElementById('sp-'+k);
             if(el)el.value=data[k]||'';
@@ -2674,7 +2702,7 @@ async function spLoad(){
     }catch(e){showToast('Load error: '+e,'error');logError('Load error',e);}
 }
 async function spSave(){
-    var keys=['surname','first_name','date_of_birth','place_of_birth','nationality','phones','email','rank','nearest_airport','nearest_intl_airport','available_from','home_address'];
+    var keys=['surname','first_name','middle_name','date_of_birth','place_of_birth','nationality','phones','email','rank','nearest_airport','nearest_intl_airport','available_from','home_address','marital_status','children_count','english_level'];
     var fields={};
     keys.forEach(function(k){
         var el=document.getElementById('sp-'+k);

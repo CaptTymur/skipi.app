@@ -124,6 +124,67 @@ pub fn create_profile_vault(
     Ok(info)
 }
 
+/// Seeds missing required-template rows into an existing vault.
+/// Called from `open_vault` so vaults created before we added a template
+/// (e.g. the Visas category added in v0.4.21) pick it up automatically on
+/// the next launch — without requiring a manual reset/recreate.
+///
+/// Only inserts rows whose `template_id` is not already present in the
+/// `documents` table; never overwrites or deletes anything.
+pub fn ensure_profile_templates(
+    conn: &rusqlite::Connection,
+    vault_path: &std::path::Path,
+) -> Result<(), String> {
+    let g = |k: &str| db::get_vault_info_value(conn, k);
+    if g("account_type").as_deref() != Some("seafarer") {
+        return Ok(());
+    }
+    let level_id = match g("stcw_level") {
+        Some(v) if !v.is_empty() => v,
+        _ => return Ok(()),
+    };
+    let vessel_category = g("vessel_category").unwrap_or_default();
+    let position = g("position").unwrap_or_default();
+
+    let level = match profiles::StcwLevel::from_id(&level_id) {
+        Some(l) => l,
+        None => return Ok(()),
+    };
+    let templates = profiles::required_docs_for_profile(level, &vessel_category, &position);
+
+    // Collect existing template_ids in one query to avoid N selects.
+    let existing: std::collections::HashSet<String> = {
+        let mut stmt = conn
+            .prepare("SELECT template_id FROM documents WHERE template_id IS NOT NULL")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        rows.filter_map(|r| r.ok()).collect()
+    };
+
+    for t in &templates {
+        if existing.contains(t.id) {
+            continue;
+        }
+        let rec = frameworks::record_from_profile_template(t);
+        let cat_dir = vault_path.join(&rec.category);
+        let _ = std::fs::create_dir_all(&cat_dir);
+        let payload = serde_json::json!({
+            "category": rec.category.clone(),
+            "kind": "framework",
+            "template_id": rec.template_id.clone(),
+            "account_type": "seafarer",
+            "source": "ensure_profile_templates",
+        })
+        .to_string();
+        let rec_id = rec.id.clone();
+        db::insert_doc(conn, &rec).map_err(|e| e.to_string())?;
+        let _ = db::log_event(conn, "doc_seeded", "document", Some(&rec_id), Some(&payload));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn get_seafarer_frameworks(
     level_id: String,

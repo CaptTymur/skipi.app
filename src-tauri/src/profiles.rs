@@ -159,6 +159,9 @@ pub fn universal_base() -> Vec<DocTemplate> {
         DocTemplate { id: "visa_us", title: "USA Visa (C1/D)", category: "Visas",
             regulatory_basis: "US Immigration and Nationality Act", has_expiry: true, typical_years: Some(10),
             notes: "Transit/crewman visa. Required by ~50% of employers." },
+        DocTemplate { id: "visa_schengen", title: "Schengen Visa", category: "Visas",
+            regulatory_basis: "EU Regulation 810/2009 (Visa Code)", has_expiry: true, typical_years: Some(5),
+            notes: "Short-stay visa covering the Schengen Area. Useful for crew changes in EU ports." },
         // Medical
         DocTemplate { id: "medical_cert", title: "Medical Fitness Certificate", category: "Medical",
             regulatory_basis: "STCW I/9; MLC 2006 A1.2", has_expiry: true, typical_years: Some(2),

@@ -2,7 +2,7 @@ use crate::db::{self, VaultInfo};
 use crate::{frameworks, identity, AppState};
 use std::fs;
 use std::path::PathBuf;
-use tauri::{Manager, State};
+use tauri::State;
 
 #[tauri::command]
 pub fn get_last_vault() -> Option<String> {
@@ -62,14 +62,12 @@ pub fn get_linux_install_type() -> String {
 
 /// Sets the OS window title. Called from the frontend whenever the vault
 /// context changes so the titlebar shows `Skipi — <AccountType> — <VaultName>`.
-/// Avoids needing a `core:window:allow-set-title` capability / the JS window
-/// plugin; we already have a `Manager` handle server-side.
+/// Receives the current `WebviewWindow` directly (Tauri injects it) — that
+/// way we don't depend on a specific label or on extra window-plugin
+/// capabilities on the JS side.
 #[tauri::command]
-pub fn set_window_title(app: tauri::AppHandle, title: String) -> Result<(), String> {
-    if let Some(win) = app.get_webview_window("main") {
-        win.set_title(&title).map_err(|e| e.to_string())?;
-    }
-    Ok(())
+pub fn set_window_title(window: tauri::WebviewWindow, title: String) -> Result<(), String> {
+    window.set_title(&title).map_err(|e| e.to_string())
 }
 
 /// Opens a URL in the user's default browser. Implemented via `xdg-open` /
@@ -204,6 +202,10 @@ pub fn open_vault(state: State<AppState>, path: String) -> Result<VaultInfo, Str
 
     let conn = db::open_db(&vault_path).map_err(|e| e.to_string())?;
     let info = db::get_vault_info(&conn).map_err(|e| e.to_string())?;
+    // Pick up templates added after this vault was created (e.g. Visas
+    // category introduced in v0.4.21). Best-effort: log but don't fail
+    // the whole open if seeding a single template errors out.
+    let _ = crate::commands::profile::ensure_profile_templates(&conn, &vault_path);
 
     crate::save_last_vault(&path);
     *state.vault_path.lock().unwrap_or_else(|e| e.into_inner()) = Some(vault_path);
