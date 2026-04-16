@@ -620,11 +620,16 @@ async function doUpdate(){
     // "invalid binary format" failure from the built-in updater.
     var installType=await _getLinuxInstallType();
     if(installType==='deb'||installType==='other'){
-        var url=SKIPI_REPO_URL+'/releases/tag/v'+_pendingUpdate.version;
-        try{await invoke('open_external_url',{url:url});}
-        catch(e){logError('open_external_url',e);}
-        if(msg){msg.innerHTML='Skipi '+_pendingUpdate.version+' released. Auto-update isn\'t supported on .deb installs — your browser just opened the release page. Download <b>Skipi_'+_pendingUpdate.version+'_amd64.deb</b> and install it with <code>sudo dpkg -i</code>, or switch to the <b>.AppImage</b> build for automatic updates.';}
-        if(btn){btn.textContent='Open page again';btn.disabled=false;btn.onclick=function(){invoke('open_external_url',{url:url}).catch(function(){});};}
+        if(btn){btn.disabled=true;btn.textContent='Downloading…';}
+        if(msg)msg.textContent='Downloading Skipi '+_pendingUpdate.version+'…';
+        try{
+            var result=await invoke('install_deb_update',{version:_pendingUpdate.version});
+            if(msg)msg.innerHTML='<b>Skipi '+_pendingUpdate.version+' installed.</b> Close and reopen the app to use the new version.';
+            if(btn){btn.style.display='none';}
+        }catch(e){
+            if(msg){msg.innerHTML='Update failed: '+e+'. <a href="'+SKIPI_REPO_URL+'/releases/tag/v'+_pendingUpdate.version+'" style="color:#fff;text-decoration:underline;" onclick="invoke(\'open_external_url\',{url:\''+SKIPI_REPO_URL+'/releases/tag/v'+_pendingUpdate.version+'\'});return false;">Download manually</a>';}
+            if(btn){btn.textContent='Retry';btn.disabled=false;btn.onclick=doUpdate;}
+        }
         return;
     }
     if(btn){btn.disabled=true;btn.textContent='Downloading…';}

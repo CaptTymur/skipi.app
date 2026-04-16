@@ -92,6 +92,7 @@ pub fn run() {
             vault::get_platform,
             vault::get_linux_install_type,
             vault::open_external_url,
+            vault::install_deb_update,
             vault::create_vault,
             vault::open_vault,
             vault::close_vault,

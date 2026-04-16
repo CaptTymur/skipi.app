@@ -80,6 +80,42 @@ pub fn open_external_url(url: String) -> Result<(), String> {
     cmd.map(|_| ()).map_err(|e| e.to_string())
 }
 
+/// Download a .deb from GitHub releases to /tmp and install via pkexec dpkg -i.
+/// Shows a native password prompt. On success, exits the app so the user
+/// restarts into the new version.
+#[tauri::command]
+pub async fn install_deb_update(version: String) -> Result<String, String> {
+    if !cfg!(target_os = "linux") {
+        return Err("Only available on Linux".to_string());
+    }
+    let filename = format!("Skipi_{}_amd64.deb", version);
+    let url = format!(
+        "https://github.com/CaptTymur/skipi.app/releases/download/v{}/{}",
+        version, filename
+    );
+    let dest = std::path::PathBuf::from("/tmp").join(&filename);
+
+    // Download
+    let resp = reqwest::get(&url).await.map_err(|e| format!("Download failed: {}", e))?;
+    if !resp.status().is_success() {
+        return Err(format!("Download failed: HTTP {}", resp.status()));
+    }
+    let bytes = resp.bytes().await.map_err(|e| format!("Download failed: {}", e))?;
+    std::fs::write(&dest, &bytes).map_err(|e| format!("Cannot save .deb: {}", e))?;
+
+    // Install via pkexec (shows native password dialog)
+    let status = std::process::Command::new("pkexec")
+        .args(["dpkg", "-i", &dest.to_string_lossy()])
+        .status()
+        .map_err(|e| format!("Cannot run pkexec: {}", e))?;
+
+    if !status.success() {
+        return Err("Installation failed (wrong password or cancelled)".to_string());
+    }
+
+    Ok("Installed. Please restart Skipi.".to_string())
+}
+
 #[tauri::command]
 pub fn get_vault_types() -> serde_json::Value {
     serde_json::json!({
