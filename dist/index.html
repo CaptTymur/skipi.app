@@ -1375,7 +1375,7 @@ async function loadVault(info){
     var expIcon=document.getElementById('ri-exp');
     var cvIcon=document.getElementById('ri-cv');
     var dispIcon=document.getElementById('ri-disp');
-    var isSeafarer=currentAccountType==='seafarer';
+    var isSeafarer=currentAccountType==='seafarer'||currentAccountType===''||!currentAccountType;
     if(expIcon)expIcon.style.display=isSeafarer?'flex':'none';
     if(cvIcon)cvIcon.style.display=isSeafarer?'flex':'none';
     if(dispIcon)dispIcon.style.display=isSeafarer?'flex':'none';
