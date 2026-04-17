@@ -2233,7 +2233,7 @@ async function showDispatch(){
     try{pkgs=await invoke('get_packages');}catch(e){}
     try{dispatches=await invoke('get_dispatches');}catch(e){}
     var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><h2 style="font-size:18px;">Dispatch</h2></div>';
-    h+='<p style="color:var(--text2);font-size:12px;margin-bottom:16px;">Choose how to send your application. Redacted CV protects your personal data — employers see your qualifications but not your identity.</p>';
+    h+='<p style="color:var(--text2);font-size:12px;margin-bottom:16px;">Choose how to send your application. Privacy-protected CV hides your personal data — employers see your qualifications but not your identity.</p>';
     h+='<div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:20px;background:var(--bg);">';
 
     // 1. Recipients
@@ -2243,7 +2243,7 @@ async function showDispatch(){
     h+='<div style="margin:12px 0 6px;font-size:13px;"><b>CV mode</b></div>';
     h+='<div style="margin:4px 0 4px 4px;"><label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px;">'+
        '<input type="radio" name="disp-cv-mode" value="redacted" checked style="margin-top:3px;width:16px;height:16px;accent-color:var(--accent);">'+
-       '<span><b>Redacted CV</b> <span style="color:var(--green);font-size:11px;">(recommended)</span><div style="font-size:11px;color:var(--text2);">Privacy-protected: initials only, contacts hidden, cert numbers masked. Employer can request full profile if interested.</div></span>'+
+       '<span><b>Privacy-protected CV</b> <span style="color:var(--green);font-size:11px;">(recommended)</span><div style="font-size:11px;color:var(--text2);">Initials only, contacts hidden, cert numbers masked. Employer can request your full profile if interested.</div></span>'+
        '</label></div>';
     h+='<div style="margin:4px 0 4px 4px;"><label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px;">'+
        '<input type="radio" name="disp-cv-mode" value="full" style="margin-top:3px;width:16px;height:16px;accent-color:var(--accent);">'+
@@ -2304,12 +2304,12 @@ async function doDispatchPrepare(){
     try{
         var dispDir=await invoke('get_dispatch_dir');
         if(cvMode==='redacted'){
-            await invoke('export_redacted_cv_pdf',{outputPath:dispDir+'/Skipi_Redacted_CV.pdf'});
+            await invoke('export_redacted_cv_pdf',{outputPath:dispDir+'/Skipi_Privacy_Protected_CV.pdf'});
         }else{
             await invoke('export_cv_pdf',{outputPath:dispDir+'/Skipi_Full_CV.pdf'});
         }
         var includeDocs=!!(document.getElementById('disp-include-docs')||{}).checked;
-        var files=[cvMode==='redacted'?'Skipi_Redacted_CV.pdf':'Skipi_Full_CV.pdf'];
+        var files=[cvMode==='redacted'?'Skipi_Privacy_Protected_CV.pdf':'Skipi_Full_CV.pdf'];
         if(includeDocs){files.push('documents.zip');}
         // Show staging panel
         var h='<div style="border:1px solid var(--green);border-radius:8px;padding:16px;margin-bottom:20px;background:var(--bg);">';

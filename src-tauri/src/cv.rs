@@ -1226,7 +1226,7 @@ pub fn render_redacted_cv_pdf(
     // -------- Header strip --------
     let mut cursor_y = page_h - margin - 12.0;
     pdf_fill_rect(&layer, margin, cursor_y, content_w, 12.0, accent.clone());
-    pdf_text(&layer, "PRIVACY-PROTECTED APPLICATION", margin + 4.0, cursor_y + 4.0, 12.0, &bold, white.clone());
+    pdf_text(&layer, "PRIVACY-PROTECTED CV", margin + 4.0, cursor_y + 4.0, 12.0, &bold, white.clone());
 
     // Small note below header
     cursor_y -= 5.0;
