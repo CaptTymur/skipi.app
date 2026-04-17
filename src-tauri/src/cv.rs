@@ -1274,18 +1274,18 @@ pub fn render_redacted_cv_pdf(
     pdf_field(&layer, "ENGLISH LEVEL", extras.english_level.as_deref().unwrap_or("—"), margin, cursor_y, half_w, summary_field_h, &bold, &reg);
     pdf_field(&layer, "LAST CONTRACT ENDED", extras.last_contract_end.as_deref().unwrap_or("—"), margin + half_w, cursor_y, half_w, summary_field_h, &bold, &reg);
 
-    // Row 4: Salary range + Career pattern
+    // Row 4: Salary range + Contact
     cursor_y -= summary_field_h;
     let salary_str = match (&extras.min_salary, &extras.salary_currency) {
         (Some(s), Some(c)) if !s.is_empty() => format!("{} {}/mo", s, c),
         _ => "—".to_string(),
     };
     pdf_field(&layer, "MIN SALARY", &salary_str, margin, cursor_y, half_w, summary_field_h, &bold, &reg);
-    pdf_field(&layer, "CAREER PATTERN", extras.career_pattern.as_deref().unwrap_or("—"), margin + half_w, cursor_y, half_w, summary_field_h, &bold, &reg);
+    pdf_field(&layer, "CONTACT", "via Skipi", margin + half_w, cursor_y, half_w, summary_field_h, &bold, &reg);
 
-    // Row 5: Contact (via Skipi)
+    // Row 5: Career pattern — full width so long text isn't truncated
     cursor_y -= summary_field_h;
-    pdf_field(&layer, "CONTACT", "via Skipi", margin, cursor_y, content_w, summary_field_h, &bold, &reg);
+    pdf_field(&layer, "CAREER PATTERN", extras.career_pattern.as_deref().unwrap_or("—"), margin, cursor_y, content_w, summary_field_h, &bold, &reg);
     cursor_y -= 4.0;
 
     // -------- Certificates section --------
