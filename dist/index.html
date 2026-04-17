@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.31';
+var APP_VERSION='0.4.32';
 // Human-readable labels for account types that go into the OS window title.
 // Unknown types fall back to the raw value so we never show something blank.
 var ACCOUNT_TYPE_LABELS={
@@ -360,10 +360,10 @@ input, select, button { font-family:var(--font-ui); }
      strip has been removed; vault switcher + settings gear moved here
      from the sidebar footer. -->
 <div class="modules-bar" id="modules-bar" style="display:none;">
-    <div class="mod-tab active" onclick="showView('files')" id="mt-files" title="Files"><span>Files</span></div>
+    <div class="mod-tab active" onclick="showView('files')" id="mt-files" title="Files and data input"><span>Files &amp; data</span></div>
+    <div class="mod-tab" onclick="showView('experience')" id="mt-exp" title="Work Experience"><span>Experience</span></div>
     <div class="mod-tab" onclick="showView('dashboard')" id="mt-dash" title="Dashboard"><span>Dashboard</span></div>
     <div class="mod-tab" onclick="showView('cv')" id="mt-cv" title="CV"><span>CV</span></div>
-    <div class="mod-tab" onclick="showView('experience')" id="mt-exp" title="Work Experience"><span>Experience</span></div>
     <div class="mod-tab" onclick="showView('packages')" id="mt-pkg" title="Packages"><span>Packages</span></div>
     <div class="mod-tab" onclick="showView('dispatch')" id="mt-disp" title="Dispatch"><span class="mi">&#128231;</span><span>Dispatch</span></div>
     <div class="mb-spacer"></div>
@@ -417,7 +417,7 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.31</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.32</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div style="margin-top:18px;font-size:12px;color:var(--text2);">
@@ -1988,18 +1988,22 @@ async function showCv(){
     var certs=data.certificates||[];
     var work=data.work_history||[];
     var e=function(v){return esc(v||'');};
-    var bdr='border:1px solid var(--border);';
-    var cellS='padding:3px 8px;font-size:12px;'+bdr;
-    var labelS=cellS+'color:var(--text2);font-weight:600;width:120px;white-space:nowrap;';
+    var bdr='border:1px solid #d0d0d0;';
+    var cellS='padding:3px 8px;font-size:12px;color:#1e1e1e;'+bdr;
+    var labelS=cellS+'color:#555;font-weight:600;width:120px;white-space:nowrap;';
     var valS=cellS;
-    var sectionS='font-size:13px;font-weight:700;color:var(--accent);padding:10px 0 4px;border-bottom:2px solid var(--accent);margin-top:16px;margin-bottom:0;';
+    var sectionS='font-size:13px;font-weight:700;color:#4a4a8a;padding:10px 0 4px;border-bottom:2px solid #4a4a8a;margin-top:16px;margin-bottom:0;';
 
-    // Export buttons
-    var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">';
+    // Export buttons (outside the paper sheet)
+    var h='<div style="display:flex;justify-content:center;padding:16px 16px 8px;">';
+    h+='<div style="width:100%;max-width:794px;display:flex;justify-content:space-between;align-items:center;">';
     h+='<h2 style="font-size:18px;">Seafarer\'s Application Form</h2>';
     h+='<div><button class="btn btn-accent" onclick="exportCvPdf()">Export .pdf</button> ';
     h+='<button class="btn btn-outline" onclick="exportCvDocx()">Export .docx</button></div>';
-    h+='</div>';
+    h+='</div></div>';
+    // Paper sheet container — A4-like, white background, centered
+    h+='<div style="display:flex;justify-content:center;padding:0 16px 24px;">';
+    h+='<div style="width:100%;max-width:794px;background:#fff;color:#1e1e1e;border-radius:4px;box-shadow:0 2px 12px rgba(0,0,0,0.25);padding:28px 32px;">';
 
     // ===== PERSONAL DETAILS + PHOTO =====
     h+='<div style="display:flex;gap:16px;align-items:flex-start;">';
@@ -2034,8 +2038,8 @@ async function showCv(){
     row('English level',sp.english_level||'','Email',sp.email);
     h+='</table>';
     // Right: photo
-    h+='<div style="width:130px;min-width:130px;height:160px;'+bdr+'border-radius:4px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:var(--surface);" id="cv-photo-box">';
-    h+='<span style="color:var(--text2);font-size:11px;">Photo</span></div>';
+    h+='<div style="width:130px;min-width:130px;height:160px;'+bdr+'border-radius:4px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#f0f0f0;" id="cv-photo-box">';
+    h+='<span style="color:#888;font-size:11px;">Photo</span></div>';
     h+='</div>';
 
     // ===== SALARY =====
@@ -2050,16 +2054,16 @@ async function showCv(){
     // ===== PASSPORTS, LICENSES & CERTIFICATES =====
     h+='<div style="'+sectionS+'">Passports, Licenses &amp; Certificates</div>';
     if(!certs.length){
-        h+='<p style="color:var(--text2);font-size:12px;margin-top:4px;">No certificates on file.</p>';
+        h+='<p style="color:#888;font-size:12px;margin-top:4px;">No certificates on file.</p>';
     }else{
         var byCat={};
         certs.forEach(function(c){if(!byCat[c.category])byCat[c.category]=[];byCat[c.category].push(c);});
         h+='<table style="border-collapse:collapse;'+bdr+'margin-top:4px;width:100%;">';
-        h+='<thead><tr style="background:var(--surface);"><th style="'+cellS+'text-align:left;">Title</th><th style="'+cellS+'text-align:left;">Number</th><th style="'+cellS+'text-align:left;">Place of issue</th><th style="'+cellS+'text-align:left;">Issued</th><th style="'+cellS+'text-align:left;">Valid</th></tr></thead><tbody>';
+        h+='<thead><tr style="background:#f0f0f0;"><th style="'+cellS+'text-align:left;">Title</th><th style="'+cellS+'text-align:left;">Number</th><th style="'+cellS+'text-align:left;">Place of issue</th><th style="'+cellS+'text-align:left;">Issued</th><th style="'+cellS+'text-align:left;">Valid</th></tr></thead><tbody>';
         Object.keys(byCat).sort().forEach(function(cat){
-            h+='<tr><td colspan="5" style="'+cellS+'font-weight:700;color:var(--accent);background:var(--hover);padding:6px 8px;">'+cat+'</td></tr>';
+            h+='<tr><td colspan="5" style="'+cellS+'font-weight:700;color:#4a4a8a;background:#f5f5f5;padding:6px 8px;">'+cat+'</td></tr>';
             byCat[cat].forEach(function(c){
-                var vc=c.status==='expired'?'var(--red)':c.status==='warning'?'var(--yellow)':'var(--text)';
+                var vc=c.status==='expired'?'#c53030':c.status==='warning'?'#d69e2e':'#1e1e1e';
                 h+='<tr>';
                 h+='<td style="'+cellS+'">'+e(c.title)+'</td>';
                 h+='<td style="'+cellS+'font-family:var(--font-mono);font-size:11px;">'+e(c.doc_number)+'</td>';
@@ -2075,10 +2079,10 @@ async function showCv(){
     // ===== SEA-GOING EXPERIENCE =====
     h+='<div style="'+sectionS+'">Sea-going experience</div>';
     if(!work.length){
-        h+='<p style="color:var(--text2);font-size:12px;margin-top:4px;">No work history recorded.</p>';
+        h+='<p style="color:#888;font-size:12px;margin-top:4px;">No work history recorded.</p>';
     }else{
         h+='<table style="border-collapse:collapse;'+bdr+'margin-top:4px;width:100%;">';
-        h+='<thead><tr style="background:var(--surface);"><th style="'+cellS+'text-align:left;">Vessel</th><th style="'+cellS+'text-align:left;">Flag</th><th style="'+cellS+'text-align:left;">Type</th><th style="'+cellS+'text-align:left;">Rank</th><th style="'+cellS+'text-align:left;">From</th><th style="'+cellS+'text-align:left;">Till</th><th style="'+cellS+'text-align:left;">Company</th></tr></thead><tbody>';
+        h+='<thead><tr style="background:#f0f0f0;"><th style="'+cellS+'text-align:left;">Vessel</th><th style="'+cellS+'text-align:left;">Flag</th><th style="'+cellS+'text-align:left;">Type</th><th style="'+cellS+'text-align:left;">Rank</th><th style="'+cellS+'text-align:left;">From</th><th style="'+cellS+'text-align:left;">Till</th><th style="'+cellS+'text-align:left;">Company</th></tr></thead><tbody>';
         work.forEach(function(w){
             h+='<tr>';
             h+='<td style="'+cellS+'font-weight:500;">'+e(w.vessel_name)+'</td>';
@@ -2092,6 +2096,9 @@ async function showCv(){
         });
         h+='</tbody></table>';
     }
+
+    // Close paper sheet + centering containers
+    h+='</div></div>';
 
     document.getElementById('scr-content').innerHTML=h;
     show('scr-content');updateTabs('CV');
