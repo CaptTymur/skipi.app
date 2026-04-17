@@ -331,6 +331,22 @@ pub fn create_demo_vault(state: State<AppState>, path: String) -> Result<VaultIn
     Ok(info)
 }
 
+/// Auto-create a demo vault in ~/Documents/Skipi Demo (no folder picker).
+#[tauri::command]
+pub fn create_demo_vault_auto(state: State<AppState>) -> Result<VaultInfo, String> {
+    let base = dirs::document_dir()
+        .or_else(dirs::home_dir)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let vault_path = base.join("Skipi Demo");
+    let conn = demo::populate_demo_vault(&vault_path)?;
+    let info = db::get_vault_info(&conn).map_err(|e| e.to_string())?;
+    let path_str = vault_path.to_string_lossy().to_string();
+    crate::save_last_vault(&path_str);
+    *state.vault_path.lock().unwrap_or_else(|e| e.into_inner()) = Some(vault_path);
+    *state.conn.lock().unwrap_or_else(|e| e.into_inner()) = Some(conn);
+    Ok(info)
+}
+
 // ========== MATCHABLE PROFILE ====================================
 
 const MATCHABLE_VERSION: u32 = 1;

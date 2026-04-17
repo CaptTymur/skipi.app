@@ -138,6 +138,7 @@ pub fn run() {
             profile::get_vessel_taxonomy,
             profile::create_vessel_profile_vault,
             profile::create_demo_vault,
+            profile::create_demo_vault_auto,
             profile::get_matchable_profile,
             profile::get_seafarer_personal,
             profile::set_seafarer_personal,

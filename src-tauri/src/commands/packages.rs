@@ -482,33 +482,61 @@ pub fn dispatch_package(
     }
     #[cfg(target_os = "windows")]
     {
-        fn pct(s: &str) -> String {
-            s.bytes()
-                .map(|b| {
-                    if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) {
-                        (b as char).to_string()
-                    } else {
-                        format!("%{:02X}", b)
-                    }
-                })
-                .collect()
+        // Collect attachment paths
+        let mut attachments: Vec<String> = Vec::new();
+        if !zip_str.is_empty() { attachments.push(zip_str.clone()); }
+        if include_cv { attachments.push(cv_str.clone()); }
+
+        // Primary: PowerShell + Outlook COM — opens Outlook with body + attachments
+        let attach_ps: String = attachments.iter()
+            .map(|a| format!("$m.Attachments.Add('{}')", a.replace('\'', "''")))
+            .collect::<Vec<_>>()
+            .join("; ");
+        let ps_script = format!(
+            "$o = New-Object -ComObject Outlook.Application; \
+             $m = $o.CreateItem(0); \
+             $m.To = '{}'; \
+             $m.Subject = '{}'; \
+             $m.Body = '{}'; \
+             {}; \
+             $m.Display()",
+            to_joined.replace('\'', "''"),
+            subject.replace('\'', "''"),
+            body.replace('\'', "''").replace('\n', "`n"),
+            attach_ps,
+        );
+        let outlook_ok = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
+            .spawn()
+            .and_then(|mut c| c.wait())
+            .map(|s| s.success())
+            .unwrap_or(false);
+
+        // Fallback: mailto (no attachments possible, but body is included)
+        if !outlook_ok {
+            fn pct(s: &str) -> String {
+                s.bytes()
+                    .map(|b| {
+                        if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) {
+                            (b as char).to_string()
+                        } else {
+                            format!("%{:02X}", b)
+                        }
+                    })
+                    .collect()
+            }
+            let url = format!(
+                "mailto:{}?subject={}&body={}",
+                to_joined,
+                pct(&subject),
+                pct(&body),
+            );
+            let _ = std::process::Command::new("cmd")
+                .args(["/C", "start", "", &url])
+                .spawn();
         }
-        let mut hint_files = String::new();
-        if !zip_str.is_empty() { hint_files.push_str(&format!("\n{}", zip_str)); }
-        if include_cv { hint_files.push_str(&format!("\n{}", cv_str)); }
-        let hint = format!(
-            "{}\n\n--- Please attach manually ---{}\n",
-            body, hint_files
-        );
-        let url = format!(
-            "mailto:{}?subject={}&body={}",
-            to_joined,
-            pct(&subject),
-            pct(&hint),
-        );
-        let _ = std::process::Command::new("cmd")
-            .args(["/C", "start", "", &url])
-            .spawn();
+
+        // Always open the dispatch folder so user can drag-drop attachments
         let _ = std::process::Command::new("explorer")
             .arg(dispatch_dir.to_string_lossy().as_ref())
             .spawn();
