@@ -40,3 +40,18 @@ pub fn export_cv_pdf(state: State<AppState>, output_path: String) -> Result<Stri
     cv::render_cv_pdf(&data, &out, photo_abs.as_deref())?;
     Ok(output_path)
 }
+
+/// Render a privacy-protected (redacted) CV PDF. PII is stripped via
+/// whitelist: the renderer only sees professional signals (rank, sea time,
+/// cert statuses, career pattern) — no names, contacts, cert numbers,
+/// vessel/company names.
+#[tauri::command]
+pub fn export_redacted_cv_pdf(state: State<AppState>, output_path: String) -> Result<String, String> {
+    let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = conn_lock.as_ref().ok_or("No vault open")?;
+    let data = cv::build_cv_data(conn)?;
+    let extras = cv::build_redacted_extras(conn);
+    let out = PathBuf::from(&output_path);
+    cv::render_redacted_cv_pdf(&data, &extras, &out)?;
+    Ok(output_path)
+}

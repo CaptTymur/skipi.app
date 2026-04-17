@@ -126,6 +126,7 @@ pub fn run() {
             packages::open_email_with_attachment,
             packages::prepare_dispatch_attachments,
             packages::record_dispatch_history,
+            packages::get_dispatch_dir,
             // Profile
             profile::get_profile_taxonomy,
             profile::get_required_docs,
@@ -148,6 +149,7 @@ pub fn run() {
             cv_commands::get_cv_data,
             cv_commands::export_cv_docx,
             cv_commands::export_cv_pdf,
+            cv_commands::export_redacted_cv_pdf,
             // Work history
             work_history::add_work_history,
             work_history::get_work_history,

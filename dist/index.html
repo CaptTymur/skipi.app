@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.26';
+var APP_VERSION='0.4.27';
 // Human-readable labels for account types that go into the OS window title.
 // Unknown types fall back to the raw value so we never show something blank.
 var ACCOUNT_TYPE_LABELS={
@@ -417,7 +417,7 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.26</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.27</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div style="margin-top:18px;font-size:12px;color:var(--text2);">
@@ -2233,22 +2233,27 @@ async function showDispatch(){
     try{pkgs=await invoke('get_packages');}catch(e){}
     try{dispatches=await invoke('get_dispatches');}catch(e){}
     var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><h2 style="font-size:18px;">Dispatch</h2></div>';
-    h+='<p style="color:var(--text2);font-size:12px;margin-bottom:16px;">Enter recipients, pick what to send, then hit Send. Your default mail client opens with subject, body, and attachments ready — you can still edit everything before sending.</p>';
+    h+='<p style="color:var(--text2);font-size:12px;margin-bottom:16px;">Choose how to send your application. Redacted CV protects your personal data — employers see your qualifications but not your identity.</p>';
     h+='<div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:20px;background:var(--bg);">';
 
     // 1. Recipients
     h+='<div class="field"><label>Recipients (one email per line or comma-separated)</label><textarea id="disp-to" rows="3" style="width:100%;font-family:var(--font-mono);font-size:12px;" placeholder="crewing@example.com&#10;manager@example.com"></textarea></div>';
 
-    // 2. Send CV checkbox
-    h+='<div style="margin:12px 0 6px;"><label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px;">'+
-       '<input type="checkbox" id="disp-include-cv" checked style="margin-top:3px;width:16px;height:16px;accent-color:var(--accent);">'+
-       '<span><b>Send CV</b><div style="font-size:11px;color:var(--text2);">Seafarer\'s Application Form PDF generated from your profile + sea service.</div></span>'+
+    // 2. CV mode radio buttons
+    h+='<div style="margin:12px 0 6px;font-size:13px;"><b>CV mode</b></div>';
+    h+='<div style="margin:4px 0 4px 4px;"><label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px;">'+
+       '<input type="radio" name="disp-cv-mode" value="redacted" checked style="margin-top:3px;width:16px;height:16px;accent-color:var(--accent);">'+
+       '<span><b>Redacted CV</b> <span style="color:var(--green);font-size:11px;">(recommended)</span><div style="font-size:11px;color:var(--text2);">Privacy-protected: initials only, contacts hidden, cert numbers masked. Employer can request full profile if interested.</div></span>'+
+       '</label></div>';
+    h+='<div style="margin:4px 0 4px 4px;"><label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px;">'+
+       '<input type="radio" name="disp-cv-mode" value="full" style="margin-top:3px;width:16px;height:16px;accent-color:var(--accent);">'+
+       '<span><b>Full CV</b><div style="font-size:11px;color:var(--text2);">All personal details included. Use only when you already know and trust the employer.</div></span>'+
        '</label></div>';
 
     // 3. Send Documents checkbox + package dropdown
-    h+='<div style="margin:6px 0 6px;"><label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px;">'+
+    h+='<div style="margin:12px 0 6px;"><label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px;">'+
        '<input type="checkbox" id="disp-include-docs" '+(pkgs.length?'':'disabled ')+'onchange="onToggleDispatchDocs()" style="margin-top:3px;width:16px;height:16px;accent-color:var(--accent);">'+
-       '<span><b>Send documents package</b><div style="font-size:11px;color:var(--text2);">'+(pkgs.length?'ZIP with the documents you\'ve packaged.':'No packages yet — go to <b>Packages</b> to create one first.')+'</div></span>'+
+       '<span><b>Include documents package</b><div style="font-size:11px;color:var(--text2);">'+(pkgs.length?'ZIP with your packaged documents.':'No packages yet — go to <b>Packages</b> to create one first.')+'</div></span>'+
        '</label></div>';
     if(pkgs.length){
         h+='<div id="disp-pkg-row" style="display:none;margin:6px 0 6px 28px;">';
@@ -2261,8 +2266,11 @@ async function showDispatch(){
         h+='</select></div>';
     }
 
-    // 4. Send button
-    h+='<div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end;"><button class="btn btn-accent" onclick="doDispatchUnified()">Send &#128231;</button></div>';
+    // 4. Action buttons
+    h+='<div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">'+
+       '<button class="btn btn-outline" onclick="doDispatchPrepare()">Prepare files</button>'+
+       '<button class="btn btn-accent" onclick="doDispatchUnified()">Send &#128231;</button>'+
+       '</div>';
     h+='</div>';
 
     // History
@@ -2288,11 +2296,38 @@ function onToggleDispatchDocs(){
     if(row)row.style.display=(cb&&cb.checked)?'block':'none';
 }
 
+// Prepare files: generate CV (redacted or full) + optional docs ZIP into
+// ~/Downloads/Skipi/ and open the folder so user can drag-drop into any
+// email client. This is the universal fallback that works on 100% of platforms.
+async function doDispatchPrepare(){
+    var cvMode=(document.querySelector('input[name="disp-cv-mode"]:checked')||{}).value||'redacted';
+    try{
+        var dispDir=await invoke('get_dispatch_dir');
+        if(cvMode==='redacted'){
+            await invoke('export_redacted_cv_pdf',{outputPath:dispDir+'/Skipi_Redacted_CV.pdf'});
+        }else{
+            await invoke('export_cv_pdf',{outputPath:dispDir+'/Skipi_Full_CV.pdf'});
+        }
+        var includeDocs=!!(document.getElementById('disp-include-docs')||{}).checked;
+        var files=[cvMode==='redacted'?'Skipi_Redacted_CV.pdf':'Skipi_Full_CV.pdf'];
+        if(includeDocs){files.push('documents.zip');}
+        // Show staging panel
+        var h='<div style="border:1px solid var(--green);border-radius:8px;padding:16px;margin-bottom:20px;background:var(--bg);">';
+        h+='<div style="font-size:14px;font-weight:600;color:var(--green);margin-bottom:8px;">Files ready</div>';
+        files.forEach(function(f){h+='<div style="font-size:12px;margin:4px 0;">&#128196; '+f+'</div>';});
+        h+='<p style="font-size:11px;color:var(--text2);margin:10px 0 0;">Drag these files from the folder into your email compose window.</p>';
+        h+='<div style="margin-top:12px;display:flex;gap:8px;"><button class="btn btn-outline btn-sm" onclick="invoke(\'open_file_in_default\',{path:\''+dispDir.replace(/\\/g,'\\\\')+'\'})"">Open folder</button><button class="btn btn-outline btn-sm" onclick="showDispatch()">Done</button></div>';
+        h+='</div>';
+        document.getElementById('scr-content').innerHTML=h;
+        showToast('Files prepared in '+dispDir,'success');
+    }catch(e){showToast('Error: '+e,'error');logError('prepare',e);}
+}
+
 async function doDispatchUnified(){
     var toRaw=(document.getElementById('disp-to')||{}).value||'';
-    var includeCv=!!(document.getElementById('disp-include-cv')||{}).checked;
+    var cvMode=(document.querySelector('input[name="disp-cv-mode"]:checked')||{}).value||'redacted';
+    var includeCv=true; // CV is always sent (mode determines redacted vs full)
     var includeDocs=!!(document.getElementById('disp-include-docs')||{}).checked;
-    if(!includeCv&&!includeDocs){showToast('Tick at least one — CV or Documents','warn');return;}
 
     // Validate recipients once (same dedupe + invalid rules as old flow).
     var rawTokens=toRaw.split(/[\n,;]+/).map(function(s){return s.trim();}).filter(function(s){return s;});

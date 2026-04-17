@@ -540,6 +540,18 @@ pub fn dispatch_package(
     }))
 }
 
+/// Return the path to the dispatch staging folder (~/Downloads/Skipi),
+/// creating it if needed. Used by `doDispatchPrepare` in the frontend.
+#[tauri::command]
+pub fn get_dispatch_dir() -> Result<String, String> {
+    let dir = dirs::download_dir()
+        .or_else(dirs::home_dir)
+        .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
+        .join("Skipi");
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir.to_string_lossy().to_string())
+}
+
 /// Return all dispatch history entries, newest first.
 #[tauri::command]
 pub fn get_dispatches(state: State<AppState>) -> Result<Vec<serde_json::Value>, String> {
