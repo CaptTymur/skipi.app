@@ -39,16 +39,16 @@ jobs:
             tauri_args: ""
             name: Linux
 
-          # macOS — re-enable when ready for cross-platform distribution
+          - platform: windows-latest
+            rust_targets: x86_64-pc-windows-msvc
+            tauri_args: ""
+            name: Windows
+
+          # macOS — re-enable when Apple Developer $99 is paid
           # - platform: macos-latest
           #   rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
           #   tauri_args: --target universal-apple-darwin
           #   name: macOS
-
-          # - platform: windows-latest
-          #   rust_targets: x86_64-pc-windows-msvc
-          #   tauri_args: ""
-          #   name: Windows
 
     runs-on: ${{ matrix.platform }}
     name: Build (${{ matrix.name }})
