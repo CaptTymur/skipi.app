@@ -292,6 +292,32 @@ pub fn populate_demo_vault(vault_path: &Path) -> Result<Connection, String> {
     db::set_vault_info(&conn, "vessel_type", "Bulk carrier").map_err(|e| e.to_string())?;
     db::set_vault_info(&conn, "is_demo", "1").map_err(|e| e.to_string())?;
 
+    // Seafarer personal data — populates the profile and CV.
+    db::set_vault_info(&conn, "personal_surname", "Seaborne").map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_first_name", "Adrian").map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_dob", "1992-07-15").map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_place_of_birth", "Odesa").map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_nationality", "Ukrainian").map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_nationality_code", "UKR").map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_phones", "+380 50 123 4567").map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_email", "a.seaborne@demo.skipi.app").map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_home_address", "Odesa, Ukraine").map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_rank", "Second Officer").map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_nearest_airport", "Odesa (ODS)").map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_nearest_intl_airport", "Istanbul (IST)").map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_available_from", "2026-05-15").map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_min_salary", "4500").map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_currency", "USD").map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_ready_for_offers", "true").map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_preferred_messenger", "WhatsApp").map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_english_level", "Fluent").map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_marital_status", "Single").map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_height_cm", "182").map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_weight_kg", "78").map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_coverall_size", "L").map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_shoe_size_eu", "43").map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_blood_type", "A+").map_err(|e| e.to_string())?;
+
     // Build the full framework from profile templates — same pipeline as real
     // seafarer creation, so nothing drifts.
     let level = profiles::StcwLevel::from_id("operational")

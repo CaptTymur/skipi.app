@@ -300,33 +300,50 @@ pub fn open_email_with_attachment(state: State<AppState>, package_id: String, to
     }
     #[cfg(target_os = "windows")]
     {
-        fn pct(s: &str) -> String {
-            s.bytes()
-                .map(|b| {
-                    if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) {
-                        (b as char).to_string()
-                    } else {
-                        format!("%{:02X}", b)
-                    }
-                })
-                .collect()
+        // Primary: PowerShell + Outlook COM — body + attachment included
+        let ps_script = format!(
+            "$o = New-Object -ComObject Outlook.Application; \
+             $m = $o.CreateItem(0); \
+             $m.To = '{}'; \
+             $m.Subject = '{}'; \
+             $m.Body = '{}'; \
+             $m.Attachments.Add('{}'); \
+             $m.Display()",
+            to.replace('\'', "''"),
+            subject.replace('\'', "''"),
+            body_str.replace('\'', "''").replace('\n', "`n"),
+            zip_str.replace('\'', "''"),
+        );
+        let outlook_ok = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
+            .spawn()
+            .and_then(|mut c| c.wait())
+            .map(|s| s.success())
+            .unwrap_or(false);
+
+        // Fallback: mailto + open folder for drag-drop
+        if !outlook_ok {
+            fn pct(s: &str) -> String {
+                s.bytes()
+                    .map(|b| {
+                        if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) {
+                            (b as char).to_string()
+                        } else {
+                            format!("%{:02X}", b)
+                        }
+                    })
+                    .collect()
+            }
+            let url = format!(
+                "mailto:{}?subject={}&body={}",
+                to,
+                pct(&subject),
+                pct(&body_str),
+            );
+            let _ = std::process::Command::new("cmd")
+                .args(["/C", "start", "", &url])
+                .spawn();
         }
-        let body = format!(
-            "Прикрепите файл вручную: {}\n\n\
-             (Windows не позволяет почтовым клиентам автоматически прикреплять \
-             файлы через mailto:. Skipi открыл папку с пакетом — перетащите ZIP в \
-             черновик письма.)",
-            zip_str
-        );
-        let url = format!(
-            "mailto:{}?subject={}&body={}",
-            to,
-            pct(&subject),
-            pct(&body),
-        );
-        let _ = std::process::Command::new("cmd")
-            .args(["/C", "start", "", &url])
-            .spawn();
         let _ = std::process::Command::new("explorer")
             .arg("/select,")
             .arg(&zip_str)

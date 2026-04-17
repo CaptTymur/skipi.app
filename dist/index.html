@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.30';
+var APP_VERSION='0.4.31';
 // Human-readable labels for account types that go into the OS window title.
 // Unknown types fall back to the raw value so we never show something blank.
 var ACCOUNT_TYPE_LABELS={
@@ -417,7 +417,7 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.30</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.31</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div style="margin-top:18px;font-size:12px;color:var(--text2);">
@@ -2105,7 +2105,7 @@ async function showCv(){
 }
 
 async function exportCvPdf(){
-    if(!open){showToast('File dialog not available','error');return;}
+    if(!saveDlg){showToast('File dialog not available','error');return;}
     var defName='Skipi_CV.pdf';
     try{
         var data=await invoke('get_cv_data');
@@ -2122,7 +2122,7 @@ async function exportCvPdf(){
         }
     }catch(e){}
     try{
-        var d=await open({save:true,title:'Save CV as PDF',defaultPath:defName,filters:[{name:'PDF document',extensions:['pdf']}]});
+        var d=await saveDlg({title:'Save CV as PDF',defaultPath:defName,filters:[{name:'PDF document',extensions:['pdf']}]});
         if(!d)return;
         if(!/\.pdf$/i.test(d))d=d+'.pdf';
         await invoke('export_cv_pdf',{outputPath:d});
@@ -2131,7 +2131,7 @@ async function exportCvPdf(){
 }
 
 async function exportCvDocx(){
-    if(!open){showToast('File dialog not available','error');return;}
+    if(!saveDlg){showToast('File dialog not available','error');return;}
     var defName='Skipi_CV.docx';
     try{
         var data=await invoke('get_cv_data');
@@ -2141,7 +2141,7 @@ async function exportCvDocx(){
         }
     }catch(e){}
     try{
-        var d=await open({save:true,title:'Save CV as...',defaultPath:defName,filters:[{name:'Word document',extensions:['docx']}]});
+        var d=await saveDlg({title:'Save CV as...',defaultPath:defName,filters:[{name:'Word document',extensions:['docx']}]});
         if(!d)return;
         if(!/\.docx$/i.test(d))d=d+'.docx';
         await invoke('export_cv_docx',{outputPath:d});
