@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.35';
+var APP_VERSION='0.4.36';
 // Human-readable labels for account types that go into the OS window title.
 // Unknown types fall back to the raw value so we never show something blank.
 var ACCOUNT_TYPE_LABELS={
@@ -360,7 +360,7 @@ input, select, button { font-family:var(--font-ui); }
      strip has been removed; vault switcher + settings gear moved here
      from the sidebar footer. -->
 <div class="modules-bar" id="modules-bar" style="display:none;">
-    <div class="mod-tab active" onclick="showView('files')" id="mt-files" title="Files and data input"><span>Files &amp; data</span></div>
+    <div class="mod-tab active" onclick="showView('files')" id="mt-files" title="Files and data input"><span>Files &amp; data input</span></div>
     <div class="mod-tab" onclick="showView('experience')" id="mt-exp" title="Work Experience"><span>Experience</span></div>
     <div class="mod-tab" onclick="showView('dashboard')" id="mt-dash" title="Dashboard"><span>Dashboard</span></div>
     <div class="mod-tab" onclick="showView('cv')" id="mt-cv" title="CV"><span>CV</span></div>
@@ -390,7 +390,7 @@ input, select, button { font-family:var(--font-ui); }
 
     <!-- Left panel -->
     <div class="left-panel" id="left-panel" style="display:none;">
-        <div class="panel-header"><span id="panel-title">Files</span><span class="actions"><span id="btn-add-custom" title="Add custom certificate" onclick="showAddCustomDoc()" style="font-size:11px;font-weight:600;padding:2px 8px;border:1px solid var(--border);border-radius:4px;">+ Add</span></span></div>
+        <div class="panel-header"><span id="panel-title">Files &amp; data input</span><span class="actions"><span id="btn-add-custom" title="Add custom certificate" onclick="showAddCustomDoc()" style="font-size:11px;font-weight:600;padding:2px 8px;border:1px solid var(--border);border-radius:4px;">+ Add</span></span></div>
         <div class="panel-search"><input type="text" placeholder="Search..." id="search-input" oninput="onSearch(this.value)"></div>
         <div class="panel-tree" id="panel-tree"></div>
     </div>
@@ -417,7 +417,7 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.35</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.36</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div style="margin-top:18px;font-size:12px;color:var(--text2);">
@@ -1545,7 +1545,7 @@ function showView(v){
     if(ri)ri.classList.add('active');
     var mt=document.getElementById('mt-'+shortMap[v]);
     if(mt)mt.classList.add('active');
-    document.getElementById('panel-title').textContent={files:'Files',dashboard:'Dashboard',cv:'CV',experience:'Sea Service',packages:'Packages',dispatch:'Dispatch',settings:'Settings'}[v]||v;
+    document.getElementById('panel-title').textContent={files:'Files & data input',dashboard:'Dashboard',cv:'CV',experience:'Sea Service',packages:'Packages',dispatch:'Dispatch',settings:'Settings'}[v]||v;
     document.getElementById('left-panel').style.display=(v==='dashboard'||v==='cv'||v==='experience'||v==='dispatch')?'none':'';
     // The second tabs row (breadcrumb-style tab with the current document name)
     // is only useful in Files view — in the other panels the panel title above
