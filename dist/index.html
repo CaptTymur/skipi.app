@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.32';
+var APP_VERSION='0.4.33';
 // Human-readable labels for account types that go into the OS window title.
 // Unknown types fall back to the raw value so we never show something blank.
 var ACCOUNT_TYPE_LABELS={
@@ -417,7 +417,7 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.32</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.33</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div style="margin-top:18px;font-size:12px;color:var(--text2);">
@@ -1168,7 +1168,7 @@ async function openForcedProfile(forceOpen){
         var msgr=document.getElementById('fp-preferred_messenger');
         if(msgr)msgr.value=data.preferred_messenger||'WhatsApp';
         var rdy=document.getElementById('fp-ready_for_offers');
-        var rdyVal=(data.ready_for_offers||'')!=='false'&&(data.ready_for_offers||'')!=='';
+        var rdyVal=(data.ready_for_offers||'true')!=='false';
         if(rdy){rdy.checked=rdyVal;}
         // In forced-profile overlay all fields must stay enabled so the user can fill them.
         // The ready_for_offers toggle only disables fields in the Settings panel, not here.
@@ -2532,7 +2532,15 @@ async function doEmail(id,title){
         (email?'\nEmail: '+email:'');
     try{await invoke('open_email_with_attachment',{packageId:id,to:to,subject:subj,body:body});}catch(e){showToast(''+e,'error');logError('op',e);}
 }
-async function exportPkg(id,title){var d=await open({save:true,title:'Save as...',defaultPath:title+'.zip',filters:[{name:'ZIP',extensions:['zip']}]});if(!d)return;try{await invoke('export_package',{packageId:id,destPath:d});}catch(e){showToast(''+e,'error');logError('op',e);}}
+async function exportPkg(id,title){
+    if(!saveDlg){showToast('File dialog not available','error');return;}
+    var d=await saveDlg({title:'Save package as...',defaultPath:title+'.zip',filters:[{name:'ZIP archive',extensions:['zip']}]});
+    if(!d)return;
+    try{
+        await invoke('export_package',{packageId:id,destPath:d});
+        showToast('Package saved','success');
+    }catch(e){showToast(''+e,'error');logError('exportPkg',e);}
+}
 async function delPkg(id){if(!confirm('Delete?'))return;try{await invoke('delete_package',{packageId:id});await showPackages();}catch(e){showToast(''+e,'error');logError('op',e);}}
 
 var settingsTab = 'general';
@@ -2803,7 +2811,7 @@ async function spLoad(){
         var msgr=document.getElementById('sp-preferred_messenger');
         if(msgr)msgr.value=data.preferred_messenger||'WhatsApp';
         var rdy=document.getElementById('sp-ready_for_offers');
-        var rdyVal=(data.ready_for_offers||'')!=='false'&&(data.ready_for_offers||'')!=='';
+        var rdyVal=(data.ready_for_offers||'true')!=='false';
         if(rdy){rdy.checked=rdyVal;spToggleReady(rdyVal);}
         // Photo — fetched as a data URL so we don't depend on the asset
         // protocol (which would need an extra capability + vault scope).
