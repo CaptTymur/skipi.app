@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.36';
+var APP_VERSION='0.4.37';
 // Human-readable labels for account types that go into the OS window title.
 // Unknown types fall back to the raw value so we never show something blank.
 var ACCOUNT_TYPE_LABELS={
@@ -417,7 +417,7 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.36</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.37</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div style="margin-top:18px;font-size:12px;color:var(--text2);">
@@ -563,6 +563,12 @@ async function _getLinuxInstallType(){
     return _linuxInstallType;
 }
 var SKIPI_REPO_URL='https://github.com/CaptTymur/skipi.app';
+// Short English footer appended to outgoing dispatch / package emails so
+// recipients know how the message was composed and where to get the app.
+// The "-- " separator (two dashes + space) is the traditional sig-delimiter;
+// mail clients that respect RFC 3676 strip everything below it as a signature
+// block, keeping replies clean.
+var SKIPI_EMAIL_FOOTER='\n\n-- \nCreated in Skipi application. Download: https://skipi.app';
 
 function _resetCheckUpdateBtn(){
     var b=document.getElementById('btn-check-update');
@@ -2526,7 +2532,8 @@ async function buildDispatchDraft(kind){
         'Kind regards,\n'+name+
         (rank?'\n'+rank:'')+
         (phone?'\nTel: '+phone:'')+
-        (email?'\nEmail: '+email:'');
+        (email?'\nEmail: '+email:'')+
+        SKIPI_EMAIL_FOOTER;
     return {subject:subject,body:body};
 }
 
@@ -2619,7 +2626,8 @@ async function doEmail(id,title){
         'Kind regards,\n'+name+
         (rank?'\n'+rank:'')+
         (phone?'\nTel: '+phone:'')+
-        (email?'\nEmail: '+email:'');
+        (email?'\nEmail: '+email:'')+
+        SKIPI_EMAIL_FOOTER;
     try{await invoke('open_email_with_attachment',{packageId:id,to:to,subject:subj,body:body});}catch(e){showToast(''+e,'error');logError('op',e);}
 }
 async function exportPkg(id,title){
