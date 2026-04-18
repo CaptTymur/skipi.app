@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.40';
+var APP_VERSION='0.4.41';
 // Human-readable labels for account types that go into the OS window title.
 // Unknown types fall back to the raw value so we never show something blank.
 var ACCOUNT_TYPE_LABELS={
@@ -417,7 +417,7 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.40</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.41</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div style="margin-top:18px;font-size:12px;color:var(--text2);">
@@ -490,6 +490,7 @@ input, select, button { font-family:var(--font-ui); }
      wins the top slot. -->
 <div id="err" style="display:none; position:fixed; top:60px; left:0; right:0; background:var(--red); color:#fff; padding:4px 12px; font-size:11px; font-family:var(--font-mono); z-index:99;"></div>
 <datalist id="airport-hubs"></datalist>
+<datalist id="maritime-flags"></datalist>
 <div id="drop-overlay"><div class="drop-card">&#128194; Drop the file to attach it to this certificate</div></div>
 
 <script>
@@ -1215,6 +1216,36 @@ function populateAirportDatalist(){
     dl.innerHTML=h;
     _airportDatalistFilled=true;
 }
+
+var _flagsDatalistFilled=false;
+function populateFlagsDatalist(){
+    if(_flagsDatalistFilled)return;
+    var dl=document.getElementById('maritime-flags');
+    if(!dl)return;
+    var h='';
+    MARITIME_FLAGS.forEach(function(f){h+='<option value="'+f+'"></option>';});
+    dl.innerHTML=h;
+    _flagsDatalistFilled=true;
+}
+
+// Common maritime flag registries ordered roughly by merchant-fleet tonnage
+// and hiring frequency for CIS / Filipino / Indian seafarers. Top flags of
+// convenience first; national registries seafarers actually work under follow.
+// Datalist is hint-only — user can still type any flag if missing.
+var MARITIME_FLAGS = [
+    "Panama","Liberia","Marshall Islands",
+    "Hong Kong","Singapore","Malta","Bahamas","Cyprus",
+    "Antigua and Barbuda","Isle of Man","Bermuda","Cayman Islands",
+    "UK","Norway (NIS)","Denmark (DIS)","Netherlands","Portugal (MAR)",
+    "Greece","Italy","Germany","France","Spain",
+    "Vanuatu","Cook Islands","Saint Vincent and the Grenadines","Belize",
+    "Ukraine","Russia","Poland","Romania","Bulgaria","Turkey",
+    "Philippines","India","Japan","South Korea","China",
+    "USA","Canada","Australia","New Zealand",
+    "UAE","Saudi Arabia","Qatar",
+    "Brazil","Argentina","Chile",
+    "Comoros","Luxembourg","Palau"
+];
 
 // ========== Common seafarer airport hubs (datalist for airport fields) ==========
 var AIRPORT_HUBS = [
@@ -2061,7 +2092,7 @@ function showAddWork(){
     h+='<div class="field"><label>Vessel Name *</label><input id="wh-vessel" placeholder="M/V Example"></div>';
     h+='<div class="field"><label>IMO Number</label><input id="wh-imo" placeholder="1234567"></div>';
     h+='<div class="field"><label>Vessel Type</label><select id="wh-type"></select></div>';
-    h+='<div class="field"><label>Flag</label><input id="wh-flag" placeholder="Panama"></div>';
+    h+='<div class="field"><label>Flag</label><input id="wh-flag" list="maritime-flags" placeholder="Start typing… (Panama, Liberia, Marshall Islands, …)"></div>';
     h+='<div class="field"><label>Company</label><input id="wh-company" placeholder="Shipping Co."></div>';
     h+='<div class="field"><label>Position *</label><select id="wh-position"></select></div>';
     h+='<div class="field"><label>Sign On</label><input id="wh-on" type="text" inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" oninput="autoFormatDate(this)"></div>';
@@ -2078,6 +2109,7 @@ function showAddWork(){
     var pList=(types&&types.ranks&&types.ranks.length)?types.ranks:RANKS;
     populateSelect(document.getElementById('wh-type'),vList,'','-- Select type --');
     populateSelect(document.getElementById('wh-position'),pList,'','-- Select position --');
+    populateFlagsDatalist();
 }
 
 async function saveWork(){
