@@ -28,7 +28,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Pre-flight: parse the inline JS in dist/index.html and fail fast on
+  # syntax errors. A single missing ')' inside an event handler or helper
+  # function has shipped multiple broken releases before this gate existed
+  # (v0.4.36 / .37 / .38 all crashed on welcome screen due to one unclosed
+  # `order.forEach(function(cat){...})` — invisible until the app actually
+  # loads in WebView2/WebKitGTK). This step runs in ~10s and blocks the
+  # whole release pipeline if the bundled JS does not parse.
+  syntax-check:
+    name: JS syntax check
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check inline JS in dist/index.html
+        run: |
+          node -e '
+            const fs = require("fs");
+            const html = fs.readFileSync("dist/index.html", "utf8");
+            const blocks = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+            if (!blocks.length) { console.error("no <script> blocks found"); process.exit(1); }
+            const main = blocks.reduce((a,b) => a.length > b.length ? a : b, "");
+            try {
+              new Function(main);
+              console.log("JS syntax OK (" + main.length + " chars across " + blocks.length + " blocks)");
+            } catch (e) {
+              console.error("SYNTAX ERROR in dist/index.html inline JS:");
+              console.error("  " + e.message);
+              process.exit(1);
+            }
+          '
+
   build:
+    needs: syntax-check
     strategy:
       fail-fast: false
       matrix:
@@ -136,6 +169,7 @@ jobs:
           args: ${{ matrix.tauri_args }}
 
   # After all platform builds finish, assemble latest.json and attach it to the release.
+  # (publish-latest-json inherits the syntax-check gate transitively via `build`.)
   # tauri-action itself does NOT aggregate per-platform signatures into one manifest
   # when running across a matrix, so we have to do it in a follow-up job.
   publish-latest-json:
