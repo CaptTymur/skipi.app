@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.37';
+var APP_VERSION='0.4.38';
 // Human-readable labels for account types that go into the OS window title.
 // Unknown types fall back to the raw value so we never show something blank.
 var ACCOUNT_TYPE_LABELS={
@@ -417,7 +417,7 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.37</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.38</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div style="margin-top:18px;font-size:12px;color:var(--text2);">
@@ -637,6 +637,40 @@ function hideUpdateBanner(){
     _pendingUpdate=null;
 }
 
+// After a successful update install, replace the banner action with a
+// "Restart now" button so the user can choose the moment (they might be
+// mid-way through something). If the user doesn't click, the new binary
+// still sits on disk and will be picked up next launch.
+function _showRestartButton(versionLabel){
+    var btn=document.getElementById('ub-action');
+    var msg=document.getElementById('ub-msg');
+    if(msg){
+        var label=versionLabel?'Skipi '+versionLabel+' installed.':'Update installed.';
+        msg.innerHTML='<b>'+label+'</b> Click Restart to apply.';
+    }
+    if(btn){
+        btn.style.display='';
+        btn.disabled=false;
+        btn.textContent='Restart now';
+        btn.onclick=async function(){
+            btn.disabled=true;
+            btn.textContent='Restarting…';
+            try{
+                if(window.__TAURI__.process&&window.__TAURI__.process.relaunch){
+                    await window.__TAURI__.process.relaunch();
+                } else {
+                    await invoke('plugin:process|restart');
+                }
+            }catch(e){
+                logError('updater:restart',e);
+                if(msg)msg.innerHTML='Could not restart automatically. Please close and reopen Skipi manually.';
+                btn.disabled=false;
+                btn.textContent='Try again';
+            }
+        };
+    }
+}
+
 async function doUpdate(){
     if(!_pendingUpdate)return;
     var btn=document.getElementById('ub-action');
@@ -649,9 +683,8 @@ async function doUpdate(){
         if(btn){btn.disabled=true;btn.textContent='Downloading…';}
         if(msg)msg.textContent='Downloading Skipi '+_pendingUpdate.version+'…';
         try{
-            var result=await invoke('install_deb_update',{version:_pendingUpdate.version});
-            if(msg)msg.innerHTML='<b>Skipi '+_pendingUpdate.version+' installed.</b> Close and reopen the app to use the new version.';
-            if(btn){btn.style.display='none';}
+            await invoke('install_deb_update',{version:_pendingUpdate.version});
+            _showRestartButton(_pendingUpdate.version);
         }catch(e){
             if(msg){msg.innerHTML='Update failed: '+e+'. <a href="'+SKIPI_REPO_URL+'/releases/tag/v'+_pendingUpdate.version+'" style="color:#fff;text-decoration:underline;" onclick="invoke(\'open_external_url\',{url:\''+SKIPI_REPO_URL+'/releases/tag/v'+_pendingUpdate.version+'\'});return false;">Download manually</a>';}
             if(btn){btn.textContent='Retry';btn.disabled=false;btn.onclick=doUpdate;}
@@ -669,25 +702,18 @@ async function doUpdate(){
                 } else if(ev.event==='Progress'){
                     // progress event
                 } else if(ev.event==='Finished'){
-                    if(msg)msg.textContent='Update installed! Restarting…';
+                    if(msg)msg.textContent='Update installed.';
                 }
             });
-            // Relaunch via process plugin
-            if(window.__TAURI__.process&&window.__TAURI__.process.relaunch){
-                await window.__TAURI__.process.relaunch();
-            } else {
-                await invoke('plugin:process|restart');
-            }
         } else {
             // Fallback: invoke plugin commands directly
             await invoke('plugin:updater|download_and_install');
-            if(msg)msg.textContent='Update installed! Restarting…';
-            await invoke('plugin:process|restart');
         }
+        _showRestartButton(_pendingUpdate.version);
     }catch(e){
         logError('updater:install',e);
         showToast('Update failed: '+e,'error');
-        if(btn){btn.disabled=false;btn.textContent='Retry';}
+        if(btn){btn.disabled=false;btn.textContent='Retry';btn.onclick=doUpdate;}
         if(msg)msg.textContent='Update failed. Click Retry to try again.';
     }
 }
@@ -769,19 +795,32 @@ function orderedCategories(cats){
     return user.concat(required).concat(optional);
 }
 
-// Drag-drop state
+// Drag-drop state. Category names are read from `data-cat` on the folder
+// element (via event.currentTarget) rather than baked into inline handler
+// arguments — categories like "Seaman's Book" contain apostrophes that
+// would break an HTML-entity-escaped JS string literal at parse time.
 var _dragCat=null;
-function onCatDragStart(ev,cat){_dragCat=cat;try{ev.dataTransfer.effectAllowed='move';ev.dataTransfer.setData('text/plain',cat);}catch(e){}}
+function onCatDragStart(ev){
+    var el=ev.currentTarget;
+    var cat=el&&el.getAttribute('data-cat');
+    if(!cat)return;
+    _dragCat=cat;
+    try{ev.dataTransfer.effectAllowed='move';ev.dataTransfer.setData('text/plain',cat);}catch(e){}
+}
 function onCatDragOver(ev){if(_dragCat){ev.preventDefault();try{ev.dataTransfer.dropEffect='move';}catch(e){}}}
-function onCatDrop(ev,targetCat){
+function onCatDrop(ev){
     ev.preventDefault();
-    if(!_dragCat||_dragCat===targetCat)return;
+    var el=ev.currentTarget;
+    var targetCat=el&&el.getAttribute('data-cat');
+    var dragCat=_dragCat;
+    _dragCat=null;
+    if(!dragCat||!targetCat||dragCat===targetCat)return;
     // Build current order from DOM so drops reflect what user sees, not a stale cache
     var tree=document.getElementById('panel-tree');
     if(!tree)return;
     var current=[];
-    tree.querySelectorAll('.tree-folder[data-cat]').forEach(function(el){current.push(el.getAttribute('data-cat'));});
-    var from=current.indexOf(_dragCat);
+    tree.querySelectorAll('.tree-folder[data-cat]').forEach(function(fold){current.push(fold.getAttribute('data-cat'));});
+    var from=current.indexOf(dragCat);
     var to=current.indexOf(targetCat);
     if(from===-1||to===-1)return;
     // Drop semantics: inserted item lands at target's position, pushing
@@ -789,9 +828,8 @@ function onCatDrop(ev,targetCat){
     // below shifts target up by one — compensate so final position matches.
     current.splice(from,1);
     if(from<to)to--;
-    current.splice(to,0,_dragCat);
+    current.splice(to,0,dragCat);
     setCategoryOrder(current);
-    _dragCat=null;
     renderTree();
 }
 
@@ -1602,13 +1640,15 @@ function renderTree(){
             if(aReq!==bReq) return aReq-bReq;
             return docStatusRank(b)-docStatusRank(a);
         });
-        // Category header — draggable. No dot, no count. Status markers live
-        // on individual items; Dashboard carries aggregates.
-        h+='<div class="tree-folder" data-cat="'+cat.replace(/"/g,'&quot;')+'" draggable="true"'
-          +' ondragstart="onCatDragStart(event,\''+cat.replace(/\'/g,'&#39;')+'\')"'
+        // Category header — draggable. The category name lives in `data-cat`
+        // (attribute-safe via esc) and the handlers read it from
+        // event.currentTarget, so apostrophes in names like "Seaman's Book"
+        // can never collide with JS string quoting.
+        h+='<div class="tree-folder" data-cat="'+esc(cat)+'" draggable="true"'
+          +' ondragstart="onCatDragStart(event)"'
           +' ondragover="onCatDragOver(event)"'
-          +' ondrop="onCatDrop(event,\''+cat.replace(/\'/g,'&#39;')+'\')">'
-          +'<div class="tree-folder-header" onclick="toggleF(this)"><span class="arrow open">&#9654;</span>'+cat+'</div><div class="tree-items open">';
+          +' ondrop="onCatDrop(event)">'
+          +'<div class="tree-folder-header" onclick="toggleF(this)"><span class="arrow open">&#9654;</span>'+esc(cat)+'</div><div class="tree-items open">';
         data.docs.forEach(function(d){
             var a=d.id===selectedDocId?' active':'';
             var ic=d.file_name?'&#128196;':'&#128195;';
@@ -2085,15 +2125,20 @@ async function showCv(){
     var work=data.work_history||[];
     var e=function(v){return esc(v||'');};
     var bdr='border:1px solid #d0d0d0;';
-    var cellS='padding:3px 8px;font-size:12px;color:#1e1e1e;'+bdr;
-    var labelS=cellS+'color:#555;font-weight:600;width:120px;white-space:nowrap;';
+    // Font sizes bumped one step (12→14, 13→15, 18→22) after pilot feedback
+    // that the on-screen CV was hard to read. A4 sheet remains 794px wide
+    // and fits the larger text without layout breakage (tables wrap the
+    // same columns, just taller rows). PDF export uses its own sizing in
+    // cv.rs and is unaffected.
+    var cellS='padding:4px 8px;font-size:14px;color:#1e1e1e;'+bdr;
+    var labelS=cellS+'color:#555;font-weight:600;width:130px;white-space:nowrap;';
     var valS=cellS;
-    var sectionS='font-size:13px;font-weight:700;color:#4a4a8a;padding:10px 0 4px;border-bottom:2px solid #4a4a8a;margin-top:16px;margin-bottom:0;';
+    var sectionS='font-size:15px;font-weight:700;color:#4a4a8a;padding:12px 0 4px;border-bottom:2px solid #4a4a8a;margin-top:16px;margin-bottom:0;';
 
     // Export buttons (outside the paper sheet)
     var h='<div style="display:flex;justify-content:center;padding:16px 16px 8px;">';
     h+='<div style="width:100%;max-width:794px;display:flex;justify-content:space-between;align-items:center;">';
-    h+='<h2 style="font-size:18px;">Seafarer\'s Application Form</h2>';
+    h+='<h2 style="font-size:22px;">Seafarer\'s Application Form</h2>';
     h+='<div><button class="btn btn-accent" onclick="exportCvPdf()">Export .pdf</button> ';
     h+='<button class="btn btn-outline" onclick="exportCvDocx()">Export .docx</button></div>';
     h+='</div></div>';
@@ -2135,7 +2180,7 @@ async function showCv(){
     h+='</table>';
     // Right: photo
     h+='<div style="width:130px;min-width:130px;height:160px;'+bdr+'border-radius:4px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#f0f0f0;" id="cv-photo-box">';
-    h+='<span style="color:#888;font-size:11px;">Photo</span></div>';
+    h+='<span style="color:#888;font-size:12px;">Photo</span></div>';
     h+='</div>';
 
     // ===== SALARY =====
@@ -2150,7 +2195,7 @@ async function showCv(){
     // ===== PASSPORTS, LICENSES & CERTIFICATES =====
     h+='<div style="'+sectionS+'">Passports, Licenses &amp; Certificates</div>';
     if(!certs.length){
-        h+='<p style="color:#888;font-size:12px;margin-top:4px;">No certificates on file.</p>';
+        h+='<p style="color:#888;font-size:13px;margin-top:4px;">No certificates on file.</p>';
     }else{
         var byCat={};
         certs.forEach(function(c){if(!byCat[c.category])byCat[c.category]=[];byCat[c.category].push(c);});
@@ -2162,7 +2207,7 @@ async function showCv(){
                 var vc=c.status==='expired'?'#c53030':c.status==='warning'?'#d69e2e':'#1e1e1e';
                 h+='<tr>';
                 h+='<td style="'+cellS+'">'+e(c.title)+'</td>';
-                h+='<td style="'+cellS+'font-family:var(--font-mono);font-size:11px;">'+e(c.doc_number)+'</td>';
+                h+='<td style="'+cellS+'font-family:var(--font-mono);font-size:12px;">'+e(c.doc_number)+'</td>';
                 h+='<td style="'+cellS+'">'+e(c.issued_by)+'</td>';
                 h+='<td style="'+cellS+'">'+e(c.valid_from)+'</td>';
                 h+='<td style="'+cellS+'color:'+vc+';">'+e(c.valid_to)+'</td>';
@@ -2175,7 +2220,7 @@ async function showCv(){
     // ===== SEA-GOING EXPERIENCE =====
     h+='<div style="'+sectionS+'">Sea-going experience</div>';
     if(!work.length){
-        h+='<p style="color:#888;font-size:12px;margin-top:4px;">No work history recorded.</p>';
+        h+='<p style="color:#888;font-size:13px;margin-top:4px;">No work history recorded.</p>';
     }else{
         h+='<table style="border-collapse:collapse;'+bdr+'margin-top:4px;width:100%;">';
         h+='<thead><tr style="background:#f0f0f0;"><th style="'+cellS+'text-align:left;">Vessel</th><th style="'+cellS+'text-align:left;">Flag</th><th style="'+cellS+'text-align:left;">Type</th><th style="'+cellS+'text-align:left;">Rank</th><th style="'+cellS+'text-align:left;">From</th><th style="'+cellS+'text-align:left;">Till</th><th style="'+cellS+'text-align:left;">Company</th></tr></thead><tbody>';
