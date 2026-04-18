@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.34';
+var APP_VERSION='0.4.35';
 // Human-readable labels for account types that go into the OS window title.
 // Unknown types fall back to the raw value so we never show something blank.
 var ACCOUNT_TYPE_LABELS={
@@ -417,7 +417,7 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.34</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.35</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div style="margin-top:18px;font-size:12px;color:var(--text2);">
@@ -456,7 +456,7 @@ input, select, button { font-family:var(--font-ui); }
         <div class="field-grid">
             <div class="field"><label>Surname *</label><input id="fp-surname"></div>
             <div class="field"><label>First name *</label><input id="fp-first_name"></div>
-            <div class="field"><label>Date of birth *</label><input id="fp-date_of_birth" type="date"></div>
+            <div class="field"><label>Date of birth *</label><input id="fp-date_of_birth" type="text" inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" oninput="autoFormatDate(this)"></div>
             <div class="field"><label>Place of birth *</label><input id="fp-place_of_birth"></div>
             <div class="field"><label>Nationality *</label><select id="fp-nationality"></select></div>
             <div class="field"><label>Phones *</label><div style="display:flex;gap:6px;"><input id="fp-phones" placeholder="+XX XXX..." style="flex:1;min-width:0;"><select id="fp-preferred_messenger" style="width:110px;flex:0 0 110px;"><option value="WhatsApp">WhatsApp</option><option value="Telegram">Telegram</option><option value="Viber">Viber</option><option value="Signal">Signal</option><option value="Other">Other</option></select></div></div>
@@ -464,7 +464,7 @@ input, select, button { font-family:var(--font-ui); }
             <div class="field"><label>Rank *</label><select id="fp-rank"></select></div>
             <div class="field"><label>Nearest airport *</label><input id="fp-nearest_airport" list="airport-hubs" placeholder="Start typing…"></div>
             <div class="field"><label>Nearest intl airport *</label><input id="fp-nearest_intl_airport" list="airport-hubs" placeholder="Start typing…"></div>
-            <div class="field"><label>Available for joining *</label><input id="fp-available_from" type="date"></div>
+            <div class="field"><label>Available for joining *</label><input id="fp-available_from" type="text" inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" oninput="autoFormatDate(this)"></div>
             <div class="field"><label>Minimum salary per month *</label>
                 <div style="display:flex;gap:6px;"><input id="fp-min_salary" type="number" min="0" placeholder="e.g. 4500" style="flex:1;min-width:0;"><select id="fp-min_salary_currency" style="width:80px;flex:0 0 80px;"></select></div>
             </div>
@@ -1485,6 +1485,19 @@ async function loadVault(info){
     if(isSeafarer){ setTimeout(function(){ openForcedProfile(false); },400); }
 }
 
+// Auto-format date inputs as the user types digits (YYYY-MM-DD).
+// Input is plain text with inputmode=numeric — dashes are inserted
+// automatically after the 4th and 6th digit. Paste of "2024-05-20"
+// or "20240520" both normalise to "2024-05-20".
+function autoFormatDate(el){
+    if(!el)return;
+    var digits=(el.value||'').replace(/\D/g,'').slice(0,8);
+    var out=digits.slice(0,4);
+    if(digits.length>4)out+='-'+digits.slice(4,6);
+    if(digits.length>6)out+='-'+digits.slice(6,8);
+    el.value=out;
+}
+
 function classify(d){if(!d.has_expiry||!d.valid_to)return'none';var dl=Math.floor((new Date(d.valid_to)-new Date())/864e5);if(dl<0)return'expired';if(dl<30)return'critical';if(dl<90)return'warning';return'valid';}
 function days(d){if(!d.valid_to)return null;return Math.floor((new Date(d.valid_to)-new Date())/864e5);}
 function stColor(s){return{expired:'var(--red)',critical:'var(--orange)',warning:'#d4a017',valid:'var(--green)',none:'var(--text2)'}[s]||'var(--text2)';}
@@ -1645,8 +1658,8 @@ async function renderDoc(d){
     h+='<div class="field-grid">';
     h+='<div class="field"><label>'+fdot('doc_number',d.doc_number)+'Document No.</label><input placeholder="e.g. UA-12345" value="'+esc(d.doc_number)+'" onchange="saveF(\''+d.id+'\',\'doc_number\',this.value)"></div>';
     h+='<div class="field"><label>'+fdot('issued_by',d.issued_by)+'Issued By</label><input placeholder="e.g. Maritime Admin" value="'+esc(d.issued_by)+'" onchange="saveF(\''+d.id+'\',\'issued_by\',this.value)"></div>';
-    h+='<div class="field"><label>'+fdot('valid_from',d.valid_from)+'Issue Date</label><input type="date" value="'+(d.valid_from||'')+'" onchange="saveF(\''+d.id+'\',\'valid_from\',this.value)"></div>';
-    h+='<div class="field"><label>'+fdot('valid_to',d.valid_to)+'Expiry Date</label><input type="date" value="'+(d.valid_to||'')+'" onchange="updExp(\''+d.id+'\',this.value)"></div>';
+    h+='<div class="field"><label>'+fdot('valid_from',d.valid_from)+'Issue Date</label><input type="text" inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" value="'+(d.valid_from||'')+'" oninput="autoFormatDate(this)" onchange="saveF(\''+d.id+'\',\'valid_from\',this.value)"></div>';
+    h+='<div class="field"><label>'+fdot('valid_to',d.valid_to)+'Expiry Date</label><input type="text" inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" value="'+(d.valid_to||'')+'" oninput="autoFormatDate(this)" onchange="updExp(\''+d.id+'\',this.value)"></div>';
     h+='</div>';
 
     if(d.notes)h+='<p style="color:var(--text2);font-size:12px;margin-bottom:16px;">'+d.notes+'</p>';
@@ -2001,8 +2014,8 @@ function showAddWork(){
     h+='<div class="field"><label>Flag</label><input id="wh-flag" placeholder="Panama"></div>';
     h+='<div class="field"><label>Company</label><input id="wh-company" placeholder="Shipping Co."></div>';
     h+='<div class="field"><label>Position *</label><select id="wh-position"></select></div>';
-    h+='<div class="field"><label>Sign On</label><input id="wh-on" type="date"></div>';
-    h+='<div class="field"><label>Sign Off</label><input id="wh-off" type="date"></div>';
+    h+='<div class="field"><label>Sign On</label><input id="wh-on" type="text" inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" oninput="autoFormatDate(this)"></div>';
+    h+='<div class="field"><label>Sign Off</label><input id="wh-off" type="text" inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" oninput="autoFormatDate(this)"></div>';
     h+='</div>';
     h+='<div class="field"><label>Notes</label><input id="wh-notes" placeholder="Route, remarks..."></div>';
     h+='<p style="color:var(--text2);font-size:11px;margin:8px 0 0;">After saving, you can attach supporting documents (contract, sea service letter, discharge, flight ticket) from the list view.</p>';
@@ -2836,6 +2849,12 @@ function renderSettingsBody(){
 // ========== Seafarer profile (Settings → Seafarer) ==========
 function spField(id,label,type){
     type = type||'text';
+    if(type==='date'){
+        // Manual-entry date field: plain text with digit-only inputmode and
+        // auto-dashing on input. Preserves YYYY-MM-DD storage format while
+        // letting the user type digits without fighting native date pickers.
+        return '<div class="field"><label>'+label+'</label><input id="'+id+'" type="text" inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" oninput="autoFormatDate(this)"></div>';
+    }
     return '<div class="field"><label>'+label+'</label><input id="'+id+'" type="'+type+'"></div>';
 }
 async function spLoad(){
