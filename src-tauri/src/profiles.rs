@@ -412,6 +412,18 @@ pub fn vessel_extras(vessel_id: &str, level: StcwLevel) -> Vec<DocTemplate> {
     }
 }
 
+// --- Optional categories -------------------------------------------------
+//
+// Docs in these categories are pre-seeded (same as mandatory), but the UI
+// should NOT mark them red when file is missing, and should place them at
+// the end of the document tree. Banking is the canonical example — every
+// seafarer has a bank account, but filling it in is not a regulatory
+// requirement and shouldn't display as "missing mandatory doc".
+
+pub fn optional_categories() -> Vec<&'static str> {
+    vec!["Banking"]
+}
+
 // --- Build a complete required set for a profile ------------------------
 
 fn merge(out: &mut Vec<DocTemplate>, seen: &mut std::collections::HashSet<&'static str>, v: Vec<DocTemplate>) {

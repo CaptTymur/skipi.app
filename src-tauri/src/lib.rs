@@ -129,6 +129,7 @@ pub fn run() {
             packages::get_dispatch_dir,
             // Profile
             profile::get_profile_taxonomy,
+            profile::get_optional_categories,
             profile::get_required_docs,
             profile::create_profile_vault,
             profile::get_profile_status,

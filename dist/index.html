@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.33';
+var APP_VERSION='0.4.34';
 // Human-readable labels for account types that go into the OS window title.
 // Unknown types fall back to the raw value so we never show something blank.
 var ACCOUNT_TYPE_LABELS={
@@ -417,7 +417,7 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.33</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.34</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div style="margin-top:18px;font-size:12px;color:var(--text2);">
@@ -716,9 +716,77 @@ async function init() {
 var profileTax = null; // loaded lazily
 var wizardState = {step:1,name:'',level:'',vessel_root:'',vessel_leaf:'',position:'',positionCustom:''};
 
+// Categories whose docs are pre-seeded but not "mandatory" — e.g. Banking.
+// Populated from backend `get_optional_categories` once at startup; used by
+// docStatusColor/Rank to skip the red-missing marker and by renderTree to
+// sort these categories to the end of the list by default.
+var optionalCategories = [];
+
 async function loadTaxonomy(){
     if(!profileTax){profileTax=await invoke('get_profile_taxonomy');}
     return profileTax;
+}
+
+async function loadOptionalCategories(){
+    try{
+        var r=await invoke('get_optional_categories');
+        if(Array.isArray(r))optionalCategories=r.slice();
+    }catch(e){/* ignore — older backend may not have this command yet */}
+}
+
+function isOptionalCategory(cat){
+    return optionalCategories.indexOf(cat)!==-1;
+}
+
+// User-reordered category list — persisted in localStorage (global for now;
+// multi-vault can key-by-vault later).
+function getCategoryOrder(){
+    try{var raw=localStorage.getItem('skipi-category-order');return raw?JSON.parse(raw):[];}
+    catch(e){return [];}
+}
+function setCategoryOrder(arr){
+    try{localStorage.setItem('skipi-category-order',JSON.stringify(arr));}catch(e){}
+}
+
+// Produce the final ordered list of categories present in `cats`:
+// 1. categories listed in user's custom order (if any) — in that order
+// 2. remaining non-optional categories — alphabetical
+// 3. remaining optional categories — alphabetical
+// Unknown categories present in data but absent from custom order get appended.
+function orderedCategories(cats){
+    var all=Object.keys(cats);
+    var user=getCategoryOrder().filter(function(c){return cats[c];});
+    var seen={}; user.forEach(function(c){seen[c]=true;});
+    var rest=all.filter(function(c){return !seen[c];}).sort();
+    var required=rest.filter(function(c){return !isOptionalCategory(c);});
+    var optional=rest.filter(function(c){return isOptionalCategory(c);});
+    return user.concat(required).concat(optional);
+}
+
+// Drag-drop state
+var _dragCat=null;
+function onCatDragStart(ev,cat){_dragCat=cat;try{ev.dataTransfer.effectAllowed='move';ev.dataTransfer.setData('text/plain',cat);}catch(e){}}
+function onCatDragOver(ev){if(_dragCat){ev.preventDefault();try{ev.dataTransfer.dropEffect='move';}catch(e){}}}
+function onCatDrop(ev,targetCat){
+    ev.preventDefault();
+    if(!_dragCat||_dragCat===targetCat)return;
+    // Build current order from DOM so drops reflect what user sees, not a stale cache
+    var tree=document.getElementById('panel-tree');
+    if(!tree)return;
+    var current=[];
+    tree.querySelectorAll('.tree-folder[data-cat]').forEach(function(el){current.push(el.getAttribute('data-cat'));});
+    var from=current.indexOf(_dragCat);
+    var to=current.indexOf(targetCat);
+    if(from===-1||to===-1)return;
+    // Drop semantics: inserted item lands at target's position, pushing
+    // target down. When dragging forward (from < to) the splice(from,1)
+    // below shifts target up by one — compensate so final position matches.
+    current.splice(from,1);
+    if(from<to)to--;
+    current.splice(to,0,_dragCat);
+    setCategoryOrder(current);
+    _dragCat=null;
+    renderTree();
 }
 
 function showSetup(){
@@ -1408,6 +1476,7 @@ async function loadVault(info){
     var mtExp=document.getElementById('mt-exp');if(mtExp)mtExp.style.display=isSeafarer?'flex':'none';
     var mtCv=document.getElementById('mt-cv');if(mtCv)mtCv.style.display=isSeafarer?'flex':'none';
     var mtDisp=document.getElementById('mt-disp');if(mtDisp)mtDisp.style.display=isSeafarer?'flex':'none';
+    await loadOptionalCategories();
     allDocs=await invoke('get_documents');
     renderTree();showDashboard();updateStatus();
     // Check for updates silently after vault loads
@@ -1428,7 +1497,9 @@ function stColor(s){return{expired:'var(--red)',critical:'var(--orange)',warning
 // - >365 days -> green
 // - no expiry rule -> neutral
 function docStatusColor(d){
-    if(!d.file_name && d.template_id) return 'var(--red)'; // required but nothing uploaded
+    // Optional categories (Banking etc.) never trigger "required missing" red.
+    var isReq = !!d.template_id && !isOptionalCategory(d.category);
+    if(!d.file_name && isReq) return 'var(--red)'; // required but nothing uploaded
     if(!d.has_expiry||!d.valid_to) return 'var(--text2)';
     var dl=Math.floor((new Date(d.valid_to)-new Date())/864e5);
     if(dl<0) return 'var(--red)';
@@ -1440,7 +1511,8 @@ function docStatusColor(d){
 }
 // Numeric priority for aggregating worst-status per category in the sidebar.
 function docStatusRank(d){
-    if(!d.file_name && d.template_id) return 6;
+    var isReq = !!d.template_id && !isOptionalCategory(d.category);
+    if(!d.file_name && isReq) return 6;
     if(!d.has_expiry||!d.valid_to) return 0;
     var dl=Math.floor((new Date(d.valid_to)-new Date())/864e5);
     if(dl<0) return 7;       // expired beats missing (both red)
@@ -1501,18 +1573,23 @@ function renderTree(){
         if(r>cats[d.category].worstRank){cats[d.category].worstRank=r;cats[d.category].worstColor=docStatusColor(d);}
     });
     var h='';
-    for(var cat in cats){var data=cats[cat];
-        // Required documents first, then extras; within group, most-urgent first.
+    var order=orderedCategories(cats);
+    order.forEach(function(cat){var data=cats[cat]; if(!data) return;
+        // Within a category: required-with-template first, optional templates
+        // next, user-added custom docs last; within each group, most-urgent first.
         data.docs.sort(function(a,b){
-            var ar=a.template_id?0:1, br=b.template_id?0:1;
-            if(ar!==br) return ar-br;
+            var aReq=a.template_id && !isOptionalCategory(a.category)?0:(a.template_id?1:2);
+            var bReq=b.template_id && !isOptionalCategory(b.category)?0:(b.template_id?1:2);
+            if(aReq!==bReq) return aReq-bReq;
             return docStatusRank(b)-docStatusRank(a);
         });
-        // Category header — no dot, no count. The worst-status and required
-        // markers at the folder level added visual noise without new info
-        // (every required doc already shows its own status dot on the right
-        // of the item, and the Dashboard carries the aggregate counts).
-        h+='<div class="tree-folder"><div class="tree-folder-header" onclick="toggleF(this)"><span class="arrow open">&#9654;</span>'+cat+'</div><div class="tree-items open">';
+        // Category header — draggable. No dot, no count. Status markers live
+        // on individual items; Dashboard carries aggregates.
+        h+='<div class="tree-folder" data-cat="'+cat.replace(/"/g,'&quot;')+'" draggable="true"'
+          +' ondragstart="onCatDragStart(event,\''+cat.replace(/\'/g,'&#39;')+'\')"'
+          +' ondragover="onCatDragOver(event)"'
+          +' ondrop="onCatDrop(event,\''+cat.replace(/\'/g,'&#39;')+'\')">'
+          +'<div class="tree-folder-header" onclick="toggleF(this)"><span class="arrow open">&#9654;</span>'+cat+'</div><div class="tree-items open">';
         data.docs.forEach(function(d){
             var a=d.id===selectedDocId?' active':'';
             var ic=d.file_name?'&#128196;':'&#128195;';
@@ -1773,7 +1850,7 @@ async function showDashboard(){
     // (template rows without file_name) must not be counted as documents — they
     // represent expected certificates, not actual ones.
     var uploadedDocs=allDocs.filter(function(d){return !!d.file_name;});
-    var requiredMissing=allDocs.filter(function(d){return !d.file_name && d.template_id;}).length;
+    var requiredMissing=allDocs.filter(function(d){return !d.file_name && d.template_id && !isOptionalCategory(d.category);}).length;
     var c={expired:0,critical:0,warning:0,warning_soft:0,valid:0,none:0};
     uploadedDocs.forEach(function(d){c[classify(d)]++;});
     var h='<h2 style="font-size:18px;margin-bottom:16px;">Dashboard</h2>';

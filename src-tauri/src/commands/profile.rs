@@ -40,6 +40,11 @@ pub fn get_profile_taxonomy() -> serde_json::Value {
 }
 
 #[tauri::command]
+pub fn get_optional_categories() -> Vec<String> {
+    profiles::optional_categories().into_iter().map(|s| s.to_string()).collect()
+}
+
+#[tauri::command]
 pub fn get_required_docs(level_id: String, vessel_id: String, position_id: String) -> Result<Vec<serde_json::Value>, String> {
     let level = profiles::StcwLevel::from_id(&level_id).ok_or("Unknown STCW level")?;
     let templates = profiles::required_docs_for_profile(level, &vessel_id, &position_id);
