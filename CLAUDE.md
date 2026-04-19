@@ -39,7 +39,7 @@ Frontend — один `dist/index.html`, внутри весь JS inline. Нет
 
 Потом `cd src-tauri && cargo update -p skipi && cd ..`, коммит, тег `vx.y.z`, push.
 
-**CI:** в данный момент собирает **только Linux** — экономия GitHub Actions минут (потратили 90% месячного лимита на март). macOS и Windows в `release.yml` закомментированы. Вернуть когда будет нужно. После 1 мая лимит обнуляется.
+**CI:** собирает Linux + Windows. Репо публичный → Actions минуты unlimited на всех стандартных runners, кредиты покупать не нужно. macOS закомментирован в `release.yml` — не из-за денег, а потому что без Apple Developer $99 + нотаризации Gatekeeper показывает scream-warning на установке. Вернуть когда Apple Developer оформлен и настроен notarization pipeline.
 
 **Подпись апдейтера:** ключ хранится в GitHub Secrets как `TAURI_SIGNING_PRIVATE_KEY`, пароль пустой (`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` удалён). Если придётся перегенерировать: `npx @tauri-apps/cli signer generate -w ~/.tauri/skipi_new.key`, новый `.pub` → `tauri.conf.json.plugins.updater.pubkey`.
 

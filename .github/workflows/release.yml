@@ -66,7 +66,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux only — for now, to save Actions minutes (macOS costs 10x, Windows 2x).
+          # Public repo → Actions minutes are unlimited on all standard runners,
+          # so Linux and Windows both build every release. macOS stays off until
+          # the Apple Developer cert ($99/yr) + notarization pipeline are wired
+          # up; without them the .dmg triggers a Gatekeeper scare on install.
           - platform: ubuntu-22.04
             rust_targets: x86_64-unknown-linux-gnu
             tauri_args: ""
@@ -77,7 +80,7 @@ jobs:
             tauri_args: ""
             name: Windows
 
-          # macOS — re-enable when Apple Developer $99 is paid
+          # macOS — re-enable when Apple Developer $99 is paid and notarization ready.
           # - platform: macos-latest
           #   rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
           #   tauri_args: --target universal-apple-darwin
@@ -149,10 +152,13 @@ jobs:
 
             | Platform | File |
             |----------|------|
-            | macOS (Apple Silicon + Intel) | `.dmg` |
-            | Windows | `.msi` |
+            | Windows (installer) | `.msi` or `.exe` |
             | Linux (Debian/Ubuntu) | `.deb` |
             | Linux (universal) | `.AppImage` |
+            | Linux (RPM-based) | `.rpm` |
+
+            macOS build is paused until the Apple Developer cert is wired up — skipping
+            it avoids the Gatekeeper warning on install.
 
             ### What's new
 
