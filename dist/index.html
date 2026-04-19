@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.48';
+var APP_VERSION='0.4.49';
 // Human-readable labels for account types that go into the OS window title.
 // Unknown types fall back to the raw value so we never show something blank.
 var ACCOUNT_TYPE_LABELS={
@@ -81,6 +81,10 @@ document.addEventListener('DOMContentLoaded',function(){updateTitlebar();});
     /* Appearance v0.4.47: user-adjustable base font size drives the body
        scale; most nested elements inherit or size relative to it. */
     --font-size-ui: 13px;
+    /* Appearance Phase 2 (v0.4.49): max content width. Default `none` keeps
+       old behaviour (full-width content); a user-set value constrains the
+       main scroll area and auto-centers it for more readable line length. */
+    --content-max-width: none;
 }
 [data-theme="light"] {
     --bg: #ffffff;
@@ -173,6 +177,8 @@ input, select, button { font-family:var(--font-ui); }
 /* Editor area */
 .editor { flex:1; overflow-y:auto; padding:40px 60px; }
 .editor-narrow { max-width:700px; }
+/* Phase 2: content scroll container honours the user's max-width choice. */
+#scr-content, #scr-welcome, #scr-setup { max-width:var(--content-max-width); margin-left:auto; margin-right:auto; }
 
 /* Right panel */
 .right-panel { width:260px; background:var(--surface); border-left:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; display:none; }
@@ -428,7 +434,7 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.48</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.49</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div style="margin-top:18px;font-size:12px;color:var(--text2);">
@@ -3096,6 +3102,35 @@ function renderSettingsBody(){
              '<span id="app-font-size-label" style="min-width:44px;text-align:right;font-family:var(--font-mono);font-size:11px;color:var(--text2);">'+fsVal+'px</span>'+
              '</div></div>';
 
+        // Interface font family
+        var curFontUi = localStorage.getItem('skipi-font-ui') || 'system';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Interface font</div><div class="setting-desc">Typeface for all UI text. Fonts not installed on your system fall back to the default.</div></div>';
+        h += '<div class="setting-control"><select onchange="setFontUi(this.value)">';
+        FONT_UI_PRESETS.forEach(function(p){
+            h += '<option value="'+p.id+'"'+(curFontUi===p.id?' selected':'')+'>'+p.label+'</option>';
+        });
+        h += '</select></div></div>';
+
+        // Mono font family
+        var curFontMono = localStorage.getItem('skipi-font-mono') || 'system';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Monospace font</div><div class="setting-desc">Used for IMO numbers, passport fields, and other fixed-width data.</div></div>';
+        h += '<div class="setting-control"><select onchange="setFontMono(this.value)">';
+        FONT_MONO_PRESETS.forEach(function(p){
+            h += '<option value="'+p.id+'"'+(curFontMono===p.id?' selected':'')+'>'+p.label+'</option>';
+        });
+        h += '</select></div></div>';
+
+        // Max content width
+        var mwVal = parseInt(localStorage.getItem('skipi-content-max-width')||'0', 10);
+        if(!isFinite(mwVal)) mwVal=0;
+        var mwLabel = mwVal>0 ? mwVal+'px' : 'Unconstrained';
+        // Slider: 0 (left) = unconstrained, 600-1400 = hard cap. Step 50px.
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Max content width</div><div class="setting-desc">Cap the main content width for more comfortable reading on large monitors. Slide fully left to disable.</div></div>';
+        h += '<div class="setting-control" style="display:flex;gap:8px;align-items:center;min-width:240px;">'+
+             '<input type="range" min="0" max="1400" step="50" value="'+(mwVal>0?mwVal:0)+'" oninput="setContentMaxWidth(this.value)" list="cw-ticks" style="flex:1;">'+
+             '<span id="app-content-width-label" style="min-width:100px;text-align:right;font-family:var(--font-mono);font-size:11px;color:var(--text2);">'+mwLabel+'</span>'+
+             '</div></div>';
+
         // Reset all
         h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Reset appearance</div><div class="setting-desc">Restore theme, accent, and font size to their defaults.</div></div>';
         h += '<div class="setting-control"><button class="btn btn-outline btn-sm" onclick="resetAppearance()">Reset all</button></div></div>';
@@ -3563,7 +3598,29 @@ async function createNewVault(){
 var DEFAULT_ACCENT_DARK  = '#7c6ff7';
 var DEFAULT_ACCENT_LIGHT = '#6c5ce7';
 var DEFAULT_FONT_SIZE_UI = 13;
+var DEFAULT_FONT_UI = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
+var DEFAULT_FONT_MONO = '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace';
 var _systemThemeListener = null;
+
+// Curated font presets. Value is a CSS font-family stack; the stack falls
+// back to the generic family so an unavailable font on the current OS still
+// renders text in the intended style.
+var FONT_UI_PRESETS = [
+    { id: 'system',   label: 'System default', value: DEFAULT_FONT_UI },
+    { id: 'inter',    label: 'Inter',          value: '"Inter", system-ui, sans-serif' },
+    { id: 'sf',       label: 'SF Pro',         value: '"SF Pro Text", "SF Pro", -apple-system, sans-serif' },
+    { id: 'segoe',    label: 'Segoe UI',       value: '"Segoe UI", Tahoma, sans-serif' },
+    { id: 'ubuntu',   label: 'Ubuntu',         value: 'Ubuntu, "Liberation Sans", sans-serif' },
+    { id: 'roboto',   label: 'Roboto',         value: 'Roboto, "Helvetica Neue", sans-serif' },
+    { id: 'georgia',  label: 'Georgia (serif)',value: 'Georgia, "Times New Roman", serif' }
+];
+var FONT_MONO_PRESETS = [
+    { id: 'system',   label: 'System default', value: DEFAULT_FONT_MONO },
+    { id: 'sfmono',   label: 'SF Mono',        value: '"SF Mono", Menlo, monospace' },
+    { id: 'consolas', label: 'Consolas',       value: 'Consolas, "Courier New", monospace' },
+    { id: 'fira',     label: 'Fira Code',      value: '"Fira Code", "Fira Mono", monospace' },
+    { id: 'jetbrains',label: 'JetBrains Mono', value: '"JetBrains Mono", "Fira Mono", monospace' }
+];
 
 function _hexToRgba(hex, alpha){
     hex = (hex||'').replace('#','');
@@ -3600,6 +3657,18 @@ function applyAppearance(){
     var fs=parseInt(localStorage.getItem('skipi-font-size-ui')||DEFAULT_FONT_SIZE_UI, 10);
     if(!isFinite(fs) || fs<10 || fs>24) fs=DEFAULT_FONT_SIZE_UI;
     document.documentElement.style.setProperty('--font-size-ui', fs+'px');
+
+    // Font families
+    var fui=_fontPresetValue(FONT_UI_PRESETS, localStorage.getItem('skipi-font-ui')) || DEFAULT_FONT_UI;
+    var fmn=_fontPresetValue(FONT_MONO_PRESETS, localStorage.getItem('skipi-font-mono')) || DEFAULT_FONT_MONO;
+    document.documentElement.style.setProperty('--font-ui', fui);
+    document.documentElement.style.setProperty('--font-mono', fmn);
+
+    // Max content width (Phase 2)
+    var mwRaw=localStorage.getItem('skipi-content-max-width');
+    var mw=parseInt(mwRaw||'0', 10);
+    if(!isFinite(mw) || mw<600 || mw>1400) mw=0;  // 0 = unconstrained
+    document.documentElement.style.setProperty('--content-max-width', mw>0 ? mw+'px' : 'none');
 
     // System-theme follow: install one listener, guarded by localStorage check
     // so a later switch away from 'system' silently stops reacting.
@@ -3646,10 +3715,40 @@ function setFontSizeUi(px){
     if(lbl) lbl.textContent=v+'px';
 }
 
+function _fontPresetValue(presets, id){
+    if(!id) return null;
+    for(var i=0;i<presets.length;i++){ if(presets[i].id===id) return presets[i].value; }
+    return null;
+}
+
+function setFontUi(id){
+    localStorage.setItem('skipi-font-ui', id);
+    applyAppearance();
+}
+function setFontMono(id){
+    localStorage.setItem('skipi-font-mono', id);
+    applyAppearance();
+}
+function setContentMaxWidth(px){
+    var v=parseInt(px, 10);
+    if(!isFinite(v) || v<=0){
+        localStorage.removeItem('skipi-content-max-width');
+    } else {
+        v=Math.max(600, Math.min(1400, v));
+        localStorage.setItem('skipi-content-max-width', v);
+    }
+    applyAppearance();
+    var lbl=document.getElementById('app-content-width-label');
+    if(lbl) lbl.textContent = (v>0 ? v+'px' : 'Unconstrained');
+}
+
 function resetAppearance(){
     localStorage.removeItem('skipi-theme');
     localStorage.removeItem('skipi-accent');
     localStorage.removeItem('skipi-font-size-ui');
+    localStorage.removeItem('skipi-font-ui');
+    localStorage.removeItem('skipi-font-mono');
+    localStorage.removeItem('skipi-content-max-width');
     applyAppearance();
     renderSettingsBody();
 }
