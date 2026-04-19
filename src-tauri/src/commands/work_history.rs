@@ -137,6 +137,78 @@ pub fn delete_work_file(state: State<AppState>, id: String) -> Result<(), String
     db::delete_work_file(conn, &id).map_err(|e| e.to_string())
 }
 
+/// Link a folder on the user's device as the evidence location for a
+/// work-history entry. Pass `None` (or an empty string) to unlink. Skipi
+/// only stores the path — files inside the folder live outside the vault
+/// and are never copied in.
+#[tauri::command]
+pub fn set_work_evidence_folder(
+    state: State<AppState>,
+    entry_id: String,
+    folder_path: Option<String>,
+) -> Result<(), String> {
+    let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = conn_lock.as_ref().ok_or("No vault open")?;
+    let trimmed = folder_path
+        .as_deref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty());
+    if let Some(p) = trimmed {
+        let path = PathBuf::from(p);
+        if !path.exists() {
+            return Err(format!("Folder does not exist: {}", p));
+        }
+        if !path.is_dir() {
+            return Err(format!("Not a folder: {}", p));
+        }
+    }
+    db::set_work_evidence_folder(conn, &entry_id, trimmed).map_err(|e| e.to_string())
+}
+
+/// Open the linked evidence folder in the OS file manager. Errors out with
+/// a clear message if nothing is linked or the folder has been moved/deleted
+/// so the UI can offer a graceful re-link.
+#[tauri::command]
+pub fn open_work_evidence_folder(state: State<AppState>, entry_id: String) -> Result<(), String> {
+    let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = conn_lock.as_ref().ok_or("No vault open")?;
+    let folder = db::get_work_evidence_folder(conn, &entry_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("No evidence folder linked for this entry")?;
+    let path = PathBuf::from(&folder);
+    if !path.exists() {
+        return Err(format!("Folder no longer exists: {}", folder));
+    }
+    if !path.is_dir() {
+        return Err(format!("Path is not a folder: {}", folder));
+    }
+    let folder_str = folder.as_str();
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(folder_str)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(folder_str)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        // `explorer <folder>` is the native way to open a folder; no console
+        // appears (explorer is GUI), so no CREATE_NO_WINDOW needed here.
+        std::process::Command::new("explorer")
+            .arg(folder_str)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn open_work_file(state: State<AppState>, id: String) -> Result<(), String> {
     let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());

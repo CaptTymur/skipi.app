@@ -171,6 +171,14 @@ fn migrations() -> Vec<(u32, &'static str)> {
         (4, r#"
             ALTER TABLE documents ADD COLUMN is_national INTEGER NOT NULL DEFAULT 0;
         "#),
+        // Migration 5: evidence_folder on work-history entries — absolute
+        // path to a folder on the user's device that holds contract evidence
+        // (photos aboard, crew list, discharge letter, payslips). Skipi only
+        // stores the pointer; files live outside the vault and Skipi opens
+        // the folder in the OS file manager on request.
+        (5, r#"
+            ALTER TABLE work_history ADD COLUMN evidence_folder TEXT;
+        "#),
     ]
 }
 
@@ -616,7 +624,7 @@ pub fn add_work_entry(
 
 pub fn get_work_history(conn: &Connection) -> Result<Vec<serde_json::Value>> {
     let mut stmt = conn.prepare(
-        "SELECT id, vessel_name, vessel_type, imo, flag, company, position, sign_on, sign_off, notes, created_at
+        "SELECT id, vessel_name, vessel_type, imo, flag, company, position, sign_on, sign_off, notes, created_at, evidence_folder
          FROM work_history ORDER BY COALESCE(sign_on, created_at) DESC"
     )?;
     let rows = stmt.query_map([], |row| {
@@ -632,9 +640,26 @@ pub fn get_work_history(conn: &Connection) -> Result<Vec<serde_json::Value>> {
             "sign_off": row.get::<_, Option<String>>(8)?,
             "notes": row.get::<_, Option<String>>(9)?,
             "created_at": row.get::<_, String>(10)?,
+            "evidence_folder": row.get::<_, Option<String>>(11)?,
         }))
     })?.collect::<Result<Vec<_>>>()?;
     Ok(rows)
+}
+
+pub fn set_work_evidence_folder(conn: &Connection, entry_id: &str, folder: Option<&str>) -> Result<()> {
+    conn.execute(
+        "UPDATE work_history SET evidence_folder = ?1 WHERE id = ?2",
+        params![folder, entry_id],
+    )?;
+    Ok(())
+}
+
+pub fn get_work_evidence_folder(conn: &Connection, entry_id: &str) -> Result<Option<String>> {
+    conn.query_row(
+        "SELECT evidence_folder FROM work_history WHERE id = ?1",
+        params![entry_id],
+        |row| row.get::<_, Option<String>>(0),
+    ).map_err(|e| e.into())
 }
 
 pub fn delete_work_entry(conn: &Connection, id: &str) -> Result<()> {
