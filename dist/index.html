@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.51';
+var APP_VERSION='0.4.52';
 // Human-readable labels for account types that go into the OS window title.
 // Unknown types fall back to the raw value so we never show something blank.
 var ACCOUNT_TYPE_LABELS={
@@ -383,6 +383,7 @@ input, select, button { font-family:var(--font-ui); }
     <div class="mod-tab" onclick="showView('cv')" id="mt-cv" title="CV"><span>CV</span></div>
     <div class="mod-tab" onclick="showView('packages')" id="mt-pkg" title="Packages"><span>Packages</span></div>
     <div class="mod-tab" onclick="showView('dispatch')" id="mt-disp" title="Dispatch"><span class="mi">&#128231;</span><span>Dispatch</span></div>
+    <div class="mod-tab" onclick="showView('jobs')" id="mt-jobs" title="Jobs — receive matching offers"><span class="mi">&#9875;</span><span>Jobs</span></div>
     <div class="mb-spacer"></div>
     <div class="mb-vault" id="mb-vault" onclick="openVaultSwitcher(event)" title="Switch vault">
         <span>&#128451;</span>
@@ -434,7 +435,7 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.51</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.52</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div style="margin-top:18px;font-size:12px;color:var(--text2);">
@@ -1753,13 +1754,13 @@ function showView(v){
     currentView=v;
     document.querySelectorAll('.ribbon-icon').forEach(function(el){el.classList.remove('active');});
     document.querySelectorAll('.modules-bar .mod-tab').forEach(function(el){el.classList.remove('active');});
-    var shortMap={files:'files',dashboard:'dash',cv:'cv',experience:'exp',packages:'pkg',dispatch:'disp',settings:'set'};
+    var shortMap={files:'files',dashboard:'dash',cv:'cv',experience:'exp',packages:'pkg',dispatch:'disp',jobs:'jobs',settings:'set'};
     var ri=document.getElementById('ri-'+shortMap[v]);
     if(ri)ri.classList.add('active');
     var mt=document.getElementById('mt-'+shortMap[v]);
     if(mt)mt.classList.add('active');
-    document.getElementById('panel-title').textContent={files:'Files & data input',dashboard:'Dashboard',cv:'CV',experience:'Sea Service',packages:'Packages',dispatch:'Dispatch',settings:'Settings'}[v]||v;
-    document.getElementById('left-panel').style.display=(v==='dashboard'||v==='cv'||v==='experience'||v==='dispatch')?'none':'';
+    document.getElementById('panel-title').textContent={files:'Files & data input',dashboard:'Dashboard',cv:'CV',experience:'Sea Service',packages:'Packages',dispatch:'Dispatch',jobs:'Jobs',settings:'Settings'}[v]||v;
+    document.getElementById('left-panel').style.display=(v==='dashboard'||v==='cv'||v==='experience'||v==='dispatch'||v==='jobs')?'none':'';
     // The second tabs row (breadcrumb-style tab with the current document name)
     // is only useful in Files view — in the other panels the panel title above
     // already says the same thing. Hide it everywhere else. We also clear the
@@ -1784,6 +1785,7 @@ function showView(v){
     else if(v==='experience')showWorkHistory();
     else if(v==='packages')showPackages();
     else if(v==='dispatch')showDispatch();
+    else if(v==='jobs')showJobs();
     else if(v==='settings')openSettings();
 }
 
@@ -2635,6 +2637,94 @@ async function doAddCustomDoc(){
 // latter is checked), then Send. No more sub-tabs or Crewing Addresses
 // placeholder. Subject + body are always auto-generated from the profile
 // and opened in the user's default mail client for final edits.
+// Jobs module — primary affordance is a single master toggle that both
+// expresses the seafarer's self-declared availability AND (future) controls
+// whether the desktop app polls skipi.app for matching vacancies. The
+// toggle is stored in ready_for_offers on the seafarer profile so it stays
+// in sync with the existing profile setting. v0.4.52: UI skeleton only —
+// no server polling yet; the "active" state shows a clear placeholder.
+async function showJobs(){
+    var sp={};
+    try{ sp=await invoke('get_seafarer_personal'); }catch(e){}
+    var on = (sp.ready_for_offers==='true' || sp.ready_for_offers===undefined);
+    var rankTxt = sp.rank || 'seafarer';
+    var ship  = (sp.preferred_vessel_types||'').split(',')[0].trim();
+    var minSal = sp.min_salary || '';
+    var cur = sp.min_salary_currency || 'USD';
+
+    var h = '';
+    h += '<div style="max-width:720px;margin:0 auto;">';
+
+    // Primary affordance — giant toggle + status line
+    h += '<div style="border:1px solid var(--border);border-radius:10px;padding:20px 24px;margin-bottom:20px;background:'+(on?'var(--accent-bg)':'var(--bg)')+';">';
+    h += '<div style="display:flex;align-items:center;gap:16px;">';
+    h += '<label style="display:flex;align-items:center;gap:12px;cursor:pointer;">'+
+         '<input type="checkbox" id="jobs-master-toggle"'+(on?' checked':'')+' onchange="setJobsToggle(this.checked)" style="width:22px;height:22px;accent-color:var(--accent);cursor:pointer;">'+
+         '<span style="font-size:18px;font-weight:700;color:'+(on?'var(--accent)':'var(--text)')+';">Ready for offers</span>'+
+         '</label>';
+    h += '<span style="flex:1;text-align:right;font-size:12px;color:var(--text2);">'+(on?'Skipi is looking for matching jobs':'Flip the switch when you\'re open to offers')+'</span>';
+    h += '</div>';
+    h += '<p style="margin-top:12px;font-size:12px;color:var(--text2);line-height:1.5;">';
+    if(on){
+        h += 'Skipi will poll the public jobs board on <code style="font-size:11px;">skipi.app</code> for vacancies that match your rank, vessel type, availability, and salary expectations — and surface them here. The server sees only those criteria, never your identity.';
+    } else {
+        h += 'When enabled, your Skipi will check the public jobs board on <code style="font-size:11px;">skipi.app</code> for vacancies matching your profile and show them here. The server only sees broad filters (rank, vessel type) — not you personally. No alerts, no account, no tracking.';
+    }
+    h += '</p>';
+    h += '</div>';
+
+    // Profile summary (what Skipi will match against) — a reassurance that
+    // we understand the user's preferences + a direct link to tune them.
+    h += '<div style="border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:20px;">';
+    h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+    h += '<div style="font-weight:600;font-size:13px;">Matching profile</div>';
+    h += '<button class="btn btn-outline btn-sm" onclick="openSettings(\'seafarer\')">Edit</button>';
+    h += '</div>';
+    h += '<div style="font-size:12px;color:var(--text2);display:grid;grid-template-columns:auto 1fr;gap:4px 10px;">';
+    h += '<div>Rank:</div><div>'+(rankTxt||'<span style="color:var(--red)">not set</span>')+'</div>';
+    h += '<div>Vessel type:</div><div>'+(ship||'<span style="color:var(--red)">not set</span>')+'</div>';
+    h += '<div>Min salary:</div><div>'+(minSal?(minSal+' '+cur):'<span style="color:var(--red)">not set</span>')+'</div>';
+    h += '<div>Available from:</div><div>'+(sp.available_from||'<span style="color:var(--red)">not set</span>')+'</div>';
+    h += '</div></div>';
+
+    // Feed placeholder — the polling loop isn't wired yet. Be honest about
+    // that instead of showing a fake empty-state.
+    h += '<div style="border:1px dashed var(--border);border-radius:8px;padding:28px 20px;text-align:center;color:var(--text2);font-size:13px;">';
+    if(on){
+        h += '<div style="font-size:28px;margin-bottom:10px;">⚓</div>';
+        h += '<div style="font-weight:600;margin-bottom:6px;color:var(--text);">Waiting for the first vacancy</div>';
+        h += '<div style="font-size:12px;max-width:420px;margin:0 auto;line-height:1.5;">The public jobs board on <code style="font-size:11px;">skipi.app</code> is coming online. Once it\'s live your Skipi will poll it every 15 minutes and list matches here.</div>';
+    } else {
+        h += '<div style="font-size:28px;margin-bottom:10px;">⚪</div>';
+        h += '<div style="font-weight:600;margin-bottom:6px;color:var(--text);">You\'re off the market</div>';
+        h += '<div style="font-size:12px;max-width:420px;margin:0 auto;line-height:1.5;">Enable "Ready for offers" above when you want Skipi to watch for vacancies. No background traffic happens until you do.</div>';
+    }
+    h += '</div>';
+
+    h += '</div>';
+
+    document.getElementById('scr-content').innerHTML=h;show('scr-content');updateTabs('Jobs');
+}
+
+// Flip the master Ready-for-offers toggle. Persists via the existing
+// seafarer profile field so Jobs tab and Profile settings stay in sync.
+async function setJobsToggle(on){
+    try{
+        await invoke('set_seafarer_personal',{fields:{ready_for_offers: on?'true':'false'}});
+        // Mirror into profile-settings checkboxes so the user sees the same
+        // state if they open Settings → Seafarer afterwards.
+        ['sp-ready_for_offers','fp-ready_for_offers'].forEach(function(id){
+            var el=document.getElementById(id);
+            if(el){ el.checked=!!on; }
+        });
+        await showJobs();
+    }catch(e){
+        showToast('Error: '+e,'error');
+        logError('op',e);
+        await showJobs();  // revert UI state
+    }
+}
+
 async function showDispatch(){
     var pkgs=[], dispatches=[];
     try{pkgs=await invoke('get_packages');}catch(e){}
