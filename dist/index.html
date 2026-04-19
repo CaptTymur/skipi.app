@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.50';
+var APP_VERSION='0.4.51';
 // Human-readable labels for account types that go into the OS window title.
 // Unknown types fall back to the raw value so we never show something blank.
 var ACCOUNT_TYPE_LABELS={
@@ -434,7 +434,7 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.50</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.51</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div style="margin-top:18px;font-size:12px;color:var(--text2);">
@@ -2811,6 +2811,7 @@ async function doDispatchUnified(){
             subject:draft.subject,
             body:draft.body,
             includeCv:includeCv,
+            mailClient:localStorage.getItem('skipi-preferred-mail-client')||null,
         });
         showToast('Dispatch draft opened. Attachments staged in ~/Downloads/Skipi/','success');
         await showDispatch();
@@ -3080,6 +3081,22 @@ function renderSettingsBody(){
              '<button class="btn btn-outline btn-sm btn-red" onclick="smtpClear()">Clear</button>'+
              '</div>';
         h += '</div>';
+
+        // Mail-client preference — when SMTP isn't configured, Dispatch
+        // falls back to the OS mail client. On Windows the user can pick
+        // which of their installed clients Skipi should target so we don't
+        // always try Outlook COM first. Populated via list_mail_clients().
+        var curMail = localStorage.getItem('skipi-preferred-mail-client') || '';
+        h += '<div class="settings-section" style="margin-top:20px;"><h3>Preferred mail client</h3><div class="section-desc">When SMTP is not configured, Skipi opens one of your installed mail clients for Dispatch. Pick which one — or leave System default to use Windows\' default and let Skipi auto-detect Outlook vs Thunderbird.</div>';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Client</div><div class="setting-desc" id="mc-desc">Attachments work automatically with Outlook (via COM) and Thunderbird (via -compose). Other clients fall back to mailto + drag-drop from the folder Skipi opens.</div></div>';
+        h += '<div class="setting-control"><select id="mc-select" onchange="setPreferredMailClient(this.value)">'+
+             '<option value=""'+(curMail===''?' selected':'')+'>System default (auto-detect)</option>'+
+             '<option value="outlook"'+(curMail==='outlook'?' selected':'')+'>Microsoft Outlook</option>'+
+             '<option value="thunderbird"'+(curMail==='thunderbird'?' selected':'')+'>Mozilla Thunderbird</option>'+
+             '<option value="mailto"'+(curMail==='mailto'?' selected':'')+'>Other (mailto + drag-drop)</option>'+
+             '</select></div></div>';
+        h += '<div id="mc-detected" style="margin-top:8px;padding:8px 10px;background:var(--hover);border-radius:4px;font-size:11px;color:var(--text2);">Detecting installed mail clients…</div>';
+        h += '</div>';
     }
 
     if(settingsTab === 'appearance'){
@@ -3198,7 +3215,7 @@ function renderSettingsBody(){
 
     document.getElementById('settings-body').innerHTML = h;
     if(settingsTab === 'seafarer'){ spLoad(); }
-    if(settingsTab === 'email'){ smtpLoad(); }
+    if(settingsTab === 'email'){ smtpLoad(); populateMailClientsHint(); }
     if(settingsTab === 'ai'){
         invoke('get_api_key').then(function(k){var el=document.getElementById('set-key');if(el)el.value=k;}).catch(function(){});
     }
@@ -3378,6 +3395,31 @@ function smtpStatus(msg, kind){
     el.textContent=msg||'';
     el.style.color=col;
 }
+function setPreferredMailClient(id){
+    if(id){ localStorage.setItem('skipi-preferred-mail-client', id); }
+    else { localStorage.removeItem('skipi-preferred-mail-client'); }
+}
+
+// Probes Windows registry for installed mail clients and surfaces them as
+// a hint under the Client dropdown. On other platforms the Tauri command
+// returns an empty list and we hide the hint.
+async function populateMailClientsHint(){
+    var box=document.getElementById('mc-detected');
+    if(!box) return;
+    try{
+        var clients=await invoke('list_mail_clients');
+        if(!clients || !clients.length){
+            // Non-Windows or registry empty — hint is not useful here.
+            box.style.display='none';
+            return;
+        }
+        var names=clients.map(function(c){return c.name;});
+        box.textContent='Detected on this computer: '+names.join(', ');
+    }catch(e){
+        box.style.display='none';
+    }
+}
+
 async function smtpLoad(){
     try{
         var cfg=await invoke('get_smtp_config');

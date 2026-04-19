@@ -124,6 +124,7 @@ pub fn run() {
             packages::delete_package,
             packages::open_file_in_default,
             packages::open_email_with_attachment,
+            packages::list_mail_clients,
             packages::prepare_dispatch_attachments,
             packages::record_dispatch_history,
             packages::get_dispatch_dir,

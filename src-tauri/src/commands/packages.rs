@@ -33,6 +33,123 @@ fn tb_compose_escape(v: &str) -> String {
 /// Launch Thunderbird with a pre-filled compose window. Returns Err if
 /// Thunderbird isn't on PATH or the spawn fails, so the caller can fall
 /// back to `xdg-email`.
+/// Spawn Thunderbird's compose window on Windows with attachments. Tries
+/// `thunderbird` on PATH first (the installer usually registers it), then
+/// the two default install locations. Returns `Err` if none of them launch.
+#[cfg(target_os = "windows")]
+fn spawn_thunderbird_compose_win(
+    to: &str,
+    subject: &str,
+    body: &str,
+    attachments: &[String],
+) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    fn escape(v: &str) -> String {
+        let needs_quote = v.contains(',') || v.contains('\'') || v.contains(' ');
+        if needs_quote {
+            format!("'{}'", v.replace('\'', "''"))
+        } else {
+            v.to_string()
+        }
+    }
+
+    let uri_list: String = attachments
+        .iter()
+        .map(|p| format!("file:///{}", p.replace('\\', "/")))
+        .collect::<Vec<_>>()
+        .join(",");
+
+    let compose = format!(
+        "to={},subject={},body={}{}",
+        escape(to),
+        escape(subject),
+        escape(body),
+        if uri_list.is_empty() { String::new() } else { format!(",attachment={}", escape(&uri_list)) },
+    );
+
+    // Try PATH first, then common install locations. `thunderbird` may be
+    // registered as an App Path alias, in which case the bare name works.
+    let candidates: [&str; 3] = [
+        "thunderbird",
+        r"C:\Program Files\Mozilla Thunderbird\thunderbird.exe",
+        r"C:\Program Files (x86)\Mozilla Thunderbird\thunderbird.exe",
+    ];
+
+    for exe in candidates.iter() {
+        if let Ok(_child) = std::process::Command::new(exe)
+            .creation_flags(CREATE_NO_WINDOW)
+            .args(["-osint", "-compose"])
+            .arg(&compose)
+            .spawn()
+        {
+            return Ok(());
+        }
+    }
+    Err("Thunderbird not found on PATH or in default install locations".to_string())
+}
+
+/// Classify a mail-client display name into one of the known integration
+/// buckets. `outlook` and `thunderbird` have first-class support (COM / CLI
+/// with attachments); everything else falls back to a `mailto:` URI.
+#[cfg(target_os = "windows")]
+fn classify_mail_client_id(name: &str) -> &'static str {
+    let lc = name.to_lowercase();
+    if lc.contains("outlook") { "outlook" }
+    else if lc.contains("thunderbird") { "thunderbird" }
+    else { "mailto" }
+}
+
+#[cfg(target_os = "windows")]
+fn list_mail_clients_win() -> Vec<serde_json::Value> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    // Each subkey under HKLM\Software\Clients\Mail is one registered client.
+    // Installers (Outlook, Thunderbird, eM Client, Mailspring, etc.) add
+    // themselves here; Windows itself registers "Windows Mail" on older
+    // builds.
+    let ps_script = "Get-ChildItem 'HKLM:\\Software\\Clients\\Mail' -ErrorAction SilentlyContinue | \
+                     ForEach-Object { $_.PSChildName }";
+
+    let output = std::process::Command::new("powershell")
+        .creation_flags(CREATE_NO_WINDOW)
+        .args(["-NoProfile", "-NonInteractive", "-Command", ps_script])
+        .output();
+
+    let mut clients: Vec<serde_json::Value> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    if let Ok(out) = output {
+        if out.status.success() {
+            let s = String::from_utf8_lossy(&out.stdout);
+            for line in s.lines() {
+                let name = line.trim();
+                if name.is_empty() { continue; }
+                if !seen.insert(name.to_lowercase()) { continue; }
+                let id = classify_mail_client_id(name);
+                clients.push(serde_json::json!({
+                    "id": id,
+                    "name": name,
+                }));
+            }
+        }
+    }
+    clients
+}
+
+/// List mail clients the user can route Dispatch through. Windows returns
+/// what's registered in `HKLM\Software\Clients\Mail`; other platforms return
+/// an empty list (Linux uses Thunderbird/xdg-email directly, macOS uses the
+/// default Mail app), so the UI only surfaces this on Windows.
+#[tauri::command]
+pub fn list_mail_clients() -> Vec<serde_json::Value> {
+    #[cfg(target_os = "windows")]
+    { list_mail_clients_win() }
+    #[cfg(not(target_os = "windows"))]
+    { Vec::new() }
+}
+
 #[cfg(target_os = "linux")]
 fn spawn_thunderbird_compose(
     to: &str,
@@ -368,6 +485,11 @@ pub fn dispatch_package(
     subject: String,
     body: String,
     include_cv: Option<bool>,
+    // v0.4.51: frontend passes the user's preferred mail client id so the
+    // Windows branch can route straight to the right integration instead of
+    // always trying Outlook COM first. `None` keeps the legacy behaviour.
+    #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
+    mail_client: Option<String>,
 ) -> Result<serde_json::Value, String> {
     if recipients.is_empty() {
         return Err("At least one recipient is required".to_string());
@@ -513,34 +635,52 @@ pub fn dispatch_package(
         if !zip_str.is_empty() { attachments.push(zip_str.clone()); }
         if include_cv { attachments.push(cv_str.clone()); }
 
-        // Primary: PowerShell + Outlook COM — opens Outlook with body + attachments
-        let attach_ps: String = attachments.iter()
-            .map(|a| format!("$m.Attachments.Add('{}')", a.replace('\'', "''")))
-            .collect::<Vec<_>>()
-            .join("; ");
-        let ps_script = format!(
-            "$o = New-Object -ComObject Outlook.Application; \
-             $m = $o.CreateItem(0); \
-             $m.To = '{}'; \
-             $m.Subject = '{}'; \
-             $m.Body = '{}'; \
-             {}; \
-             $m.Display()",
-            to_joined.replace('\'', "''"),
-            subject.replace('\'', "''"),
-            body.replace('\'', "''").replace('\n', "`n"),
-            attach_ps,
-        );
-        let outlook_ok = std::process::Command::new("powershell")
-            .creation_flags(CREATE_NO_WINDOW)
-            .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
-            .spawn()
-            .and_then(|mut c| c.wait())
-            .map(|s| s.success())
-            .unwrap_or(false);
+        // v0.4.51: route by user's preferred client.
+        // `None` or unknown → fall through to Outlook COM → mailto fallback
+        // (the old behaviour); `thunderbird` → CLI; `mailto` → skip Outlook.
+        let prefer = mail_client.as_deref().unwrap_or("").to_lowercase();
 
-        // Fallback: mailto (no attachments possible, but body is included)
-        if !outlook_ok {
+        let try_outlook = prefer.is_empty() || prefer == "outlook";
+        let try_thunderbird = prefer == "thunderbird";
+        let force_mailto = prefer == "mailto";
+
+        let mut handled = false;
+
+        if try_thunderbird {
+            handled = spawn_thunderbird_compose_win(&to_joined, &subject, &body, &attachments).is_ok();
+        }
+
+        if !handled && try_outlook {
+            let attach_ps: String = attachments.iter()
+                .map(|a| format!("$m.Attachments.Add('{}')", a.replace('\'', "''")))
+                .collect::<Vec<_>>()
+                .join("; ");
+            let ps_script = format!(
+                "$o = New-Object -ComObject Outlook.Application; \
+                 $m = $o.CreateItem(0); \
+                 $m.To = '{}'; \
+                 $m.Subject = '{}'; \
+                 $m.Body = '{}'; \
+                 {}; \
+                 $m.Display()",
+                to_joined.replace('\'', "''"),
+                subject.replace('\'', "''"),
+                body.replace('\'', "''").replace('\n', "`n"),
+                attach_ps,
+            );
+            handled = std::process::Command::new("powershell")
+                .creation_flags(CREATE_NO_WINDOW)
+                .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
+                .spawn()
+                .and_then(|mut c| c.wait())
+                .map(|s| s.success())
+                .unwrap_or(false);
+        }
+
+        // Fallback: mailto (no attachments possible, but body is included).
+        // Used when (a) user explicitly picked mailto, (b) selected client
+        // failed to launch, or (c) unknown preference fell through.
+        if !handled || force_mailto {
             fn pct(s: &str) -> String {
                 s.bytes()
                     .map(|b| {
