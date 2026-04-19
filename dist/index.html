@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.42';
+var APP_VERSION='0.4.43';
 // Human-readable labels for account types that go into the OS window title.
 // Unknown types fall back to the raw value so we never show something blank.
 var ACCOUNT_TYPE_LABELS={
@@ -210,6 +210,14 @@ input, select, button { font-family:var(--font-ui); }
 /* AI buttons */
 .ai-row { display:flex; gap:6px; align-items:center; margin-bottom:16px; }
 .ai-status { font-size:11px; color:var(--text2); }
+
+/* Closed combobox (type-to-filter, pick-from-list only) */
+.combobox-wrap { position:relative; }
+.combobox-dd { position:absolute; top:100%; left:0; right:0; max-height:280px; overflow-y:auto; background:var(--surface); border:1px solid var(--border); border-top:none; border-radius:0 0 4px 4px; z-index:120; display:none; box-shadow:0 6px 18px rgba(0,0,0,0.3); }
+.combobox-dd.open { display:block; }
+.combobox-item { padding:6px 10px; cursor:pointer; font-size:13px; color:var(--text); }
+.combobox-item:hover, .combobox-item.highlighted { background:var(--bg2); color:var(--accent); }
+.combobox-empty { padding:8px 10px; color:var(--text2); font-size:12px; font-style:italic; }
 
 /* Dashboard */
 .dash-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(120px,1fr)); gap:8px; margin-bottom:24px; }
@@ -417,7 +425,7 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.42</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.43</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div style="margin-top:18px;font-size:12px;color:var(--text2);">
@@ -462,8 +470,8 @@ input, select, button { font-family:var(--font-ui); }
             <div class="field"><label>Phones *</label><div style="display:flex;gap:6px;"><input id="fp-phones" placeholder="+XX XXX..." style="flex:1;min-width:0;"><select id="fp-preferred_messenger" style="width:110px;flex:0 0 110px;"><option value="WhatsApp">WhatsApp</option><option value="Telegram">Telegram</option><option value="Viber">Viber</option><option value="Signal">Signal</option><option value="Other">Other</option></select></div></div>
             <div class="field"><label>Email *</label><input id="fp-email" type="email"></div>
             <div class="field"><label>Rank *</label><select id="fp-rank"></select></div>
-            <div class="field"><label>Nearest airport *</label><input id="fp-nearest_airport" list="airport-hubs" placeholder="Start typing…"></div>
-            <div class="field"><label>Nearest intl airport *</label><input id="fp-nearest_intl_airport" list="airport-hubs" placeholder="Start typing…"></div>
+            <div class="field"><label>Nearest airport *</label><input id="fp-nearest_airport" placeholder="Start typing…"></div>
+            <div class="field"><label>Nearest intl airport *</label><input id="fp-nearest_intl_airport" placeholder="Start typing…"></div>
             <div class="field"><label>Available for joining *</label><input id="fp-available_from" type="text" inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" oninput="autoFormatDate(this)"></div>
             <div class="field"><label>Minimum salary per month *</label>
                 <div style="display:flex;gap:6px;"><input id="fp-min_salary" type="number" min="0" placeholder="e.g. 4500" style="flex:1;min-width:0;"><select id="fp-min_salary_currency" style="width:80px;flex:0 0 80px;"></select></div>
@@ -489,7 +497,6 @@ input, select, button { font-family:var(--font-ui); }
      JS errors are informational; update state is actionable — actionable
      wins the top slot. -->
 <div id="err" style="display:none; position:fixed; top:60px; left:0; right:0; background:var(--red); color:#fff; padding:4px 12px; font-size:11px; font-family:var(--font-mono); z-index:99;"></div>
-<datalist id="airport-hubs"></datalist>
 <datalist id="maritime-flags"></datalist>
 <div id="drop-overlay"><div class="drop-card">&#128194; Drop the file to attach it to this certificate</div></div>
 
@@ -1206,16 +1213,91 @@ function populateSelect(selectEl, list, currentVal, placeholder){
 // ========== Currencies (next to min salary) ==========
 var CURRENCIES = ["USD","EUR","GBP","CHF","JPY","AUD","NOK","SEK","DKK"];
 
-var _airportDatalistFilled=false;
-function populateAirportDatalist(){
-    if(_airportDatalistFilled)return;
-    var dl=document.getElementById('airport-hubs');
-    if(!dl)return;
-    var h='';
-    AIRPORT_HUBS.forEach(function(a){h+='<option value="'+a+'"></option>';});
-    dl.innerHTML=h;
-    _airportDatalistFilled=true;
+// Closed combobox widget — input that filters a fixed list as the user types
+// but allows selection only from the list. On blur, any value not in the list
+// is cleared. Used for the airport fields so users can't enter free-text
+// airport names (which would break future downstream lookups).
+function attachClosedCombobox(inputEl, list){
+    if(!inputEl || inputEl.dataset.comboboxReady==='1') return;
+    inputEl.dataset.comboboxReady='1';
+    inputEl.removeAttribute('list');
+    inputEl.setAttribute('autocomplete','off');
+    inputEl.setAttribute('spellcheck','false');
+
+    var parent=inputEl.parentNode;
+    var wrap=document.createElement('div');
+    wrap.className='combobox-wrap';
+    parent.insertBefore(wrap,inputEl);
+    wrap.appendChild(inputEl);
+    var dd=document.createElement('div');
+    dd.className='combobox-dd';
+    wrap.appendChild(dd);
+
+    var filtered=list.slice();
+    var hi=-1;
+
+    function render(){
+        if(!filtered.length){
+            dd.innerHTML='<div class="combobox-empty">No match</div>';
+            return;
+        }
+        var h='';
+        for(var i=0;i<filtered.length;i++){
+            var cls=i===hi?' highlighted':'';
+            var v=filtered[i].replace(/"/g,'&quot;');
+            h+='<div class="combobox-item'+cls+'" data-idx="'+i+'" data-val="'+v+'">'+filtered[i]+'</div>';
+        }
+        dd.innerHTML=h;
+    }
+    function open(){ dd.classList.add('open'); render(); }
+    function close(){ dd.classList.remove('open'); }
+    function filter(q){
+        q=(q||'').toLowerCase().trim();
+        if(!q){ filtered=list.slice(); }
+        else { filtered=list.filter(function(it){ return it.toLowerCase().indexOf(q)!==-1; }); }
+        hi=filtered.length?0:-1;
+    }
+    function scrollHiIntoView(){
+        var el=dd.querySelector('.combobox-item.highlighted');
+        if(el && el.scrollIntoView) el.scrollIntoView({block:'nearest'});
+    }
+
+    inputEl.addEventListener('focus', function(){ filter(inputEl.value); open(); });
+    inputEl.addEventListener('input', function(){ filter(inputEl.value); open(); });
+    inputEl.addEventListener('keydown', function(e){
+        if(!dd.classList.contains('open')){
+            if(e.key==='ArrowDown'||e.key==='ArrowUp'){ filter(inputEl.value); open(); e.preventDefault(); }
+            return;
+        }
+        if(e.key==='ArrowDown'){ if(hi<filtered.length-1) hi++; render(); scrollHiIntoView(); e.preventDefault(); }
+        else if(e.key==='ArrowUp'){ if(hi>0) hi--; render(); scrollHiIntoView(); e.preventDefault(); }
+        else if(e.key==='Enter'){
+            if(hi>=0 && filtered[hi]){ inputEl.value=filtered[hi]; close(); e.preventDefault(); }
+        } else if(e.key==='Escape'){ close(); }
+    });
+    dd.addEventListener('mousedown', function(e){
+        var it=e.target.closest('.combobox-item');
+        if(it){ inputEl.value=it.getAttribute('data-val'); close(); e.preventDefault(); }
+    });
+    inputEl.addEventListener('blur', function(){
+        // Defer to let a mousedown-on-dropdown win over blur before we close.
+        setTimeout(function(){
+            if(list.indexOf(inputEl.value)===-1) inputEl.value='';
+            close();
+        }, 180);
+    });
 }
+
+function attachAirportComboboxes(){
+    ['fp-nearest_airport','fp-nearest_intl_airport','sp-nearest_airport','sp-nearest_intl_airport'].forEach(function(id){
+        var el=document.getElementById(id);
+        if(el) attachClosedCombobox(el, AIRPORT_HUBS);
+    });
+}
+
+// Legacy name kept for existing call sites; the implementation now attaches
+// combobox behavior instead of filling a native <datalist>.
+function populateAirportDatalist(){ attachAirportComboboxes(); }
 
 var _flagsDatalistFilled=false;
 function populateFlagsDatalist(){
@@ -1248,25 +1330,67 @@ var MARITIME_FLAGS = [
 ];
 
 // ========== Common seafarer airport hubs (datalist for airport fields) ==========
+// International airports list — alphabetical by display label. Curated for
+// crew-change and commercial aviation coverage (not every regional strip).
+// Format "City (IATA)"; search matches anywhere in the label so typing either
+// the city name or the IATA code finds the entry.
 var AIRPORT_HUBS = [
-    "Kyiv (KBP)","Odesa (ODS)","Lviv (LWO)",
-    "Manila (MNL)","Cebu (CEB)","Davao (DVO)",
-    "Mumbai (BOM)","Delhi (DEL)","Chennai (MAA)","Kochi (COK)","Kolkata (CCU)",
-    "Istanbul (IST)","Istanbul Sabiha (SAW)","Ankara (ESB)","Izmir (ADB)",
-    "Moscow (SVO)","Moscow (DME)","St Petersburg (LED)","Novorossiysk/Krasnodar (KRR)",
-    "Warsaw (WAW)","Gdansk (GDN)","Krakow (KRK)",
-    "Bucharest (OTP)","Constanta (CND)",
-    "Sofia (SOF)","Varna (VAR)","Burgas (BOJ)",
-    "Athens (ATH)","Piraeus — Athens (ATH)","Thessaloniki (SKG)",
-    "Rotterdam (RTM)","Amsterdam (AMS)",
-    "Hamburg (HAM)","Frankfurt (FRA)","Munich (MUC)",
-    "London Heathrow (LHR)","London Gatwick (LGW)","Manchester (MAN)",
-    "Singapore (SIN)","Hong Kong (HKG)","Shanghai (PVG)","Busan (PUS)","Incheon (ICN)",
-    "Dubai (DXB)","Abu Dhabi (AUH)","Doha (DOH)","Jeddah (JED)",
-    "Casablanca (CMN)","Lagos (LOS)",
-    "Rio de Janeiro (GIG)","Santos/São Paulo (GRU)",
-    "Houston (IAH)","New York (JFK)","Miami (MIA)","Los Angeles (LAX)",
-    "Cape Town (CPT)","Durban (DUR)","Johannesburg (JNB)"
+    "Abu Dhabi (AUH)","Accra (ACC)","Addis Ababa (ADD)","Adelaide (ADL)","Agadir (AGA)",
+    "Alexandria (HBE)","Algiers (ALG)","Almaty (ALA)","Amman (AMM)","Amsterdam (AMS)",
+    "Anchorage (ANC)","Ankara (ESB)","Antalya (AYT)","Athens (ATH)","Auckland (AKL)",
+    "Baku (GYD)","Baltimore (BWI)","Bangalore (BLR)","Bangkok (BKK)","Bangkok Don Mueang (DMK)",
+    "Barcelona (BCN)","Beijing Capital (PEK)","Beijing Daxing (PKX)","Beirut (BEY)","Belgrade (BEG)",
+    "Berlin (BER)","Bilbao (BIO)","Birmingham (BHX)","Bogota (BOG)","Boston (BOS)",
+    "Brasilia (BSB)","Bratislava (BTS)","Brisbane (BNE)","Brussels (BRU)","Bucharest (OTP)",
+    "Budapest (BUD)","Buenos Aires (EZE)","Burgas (BOJ)","Busan (PUS)",
+    "Cairo (CAI)","Calgary (YYC)","Cape Town (CPT)","Caracas (CCS)","Casablanca (CMN)",
+    "Cebu (CEB)","Chengdu (CTU)","Chennai (MAA)","Chicago (ORD)","Chisinau (KIV)",
+    "Cluj-Napoca (CLJ)","Colombo (CMB)","Constanta (CND)","Copenhagen (CPH)","Curaçao (CUR)",
+    "Dakar (DSS)","Dallas (DFW)","Dar es Salaam (DAR)","Davao (DVO)","Delhi (DEL)",
+    "Denpasar / Bali (DPS)","Denver (DEN)","Dhaka (DAC)","Doha (DOH)","Dubai (DXB)",
+    "Dublin (DUB)","Durban (DUR)","Düsseldorf (DUS)",
+    "Edinburgh (EDI)","Entebbe (EBB)",
+    "Fortaleza (FOR)","Frankfurt (FRA)","Fukuoka (FUK)",
+    "Gdansk (GDN)","Geneva (GVA)","Glasgow (GLA)","Goa (GOI)","Guadalajara (GDL)",
+    "Guangzhou (CAN)","Guatemala City (GUA)",
+    "Hamburg (HAM)","Hanoi (HAN)","Harare (HRE)","Havana (HAV)","Helsinki (HEL)",
+    "Ho Chi Minh City (SGN)","Hong Kong (HKG)","Honolulu (HNL)","Houston (IAH)","Hyderabad (HYD)",
+    "Incheon / Seoul (ICN)","Islamabad (ISB)","Istanbul (IST)","Istanbul Sabiha (SAW)","Izmir (ADB)",
+    "Jakarta (CGK)","Jeddah (JED)","Johannesburg (JNB)",
+    "Kansas City (MCI)","Karachi (KHI)","Kathmandu (KTM)","Kingston (KIN)","Kochi (COK)",
+    "Kolkata (CCU)","Krakow (KRK)","Krasnodar (KRR)","Kuala Lumpur (KUL)","Kuwait (KWI)",
+    "Kyiv Boryspil (KBP)",
+    "Lagos (LOS)","Larnaca (LCA)","Las Palmas (LPA)","Las Vegas (LAS)","Lima (LIM)",
+    "Lisbon (LIS)","Ljubljana (LJU)","London Gatwick (LGW)","London Heathrow (LHR)","London Stansted (STN)",
+    "Los Angeles (LAX)","Luanda (LAD)","Luxembourg (LUX)","Lviv (LWO)",
+    "Madrid (MAD)","Malaga (AGP)","Male (MLE)","Manchester (MAN)","Manila (MNL)",
+    "Marseille (MRS)","Melbourne (MEL)","Mexico City (MEX)","Miami (MIA)","Milan Linate (LIN)",
+    "Milan Malpensa (MXP)","Minneapolis (MSP)","Minsk (MSQ)","Mombasa (MBA)","Monterrey (MTY)",
+    "Montreal (YUL)","Moscow Domodedovo (DME)","Moscow Sheremetyevo (SVO)","Moscow Vnukovo (VKO)",
+    "Mumbai (BOM)","Munich (MUC)","Muscat (MCT)",
+    "Nairobi (NBO)","Nantes (NTE)","Naples (NAP)","Nassau (NAS)","New Orleans (MSY)",
+    "New York JFK (JFK)","New York LaGuardia (LGA)","Newark (EWR)","Nice (NCE)","Novosibirsk (OVB)",
+    "Odesa (ODS)","Osaka Kansai (KIX)","Oslo (OSL)","Ottawa (YOW)",
+    "Panama City (PTY)","Paphos (PFO)","Paris CDG (CDG)","Paris Orly (ORY)","Penang (PEN)",
+    "Perth (PER)","Phnom Penh (PNH)","Phoenix (PHX)","Phuket (HKT)","Pittsburgh (PIT)",
+    "Podgorica (TGD)","Port Louis (MRU)","Porto (OPO)","Prague (PRG)","Pune (PNQ)",
+    "Quito (UIO)",
+    "Rabat (RBA)","Reykjavik Keflavik (KEF)","Riga (RIX)","Rio de Janeiro (GIG)","Riyadh (RUH)",
+    "Rome Ciampino (CIA)","Rome Fiumicino (FCO)","Rotterdam (RTM)",
+    "Salt Lake City (SLC)","Salvador (SSA)","San Francisco (SFO)","San Jose CA (SJC)","San Juan (SJU)",
+    "Santiago Chile (SCL)","Santo Domingo (SDQ)","Sao Paulo Congonhas (CGH)","Sao Paulo Guarulhos (GRU)",
+    "Sarajevo (SJJ)","Seattle (SEA)","Seoul Gimpo (GMP)","Shanghai Hongqiao (SHA)","Shanghai Pudong (PVG)",
+    "Sharjah (SHJ)","Shenzhen (SZX)","Singapore (SIN)","Skopje (SKP)","Sofia (SOF)",
+    "St Petersburg (LED)","Stockholm Arlanda (ARN)","Stuttgart (STR)","Sydney (SYD)",
+    "Taipei Taoyuan (TPE)","Tallinn (TLL)","Tashkent (TAS)","Tbilisi (TBS)","Tehran (IKA)",
+    "Tel Aviv (TLV)","Thessaloniki (SKG)","Tirana (TIA)","Tokyo Haneda (HND)","Tokyo Narita (NRT)",
+    "Toronto Pearson (YYZ)","Tripoli (TIP)","Tunis (TUN)",
+    "Ulaanbaatar (UBN)",
+    "Vancouver (YVR)","Varna (VAR)","Venice (VCE)","Vienna (VIE)","Vilnius (VNO)",
+    "Vladivostok (VVO)",
+    "Warsaw (WAW)","Washington Dulles (IAD)","Washington Reagan (DCA)","Wellington (WLG)","Windhoek (WDH)",
+    "Yangon (RGN)","Yerevan (EVN)",
+    "Zagreb (ZAG)","Zurich (ZRH)"
 ];
 
 // ========== Forced seafarer profile ==========
@@ -2824,8 +2948,8 @@ function renderSettingsBody(){
         h += '<div class="field"><label>Marital status</label><select id="sp-marital_status"><option value="">-- Select --</option><option value="Single">Single</option><option value="Married">Married</option><option value="Divorced">Divorced</option><option value="Widowed">Widowed</option></select></div>';
         h += '<div class="field"><label>Children</label><input id="sp-children_count" type="number" min="0" step="1" placeholder="0"></div>';
         h += '<div class="field"><label>English level</label><select id="sp-english_level"><option value="">-- Select --</option><option value="Basic">Basic</option><option value="Intermediate">Intermediate</option><option value="Advanced">Advanced</option><option value="Fluent">Fluent</option><option value="Native">Native</option></select></div>';
-        h += '<div class="field"><label>Nearest airport</label><input id="sp-nearest_airport" list="airport-hubs" placeholder="Start typing…"></div>';
-        h += '<div class="field"><label>Nearest intl airport</label><input id="sp-nearest_intl_airport" list="airport-hubs" placeholder="Start typing…"></div>';
+        h += '<div class="field"><label>Nearest airport</label><input id="sp-nearest_airport" placeholder="Start typing…"></div>';
+        h += '<div class="field"><label>Nearest intl airport</label><input id="sp-nearest_intl_airport" placeholder="Start typing…"></div>';
         h += spField('sp-available_from','Available for joining','date');
         h += '<div class="field"><label>Minimum salary per month</label><div style="display:flex;gap:6px;"><input id="sp-min_salary" type="number" min="0" style="flex:1;min-width:0;"><select id="sp-min_salary_currency" style="width:80px;flex:0 0 80px;"></select></div></div>';
         h += '</div>';
