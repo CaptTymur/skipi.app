@@ -84,7 +84,14 @@ pub fn open_external_url(url: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     let cmd = std::process::Command::new("open").arg(&url).spawn();
     #[cfg(target_os = "windows")]
-    let cmd = std::process::Command::new("cmd").args(["/C", "start", "", &url]).spawn();
+    let cmd = {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        std::process::Command::new("cmd")
+            .creation_flags(CREATE_NO_WINDOW)
+            .args(["/C", "start", "", &url])
+            .spawn()
+    };
     #[cfg(target_os = "linux")]
     let cmd = std::process::Command::new("xdg-open").arg(&url).spawn();
     cmd.map(|_| ()).map_err(|e| e.to_string())

@@ -168,7 +168,10 @@ pub fn open_work_file(state: State<AppState>, id: String) -> Result<(), String> 
     }
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
         std::process::Command::new("cmd")
+            .creation_flags(CREATE_NO_WINDOW)
             .args(["/C", "start", "", &fp_str])
             .spawn()
             .map_err(|e| e.to_string())?;

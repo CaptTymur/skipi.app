@@ -231,7 +231,10 @@ pub fn open_file_in_default(path: String) -> Result<(), String> {
     }
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
         std::process::Command::new("cmd")
+            .creation_flags(CREATE_NO_WINDOW)
             .args(["/C", "start", "", &path])
             .spawn()
             .map_err(|e| e.to_string())?;
@@ -300,6 +303,8 @@ pub fn open_email_with_attachment(state: State<AppState>, package_id: String, to
     }
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
         // Primary: PowerShell + Outlook COM — body + attachment included
         let ps_script = format!(
             "$o = New-Object -ComObject Outlook.Application; \
@@ -315,6 +320,7 @@ pub fn open_email_with_attachment(state: State<AppState>, package_id: String, to
             zip_str.replace('\'', "''"),
         );
         let outlook_ok = std::process::Command::new("powershell")
+            .creation_flags(CREATE_NO_WINDOW)
             .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
             .spawn()
             .and_then(|mut c| c.wait())
@@ -341,6 +347,7 @@ pub fn open_email_with_attachment(state: State<AppState>, package_id: String, to
                 pct(&body_str),
             );
             let _ = std::process::Command::new("cmd")
+                .creation_flags(CREATE_NO_WINDOW)
                 .args(["/C", "start", "", &url])
                 .spawn();
         }
@@ -499,6 +506,8 @@ pub fn dispatch_package(
     }
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
         // Collect attachment paths
         let mut attachments: Vec<String> = Vec::new();
         if !zip_str.is_empty() { attachments.push(zip_str.clone()); }
@@ -523,6 +532,7 @@ pub fn dispatch_package(
             attach_ps,
         );
         let outlook_ok = std::process::Command::new("powershell")
+            .creation_flags(CREATE_NO_WINDOW)
             .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
             .spawn()
             .and_then(|mut c| c.wait())
@@ -549,6 +559,7 @@ pub fn dispatch_package(
                 pct(&body),
             );
             let _ = std::process::Command::new("cmd")
+                .creation_flags(CREATE_NO_WINDOW)
                 .args(["/C", "start", "", &url])
                 .spawn();
         }
