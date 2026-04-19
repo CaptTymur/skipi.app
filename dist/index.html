@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.45';
+var APP_VERSION='0.4.46';
 // Human-readable labels for account types that go into the OS window title.
 // Unknown types fall back to the raw value so we never show something blank.
 var ACCOUNT_TYPE_LABELS={
@@ -129,7 +129,7 @@ input, select, button { font-family:var(--font-ui); }
 
 /* Left panel */
 .left-panel { width:260px; background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; }
-.panel-header { height:28px; display:flex; align-items:center; padding:0 12px; font-size:11px; color:var(--text2); text-transform:uppercase; letter-spacing:.05em; border-bottom:1px solid var(--border); }
+.panel-header { min-height:34px; display:flex; align-items:center; padding:4px 8px 4px 12px; font-size:11px; color:var(--text2); text-transform:uppercase; letter-spacing:.05em; border-bottom:1px solid var(--border); gap:8px; }
 .panel-header .actions { margin-left:auto; display:flex; gap:4px; }
 .panel-header .actions span { cursor:pointer; opacity:.5; }
 .panel-header .actions span:hover { opacity:1; }
@@ -398,7 +398,7 @@ input, select, button { font-family:var(--font-ui); }
 
     <!-- Left panel -->
     <div class="left-panel" id="left-panel" style="display:none;">
-        <div class="panel-header"><span id="panel-title">Files &amp; data input</span><span class="actions"><span id="btn-add-custom" title="Add custom certificate" onclick="showAddCustomDoc()" style="font-size:11px;font-weight:600;padding:2px 8px;border:1px solid var(--border);border-radius:4px;">+ Add</span></span></div>
+        <div class="panel-header"><span id="panel-title">Files &amp; data input</span><span class="actions"><button id="btn-add-custom" class="btn btn-accent btn-sm" title="Add a certificate or document that isn't in the pre-seeded list" onclick="showAddCustomDoc()">+ Add document</button></span></div>
         <div class="panel-search"><input type="text" placeholder="Search..." id="search-input" oninput="onSearch(this.value)"></div>
         <div class="panel-tree" id="panel-tree"></div>
     </div>
@@ -425,7 +425,7 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.45</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.46</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div style="margin-top:18px;font-size:12px;color:var(--text2);">
