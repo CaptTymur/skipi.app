@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.46';
+var APP_VERSION='0.4.47';
 // Human-readable labels for account types that go into the OS window title.
 // Unknown types fall back to the raw value so we never show something blank.
 var ACCOUNT_TYPE_LABELS={
@@ -78,6 +78,9 @@ document.addEventListener('DOMContentLoaded',function(){updateTitlebar();});
     --statusbar: #1a1a1a;
     --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
     --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    /* Appearance v0.4.47: user-adjustable base font size drives the body
+       scale; most nested elements inherit or size relative to it. */
+    --font-size-ui: 13px;
 }
 [data-theme="light"] {
     --bg: #ffffff;
@@ -97,7 +100,7 @@ document.addEventListener('DOMContentLoaded',function(){updateTitlebar();});
     --orange: #e67e22;
     --statusbar: #f0f0f0;
 }
-body { background:var(--bg); color:var(--text); font-family:var(--font-ui); font-size:13px; height:100vh; display:flex; flex-direction:column; overflow:hidden; }
+body { background:var(--bg); color:var(--text); font-family:var(--font-ui); font-size:var(--font-size-ui); height:100vh; display:flex; flex-direction:column; overflow:hidden; }
 ::selection { background:var(--accent-bg2); }
 input, select, button { font-family:var(--font-ui); }
 
@@ -425,7 +428,7 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.46</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.47</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div style="margin-top:18px;font-size:12px;color:var(--text2);">
@@ -3007,10 +3010,40 @@ function renderSettingsBody(){
     }
 
     if(settingsTab === 'appearance'){
-        h += '<div class="settings-section"><h3>Appearance</h3><div class="section-desc">Customize how Skipi looks.</div>';
-        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Theme</div><div class="setting-desc">Choose between light and dark mode.</div></div>';
-        h += '<div class="setting-control"><select onchange="setTheme(this.value)"><option value="dark"'+(cur==='dark'?' selected':'')+'>Dark</option><option value="light"'+(cur==='light'?' selected':'')+'>Light</option></select></div></div>';
-        // Accent color picker intentionally hidden — the control was a read-only swatch, not a real picker.
+        var themeChoice = localStorage.getItem('skipi-theme') || 'dark';
+        var resolvedTheme = _resolvedTheme(themeChoice);
+        var accentVal = localStorage.getItem('skipi-accent') ||
+                        (resolvedTheme==='light' ? DEFAULT_ACCENT_LIGHT : DEFAULT_ACCENT_DARK);
+        var fsVal = parseInt(localStorage.getItem('skipi-font-size-ui') || DEFAULT_FONT_SIZE_UI, 10);
+
+        h += '<div class="settings-section"><h3>Appearance</h3><div class="section-desc">Customize how Skipi looks. Changes apply immediately.</div>';
+
+        // Theme (Dark / Light / System)
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Color scheme</div><div class="setting-desc">System follows your OS dark-mode setting.</div></div>';
+        h += '<div class="setting-control"><select onchange="setTheme(this.value)">'+
+             '<option value="system"'+(themeChoice==='system'?' selected':'')+'>System</option>'+
+             '<option value="light"'+(themeChoice==='light'?' selected':'')+'>Light</option>'+
+             '<option value="dark"'+(themeChoice==='dark'?' selected':'')+'>Dark</option>'+
+             '</select></div></div>';
+
+        // Accent color
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Accent color</div><div class="setting-desc">Primary UI color — active tabs, buttons, highlights.</div></div>';
+        h += '<div class="setting-control" style="display:flex;gap:6px;align-items:center;">'+
+             '<input type="color" value="'+accentVal+'" oninput="setAccent(this.value)" style="width:40px;height:28px;padding:0;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;">'+
+             '<button class="btn btn-outline btn-sm" onclick="resetAccent()" title="Reset to the default accent for the current theme">Reset</button>'+
+             '</div></div>';
+
+        // Interface font size
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Interface font size</div><div class="setting-desc">Base size for most text. Useful on small screens or at sea when the ship is rolling.</div></div>';
+        h += '<div class="setting-control" style="display:flex;gap:8px;align-items:center;min-width:220px;">'+
+             '<input type="range" min="10" max="24" step="1" value="'+fsVal+'" oninput="setFontSizeUi(this.value)" style="flex:1;">'+
+             '<span id="app-font-size-label" style="min-width:44px;text-align:right;font-family:var(--font-mono);font-size:11px;color:var(--text2);">'+fsVal+'px</span>'+
+             '</div></div>';
+
+        // Reset all
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Reset appearance</div><div class="setting-desc">Restore theme, accent, and font size to their defaults.</div></div>';
+        h += '<div class="setting-control"><button class="btn btn-outline btn-sm" onclick="resetAppearance()">Reset all</button></div></div>';
+
         h += '</div>';
     }
 
@@ -3467,16 +3500,106 @@ async function createNewVault(){
     showSetup();
 }
 
+// Appearance v0.4.47 — user-adjustable theme, accent, and UI font size.
+// Persisted in localStorage. `applyAppearance()` runs once at startup before
+// render to avoid flash-of-default.
+
+var DEFAULT_ACCENT_DARK  = '#7c6ff7';
+var DEFAULT_ACCENT_LIGHT = '#6c5ce7';
+var DEFAULT_FONT_SIZE_UI = 13;
+var _systemThemeListener = null;
+
+function _hexToRgba(hex, alpha){
+    hex = (hex||'').replace('#','');
+    if(hex.length===3){hex=hex.split('').map(function(c){return c+c;}).join('');}
+    if(!/^[0-9a-fA-F]{6}$/.test(hex)) return 'rgba(124,111,247,'+alpha+')';
+    var r=parseInt(hex.substr(0,2),16),
+        g=parseInt(hex.substr(2,2),16),
+        b=parseInt(hex.substr(4,2),16);
+    return 'rgba('+r+','+g+','+b+','+alpha+')';
+}
+
+function _resolvedTheme(choice){
+    if(choice!=='system') return choice;
+    try{
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }catch(e){ return 'dark'; }
+}
+
+function applyAppearance(){
+    var choice=localStorage.getItem('skipi-theme')||'dark';
+    var resolved=_resolvedTheme(choice);
+    document.documentElement.setAttribute('data-theme', resolved);
+
+    // Accent: stored as hex, applied as --accent + derived --accent-bg/-bg2.
+    // Default depends on resolved theme so users who never touched the picker
+    // keep the original brand colors per mode.
+    var accent=localStorage.getItem('skipi-accent') ||
+               (resolved==='light' ? DEFAULT_ACCENT_LIGHT : DEFAULT_ACCENT_DARK);
+    document.documentElement.style.setProperty('--accent', accent);
+    document.documentElement.style.setProperty('--accent-bg', _hexToRgba(accent, 0.15));
+    document.documentElement.style.setProperty('--accent-bg2', _hexToRgba(accent, 0.3));
+
+    // Font size
+    var fs=parseInt(localStorage.getItem('skipi-font-size-ui')||DEFAULT_FONT_SIZE_UI, 10);
+    if(!isFinite(fs) || fs<10 || fs>24) fs=DEFAULT_FONT_SIZE_UI;
+    document.documentElement.style.setProperty('--font-size-ui', fs+'px');
+
+    // System-theme follow: install one listener, guarded by localStorage check
+    // so a later switch away from 'system' silently stops reacting.
+    if(choice==='system' && !_systemThemeListener){
+        try{
+            var mq=window.matchMedia('(prefers-color-scheme: dark)');
+            _systemThemeListener=function(){
+                if((localStorage.getItem('skipi-theme')||'dark')==='system'){
+                    applyAppearance();
+                }
+            };
+            if(mq.addEventListener) mq.addEventListener('change', _systemThemeListener);
+            else if(mq.addListener) mq.addListener(_systemThemeListener);
+        }catch(e){}
+    }
+}
+
 function setTheme(t){
-    document.documentElement.setAttribute('data-theme',t);
-    localStorage.setItem('skipi-theme',t);
+    localStorage.setItem('skipi-theme', t);
+    applyAppearance();
     renderSettingsBody();
 }
 
-function loadTheme(){
-    var t=localStorage.getItem('skipi-theme')||'dark';
-    document.documentElement.setAttribute('data-theme',t);
+function setAccent(hex){
+    localStorage.setItem('skipi-accent', hex);
+    applyAppearance();
+    // Don't re-render the settings body — color picker value is controlled and
+    // re-rendering would steal focus mid-drag of the picker.
 }
+
+function resetAccent(){
+    localStorage.removeItem('skipi-accent');
+    applyAppearance();
+    renderSettingsBody();
+}
+
+function setFontSizeUi(px){
+    var v=parseInt(px, 10);
+    if(!isFinite(v)) return;
+    v=Math.max(10, Math.min(24, v));
+    localStorage.setItem('skipi-font-size-ui', v);
+    applyAppearance();
+    var lbl=document.getElementById('app-font-size-label');
+    if(lbl) lbl.textContent=v+'px';
+}
+
+function resetAppearance(){
+    localStorage.removeItem('skipi-theme');
+    localStorage.removeItem('skipi-accent');
+    localStorage.removeItem('skipi-font-size-ui');
+    applyAppearance();
+    renderSettingsBody();
+}
+
+// Legacy entry point — scripts/bootstrapping still call loadTheme().
+function loadTheme(){ applyAppearance(); }
 
 async function saveKey(){try{await invoke('save_api_key',{key:document.getElementById('set-key').value});showToast('Saved','success');}catch(e){showToast(''+e,'error');logError('op',e);}}
 
