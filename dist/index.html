@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.44';
+var APP_VERSION='0.4.45';
 // Human-readable labels for account types that go into the OS window title.
 // Unknown types fall back to the raw value so we never show something blank.
 var ACCOUNT_TYPE_LABELS={
@@ -425,7 +425,7 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.44</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.45</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div style="margin-top:18px;font-size:12px;color:var(--text2);">
@@ -498,6 +498,7 @@ input, select, button { font-family:var(--font-ui); }
      wins the top slot. -->
 <div id="err" style="display:none; position:fixed; top:60px; left:0; right:0; background:var(--red); color:#fff; padding:4px 12px; font-size:11px; font-family:var(--font-mono); z-index:99;"></div>
 <datalist id="maritime-flags"></datalist>
+<datalist id="wh-prev-vessels"></datalist>
 <div id="drop-overlay"><div class="drop-card">&#128194; Drop the file to attach it to this certificate</div></div>
 
 <script>
@@ -2209,11 +2210,11 @@ async function delWorkFile(id){
     try{await invoke('delete_work_file',{id:id});await showWorkHistory();}catch(err){showToast('Error: '+err,'error');logError('op',err);}
 }
 
-function showAddWork(){
+async function showAddWork(){
     var h='<h2 style="font-size:18px;margin-bottom:16px;">Add Work Entry</h2>';
     h+='<div style="max-width:480px;">';
     h+='<div class="field-grid">';
-    h+='<div class="field"><label>Vessel Name *</label><input id="wh-vessel" placeholder="M/V Example"></div>';
+    h+='<div class="field"><label>Vessel Name *</label><input id="wh-vessel" list="wh-prev-vessels" placeholder="M/V Example" autocomplete="off"></div>';
     h+='<div class="field"><label>IMO Number</label><input id="wh-imo" placeholder="1234567"></div>';
     h+='<div class="field"><label>Vessel Type</label><select id="wh-type"></select></div>';
     h+='<div class="field"><label>Flag</label><input id="wh-flag" list="maritime-flags" placeholder="Start typing… (Panama, Liberia, Marshall Islands, …)"></div>';
@@ -2234,6 +2235,31 @@ function showAddWork(){
     populateSelect(document.getElementById('wh-type'),vList,'','-- Select type --');
     populateSelect(document.getElementById('wh-position'),pList,'','-- Select position --');
     populateFlagsDatalist();
+    await populatePrevVesselsDatalist();
+}
+
+// Fill the vessel-name datalist with the user's own prior work_history entries.
+// Vessel names can legitimately change on the same hull over time (IMO is the
+// stable global identifier, not the name), so we only suggest — not restrict.
+// The list is deduped and alphabetical.
+async function populatePrevVesselsDatalist(){
+    var dl=document.getElementById('wh-prev-vessels');
+    if(!dl) return;
+    var entries=[];
+    try{ entries=await invoke('get_work_history'); }catch(e){ entries=[]; }
+    var seen={};
+    var names=[];
+    for(var i=0;i<entries.length;i++){
+        var n=(entries[i].vessel_name||'').trim();
+        if(n && !seen[n.toLowerCase()]){
+            seen[n.toLowerCase()]=true;
+            names.push(n);
+        }
+    }
+    names.sort(function(a,b){ return a.localeCompare(b); });
+    var h='';
+    names.forEach(function(n){ h+='<option value="'+n.replace(/"/g,'&quot;')+'"></option>'; });
+    dl.innerHTML=h;
 }
 
 async function saveWork(){
