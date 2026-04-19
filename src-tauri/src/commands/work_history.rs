@@ -165,6 +165,81 @@ pub fn set_work_evidence_folder(
     db::set_work_evidence_folder(conn, &entry_id, trimmed).map_err(|e| e.to_string())
 }
 
+/// Sanitise a string for use as a folder name: collapse anything outside the
+/// alnum/dash/underscore set into `_`, strip leading/trailing dots, and cap
+/// length at 60 chars so the final path stays comfortably short on Windows.
+fn sanitise_folder_segment(s: &str) -> String {
+    let mut out: String = s
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .collect();
+    // Collapse runs of underscores so `M/V Spring Breeze` does not become
+    // `M_V_Spring_Breeze_` with ugly doubles from the leading slash/space.
+    while out.contains("__") { out = out.replace("__", "_"); }
+    let trimmed = out.trim_matches(|c| c == '_' || c == '.').to_string();
+    let final_len = trimmed.chars().count().min(60);
+    trimmed.chars().take(final_len).collect()
+}
+
+/// Create the default evidence folder for a work-history entry under
+/// `~/Skipi/Contracts/<vessel_or_imo>_<YYYYMM>/` and link it to the entry.
+/// Idempotent: if the folder already exists it is reused. Returns the
+/// absolute path that was linked so the UI can show it.
+#[tauri::command]
+pub fn auto_create_work_evidence_folder(
+    state: State<AppState>,
+    entry_id: String,
+) -> Result<String, String> {
+    // Pull the fields we need to build the path in one DB scope, then drop
+    // the lock before touching the filesystem.
+    let (vessel_name, imo, sign_on, created_at) = {
+        let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = conn_lock.as_ref().ok_or("No vault open")?;
+        conn.query_row(
+            "SELECT vessel_name, imo, sign_on, created_at FROM work_history WHERE id = ?1",
+            rusqlite::params![entry_id],
+            |row| Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, String>(3)?,
+            )),
+        ).map_err(|_| "Work history entry not found".to_string())?
+    };
+
+    // Prefer IMO as the stable identifier (vessel names legitimately change
+    // on the same hull). Fall back to a sanitised vessel name.
+    let ident = match imo.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        Some(i) => format!("IMO{}", sanitise_folder_segment(i)),
+        None => sanitise_folder_segment(&vessel_name),
+    };
+    if ident.is_empty() {
+        return Err("Cannot build folder name — vessel is missing both IMO and name".to_string());
+    }
+
+    // Date bucket: sign_on when present, otherwise the entry's created_at.
+    // Both are stored as `YYYY-MM-DD` / `YYYY-MM-DDTHH:MM:SS` — we just want
+    // the first 7 chars and to strip the dash for a compact `YYYYMM`.
+    let date_src = sign_on.as_deref().filter(|s| s.len() >= 7).unwrap_or(&created_at);
+    let yyyymm: String = date_src.chars().take(7).filter(|c| *c != '-').collect();
+
+    let folder_name = format!("{}_{}", ident, yyyymm);
+    let home = dirs::home_dir().ok_or("Cannot resolve home directory")?;
+    let path = home.join("Skipi").join("Contracts").join(&folder_name);
+
+    fs::create_dir_all(&path).map_err(|e| format!("Failed to create folder: {}", e))?;
+
+    let path_str = path.to_string_lossy().to_string();
+    {
+        let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = conn_lock.as_ref().ok_or("No vault open")?;
+        db::set_work_evidence_folder(conn, &entry_id, Some(&path_str))
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(path_str)
+}
+
 /// Open the linked evidence folder in the OS file manager. Errors out with
 /// a clear message if nothing is linked or the folder has been moved/deleted
 /// so the UI can offer a graceful re-link.

@@ -162,6 +162,7 @@ pub fn run() {
             work_history::open_work_file,
             work_history::set_work_evidence_folder,
             work_history::open_work_evidence_folder,
+            work_history::auto_create_work_evidence_folder,
             // SMTP outgoing mail
             email::suggest_smtp_from_email,
             email::get_smtp_config,
