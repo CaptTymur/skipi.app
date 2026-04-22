@@ -66,10 +66,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Public repo → Actions minutes are unlimited on all standard runners,
-          # so Linux and Windows both build every release. macOS stays off until
-          # the Apple Developer cert ($99/yr) + notarization pipeline are wired
-          # up; without them the .dmg triggers a Gatekeeper scare on install.
+          # Public repo → Actions minutes are unlimited on all standard runners.
+          # All three platforms build every release. Signing details:
+          #   • Windows — Authenticode via Azure Trusted Signing (see the "Sign
+          #     Windows binaries" step below and the signCommand in tauri.conf.json).
+          #   • macOS  — Developer ID Application cert + notarytool staple via
+          #     tauri-action's native APPLE_* env vars.
+          #   • Linux  — no OS-level signing required; AppImage/deb/rpm ship as-is
+          #     with a minisign updater signature on top for auto-update trust.
           - platform: ubuntu-22.04
             rust_targets: x86_64-unknown-linux-gnu
             tauri_args: ""
@@ -80,11 +84,10 @@ jobs:
             tauri_args: ""
             name: Windows
 
-          # macOS — re-enable when Apple Developer $99 is paid and notarization ready.
-          # - platform: macos-latest
-          #   rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
-          #   tauri_args: --target universal-apple-darwin
-          #   name: macOS
+          - platform: macos-latest
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+            tauri_args: --target universal-apple-darwin
+            name: macOS
 
     runs-on: ${{ matrix.platform }}
     name: Build (${{ matrix.name }})
@@ -125,6 +128,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-registry-
 
+      # Windows: install Azure Trusted Signing CLI so tauri.conf.json's
+      # windows.signCommand can call it during bundle. The CLI reads
+      # AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET from the
+      # environment; the account/profile/endpoint names are passed as args
+      # in tauri.conf.json via the AZURE_* env vars set below.
+      - name: Install trusted-signing-cli
+        if: matrix.platform == 'windows-latest'
+        run: cargo install trusted-signing-cli --locked
+        shell: bash
+
       # Build the Tauri app
       - name: Build Skipi
         uses: tauri-apps/tauri-action@v0
@@ -133,13 +146,24 @@ jobs:
           # Updater signing — REQUIRED for auto-updates:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # macOS signing (optional — set these secrets if you have an Apple Developer cert):
-          # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          # APPLE_ID: ${{ secrets.APPLE_ID }}
-          # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Windows — Azure Trusted Signing (Authenticode). trusted-signing-cli
+          # is invoked by tauri.conf.json's bundle.windows.signCommand during
+          # the MSI/EXE bundle step; these env vars flow through to it.
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_ENDPOINT: ${{ secrets.AZURE_ENDPOINT }}
+          AZURE_CODE_SIGNING_NAME: ${{ secrets.AZURE_CODE_SIGNING_NAME }}
+          AZURE_CERT_PROFILE_NAME: ${{ secrets.AZURE_CERT_PROFILE_NAME }}
+          # macOS — Developer ID Application cert + notarytool staple.
+          # tauri-action picks these up and runs codesign + xcrun notarytool
+          # automatically when they're set.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Skipi ${{ github.ref_name }}"
@@ -150,15 +174,13 @@ jobs:
 
             ### Download
 
-            | Platform | File |
-            |----------|------|
-            | Windows (installer) | `.msi` or `.exe` |
-            | Linux (Debian/Ubuntu) | `.deb` |
-            | Linux (universal) | `.AppImage` |
-            | Linux (RPM-based) | `.rpm` |
-
-            macOS build is paused until the Apple Developer cert is wired up — skipping
-            it avoids the Gatekeeper warning on install.
+            | Platform | File | Signed? |
+            |----------|------|---------|
+            | Windows | `.msi` / `.exe` | Authenticode (Azure Trusted Signing) |
+            | macOS (Universal — Apple Silicon + Intel) | `.dmg` / `.app.tar.gz` | Developer ID + notarized |
+            | Linux (Debian/Ubuntu) | `.deb` | minisign (updater) |
+            | Linux (universal) | `.AppImage` | minisign (updater) |
+            | Linux (RPM-based) | `.rpm` | minisign (updater) |
 
             ### What's new
 
