@@ -35,4 +35,4 @@ MIT. See [LICENSE](LICENSE).
 
 ## Contact
 
-Tymur Rudov — [beta@skipi.app](mailto:beta@skipi.app) — [skipi.app](https://skipi.app)
+Tymur Rudov — [tymur.rudov@icloud.com](mailto:tymur.rudov@icloud.com) — [skipi.app](https://skipi.app)
