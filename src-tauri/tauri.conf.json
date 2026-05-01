@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Skipi",
-  "version": "0.4.52",
+  "version": "0.4.77",
   "identifier": "app.skipi.desktop",
   "build": {
     "frontendDist": "../dist"
@@ -10,7 +10,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Skipi — Maritime Document Management",
+        "title": "Skipi 0.4.77",
         "width": 1100,
         "height": 750,
         "resizable": true,
@@ -34,7 +34,7 @@
     "targets": "all",
     "createUpdaterArtifacts": true,
     "publisher": "Tymur Rudov",
-    "copyright": "Copyright © 2026 Tymur Rudov. Closed beta.",
+    "copyright": "Copyright © 2026 Tymur Rudov. MIT licensed client.",
     "category": "Productivity",
     "shortDescription": "Maritime document management for seafarers",
     "longDescription": "Skipi is a local-first document vault for seafarers and ship managers. Store certificates, track expiry dates, build shareable packages — all data stays on your computer.",

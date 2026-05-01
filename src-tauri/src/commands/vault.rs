@@ -76,10 +76,12 @@ pub fn set_window_title(window: tauri::WebviewWindow, title: String) -> Result<(
 /// applicable to their install type.
 #[tauri::command]
 pub fn open_external_url(url: String) -> Result<(), String> {
-    // Basic sanity check — only allow http(s) URLs so this command can't be
-    // abused to run arbitrary programs.
-    if !url.starts_with("https://") && !url.starts_with("http://") {
-        return Err("Only http(s) URLs are allowed".to_string());
+    // Sanity check — limit to scheme://-style URLs so this command can't be
+    // abused to run arbitrary programs. We allow http(s)/mailto/tel which
+    // are the schemes Skipi routes through default applications.
+    let allowed = ["https://", "http://", "mailto:", "tel:"];
+    if !allowed.iter().any(|p| url.starts_with(p)) {
+        return Err("Only http(s)/mailto/tel URLs are allowed".to_string());
     }
     #[cfg(target_os = "macos")]
     let cmd = std::process::Command::new("open").arg(&url).spawn();
@@ -151,6 +153,9 @@ pub fn create_vault(
     vessel_type: Option<String>,
 ) -> Result<VaultInfo, String> {
     let vault_path = PathBuf::from(&path);
+    if vault_path.join("skipi.db").exists() {
+        return Err("A Skipi vault already exists in that folder. Use Open Existing Vault, or choose a different parent folder/name.".to_string());
+    }
     fs::create_dir_all(&vault_path).map_err(|e| e.to_string())?;
 
     let conn = db::open_db(&vault_path).map_err(|e| e.to_string())?;

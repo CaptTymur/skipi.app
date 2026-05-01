@@ -31,7 +31,11 @@ Tauri 2 (Rust + WebView). Single-file HTML frontend. SQLite for structured data.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+The desktop client in this repository is MIT licensed. See [LICENSE](LICENSE).
+
+The Skipi name, logo, hosted backend services, skipi.app infrastructure, and
+separate Skipi Crewing application are not granted under this repository's MIT
+license unless expressly stated.
 
 ## Contact
 

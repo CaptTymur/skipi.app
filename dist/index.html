@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.52';
+var APP_VERSION='0.4.77';
+// Window title is set via `set_window_title` Rust command inside
+// updateTitlebar() — direct JS setTitle() is blocked by Tauri 2 ACL.
 // Human-readable labels for account types that go into the OS window title.
 // Unknown types fall back to the raw value so we never show something blank.
 var ACCOUNT_TYPE_LABELS={
@@ -17,11 +19,10 @@ var ACCOUNT_TYPE_LABELS={
 };
 function updateTitlebar(vaultName,accountType){
     var label=accountType?(ACCOUNT_TYPE_LABELS[accountType]||accountType):'';
-    // Title lives in the OS window chrome only now — the old inline strip
-    // was removed in v0.4.23 as redundant. Format:
-    //   "Skipi — Seafarer — Adrian V. Seaborne"  (with vault + type)
-    //   "Skipi"                                   (no vault)
-    var os=label?'Skipi — '+label+(vaultName?' — '+vaultName:''):'Skipi';
+    // Format: "Skipi 0.4.69 — Seafarer — Adrian V. Seaborne". Version always
+    // visible for dev/QA — single source of truth = APP_VERSION.
+    var base='Skipi '+APP_VERSION;
+    var os=label?base+' — '+label+(vaultName?' — '+vaultName:''):base;
     document.title=os;
     // Push it to the actual OS titlebar via the Rust helper. Fire-and-forget —
     // we don't block init if the command is missing (e.g. older binary).
@@ -368,6 +369,28 @@ input, select, button { font-family:var(--font-ui); }
 .fw-doc { background:var(--bg); border-left:2px solid var(--accent); padding:5px 8px; margin:3px 0; border-radius:0 3px 3px 0; }
 .fw-doc-title { font-size:11px; color:var(--text); }
 .fw-doc-basis { font-size:10px; color:var(--text2); font-family:var(--font-mono); margin-top:2px; }
+/* WhatsApp-like chat */
+.chat-pane { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 8px; max-height: 440px; min-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.chat-empty { color: var(--text2); text-align: center; font-size: 12px; padding: 16px; }
+.msg { display: flex; margin-top: 2px; }
+.msg.mine { justify-content: flex-end; }
+.msg.other { justify-content: flex-start; }
+.msg-bubble { max-width: 70%; padding: 6px 10px 16px; border-radius: 8px; position: relative; font-size: 13px; line-height: 1.4; word-wrap: break-word; box-shadow: 0 1px 0.5px rgba(0,0,0,0.25); }
+.msg.mine .msg-bubble { background: var(--accent); color: #fff; border-bottom-right-radius: 2px; }
+.msg.other .msg-bubble { background: var(--surface); color: var(--text); border-bottom-left-radius: 2px; }
+.msg-text { white-space: pre-wrap; }
+.msg-meta { position: absolute; bottom: 3px; right: 8px; font-size: 10px; opacity: 0.7; display: inline-flex; gap: 3px; align-items: center; }
+.msg.pending .msg-bubble { opacity: 0.65; }
+.msg.failed .msg-bubble { background: rgba(239,68,68,0.25); color: var(--red); }
+.chat-composer { display: flex; gap: 8px; padding: 6px 6px 6px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 22px; margin-top: 8px; align-items: flex-end; }
+.chat-composer textarea { flex: 1; border: none; background: transparent; resize: none; outline: none; color: var(--text); font-family: inherit; font-size: 14px; min-height: 32px; max-height: 120px; padding: 6px 0; line-height: 1.4; }
+.chat-composer .btn-send { width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: #fff; border: none; display: flex; align-items: center; justify-content: center; font-size: 14px; cursor: pointer; flex-shrink: 0; padding: 0; }
+.chat-composer .btn-send:hover { filter: brightness(1.1); }
+.chat-composer .btn-icon { width: 32px; height: 32px; border-radius: 50%; background: transparent; color: var(--text2); border: none; cursor: pointer; flex-shrink: 0; padding: 0; font-size: 14px; }
+.chat-composer .btn-icon:hover { color: var(--text); }
+.chat-status { font-size: 10px; color: var(--text2); padding: 4px 12px 0; display: flex; justify-content: space-between; align-items: center; }
+.chat-day-sep { display: flex; justify-content: center; margin: 8px 0; }
+.chat-day-sep span { background: var(--surface2); color: var(--text2); font-size: 11px; padding: 3px 10px; border-radius: 10px; }
 </style>
 </head>
 <body>
@@ -435,9 +458,12 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.52</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.63</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
+                <div style="margin-top:12px;font-size:11px;color:var(--text2);line-height:1.45;max-width:360px;">
+                    New vault folders are named clearly, for example <code>Skipi Seafarer - Tymur Rudov</code>. When opening a vault, select that named folder.
+                </div>
                 <div style="margin-top:18px;font-size:12px;color:var(--text2);">
                     Just exploring? <a href="#" onclick="loadDemoVault();return false;" style="color:var(--accent);">Load demo seafarer</a>
                 </div>
@@ -749,6 +775,7 @@ async function init() {
     if(!window.__TAURI__||!window.__TAURI__.core){err('Tauri API not available');return;}
     invoke=window.__TAURI__.core.invoke;
     if(window.__TAURI__.dialog){open=window.__TAURI__.dialog.open;saveDlg=window.__TAURI__.dialog.save;}
+    var wv=document.getElementById('welcome-version');if(wv)wv.textContent=APP_VERSION;
     convertFileSrc=window.__TAURI__.core.convertFileSrc||function(p){return p;};
     // Wire up native drag-and-drop (runs once, independent of vault state)
     setupDragDrop();
@@ -765,6 +792,17 @@ async function init() {
     showWelcome();
     // Check for updates even without a vault open
     setTimeout(function(){checkForUpdate(true);},3000);
+    // Background poll for new vacancies on the public board (5-min cadence)
+    startJobsPolling();
+    // Pre-warm the Jobs cache so the tab opens instantly on first click.
+    // Runs silently — doesn't touch the DOM until the user navigates there.
+    setTimeout(function(){
+        if (typeof loadJobsFeed === 'function' && currentView !== 'jobs') {
+            // No host element yet — loadJobsFeed already handles that and
+            // just populates lastJobsItems + localStorage cache.
+            loadJobsFeed().catch(function(){});
+        }
+    }, 800);
 }
 
 // ========== Profile taxonomy (STCW levels, vessel tree, positions) ==========
@@ -879,11 +917,38 @@ async function onType(v){
 }
 function showWelcome(){show('scr-welcome');hide('scr-setup');hide('scr-content');hide('ribbon');hide('left-panel');hide('tabs');hide('statusbar');var mb=document.getElementById('modules-bar');if(mb)mb.style.display='none';}
 
+function cleanVaultFolderPart(value,fallback){
+    var s=(value||'').toString().trim();
+    if(!s)s=fallback||'Vault';
+    s=s.replace(/[<>:"/\\|?*\x00-\x1F]/g,' ');
+    s=s.replace(/\s+/g,' ').trim();
+    s=s.replace(/[. ]+$/g,'');
+    if(!s)s=fallback||'Vault';
+    if(s.length>64)s=s.slice(0,64).trim();
+    return s;
+}
+function joinFolderPath(base,child){
+    var sep=(base&&base.indexOf('\\')!==-1&&base.indexOf('/')===-1)?'\\':'/';
+    return (base||'').replace(/[\\\/]+$/,'')+sep+child;
+}
+function vaultFolderName(kind,name,extra){
+    var label=cleanVaultFolderPart(name,'Vault');
+    var suffix=extra?cleanVaultFolderPart(extra,''):'';
+    if(suffix)return 'Skipi '+kind+' - '+label+' - '+suffix;
+    return 'Skipi '+kind+' - '+label;
+}
+function confirmVaultCreate(path){
+    return confirm('Skipi will create this vault folder:\n\n'+path+'\n\nThe folder name is visible in your file manager, so it is easier to find and open later.');
+}
+
 async function doLegacyCreate(t){
     var n=document.getElementById('s-name').value.trim();if(!n){alert('Enter name');return;}
     var vt=document.getElementById('s-vt').value||null;
-    var dir=await open({directory:true,title:'Choose folder'});if(!dir)return;
-    var path=dir+'/Skipi - '+n.replace(/[^a-zA-Z0-9 _-]/g,'_');
+    var kind=t==='crewing'?'Crewing':(t==='vessel'?'Vessel':(t==='manager'?'Ship Manager':(t==='agent'?'Agent':'Seafarer')));
+    var folder=vaultFolderName(kind,n,vt);
+    var dir=await open({directory:true,title:'Choose parent folder for '+folder});if(!dir)return;
+    var path=joinFolderPath(dir,folder);
+    if(!confirmVaultCreate(path))return;
     try{var info=await invoke('create_vault',{path:path,accountType:t,name:n,rank:null,vesselType:vt});await loadVault(info);}catch(e){showToast('Could not create vault: '+e,'error');logError('create_vault',e);}
 }
 
@@ -1155,8 +1220,10 @@ function wNext(){
 }
 
 async function wFinish(){
-    var dir=await open({directory:true,title:'Choose folder for the vault'});if(!dir)return;
-    var path=dir+'/Skipi - '+wizardState.name.replace(/[^a-zA-Z0-9 _-]/g,'_');
+    var folder=vaultFolderName('Seafarer',wizardState.name);
+    var dir=await open({directory:true,title:'Choose parent folder for '+folder});if(!dir)return;
+    var path=joinFolderPath(dir,folder);
+    if(!confirmVaultCreate(path))return;
     var vessId=wizardState.vessel_leaf||wizardState.vessel_root;
     try{
         var info=await invoke('create_profile_vault',{
@@ -1450,7 +1517,7 @@ async function openForcedProfile(forceOpen){
         var msgr=document.getElementById('fp-preferred_messenger');
         if(msgr)msgr.value=data.preferred_messenger||'WhatsApp';
         var rdy=document.getElementById('fp-ready_for_offers');
-        var rdyVal=(data.ready_for_offers||'true')!=='false';
+        var rdyVal=data.ready_for_offers==='true';
         if(rdy){rdy.checked=rdyVal;}
         // In forced-profile overlay all fields must stay enabled so the user can fill them.
         // The ready_for_offers toggle only disables fields in the Settings panel, not here.
@@ -1650,8 +1717,11 @@ function vwNext(){
 }
 
 async function vwFinish(){
-    var dir=await open({directory:true,title:'Choose folder for the vault'});if(!dir)return;
-    var path=dir+'/Skipi - '+vesselWizardState.name.replace(/[^a-zA-Z0-9 _-]/g,'_');
+    var extra=vesselWizardState.imo?('IMO '+vesselWizardState.imo):'';
+    var folder=vaultFolderName('Vessel',vesselWizardState.name,extra);
+    var dir=await open({directory:true,title:'Choose parent folder for '+folder});if(!dir)return;
+    var path=joinFolderPath(dir,folder);
+    if(!confirmVaultCreate(path))return;
     var catId=vesselWizardState.category_leaf||vesselWizardState.category_root;
     try{
         var info=await invoke('create_vessel_profile_vault',{
@@ -1668,8 +1738,8 @@ async function vwFinish(){
 }
 
 async function openExisting(){
-    var dir=await open({directory:true,title:'Select Skipi vault'});if(!dir)return;
-    try{var info=await invoke('open_vault',{path:dir});await loadVault(info);}catch(e){showToast('Could not open vault: '+e,'error');logError('open_vault',e);}
+    var dir=await open({directory:true,title:'Select a Skipi vault folder, e.g. Skipi Seafarer - Tymur Rudov'});if(!dir)return;
+    try{var info=await invoke('open_vault',{path:dir});await loadVault(info);}catch(e){showToast('Could not open vault: '+e+'. Select the named folder that contains skipi.db, for example "Skipi Seafarer - Your Name".','error');logError('open_vault',e);}
 }
 
 async function loadVault(info){
@@ -1679,6 +1749,11 @@ async function loadVault(info){
     updateTitlebar(info.name,currentAccountType);
     // Update bottom-left vault name
     var vn=document.getElementById('pf-vault-name');if(vn)vn.textContent=info.name||'Vault';
+    var vb=document.getElementById('mb-vault');
+    if(vb){
+        vb.title='Switch vault';
+        try{invoke('get_current_vault_path').then(function(p){if(p)vb.title='Current vault: '+p;}).catch(function(){});}catch(e){}
+    }
     var expIcon=document.getElementById('ri-exp');
     var cvIcon=document.getElementById('ri-cv');
     var dispIcon=document.getElementById('ri-disp');
@@ -1787,6 +1862,192 @@ function showView(v){
     else if(v==='dispatch')showDispatch();
     else if(v==='jobs')showJobs();
     else if(v==='settings')openSettings();
+}
+
+// ------------- Inbox (E2E messages with crewings) -------------
+var inboxState = { threads: [], selected: null, messages: [] };
+
+async function showInbox(){
+    var content = document.getElementById('scr-content');
+    content.innerHTML = '<div style="display:flex;height:100%;">'
+        + '<div id="inbox-list" style="width:300px;border-right:1px solid var(--border);overflow-y:auto;flex-shrink:0;"></div>'
+        + '<div id="inbox-thread" style="flex:1;display:flex;flex-direction:column;min-width:0;"></div>'
+        + '</div>';
+    show('scr-content');
+    updateTabs('Inbox');
+
+    // Make sure our pubkey is registered (idempotent).
+    try { await invoke('register_my_pubkey'); } catch(e){ console.log('register_my_pubkey:', e); }
+
+    // Threads list = active applications by this seafarer. We don't have a
+    // server endpoint that lists "my applications" yet, so we poll inbox/{user_id}
+    // and group messages by application_id.
+    var me = null;
+    try { me = await invoke('get_my_identity'); } catch(e){}
+    if(!me){
+        document.getElementById('inbox-list').innerHTML =
+            '<div style="padding:30px 20px;color:var(--text2);font-size:12px;text-align:center;">'
+            + 'No messaging identity yet. Open a vault first.</div>';
+        return;
+    }
+    inboxState.me = me;
+
+    // Use the messaging inbox endpoint to get all messages addressed to us.
+    // Group by application_id locally.
+    try {
+        var inboxResp = await fetch('https://api.skipi.app/api/messaging/inbox/'+encodeURIComponent(me.user_id));
+        var inboxMessages = await inboxResp.json();
+        var byThread = {};
+        inboxMessages.forEach(function(m){
+            if(!byThread[m.application_id]) byThread[m.application_id] = { application_id: m.application_id, last_at: '', count: 0 };
+            byThread[m.application_id].count++;
+            if(m.sent_at > byThread[m.application_id].last_at) byThread[m.application_id].last_at = m.sent_at;
+        });
+        inboxState.threads = Object.values(byThread).sort(function(a,b){return b.last_at.localeCompare(a.last_at);});
+    } catch(e){
+        inboxState.threads = [];
+    }
+
+    renderInboxList();
+    if(inboxState.selected) renderInboxThread();
+    else renderInboxEmpty();
+}
+
+function renderInboxList(){
+    var host = document.getElementById('inbox-list');
+    if(!host) return;
+    if(!inboxState.threads.length){
+        host.innerHTML = '<div style="padding:30px 16px;color:var(--text2);font-size:12px;text-align:center;">'
+            + '<div style="font-size:32px;margin-bottom:10px;">&#128238;</div>'
+            + '<b style="color:var(--text);">No conversations yet</b><br><br>'
+            + 'When a crewing replies to one of your applications, the chat appears here.<br><br>'
+            + '<span style="font-size:11px;">&#128274; End-to-end encrypted. Skipi server cannot read messages.</span></div>';
+        updateInboxBadge(0);
+        return;
+    }
+    var html = '';
+    inboxState.threads.forEach(function(t){
+        var active = inboxState.selected && inboxState.selected.application_id === t.application_id;
+        var date = (t.last_at||'').slice(0,10);
+        html += '<div onclick="openInboxThread(\''+t.application_id+'\')" style="padding:12px 14px;border-bottom:1px solid var(--border);cursor:pointer;'
+            +(active?'background:var(--hover);border-left:3px solid var(--accent);':'')+'">';
+        html += '<div style="font-weight:600;font-size:13px;">Application '+t.application_id.slice(0,8)+'</div>';
+        html += '<div style="font-size:11px;color:var(--text2);margin-top:3px;">'+t.count+' message'+(t.count>1?'s':'')+' · '+date+'</div>';
+        html += '</div>';
+    });
+    host.innerHTML = html;
+    updateInboxBadge(0);
+}
+
+function updateInboxBadge(n){
+    var b = document.getElementById('nav-inbox-badge');
+    if(!b) return;
+    if(n>0){ b.textContent = n; b.style.display = 'inline-block'; }
+    else b.style.display = 'none';
+}
+
+function renderInboxEmpty(){
+    document.getElementById('inbox-thread').innerHTML =
+        '<div style="margin:auto;padding:40px;text-align:center;color:var(--text2);max-width:480px;">'
+        + '<div style="font-size:48px;">&#128238;</div>'
+        + '<div style="font-size:16px;color:var(--text);margin-top:12px;">Select a conversation</div>'
+        + '<div style="font-size:12px;margin-top:14px;line-height:1.5;">'
+        + '&#128274; All messages are end-to-end encrypted. The Skipi server stores opaque ciphertext only — only you and the crewing can read what is sent.'
+        + '</div></div>';
+}
+
+async function openInboxThread(applicationId){
+    inboxState.selected = inboxState.threads.find(function(t){return t.application_id===applicationId;});
+    inboxState.messages = [];
+    renderInboxList();
+    document.getElementById('inbox-thread').innerHTML =
+        '<div style="padding:14px 18px;border-bottom:1px solid var(--border);">'
+        + '<div style="font-weight:600;">Application '+applicationId.slice(0,8)+'</div>'
+        + '<div style="font-size:11px;color:var(--ok);">&#128274; end-to-end encrypted</div>'
+        + '</div>'
+        + '<div id="inbox-msgs" style="flex:1;overflow-y:auto;padding:14px;background:var(--bg);"><div style="text-align:center;color:var(--text2);font-size:12px;">Loading…</div></div>'
+        + '<div style="padding:12px 14px;border-top:1px solid var(--border);background:var(--surface);">'
+        + '<textarea id="inbox-compose" placeholder="Type your reply — encrypted on this device before sending" style="width:100%;min-height:60px;padding:8px 10px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:13px;font-family:inherit;"></textarea>'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">'
+        + '<span id="inbox-send-status" style="font-size:11px;color:var(--text2);"></span>'
+        + '<button class="btn btn-accent btn-sm" onclick="sendInboxReply()">Send &#128274;</button>'
+        + '</div></div>';
+    loadInboxMessages();
+}
+
+async function loadInboxMessages(){
+    var t = inboxState.selected;
+    if(!t) return;
+    try {
+        inboxState.messages = await invoke('fetch_messages', { applicationId: t.application_id });
+        renderInboxMessages();
+    } catch(e){
+        var host = document.getElementById('inbox-msgs');
+        if(host) host.innerHTML = '<div style="color:var(--red);text-align:center;">Failed to load: '+e+'</div>';
+    }
+}
+
+function renderInboxMessages(){
+    var host = document.getElementById('inbox-msgs');
+    if(!host) return;
+    var msgs = inboxState.messages || [];
+    if(!msgs.length){
+        host.innerHTML = '<div style="text-align:center;color:var(--text2);font-size:12px;padding:40px 20px;">No messages yet.</div>';
+        return;
+    }
+    var myId = inboxState.me ? inboxState.me.user_id : '';
+    var html = '';
+    msgs.forEach(function(m){
+        var mine = m.from_user_id === myId;
+        var bg = mine ? 'var(--accent)' : 'var(--surface)';
+        var color = mine ? '#fff' : 'var(--text)';
+        var align = mine ? 'flex-end' : 'flex-start';
+        html += '<div style="display:flex;justify-content:'+align+';margin-bottom:8px;">';
+        html += '<div style="max-width:75%;padding:8px 12px;border-radius:12px;background:'+bg+';color:'+color+';">';
+        var safe = (m.plaintext||'').replace(/[<>&]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c];});
+        html += '<div style="white-space:pre-wrap;font-size:13px;">'+safe+'</div>';
+        html += '<div style="font-size:10px;opacity:0.7;margin-top:4px;text-align:right;">'+(m.sent_at||'').slice(0,16).replace('T',' ')+'</div>';
+        html += '</div></div>';
+    });
+    host.innerHTML = html;
+    host.scrollTop = host.scrollHeight;
+}
+
+async function sendInboxReply(){
+    var t = inboxState.selected;
+    if(!t) return;
+    var input = document.getElementById('inbox-compose');
+    var text = (input && input.value || '').trim();
+    if(!text) return;
+
+    // Counterpart = whoever is the OTHER party in this thread.
+    var msgs = inboxState.messages || [];
+    var myId = inboxState.me ? inboxState.me.user_id : '';
+    var counterpart = null;
+    for(var i=0; i<msgs.length; i++){
+        var m = msgs[i];
+        if(m.from_user_id !== myId){ counterpart = m.from_user_id; break; }
+        if(m.to_user_id !== myId){ counterpart = m.to_user_id; break; }
+    }
+    if(!counterpart){
+        showToast('Cannot reply: no party identified yet in this thread.','warn');
+        return;
+    }
+
+    var status = document.getElementById('inbox-send-status');
+    if(status){ status.textContent = 'Encrypting…'; status.style.color = 'var(--text2)'; }
+    try {
+        await invoke('send_encrypted_message', {
+            applicationId: t.application_id,
+            toUserId: counterpart,
+            plaintext: text,
+        });
+        if(input) input.value = '';
+        if(status){ status.textContent = 'Sent ✓'; status.style.color = 'var(--ok)'; }
+        await loadInboxMessages();
+    } catch(e){
+        if(status){ status.textContent = 'Send failed: '+e; status.style.color = 'var(--red)'; }
+    }
 }
 
 function onSearch(v){searchTerm=v.toLowerCase();renderTree();}
@@ -2646,7 +2907,7 @@ async function doAddCustomDoc(){
 async function showJobs(){
     var sp={};
     try{ sp=await invoke('get_seafarer_personal'); }catch(e){}
-    var on = (sp.ready_for_offers==='true' || sp.ready_for_offers===undefined);
+    var on = sp.ready_for_offers==='true';
     var rankTxt = sp.rank || 'seafarer';
     var ship  = (sp.preferred_vessel_types||'').split(',')[0].trim();
     var minSal = sp.min_salary || '';
@@ -2673,37 +2934,841 @@ async function showJobs(){
     h += '</p>';
     h += '</div>';
 
-    // Profile summary (what Skipi will match against) — a reassurance that
-    // we understand the user's preferences + a direct link to tune them.
-    h += '<div style="border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:20px;">';
-    h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
-    h += '<div style="font-weight:600;font-size:13px;">Matching profile</div>';
-    h += '<button class="btn btn-outline btn-sm" onclick="openSettings(\'seafarer\')">Edit</button>';
-    h += '</div>';
-    h += '<div style="font-size:12px;color:var(--text2);display:grid;grid-template-columns:auto 1fr;gap:4px 10px;">';
-    h += '<div>Rank:</div><div>'+(rankTxt||'<span style="color:var(--red)">not set</span>')+'</div>';
-    h += '<div>Vessel type:</div><div>'+(ship||'<span style="color:var(--red)">not set</span>')+'</div>';
-    h += '<div>Min salary:</div><div>'+(minSal?(minSal+' '+cur):'<span style="color:var(--red)">not set</span>')+'</div>';
-    h += '<div>Available from:</div><div>'+(sp.available_from||'<span style="color:var(--red)">not set</span>')+'</div>';
-    h += '</div></div>';
+    // (Profile fields shown here previously were a duplicate of Settings →
+    //  Seafarer Profile. Removed in v0.4.54 — single source of truth.)
 
-    // Feed placeholder — the polling loop isn't wired yet. Be honest about
-    // that instead of showing a fake empty-state.
-    h += '<div style="border:1px dashed var(--border);border-radius:8px;padding:28px 20px;text-align:center;color:var(--text2);font-size:13px;">';
-    if(on){
-        h += '<div style="font-size:28px;margin-bottom:10px;">⚓</div>';
-        h += '<div style="font-weight:600;margin-bottom:6px;color:var(--text);">Waiting for the first vacancy</div>';
-        h += '<div style="font-size:12px;max-width:420px;margin:0 auto;line-height:1.5;">The public jobs board on <code style="font-size:11px;">skipi.app</code> is coming online. Once it\'s live your Skipi will poll it every 15 minutes and list matches here.</div>';
-    } else {
+    // Feed — wired to api.skipi.app:8443 since v0.4.53.
+    h += '<div id="jobs-feed-host">';
+    if(!on){
+        h += '<div style="border:1px dashed var(--border);border-radius:8px;padding:28px 20px;text-align:center;color:var(--text2);font-size:13px;">';
         h += '<div style="font-size:28px;margin-bottom:10px;">⚪</div>';
         h += '<div style="font-weight:600;margin-bottom:6px;color:var(--text);">You\'re off the market</div>';
         h += '<div style="font-size:12px;max-width:420px;margin:0 auto;line-height:1.5;">Enable "Ready for offers" above when you want Skipi to watch for vacancies. No background traffic happens until you do.</div>';
+        h += '</div>';
+    } else {
+        h += '<div style="font-weight:600;font-size:13px;margin-bottom:10px;">Latest matching vacancies</div>';
+        h += '<div id="jobs-feed">Loading...</div>';
     }
     h += '</div>';
 
     h += '</div>';
 
     document.getElementById('scr-content').innerHTML=h;show('scr-content');updateTabs('Jobs');
+    if(on) loadJobsFeed();
+}
+
+async function loadJobsFeed(){
+    var host = document.getElementById('jobs-feed');
+
+    // 1. Cache-first: render instantly from memory or localStorage so the
+    //    Jobs tab feels native. Network refresh happens silently below.
+    var cached = (lastJobsItems && lastJobsItems.length) ? lastJobsItems : null;
+    if (!cached) {
+        try {
+            var raw = localStorage.getItem('skipi-jobs-cache');
+            if (raw) {
+                var parsed = JSON.parse(raw);
+                if (Array.isArray(parsed) && parsed.length) cached = parsed;
+            }
+        } catch(e){}
+    }
+    if (host && cached) {
+        lastJobsItems = cached;
+        renderJobsFeed(cached);
+    } else if (host) {
+        // No "Loading…" text — leaves an empty pane that fills in <1s.
+        // Avoids the impression that the app is hanging on first click.
+        host.innerHTML = '';
+    }
+
+    // 2. Pubkey registration is idempotent — fire-and-forget, never block UI.
+    invoke('register_my_pubkey').catch(function(){});
+
+    // 3. Fetch jobs + my-threads in parallel.
+    try {
+        var sp = {};
+        try { sp = await invoke('get_seafarer_personal'); } catch(e) {}
+        var rank = sp.rank || null;
+
+        var jobsP = invoke('fetch_jobs', { rank: rank, vesselType: null });
+        var threadsP = (async function(){
+            try {
+                var me = await invoke('get_my_identity');
+                if (!me || !me.user_id) return {};
+                var resp = await fetch('https://api.skipi.app/api/messaging/my-threads/'+encodeURIComponent(me.user_id));
+                if (!resp.ok) return {};
+                var threads = await resp.json();
+                var map = {};
+                threads.forEach(function(t){ map[t.vacancy_id] = t; });
+                return map;
+            } catch(e){ return {}; }
+        })();
+
+        var results = await Promise.all([jobsP, threadsP]);
+        var items = results[0] || [];
+        var threadsByVacancy = results[1] || {};
+        items.forEach(function(v){ v._thread = threadsByVacancy[v.id] || null; });
+
+        var seen = jobsLoadSeen();
+        items.forEach(function(v){ seen[v.id] = true; });
+        jobsSaveSeen(seen);
+        clearJobsBadge();
+        lastJobsItems = items;
+        try { localStorage.setItem('skipi-jobs-cache', JSON.stringify(items)); } catch(e){}
+        // Only repaint if user is still on Jobs view and the host hasn't been
+        // replaced by a tab switch.
+        var liveHost = document.getElementById('jobs-feed');
+        if (liveHost) renderJobsFeed(items);
+        return items;
+    } catch (e) {
+        // Only show the error placeholder when we had nothing cached to show.
+        if (host && !cached) {
+            host.innerHTML = '<div style="border:1px dashed var(--border);border-radius:8px;padding:20px;color:var(--red);font-size:12px;">'
+                + 'Failed to load: '+(''+e).replace(/</g,'&lt;')
+                + '<br><span style="color:var(--text2);font-size:11px;">Will retry silently.</span>'
+                + '</div>';
+        }
+        return cached || [];
+    }
+}
+
+// ---------- Background poll for new vacancies ----------
+// Polls /api/vacancies every 5 min while ready_for_offers is on. Diff against
+// the local "seen" set (localStorage) — when a new vacancy appears, mark the
+// Jobs tab with a red dot and show a toast. Doesn't open the feed UI.
+function jobsLoadSeen(){
+    try { return JSON.parse(localStorage.getItem('skipi-jobs-seen')||'{}'); }
+    catch(e){ return {}; }
+}
+function jobsSaveSeen(s){
+    try { localStorage.setItem('skipi-jobs-seen', JSON.stringify(s)); } catch(e){}
+}
+function setJobsBadge(n){
+    var tab = document.getElementById('mt-jobs');
+    if (!tab) return;
+    var existing = tab.querySelector('.jobs-badge');
+    if (existing) existing.remove();
+    if (n > 0) {
+        var b = document.createElement('span');
+        b.className = 'jobs-badge';
+        b.style.cssText = 'display:inline-block;min-width:18px;height:18px;line-height:18px;padding:0 6px;margin-left:6px;border-radius:9px;background:var(--red);color:#fff;font-size:11px;font-weight:700;text-align:center;';
+        b.textContent = n;
+        tab.appendChild(b);
+    }
+}
+function clearJobsBadge(){ setJobsBadge(0); }
+
+async function checkNewJobsBackground(){
+    try {
+        var sp = await invoke('get_seafarer_personal');
+        if (sp.ready_for_offers !== 'true') { clearJobsBadge(); return; }
+        var rank = sp.rank || null;
+        var vt = (sp.preferred_vessel_types||'').split(',')[0].trim() || null;
+        // vessel_type on seafarer profile uses a different taxonomy than
+        // the crewing-side ('bulker' vs 'Bulk Carrier' etc.). Skip the
+        // server-side filter and let the small list through to the user.
+        var items = await invoke('fetch_jobs', { rank: rank, vesselType: null });
+        var seen = jobsLoadSeen();
+        var newOnes = items.filter(function(v){ return !seen[v.id]; });
+        if (newOnes.length > 0) {
+            setJobsBadge(newOnes.length);
+            // Toast only on transitions (don't spam every tick if user ignores).
+            if (currentView !== 'jobs') {
+                showToast(newOnes.length+' new vacancy'+(newOnes.length>1?'ies':'')+' on skipi.app — open Jobs tab', 'success');
+            }
+        }
+    } catch (e) {
+        // silent — server may be down, will retry
+    }
+}
+
+var jobsPollTimer = null;
+function startJobsPolling(){
+    if (jobsPollTimer) return;
+    // Initial check 5s after boot, then every 60s — Refresh button removed,
+    // so the user expects the list to keep itself current silently.
+    setTimeout(checkNewJobsBackground, 5000);
+    jobsPollTimer = setInterval(checkNewJobsBackground, 60*1000);
+}
+
+function jobsLoadHidden(){
+    try { return JSON.parse(localStorage.getItem('skipi-jobs-hidden')||'{}'); }
+    catch(e){ return {}; }
+}
+function jobsSaveHidden(h){
+    try { localStorage.setItem('skipi-jobs-hidden', JSON.stringify(h)); } catch(e){}
+}
+
+function renderJobsFeed(items){
+    var host = document.getElementById('jobs-feed');
+    if(!host) return;
+    var hidden = jobsLoadHidden();
+    var visible = (items||[]).filter(function(v){ return !hidden[v.id]; });
+    var hiddenCount = (items||[]).length - visible.length;
+    if(!visible.length){
+        var empty = '<div style="border:1px dashed var(--border);border-radius:8px;padding:28px 20px;text-align:center;color:var(--text2);font-size:13px;">'
+            + '<div style="font-size:28px;margin-bottom:10px;">⚓</div>'
+            + '<div style="font-weight:600;margin-bottom:6px;color:var(--text);">'+(hiddenCount>0?'All matching vacancies hidden':'No matching vacancies right now')+'</div>'
+            + (hiddenCount>0
+                ? '<div style="font-size:12px;">'+hiddenCount+' hidden. <span style="color:var(--accent);cursor:pointer;text-decoration:underline;" onclick="jobsUnhideAll()">Show all</span></div>'
+                : '<div style="font-size:12px;max-width:420px;margin:0 auto;line-height:1.5;">Skipi will keep checking. Try a wider rank/vessel-type combination in your profile if nothing shows up after a few hours.</div>')
+            + '</div>';
+        host.innerHTML = empty;
+        return;
+    }
+    var esc = function(s){return (s||'').toString().replace(/[<>&"]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c];});};
+    var html = '';
+    if(hiddenCount > 0){
+        html += '<div style="font-size:11px;color:var(--text2);margin-bottom:8px;text-align:right;">'
+            +hiddenCount+' hidden. <span style="color:var(--accent);cursor:pointer;text-decoration:underline;" onclick="jobsUnhideAll()">Show all</span></div>';
+    }
+    // Warm message cache for visible vacancies that already have a thread,
+    // so opening conversations is instant.
+    prefetchVacancyThreads(visible);
+    visible.forEach(function(v){
+        var title = v.title || (v.rank+' · '+v.vessel_type);
+        var salary = v.salary_min ? (v.salary_currency||'USD')+' '+v.salary_min
+            +(v.salary_max && v.salary_max!==v.salary_min ? '-'+v.salary_max : '')+'/mo' : '';
+        var hasThread = !!v._thread;
+        var threadCount = hasThread ? v._thread.message_count : 0;
+        html += '<div id="vac-card-'+esc(v.id)+'" style="border:1px solid '+(hasThread?'var(--accent)':'var(--border)')+';border-radius:8px;padding:14px 16px;margin-bottom:10px;background:var(--surface);">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">';
+        html += '<div style="flex:1;min-width:0;">';
+        html += '<div style="font-weight:600;font-size:14px;">'+esc(title)
+            +(hasThread?' <span style="font-size:11px;color:var(--accent);font-weight:600;">· 🔒 '+threadCount+' message'+(threadCount>1?'s':'')+'</span>':'')
+            +'</div>';
+        html += '<div style="font-size:12px;color:var(--text2);margin-top:3px;">'
+            +esc(v.rank)+' · '+esc(v.vessel_type)
+            +(v.flag?' · '+esc(v.flag):'')
+            +(v.contract_months?' · '+v.contract_months+' months':'')
+            +(salary?' · '+esc(salary):'')
+            +'</div>';
+        if(v.crewing_ref){
+            html += '<div style="font-size:11px;color:var(--text2);margin-top:3px;">via '+esc(v.crewing_ref)+'</div>';
+        }
+        if(hasThread){
+            // WhatsApp-style snippet: last message preview if we have it cached.
+            var preview = lastSeafarerPreview(v._thread.application_id);
+            if (preview && preview.text) {
+                html += '<div style="display:flex;justify-content:space-between;gap:8px;margin-top:8px;align-items:center;">'
+                     +    '<div style="font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">'
+                     +      (preview.mine?'<span>You: </span>':'')+esc(preview.text)
+                     +    '</div>'
+                     +    '<div style="font-size:11px;color:var(--text2);flex-shrink:0;">'+esc(formatJobsRowTime(preview.time))+'</div>'
+                     +  '</div>';
+            }
+        } else if(v.description){
+            html += '<div style="font-size:12px;color:var(--text);margin-top:8px;white-space:pre-wrap;line-height:1.4;max-height:80px;overflow:hidden;">'+esc(v.description)+'</div>';
+        }
+        html += '</div>';
+        html += '<div style="text-align:right;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:6px;">';
+        html += '<div style="font-size:10px;color:var(--text2);">'+esc(v.published_at.slice(0,10))+'</div>';
+        if (hasThread) {
+            html += '<button onclick="toggleVacancyThread(\''+esc(v.id)+'\')" style="padding:4px 12px;background:var(--accent);color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer;font-weight:600;">🔒 Open conversation</button>';
+        } else if(v.reply_to){
+            html += '<button onclick="jobsApply(\''+esc(v.id)+'\',\''+esc(v.reply_to)+'\',\''+esc(title).replace(/&quot;/g,'')+'\')" style="padding:4px 12px;background:var(--accent);color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer;font-weight:600;">Apply</button>';
+        }
+        html += '<button onclick="jobsHide(\''+esc(v.id)+'\')" style="padding:3px 10px;background:transparent;color:var(--text2);border:1px solid var(--border);border-radius:4px;font-size:11px;cursor:pointer;">Hide</button>';
+        html += '</div>';
+        html += '</div>';
+        // Inline thread expand zone (hidden until click).
+        html += '<div id="thread-'+esc(v.id)+'" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border);"></div>';
+        html += '</div>';
+    });
+    host.innerHTML = html;
+}
+
+// Toggle inline E2E thread under a vacancy card.
+async function toggleVacancyThread(vacancyId){
+    var host = document.getElementById('thread-'+vacancyId);
+    if(!host) return;
+    if(host.style.display !== 'none' && host.dataset.loaded === '1'){
+        host.style.display = 'none';
+        host.dataset.loaded = '';
+        return;
+    }
+    host.style.display = 'block';
+    host.innerHTML = '<div class="chat-empty">Loading…</div>';
+    var v = (lastJobsItems||[]).find(function(x){return x.id===vacancyId;});
+    if(!v || !v._thread){
+        host.innerHTML = '<div class="chat-empty" style="color:var(--red);">No thread yet for this vacancy.</div>';
+        return;
+    }
+    var applicationId = v._thread.application_id;
+    // Identity is needed for mine/other detection. Fetch first time and cache.
+    if (!window._myIdentityCache) {
+        try { window._myIdentityCache = await invoke('get_my_identity'); } catch(e){}
+    }
+    var me = window._myIdentityCache;
+    // Cache-first: render instantly from cache, refresh in background.
+    var cachedMsgs = window._messagesByApp[applicationId];
+    var msgs = cachedMsgs || [];
+    if (!cachedMsgs) {
+        try { msgs = await invoke('fetch_messages', { applicationId: applicationId }); }
+        catch(e){
+            host.innerHTML = '<div class="chat-empty" style="color:var(--red);">Failed to load: '+e+'</div>';
+            return;
+        }
+        window._messagesByApp[applicationId] = msgs;
+    } else {
+        setTimeout(function(){ refreshVacancyThread(vacancyId, true); }, 0);
+    }
+    var myIdForRender = me ? me.user_id : '';
+    var msgsHtml = '<div id="vac-msgs-'+vacancyId+'" class="chat-pane">'
+                + renderVacancyMessages(msgs, myIdForRender, vacancyId)
+                + '</div>';
+    msgsHtml += '<div class="chat-composer">';
+    msgsHtml += '<textarea id="vac-compose-'+vacancyId+'" rows="1" placeholder="Type a message" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();sendVacancyReply(\''+vacancyId+'\');}"></textarea>';
+    msgsHtml += '<button class="btn-send" onclick="sendVacancyReply(\''+vacancyId+'\')" title="Send">▶</button>';
+    msgsHtml += '</div>';
+    msgsHtml += '<div class="chat-status"><span id="vac-status-'+vacancyId+'">🔒 End-to-end encrypted</span></div>';
+    host.innerHTML = msgsHtml;
+    host.dataset.loaded = '1';
+    host.dataset.applicationId = applicationId;
+    // Resolve and cache counterpart so sending is single-RTT.
+    for (var i = 0; i < msgs.length; i++) {
+        var mm = msgs[i];
+        var c = mm.from_user_id !== myIdForRender ? mm.from_user_id : mm.to_user_id;
+        if (c && c !== myIdForRender) { host.dataset.counterpartId = c; break; }
+    }
+    var box = document.getElementById('vac-msgs-'+vacancyId);
+    if (box) {
+        box.dataset.msgCount = String(msgs.length);
+        // Two RAFs — wait for layout to settle, then pin to last message.
+        requestAnimationFrame(function(){
+            requestAnimationFrame(function(){
+                var b = document.getElementById('vac-msgs-'+vacancyId);
+                if (b) b.scrollTop = b.scrollHeight;
+            });
+        });
+    }
+
+    if (host.dataset.pollId) clearInterval(parseInt(host.dataset.pollId, 10));
+    var pollId = setInterval(function(){
+        var h = document.getElementById('thread-'+vacancyId);
+        if (!h || h.dataset.loaded !== '1' || h.style.display === 'none') {
+            clearInterval(pollId);
+            if (h) h.dataset.pollId = '';
+            return;
+        }
+        var ta = document.getElementById('vac-compose-'+vacancyId);
+        if (ta && (document.activeElement === ta || (ta.value||'').length > 0)) return;
+        refreshVacancyThread(vacancyId, /*silent=*/true);
+    }, 15000);
+    host.dataset.pollId = String(pollId);
+}
+
+function renderVacancyMessages(msgs, myId, vacancyId) {
+    if (!msgs.length) {
+        return '<div class="chat-empty">No messages yet.</div>';
+    }
+    var html = '';
+    var lastDay = '';
+    msgs.forEach(function(m){
+        var dt = m.sent_at || '';
+        var day = dt.slice(0,10);
+        if (day && day !== lastDay) {
+            html += '<div class="chat-day-sep"><span>'+escSafe(formatChatDay(day))+'</span></div>';
+            lastDay = day;
+        }
+        html += renderChatBubble(m, m.from_user_id === myId, {vacancyId: vacancyId});
+    });
+    return html;
+}
+
+function escSafe(s) { return (s||'').replace(/[<>&]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c];}); }
+
+function renderChatBubble(m, mine, opts) {
+    opts = opts || {};
+    var raw = m.plaintext || '';
+    var time = (m.sent_at||'').slice(11,16);
+    var classes = 'msg ' + (mine ? 'mine' : 'other');
+    if (opts.pending) classes += ' pending';
+    if (opts.failed) classes += ' failed';
+    var idAttr = opts.tempId ? ' id="'+opts.tempId+'"' : '';
+    var ticks = mine ? (opts.pending ? '⌛' : '✓') : '';
+
+    // Marker-based action cards. Crewing → seafarer document request gets
+    // an inline "Send my CV" button so the seafarer doesn't have to leave
+    // the chat to respond.
+    if (raw.indexOf('[skipi:request_docs]') === 0) {
+        var note = raw.replace('[skipi:request_docs]','').trim()
+                || 'Crewing requested your documents.';
+        var label = mine ? '📄 You requested documents' : '📄 Documents requested';
+        var actionBtn = '';
+        if (!mine && opts.vacancyId) {
+            actionBtn = '<button class="btn btn-accent btn-sm" style="margin-top:8px;font-size:12px;padding:5px 12px;" onclick="respondWithDocs(\''+opts.vacancyId+'\')">📎 Send my CV</button>';
+        }
+        return '<div class="'+classes+'"'+idAttr+'>'
+             +   '<div class="msg-bubble" style="border:1px solid var(--accent);">'
+             +     '<div style="font-weight:600;font-size:12px;margin-bottom:4px;">'+label+'</div>'
+             +     '<div class="msg-text" style="font-size:12px;opacity:0.9;">'+escSafe(note)+'</div>'
+             +     actionBtn
+             +     '<div class="msg-meta">'+escSafe(time)+(ticks?' <span>'+ticks+'</span>':'')+'</div>'
+             +   '</div>'
+             + '</div>';
+    }
+    if (raw.indexOf('[skipi:docs_response]') === 0) {
+        var note2 = raw.replace('[skipi:docs_response]','').trim() || 'Documents sent.';
+        return '<div class="'+classes+'"'+idAttr+'>'
+             +   '<div class="msg-bubble" style="border:1px solid var(--ok);">'
+             +     '<div style="font-weight:600;font-size:12px;margin-bottom:4px;">📎 Documents sent</div>'
+             +     '<div class="msg-text" style="font-size:12px;opacity:0.9;">'+escSafe(note2)+'</div>'
+             +     '<div class="msg-meta">'+escSafe(time)+(ticks?' <span>'+ticks+'</span>':'')+'</div>'
+             +   '</div>'
+             + '</div>';
+    }
+    if (raw.indexOf('[skipi:file_attached]') === 0) {
+        var jsonStr = raw.replace('[skipi:file_attached]','').trim();
+        var info = {};
+        try { info = JSON.parse(jsonStr); } catch(e){}
+        var sizeKb = info.size ? Math.round(info.size/1024)+' KB' : '';
+        var fname = info.filename || 'file';
+        var counterpartId = (window._myIdentityCache && window._myIdentityCache.user_id === m.from_user_id)
+            ? m.to_user_id : m.from_user_id;
+        var dlBtn = info.id
+            ? '<button class="btn btn-accent btn-sm" style="margin-top:6px;font-size:12px;padding:5px 12px;" onclick="downloadAttachment(\''+info.id+'\',\''+counterpartId+'\',\''+escSafe(fname).replace(/&quot;/g,'')+'\')">⬇ Download</button>'
+            : '';
+        return '<div class="'+classes+'"'+idAttr+'>'
+             +   '<div class="msg-bubble" style="border:1px solid var(--ok);max-width:300px;">'
+             +     '<div style="display:flex;align-items:center;gap:8px;">'
+             +       '<div style="font-size:24px;">📎</div>'
+             +       '<div style="flex:1;min-width:0;">'
+             +         '<div style="font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escSafe(fname)+'</div>'
+             +         '<div style="font-size:11px;opacity:0.7;">'+escSafe(sizeKb)+'</div>'
+             +       '</div>'
+             +     '</div>'
+             +     dlBtn
+             +     '<div class="msg-meta">'+escSafe(time)+(ticks?' <span>'+ticks+'</span>':'')+'</div>'
+             +   '</div>'
+             + '</div>';
+    }
+
+    return '<div class="'+classes+'"'+idAttr+'>'
+         +   '<div class="msg-bubble">'
+         +     '<div class="msg-text">'+escSafe(raw)+'</div>'
+         +     '<div class="msg-meta">'+escSafe(time)+(ticks?' <span>'+ticks+'</span>':'')+'</div>'
+         +   '</div>'
+         + '</div>';
+}
+
+async function respondWithDocs(vacancyId) {
+    var host = document.getElementById('thread-'+vacancyId);
+    if (!host) { showToast('Chat not open', 'error'); return; }
+    var applicationId = host.dataset.applicationId;
+    var counterpart = host.dataset.counterpartId;
+    if (!applicationId || !counterpart) {
+        showToast('No conversation context', 'error');
+        return;
+    }
+
+    showToast('Generating redacted CV…', 'info');
+    var attachPath = '';
+    var fname = '';
+    try {
+        var sp = {};
+        try { sp = await invoke('get_seafarer_personal'); } catch(e) {}
+        var ts = (new Date()).toISOString().slice(0,10);
+        var rankSafe = (sp.rank||'CV').replace(/[^A-Za-z0-9_-]/g,'_');
+        var dl = await invoke('get_downloads_dir');
+        fname = 'Skipi-redacted-CV_'+rankSafe+'_'+ts+'.pdf';
+        attachPath = (dl.endsWith('/')?dl:dl+'/') + fname;
+        await invoke('export_redacted_cv_pdf', { outputPath: attachPath });
+    } catch (e) {
+        showToast('Could not generate CV: '+e, 'error');
+        return;
+    }
+
+    showToast('Encrypting and uploading…', 'info');
+    var meta;
+    try {
+        meta = await invoke('upload_encrypted_attachment', {
+            applicationId: applicationId,
+            toUserId: counterpart,
+            filePath: attachPath,
+        });
+    } catch (e) {
+        showToast('Upload failed: '+e, 'error');
+        return;
+    }
+
+    var tileJson = JSON.stringify({
+        id: meta.id,
+        filename: meta.original_filename,
+        mime: meta.mime_type,
+        size: meta.size_bytes,
+    });
+    var marker = '[skipi:file_attached] '+tileJson;
+    var box = document.getElementById('vac-msgs-'+vacancyId);
+    var tempId = 'tmp-'+Date.now();
+    var nowIso = new Date().toISOString();
+    if (box) {
+        box.insertAdjacentHTML('beforeend', renderChatBubble(
+            {plaintext: marker, sent_at: nowIso}, true,
+            {pending: true, tempId: tempId, vacancyId: vacancyId}
+        ));
+        box.scrollTop = box.scrollHeight;
+    }
+    await new Promise(function(r){ requestAnimationFrame(function(){ requestAnimationFrame(r); }); });
+    try {
+        await invoke('send_encrypted_message', {
+            applicationId: applicationId,
+            toUserId: counterpart,
+            plaintext: marker,
+        });
+        var pendingEl = document.getElementById(tempId);
+        if (pendingEl) pendingEl.classList.remove('pending');
+        showToast('CV sent — encrypted end-to-end 🔒', 'success');
+    } catch (e) {
+        var pendingEl = document.getElementById(tempId);
+        if (pendingEl) { pendingEl.classList.remove('pending'); pendingEl.classList.add('failed'); }
+        showToast('Could not notify crewing: '+e, 'error');
+    }
+}
+
+async function downloadAttachment(attachmentId, counterpartId, filename) {
+    showToast('Downloading and decrypting…', 'info');
+    try {
+        var path = await invoke('download_encrypted_attachment', {
+            attachmentId: attachmentId,
+            counterpartUserId: counterpartId,
+            originalFilename: filename,
+        });
+        showToast('Saved: '+path, 'success');
+        try { await invoke('open_path_with_default', { path: path }); } catch(e){}
+    } catch (e) {
+        showToast('Download failed: '+e, 'error');
+    }
+}
+
+function formatChatDay(dayIso) {
+    if (!dayIso) return '';
+    var today = new Date().toISOString().slice(0,10);
+    if (dayIso === today) return 'Today';
+    var yest = new Date(); yest.setDate(yest.getDate()-1);
+    if (dayIso === yest.toISOString().slice(0,10)) return 'Yesterday';
+    var d = new Date(dayIso+'T00:00:00');
+    return d.toLocaleDateString(undefined, {day:'numeric', month:'short', year:'numeric'});
+}
+
+async function refreshVacancyThread(vacancyId, silent) {
+    var host = document.getElementById('thread-'+vacancyId);
+    var box = document.getElementById('vac-msgs-'+vacancyId);
+    if (!host || !box) return;
+    var applicationId = host.dataset.applicationId;
+    if (!applicationId) return;
+    var msgs;
+    try { msgs = await invoke('fetch_messages', { applicationId: applicationId }); }
+    catch (e) {
+        if (!silent) {
+            var st = document.getElementById('vac-status-'+vacancyId);
+            if (st) { st.textContent = 'Refresh failed: '+e; st.style.color = 'var(--red)'; }
+        }
+        return;
+    }
+    window._messagesByApp[applicationId] = msgs;
+    // Count optimistic-pending bubbles separately — they aren't on server yet.
+    var pendingCount = box.querySelectorAll('.msg.pending').length;
+    var newCount = msgs.length + pendingCount;
+    var prevCount = parseInt(box.dataset.msgCount || '-1', 10);
+    if (newCount === prevCount) return;
+    var nearBottom = (box.scrollHeight - box.scrollTop - box.clientHeight) < 30;
+    var myId = (window._myIdentityCache && window._myIdentityCache.user_id) || '';
+    if (!myId) {
+        try { window._myIdentityCache = await invoke('get_my_identity'); myId = window._myIdentityCache.user_id; } catch(e){}
+    }
+    box.innerHTML = renderVacancyMessages(msgs, myId, vacancyId);
+    box.dataset.msgCount = String(msgs.length);
+    if (nearBottom) box.scrollTop = box.scrollHeight;
+}
+
+async function sendVacancyReply(vacancyId){
+    var host = document.getElementById('thread-'+vacancyId);
+    var input = document.getElementById('vac-compose-'+vacancyId);
+    var status = document.getElementById('vac-status-'+vacancyId);
+    var box = document.getElementById('vac-msgs-'+vacancyId);
+    if(!host || !input) return;
+    var text = (input.value||'').trim();
+    if(!text) return;
+    var applicationId = host.dataset.applicationId;
+    if(!applicationId) return;
+    var counterpart = host.dataset.counterpartId;
+    if(!counterpart){
+        if(status){ status.textContent = 'No counterpart yet.'; status.style.color = 'var(--red)'; }
+        return;
+    }
+
+    // Optimistic UI: clear input + append pending bubble immediately.
+    input.value = '';
+    input.style.height = 'auto';
+    var tempId = 'tmp-'+Date.now();
+    var nowIso = new Date().toISOString();
+    if (box) {
+        var emptyEl = box.querySelector('.chat-empty');
+        if (emptyEl) emptyEl.remove();
+        box.insertAdjacentHTML('beforeend', renderChatBubble(
+            {plaintext: text, sent_at: nowIso}, true,
+            {pending: true, tempId: tempId}
+        ));
+        box.scrollTop = box.scrollHeight;
+    }
+    input.focus();
+    // Yield so WebKit paints the bubble before we run the (slow) invoke.
+    await new Promise(function(r){ requestAnimationFrame(function(){ requestAnimationFrame(r); }); });
+
+    try {
+        await invoke('send_encrypted_message', {
+            applicationId: applicationId,
+            toUserId: counterpart,
+            plaintext: text,
+        });
+        var pendingEl = document.getElementById(tempId);
+        if (pendingEl) pendingEl.classList.remove('pending');
+        var tickSpan = pendingEl ? pendingEl.querySelector('.msg-meta span') : null;
+        if (tickSpan) tickSpan.textContent = '✓';
+        setTimeout(function(){ refreshVacancyThread(vacancyId, true); }, 0);
+    } catch(e){
+        var pendingEl = document.getElementById(tempId);
+        if (pendingEl) { pendingEl.classList.remove('pending'); pendingEl.classList.add('failed'); }
+        if(status){ status.textContent = 'Send failed: '+e; status.style.color = 'var(--red)'; }
+        input.value = text;
+    }
+}
+
+async function jobsApply(vacancyId, replyTo, title){
+    try { await invoke('job_apply_click', { vacancyId: vacancyId }); } catch(e){}
+
+    // Pull seafarer profile + work history → structured subject + body.
+    var sp = {};
+    try { sp = await invoke('get_seafarer_personal'); } catch(e) {}
+    var v = (lastJobsItems || []).find(function(x){return x.id===vacancyId;}) || {};
+
+    // Aggregate for both E2E summary and email body.
+    var totalMo_ = 0, rankMo_ = 0;
+    try {
+        var wh_ = await invoke('get_work_history') || [];
+        var rank_ = sp.rank || '';
+        wh_.forEach(function(w){
+            var on = w.sign_on_date && new Date(w.sign_on_date);
+            var off = w.sign_off_date && new Date(w.sign_off_date);
+            if (!on) return;
+            var end = off || new Date();
+            var mo = Math.max(0, Math.round((end - on) / (30.5 * 864e5)));
+            totalMo_ += mo;
+            if (rank_ && (w.position||'').toLowerCase() === rank_.toLowerCase()) rankMo_ += mo;
+        });
+    } catch(e){}
+
+    // E2E path — when crewing has registered an X25519 pubkey, encrypt
+    // and post the cover message directly. No email leaks.
+    if (v.crewing_pubkey && v.crewing_user_id) {
+        try {
+            // Make sure our own pubkey is published.
+            try { await invoke('register_my_pubkey'); } catch(e){}
+            var initials_ = ((sp.first_name||'').charAt(0)+'. '+(sp.surname||'')).trim() || 'Skipi user';
+            var summary = {
+                redacted_initials: initials_,
+                rank: sp.rank,
+                nationality: sp.nationality,
+                total_sea_time_months: totalMo_,
+                months_in_rank: rankMo_,
+                available_from: sp.available_from,
+                min_salary: sp.min_salary,
+                min_salary_currency: sp.min_salary_currency,
+            };
+            var coverLines = [
+                'Hi,',
+                '',
+                'I would like to apply for the '+(v.rank||'position')
+                    +' on '+(v.vessel_name||v.vessel_type)
+                    +(v.vessel_imo?' (IMO '+v.vessel_imo+')':'')+'.',
+                '',
+                'About me:',
+                sp.rank ? '- Rank: '+sp.rank : null,
+                totalMo_ ? '- Total sea time: '+totalMo_+' months' : null,
+                rankMo_ ? '- Experience as '+sp.rank+': '+rankMo_+' months' : null,
+                sp.available_from ? '- Available from: '+sp.available_from : null,
+                sp.nationality ? '- Nationality: '+sp.nationality : null,
+                sp.min_salary ? '- Minimum salary expected: '+sp.min_salary+' '+(sp.min_salary_currency||'USD')+'/month' : null,
+                '',
+                'Sent end-to-end encrypted via Skipi (skipi.app).',
+                '',
+                'Best regards,',
+                initials_,
+            ].filter(Boolean).join('\n');
+            await invoke('apply_via_e2e', {
+                vacancyId: vacancyId,
+                crewingUserId: v.crewing_user_id,
+                crewingPubkeyB64: v.crewing_pubkey,
+                coverMessage: coverLines,
+                summaryJson: summary,
+            });
+            showToast('Application sent — encrypted end-to-end 🔒', 'success');
+            return;
+        } catch (e) {
+            showToast('E2E apply failed: '+e+'. Falling back to email.', 'warn');
+            // continue to email path below
+        }
+    }
+
+    var totalMo = 0, rankMo = 0;
+    try {
+        var wh = await invoke('get_work_history') || [];
+        var rank = sp.rank || '';
+        wh.forEach(function(w){
+            var on = w.sign_on_date && new Date(w.sign_on_date);
+            var off = w.sign_off_date && new Date(w.sign_off_date);
+            if (!on) return;
+            var end = off || new Date();
+            var mo = Math.max(0, Math.round((end - on) / (30.5 * 864e5)));
+            totalMo += mo;
+            if (rank && (w.position||'').toLowerCase() === rank.toLowerCase()) rankMo += mo;
+        });
+    } catch(e){}
+
+    var initials = ((sp.first_name||'').charAt(0)+'. '+(sp.surname||'')).trim() || 'Skipi user';
+    var subjBits = [];
+    subjBits.push('Application: '+(sp.rank || v.rank || ''));
+    if (v.vessel_type) subjBits.push(v.vessel_type);
+    if (v.contract_months) subjBits.push(v.contract_months+'mo contract');
+    var subject = subjBits.filter(Boolean).join(' / ')+' — '+initials
+        +(totalMo?', '+totalMo+'mo at sea':'')
+        +(rankMo?', '+rankMo+'mo as '+(sp.rank||'rank'):'');
+
+    var bodyLines = [];
+    bodyLines.push('Hi,');
+    bodyLines.push('');
+    bodyLines.push('I would like to apply for the '+(v.rank || sp.rank || 'position')
+        +' position advertised by '+(v.crewing_ref || 'your agency')
+        +(v.vessel_name?' on '+v.vessel_name:'')
+        +(v.vessel_imo?' (IMO '+v.vessel_imo+')':'')+'.');
+    bodyLines.push('');
+    bodyLines.push('About me:');
+    if (sp.rank) bodyLines.push('- Rank: '+sp.rank);
+    if (totalMo) bodyLines.push('- Total sea time: '+totalMo+' months');
+    if (rankMo) bodyLines.push('- Experience as '+sp.rank+': '+rankMo+' months');
+    if (sp.available_from) bodyLines.push('- Available from: '+sp.available_from);
+    if (sp.nationality) bodyLines.push('- Nationality: '+sp.nationality);
+    if (sp.min_salary) bodyLines.push('- Minimum salary expected: '+sp.min_salary+' '+(sp.min_salary_currency||'USD')+'/month');
+    bodyLines.push('');
+    bodyLines.push('Redacted CV with full credentials is attached.');
+    bodyLines.push('');
+    bodyLines.push('Sent via Skipi (https://skipi.app) — local-first document handling for seafarers.');
+    bodyLines.push('');
+    bodyLines.push('Best regards,');
+    bodyLines.push(initials);
+    var body = bodyLines.join('\n');
+
+    // Generate redacted CV PDF in ~/Downloads.
+    var attachPath = '';
+    try {
+        var ts = (new Date()).toISOString().slice(0,10);
+        var rankSafe = (sp.rank||'CV').replace(/[^A-Za-z0-9_-]/g,'_');
+        var dl = await invoke('get_downloads_dir');
+        var fname = 'Skipi-redacted-CV_'+rankSafe+'_'+ts+'.pdf';
+        attachPath = (dl.endsWith('/')?dl:dl+'/') + fname;
+        await invoke('export_redacted_cv_pdf', { outputPath: attachPath });
+    } catch(e) {
+        showToast('Could not generate redacted CV ('+e+'). Opening mail without attachment.', 'warn');
+        attachPath = '';
+    }
+
+    try {
+        var intent = {
+            to: [replyTo],
+            subject: subject,
+            body: body,
+            attachments: attachPath ? [attachPath] : [],
+            purpose: 'apply_'+(v.rank || sp.rank || 'job').replace(/[^A-Za-z0-9]/g,'_'),
+        };
+        var res = await invoke('create_email_file', { intent: intent });
+        if (res && res.eml_path) {
+            showToast('Email draft saved: '+res.eml_path+'. Open it in your mail client and Send.', 'success');
+        } else {
+            showToast('Email draft created in ~/Downloads/Skipi/Outbox/', 'success');
+        }
+    } catch (e) {
+        showToast('Could not create email draft: '+e, 'error');
+    }
+}
+
+async function jobsHide(vacancyId){
+    var hidden = jobsLoadHidden();
+    hidden[vacancyId] = Date.now();
+    jobsSaveHidden(hidden);
+    try { await invoke('job_hide', { vacancyId: vacancyId }); } catch(e){}
+    // Re-render the feed without re-fetching.
+    var seen = jobsLoadSeen();
+    var items = lastJobsItems || [];
+    renderJobsFeed(items);
+}
+
+function jobsUnhideAll(){
+    jobsSaveHidden({});
+    renderJobsFeed(lastJobsItems || []);
+}
+
+var lastJobsItems = [];
+// Per-application messages cache so chat opens instantly + last-message preview.
+window._messagesByApp = window._messagesByApp || {};
+
+async function prefetchVacancyThreads(vacancies) {
+    for (var i = 0; i < vacancies.length; i++) {
+        var v = vacancies[i];
+        if (!v._thread) continue;
+        var aid = v._thread.application_id;
+        if (!aid || window._messagesByApp[aid]) continue;
+        try {
+            var msgs = await invoke('fetch_messages', { applicationId: aid });
+            window._messagesByApp[aid] = msgs;
+            // Patch this one card's preview in place — full re-render would
+            // re-trigger prefetch and paint everything.
+            patchSeafarerVacancyPreview(v);
+        } catch(e) { /* ignore */ }
+    }
+}
+
+function patchSeafarerVacancyPreview(v) {
+    if (!v._thread) return;
+    var preview = lastSeafarerPreview(v._thread.application_id);
+    if (!preview || !preview.text) return;
+    var card = document.getElementById('vac-card-'+v.id);
+    if (!card) return;
+    // The preview slot is the chat-row built right after crewing_ref. Easier
+    // path: re-set the dataset and let the next render pick it up. For instant
+    // visible effect, just inject a discreet preview line at the top of card.
+    var existing = card.querySelector('.vac-preview-row');
+    var html = '<div class="vac-preview-row" style="display:flex;justify-content:space-between;gap:8px;margin-top:8px;align-items:center;">'
+             +   '<div style="font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">'
+             +     (preview.mine?'<span>You: </span>':'')+(preview.text||'').replace(/[<>&]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c];})
+             +   '</div>'
+             +   '<div style="font-size:11px;color:var(--text2);flex-shrink:0;">'+formatJobsRowTime(preview.time)+'</div>'
+             + '</div>';
+    if (existing) { existing.outerHTML = html; }
+    else {
+        // Append before the inline thread div.
+        var thread = card.querySelector('[id^="thread-"]');
+        if (thread) thread.insertAdjacentHTML('beforebegin', html);
+    }
+}
+
+function lastSeafarerPreview(applicationId) {
+    var msgs = window._messagesByApp[applicationId];
+    if (!msgs || !msgs.length) return null;
+    var last = msgs[msgs.length-1];
+    var myId = window._myIdentityCache ? window._myIdentityCache.user_id : '';
+    return {text: (last.plaintext||'').slice(0,80), time: last.sent_at, mine: last.from_user_id === myId};
+}
+
+function formatJobsRowTime(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    if (isNaN(d)) return '';
+    var today = new Date();
+    if (d.toDateString() === today.toDateString()) return iso.slice(11,16);
+    var yest = new Date(); yest.setDate(yest.getDate()-1);
+    if (d.toDateString() === yest.toDateString()) return 'Yesterday';
+    return d.toLocaleDateString(undefined, {day:'numeric', month:'short'});
 }
 
 // Flip the master Ready-for-offers toggle. Persists via the existing
@@ -3388,7 +4453,7 @@ async function spLoad(){
         var msgr=document.getElementById('sp-preferred_messenger');
         if(msgr)msgr.value=data.preferred_messenger||'WhatsApp';
         var rdy=document.getElementById('sp-ready_for_offers');
-        var rdyVal=(data.ready_for_offers||'true')!=='false';
+        var rdyVal=data.ready_for_offers==='true';
         if(rdy){rdy.checked=rdyVal;spToggleReady(rdyVal);}
         // Photo — fetched as a data URL so we don't depend on the asset
         // protocol (which would need an extra capability + vault scope).

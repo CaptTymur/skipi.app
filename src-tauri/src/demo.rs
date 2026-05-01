@@ -308,7 +308,7 @@ pub fn populate_demo_vault(vault_path: &Path) -> Result<Connection, String> {
     db::set_vault_info(&conn, "personal_available_from", "2026-05-15").map_err(|e| e.to_string())?;
     db::set_vault_info(&conn, "personal_min_salary", "4500").map_err(|e| e.to_string())?;
     db::set_vault_info(&conn, "personal_currency", "USD").map_err(|e| e.to_string())?;
-    db::set_vault_info(&conn, "personal_ready_for_offers", "true").map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_ready_for_offers", "false").map_err(|e| e.to_string())?;
     db::set_vault_info(&conn, "personal_preferred_messenger", "WhatsApp").map_err(|e| e.to_string())?;
     db::set_vault_info(&conn, "personal_english_level", "Fluent").map_err(|e| e.to_string())?;
     db::set_vault_info(&conn, "personal_marital_status", "Single").map_err(|e| e.to_string())?;

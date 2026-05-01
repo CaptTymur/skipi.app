@@ -6,3 +6,6 @@ pub mod profile;
 pub mod cv_commands;
 pub mod work_history;
 pub mod email;
+pub mod jobs;
+pub mod messaging;
+pub mod mail_intent;

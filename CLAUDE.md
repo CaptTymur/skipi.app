@@ -45,6 +45,8 @@ Frontend — один `dist/index.html`, внутри весь JS inline. Нет
 
 **macOS Gatekeeper:** приложение не notarised (нет $99 Apple Developer). Пользователи видят «Apple не удалось подтвердить». Воркэраунд: `xattr -dr com.apple.quarantine /Applications/Skipi.app`. TODO: оформить Apple Developer когда дойдут руки.
 
+**Email delivery decision:** единый кроссплатформенный fallback — генерировать `.eml` файл с subject/body/footer/attachments и открывать его/папку для пользователя. SMTP остаётся production path для прямой отправки из Skipi. Не делать `mailto:` с attachment как базовый путь: это не стандарт и ломается по-разному на Linux/Windows/macOS. Подробно: `EMAIL_DELIVERY_DECISION.md`; handoff для coding agent: `EMAIL_EML_IMPLEMENTATION_HANDOFF.md`.
+
 **Стиль кода во frontend:**
 - Var, не let/const (совместимость и привычка по файлу)
 - Никаких фреймворков, всё ручной DOM через innerHTML

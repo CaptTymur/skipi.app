@@ -70,6 +70,9 @@ pub fn create_profile_vault(
     position_label: Option<String>,
 ) -> Result<VaultInfo, String> {
     let vault_path = PathBuf::from(&path);
+    if vault_path.join("skipi.db").exists() {
+        return Err("A Skipi vault already exists in that folder. Use Open Existing Vault, or choose a different parent folder/name.".to_string());
+    }
     fs::create_dir_all(&vault_path).map_err(|e| e.to_string())?;
 
     let conn = db::open_db(&vault_path).map_err(|e| e.to_string())?;
@@ -269,6 +272,9 @@ pub fn create_vessel_profile_vault(
     imo: Option<String>,
 ) -> Result<VaultInfo, String> {
     let vault_path = PathBuf::from(&path);
+    if vault_path.join("skipi.db").exists() {
+        return Err("A Skipi vault already exists in that folder. Use Open Existing Vault, or choose a different parent folder/name.".to_string());
+    }
     fs::create_dir_all(&vault_path).map_err(|e| e.to_string())?;
 
     let conn = db::open_db(&vault_path).map_err(|e| e.to_string())?;

@@ -1,0 +1,228 @@
+//! Public jobs board client — polls https://api.skipi.app:8443/api/vacancies
+//! for vacancies that match the seafarer's profile (rank, vessel type).
+//!
+//! Privacy: the desktop app sends only the broad filter parameters in the
+//! query string; the server never sees the seafarer's identity.
+
+use serde::{Deserialize, Serialize};
+
+const PROD_API: &str = "https://api.skipi.app:8443";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PublicVacancy {
+    pub id: String,
+    pub crewing_ref: String,
+    pub rank: String,
+    pub vessel_type: String,
+    #[serde(default)]
+    pub flag: Option<String>,
+    #[serde(default)]
+    pub trading_area: Option<String>,
+    #[serde(default)]
+    pub russia_trading: bool,
+    #[serde(default)]
+    pub joining_window_from: Option<String>,
+    #[serde(default)]
+    pub joining_window_to: Option<String>,
+    #[serde(default)]
+    pub contract_months: Option<i64>,
+    #[serde(default)]
+    pub salary_min: Option<i64>,
+    #[serde(default)]
+    pub salary_max: Option<i64>,
+    #[serde(default)]
+    pub salary_currency: Option<String>,
+    #[serde(default)]
+    pub salary_negotiable: bool,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub reply_to: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub vessel_name: Option<String>,
+    #[serde(default)]
+    pub join_port: Option<String>,
+    #[serde(default)]
+    pub client_name: Option<String>,
+    pub published_at: String,
+    #[serde(default)]
+    pub expires_at: Option<String>,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct VacancyListResp {
+    items: Vec<PublicVacancy>,
+}
+
+#[tauri::command]
+pub fn fetch_jobs(
+    rank: Option<String>,
+    vessel_type: Option<String>,
+) -> Result<Vec<PublicVacancy>, String> {
+    let mut url = format!("{}/api/vacancies?limit=100", PROD_API);
+    if let Some(r) = rank.as_deref().filter(|s| !s.is_empty()) {
+        url.push_str(&format!("&rank={}", urlencoding(r)));
+    }
+    if let Some(v) = vessel_type.as_deref().filter(|s| !s.is_empty()) {
+        url.push_str(&format!("&vessel_type={}", urlencoding(v)));
+    }
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client.get(&url).send().map_err(|e| format!("network: {e}"))?;
+    let s = resp.status();
+    if !s.is_success() {
+        let body = resp.text().unwrap_or_default();
+        return Err(format!("server returned {s}: {body}"));
+    }
+    let parsed: VacancyListResp = resp.json().map_err(|e| format!("bad JSON: {e}"))?;
+    Ok(parsed.items)
+}
+
+/// Tell the public board that someone hit Apply on this vacancy.
+/// Anonymous counter — no per-user info.
+#[tauri::command]
+pub fn job_apply_click(vacancy_id: String) -> Result<(), String> {
+    bump_counter(&vacancy_id, "apply-click")
+}
+
+/// Open the user's preferred mail composer with subject + body + the
+/// supplied attachment path (the redacted-CV PDF generated client-side).
+///
+/// Linux: prefer Thunderbird's native `-compose` CLI when available — it
+/// reliably honours subject / body / attachment, unlike xdg-email + snap
+/// Thunderbird which drops everything except recipient. Falls back to
+/// xdg-email otherwise.
+///
+/// macOS / Windows: open mailto:; attachment is dropped (mailto: doesn't
+/// carry attachments) — the JS layer should toast the file path so the
+/// user can attach manually.
+#[tauri::command]
+pub fn open_mail_with_attachment(
+    to: String,
+    subject: String,
+    body: String,
+    attachment_path: Option<String>,
+) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        // Thunderbird's compose URI: comma-separated key=value list; values
+        // with literal commas / quotes need to be escaped per
+        // https://kb.mozillazine.org/Command_line_arguments_-_Thunderbird
+        // For simplicity we URL-encode commas and quotes inside subject /
+        // body which Thunderbird's parser tolerates.
+        fn esc(s: &str) -> String {
+            s.replace('\'', "%27")
+                .replace('"', "%22")
+                .replace(',', "%2C")
+        }
+        let attach_part = attachment_path
+            .as_deref()
+            .filter(|p| !p.is_empty() && std::path::Path::new(p).exists())
+            .map(|p| format!(",attachment='{}'", p))
+            .unwrap_or_default();
+        let compose_uri = format!(
+            "to={},subject='{}',body='{}'{}",
+            to.trim(),
+            esc(&subject),
+            esc(&body),
+            attach_part
+        );
+        // Try thunderbird first (most users on Linux use TB; native CLI is
+        // robust with subject/body/attachments even under snap).
+        if std::process::Command::new("thunderbird")
+            .arg("-compose")
+            .arg(&compose_uri)
+            .spawn()
+            .is_ok()
+        {
+            return Ok(());
+        }
+        // Fallback: xdg-email
+        let mut cmd = std::process::Command::new("xdg-email");
+        cmd.arg("--utf8")
+            .arg("--subject").arg(&subject)
+            .arg("--body").arg(&body);
+        if let Some(p) = attachment_path.as_deref().filter(|s| !s.is_empty()) {
+            if std::path::Path::new(p).exists() {
+                cmd.arg("--attach").arg(p);
+            }
+        }
+        cmd.arg(&to);
+        cmd.spawn().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let url = format!(
+            "mailto:{}?subject={}&body={}",
+            urlencoding(&to), urlencoding(&subject), urlencoding(&body)
+        );
+        std::process::Command::new("open").arg(&url).spawn()
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let url = format!(
+            "mailto:{}?subject={}&body={}",
+            urlencoding(&to), urlencoding(&subject), urlencoding(&body)
+        );
+        std::process::Command::new("cmd")
+            .creation_flags(CREATE_NO_WINDOW)
+            .args(&["/C", "start", "", &url])
+            .spawn().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    #[allow(unreachable_code)]
+    Err("Unsupported OS".to_string())
+}
+
+/// Tell the public board that someone hid this vacancy.
+#[tauri::command]
+pub fn job_hide(vacancy_id: String) -> Result<(), String> {
+    bump_counter(&vacancy_id, "hide")
+}
+
+/// Resolve the user's Downloads folder cross-platform (~/Downloads on Linux/Mac,
+/// %USERPROFILE%\Downloads on Windows). Used by the Apply flow to drop the
+/// generated redacted-CV PDF in a predictable, attach-friendly location.
+#[tauri::command]
+pub fn get_downloads_dir() -> Result<String, String> {
+    let p = dirs::download_dir()
+        .or_else(dirs::home_dir)
+        .ok_or_else(|| "Could not resolve user home / downloads dir".to_string())?;
+    Ok(p.to_string_lossy().to_string())
+}
+
+fn bump_counter(vacancy_id: &str, action: &str) -> Result<(), String> {
+    let url = format!("{}/api/vacancies/{}/{}", PROD_API, vacancy_id, action);
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client.post(&url).send().map_err(|e| format!("network: {e}"))?;
+    let s = resp.status();
+    if !s.is_success() && s.as_u16() != 204 {
+        return Err(format!("server returned {s}"));
+    }
+    Ok(())
+}
+
+fn urlencoding(s: &str) -> String {
+    s.bytes()
+        .map(|b| {
+            if b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.' || b == b'~' {
+                (b as char).to_string()
+            } else {
+                format!("%{:02X}", b)
+            }
+        })
+        .collect()
+}
