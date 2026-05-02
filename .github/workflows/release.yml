@@ -118,6 +118,43 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-registry-
 
+      # Windows releases must be signed. Fail before the expensive build if
+      # Azure Trusted Signing is not configured in repository secrets.
+      - name: Validate Windows signing secrets
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_ENDPOINT: ${{ secrets.AZURE_ENDPOINT }}
+          AZURE_CODE_SIGNING_NAME: ${{ secrets.AZURE_CODE_SIGNING_NAME }}
+          AZURE_CERT_PROFILE_NAME: ${{ secrets.AZURE_CERT_PROFILE_NAME }}
+        run: |
+          set -eu
+          missing=0
+          for name in \
+            AZURE_TENANT_ID \
+            AZURE_CLIENT_ID \
+            AZURE_CLIENT_SECRET \
+            AZURE_ENDPOINT \
+            AZURE_CODE_SIGNING_NAME \
+            AZURE_CERT_PROFILE_NAME
+          do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing GitHub Actions secret: ${name}"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      # Windows: install Azure Trusted Signing CLI. Tauri calls it through
+      # src-tauri/tauri.windows.conf.json for every Windows binary/installer.
+      - name: Install trusted-signing-cli
+        if: matrix.platform == 'windows-latest'
+        run: cargo install trusted-signing-cli --locked
+        shell: bash
+
       # Build the Tauri app
       - name: Build Skipi
         uses: tauri-apps/tauri-action@v0
@@ -126,6 +163,13 @@ jobs:
           # Updater signing — REQUIRED for auto-updates:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Windows Authenticode signing — used by trusted-signing-cli.
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_ENDPOINT: ${{ secrets.AZURE_ENDPOINT }}
+          AZURE_CODE_SIGNING_NAME: ${{ secrets.AZURE_CODE_SIGNING_NAME }}
+          AZURE_CERT_PROFILE_NAME: ${{ secrets.AZURE_CERT_PROFILE_NAME }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Skipi ${{ github.ref_name }}"
@@ -138,7 +182,7 @@ jobs:
 
             | Platform | File | Signed? |
             |----------|------|---------|
-            | Windows | `.msi` / `.exe` | unsigned beta |
+            | Windows | `.msi` / `.exe` | Authenticode (Azure Trusted Signing) |
             | Linux (Debian/Ubuntu) | `.deb` | minisign (updater) |
             | Linux (universal) | `.AppImage` | minisign (updater) |
             | Linux (RPM-based) | `.rpm` | minisign (updater) |
