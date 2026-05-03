@@ -85,6 +85,82 @@ pub fn add_custom_doc(
     Ok(rec)
 }
 
+/// Slice F2-lite — add a template-backed (catalog) document row to the vault.
+/// Unlike `add_custom_doc`, this writes a `template_id` so the row contributes
+/// to compliance assessment server-side. Caller passes catalog metadata
+/// resolved from `serverCatalog.certs`.
+#[tauri::command]
+pub fn add_catalog_doc(
+    state: State<AppState>,
+    template_id: String,
+    title: String,
+    category: Option<String>,
+    has_expiry: Option<bool>,
+    regulatory_basis: Option<String>,
+) -> Result<DocRecord, String> {
+    let template_id = template_id.trim().to_string();
+    if template_id.is_empty() {
+        return Err("template_id is required".to_string());
+    }
+    let title = title.trim().to_string();
+    if title.is_empty() {
+        return Err("Title is required".to_string());
+    }
+    let category = category
+        .and_then(|c| {
+            let t = c.trim().to_string();
+            if t.is_empty() { None } else { Some(t) }
+        })
+        .unwrap_or_else(|| "Catalog".to_string());
+    let has_expiry = has_expiry.unwrap_or(false);
+
+    let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
+    let vault_path = vault_lock.as_ref().ok_or("No vault open")?;
+    let cat_dir = vault_path.join(&category);
+    fs::create_dir_all(&cat_dir).map_err(|e| e.to_string())?;
+
+    let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = conn_lock.as_ref().ok_or("No vault open")?;
+
+    let id = format!("cat_{}", uuid::Uuid::new_v4().simple());
+    let regulatory = regulatory_basis
+        .and_then(|s| {
+            let t = s.trim().to_string();
+            if t.is_empty() { None } else { Some(t) }
+        })
+        .unwrap_or_else(|| "Catalog".to_string());
+    let rec = DocRecord {
+        id: id.clone(),
+        category: category.clone(),
+        title: title.clone(),
+        file_name: None,
+        has_expiry,
+        valid_from: None,
+        valid_to: None,
+        issued_by: None,
+        doc_number: None,
+        notes: None,
+        field_statuses: None,
+        regulatory_basis: Some(regulatory),
+        template_id: Some(template_id.clone()),
+        sha256: None,
+        file_size: None,
+        content_type: None,
+        visibility: "private".to_string(),
+        is_national: false,
+    };
+    db::insert_doc(conn, &rec).map_err(|e| e.to_string())?;
+    let payload = serde_json::json!({
+        "category": category,
+        "kind": "catalog",
+        "template_id": template_id,
+        "has_expiry": has_expiry,
+    })
+    .to_string();
+    let _ = db::log_event(conn, "doc_added", "document", Some(&id), Some(&payload));
+    Ok(rec)
+}
+
 /// Delete a document row from the vault. Also removes any attached file on disk.
 #[tauri::command]
 pub fn delete_doc(state: State<AppState>, id: String) -> Result<(), String> {
@@ -106,6 +182,22 @@ pub fn delete_doc(state: State<AppState>, id: String) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     let _ = db::log_event(conn, "doc_deleted", "document", Some(&id), None);
     Ok(())
+}
+
+/// Resolve a vault document to its absolute path on disk so the chat
+/// attachment uploader can read+encrypt it. Returns Err if the doc has
+/// no file attached or no vault is open.
+#[tauri::command]
+pub fn get_document_file_path(state: State<AppState>, doc_id: String) -> Result<String, String> {
+    let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
+    let vault_path = vault_lock.as_ref().ok_or("No vault open")?;
+    let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = conn_lock.as_ref().ok_or("No vault open")?;
+    let docs = db::get_all_docs(conn).map_err(|e| e.to_string())?;
+    let doc = docs.iter().find(|d| d.id == doc_id).ok_or("Document not found")?;
+    let file_name = doc.file_name.as_ref().ok_or("No file attached")?;
+    let p = vault_path.join(&doc.category).join(file_name);
+    Ok(p.to_string_lossy().to_string())
 }
 
 #[tauri::command]
@@ -196,4 +288,99 @@ pub fn attach_file(state: State<AppState>, doc_id: String, source_path: String) 
     }
 
     Ok(dest_name)
+}
+
+/// Bundle every vault document with an attached file into a single ZIP +
+/// `manifest.json` describing the doc tree. Used by the chat "send all
+/// documents" path so the crewing receives one structured container they
+/// can open in the same hierarchical viewer the seafarer uses.
+///
+/// ZIP layout:
+///   manifest.json
+///   <category>/<filename>          one entry per doc with a file
+#[tauri::command]
+pub fn export_documents_bundle(
+    state: State<AppState>,
+    output_path: String,
+) -> Result<String, String> {
+    use std::io::Write;
+    let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
+    let vault_path = vault_lock.as_ref().ok_or("No vault open")?;
+    let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = conn_lock.as_ref().ok_or("No vault open")?;
+    let docs = db::get_all_docs(conn).map_err(|e| e.to_string())?;
+
+    let out = std::path::PathBuf::from(&output_path);
+    if let Some(parent) = out.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let file = fs::File::create(&out).map_err(|e| format!("create zip: {e}"))?;
+    let mut zip = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+
+    let mut manifest_docs: Vec<serde_json::Value> = Vec::new();
+    for doc in &docs {
+        let fname = match &doc.file_name {
+            Some(f) => f.clone(),
+            None => {
+                // Still record the doc so the crewing sees the empty slot —
+                // useful for "missing documents" awareness.
+                manifest_docs.push(serde_json::json!({
+                    "id": doc.id,
+                    "title": doc.title,
+                    "category": doc.category,
+                    "template_id": doc.template_id,
+                    "is_template": doc.template_id.is_some(),
+                    "doc_number": doc.doc_number,
+                    "issued_by": doc.issued_by,
+                    "valid_from": doc.valid_from,
+                    "valid_to": doc.valid_to,
+                    "file_path": serde_json::Value::Null,
+                    "file_name": serde_json::Value::Null,
+                }));
+                continue;
+            }
+        };
+        let src = vault_path.join(&doc.category).join(&fname);
+        if !src.exists() { continue; }
+        let data = fs::read(&src).map_err(|e| format!("read {}: {}", src.display(), e))?;
+        let in_zip = format!("{}/{}", doc.category, fname);
+        zip.start_file(&in_zip, options).map_err(|e| e.to_string())?;
+        zip.write_all(&data).map_err(|e| e.to_string())?;
+        manifest_docs.push(serde_json::json!({
+            "id": doc.id,
+            "title": doc.title,
+            "category": doc.category,
+            "template_id": doc.template_id,
+            "is_template": doc.template_id.is_some(),
+            "doc_number": doc.doc_number,
+            "issued_by": doc.issued_by,
+            "valid_from": doc.valid_from,
+            "valid_to": doc.valid_to,
+            "file_name": fname,
+            "file_path": in_zip,
+        }));
+    }
+
+    // Optional seafarer metadata so the crewing card has labels.
+    let info = db::get_vault_info(conn).map_err(|e| e.to_string())?;
+    let manifest = serde_json::json!({
+        "schema_version": 1,
+        "exported_at": chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+        "exported_by": {
+            "name": info.name,
+            "rank": info.rank,
+            "vessel_type": info.vessel_type,
+            "position": info.position,
+            "vessel_category": info.vessel_category,
+        },
+        "documents": manifest_docs,
+    });
+    let manifest_str = serde_json::to_string_pretty(&manifest)
+        .map_err(|e| e.to_string())?;
+    zip.start_file("manifest.json", options).map_err(|e| e.to_string())?;
+    zip.write_all(manifest_str.as_bytes()).map_err(|e| e.to_string())?;
+    zip.finish().map_err(|e| e.to_string())?;
+    Ok(out.to_string_lossy().to_string())
 }

@@ -49,6 +49,11 @@ pub struct VaultInfo {
     pub name: String,
     pub rank: Option<String>,
     pub vessel_type: Option<String>,
+    /// Wizard slug, e.g. "second_officer" — used as Jobs filter fallback
+    /// when the user hasn't filled Personal Details > Rank.
+    pub position: Option<String>,
+    /// Wizard slug, e.g. "bulker".
+    pub vessel_category: Option<String>,
 }
 
 /// Ordered list of schema migrations.
@@ -345,17 +350,14 @@ pub fn get_vault_info(conn: &Connection) -> Result<VaultInfo> {
             |row| row.get(0),
         ).unwrap_or_default()
     };
+    let opt = |k: &str| { let v = get(k); if v.is_empty() { None } else { Some(v) } };
     Ok(VaultInfo {
         account_type: get("account_type"),
         name: get("name"),
-        rank: {
-            let r = get("rank");
-            if r.is_empty() { None } else { Some(r) }
-        },
-        vessel_type: {
-            let v = get("vessel_type");
-            if v.is_empty() { None } else { Some(v) }
-        },
+        rank: opt("rank"),
+        vessel_type: opt("vessel_type"),
+        position: opt("position"),
+        vessel_category: opt("vessel_category"),
     })
 }
 

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.78';
+var APP_VERSION='0.4.103';
 // Window title is set via `set_window_title` Rust command inside
 // updateTitlebar() — direct JS setTitle() is blocked by Tauri 2 ACL.
 // Human-readable labels for account types that go into the OS window title.
@@ -458,9 +458,10 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.63</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.103</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
+                <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
                 <div style="margin-top:12px;font-size:11px;color:var(--text2);line-height:1.45;max-width:360px;">
                     New vault folders are named clearly, for example <code>Skipi Seafarer - Tymur Rudov</code>. When opening a vault, select that named folder.
                 </div>
@@ -543,6 +544,46 @@ var types = {vessel_types:[], ranks:[]};
 var allDocs = [], selectedDocId = null, searchTerm = '', currentView = 'files';
 var pkgMode = false, pkgSelected = [];
 var currentAccountType = '';
+var currentWizardPosition = '';
+var currentWizardVesselCategory = '';
+
+// Wizard slug → canonical rank string used by crewings when posting vacancies.
+// When seafarer hasn't filled the "Personal details → Rank" form, this is
+// the only thing we have to filter the Jobs feed by.
+var WIZARD_POSITION_TO_RANK = {
+    master: 'Master',
+    chief_officer: 'Chief Officer',
+    second_officer: '2nd Officer',
+    third_officer: '3rd Officer',
+    chief_engineer: 'Chief Engineer',
+    second_engineer: '2nd Engineer',
+    third_engineer: '3rd Engineer',
+    fourth_engineer: '4th Engineer',
+    eto: 'Electro-Technical Officer',
+    bosun: 'Bosun',
+    ab: 'AB',
+    os: 'OS',
+    cook: 'Cook',
+    cadet_deck: 'Cadet',
+    cadet_engine: 'Cadet',
+};
+
+// Map long-form rank labels (Second Officer, Third Engineer) to the terse
+// crewing-side canonical names (2nd Officer, 3rd Engineer). Idempotent — if
+// already canonical, returns input unchanged.
+var RANK_ALIASES = {
+    'Second Officer': '2nd Officer',
+    'Third Officer': '3rd Officer',
+    'Second Engineer': '2nd Engineer',
+    'Third Engineer': '3rd Engineer',
+    'Fourth Engineer': '4th Engineer',
+    'Electro Technical Officer': 'Electro-Technical Officer',
+    'ETO': 'Electro-Technical Officer',
+};
+function canonicalRank(r) {
+    if (!r) return r;
+    return RANK_ALIASES[r] || r;
+}
 
 function err(m) { var e=document.getElementById('err'); e.textContent=m; e.style.display='block'; }
 
@@ -779,6 +820,7 @@ async function init() {
     convertFileSrc=window.__TAURI__.core.convertFileSrc||function(p){return p;};
     // Wire up native drag-and-drop (runs once, independent of vault state)
     setupDragDrop();
+    setTimeout(function(){loadServerCatalog().catch(function(){});},500);
     var hadVaultPath=false;
     try{types=await invoke('get_vault_types');document.getElementById('err').style.display='none';
         var lv=await invoke('get_last_vault');
@@ -807,6 +849,10 @@ async function init() {
 
 // ========== Profile taxonomy (STCW levels, vessel tree, positions) ==========
 var profileTax = null; // loaded lazily
+var serverCatalog = null; // cached server catalog for future cert-matrix slices
+var SERVER_CATALOG_CACHE_KEY = 'skipi-catalog';
+var SERVER_CATALOG_TTL_MS = 60 * 60 * 1000;
+var SERVER_CATALOG_URL = 'https://api.skipi.app/api/catalogs';
 var wizardState = {step:1,name:'',level:'',vessel_root:'',vessel_leaf:'',position:'',positionCustom:''};
 
 // Categories whose docs are pre-seeded but not "mandatory" — e.g. Banking.
@@ -818,6 +864,42 @@ var optionalCategories = [];
 async function loadTaxonomy(){
     if(!profileTax){profileTax=await invoke('get_profile_taxonomy');}
     return profileTax;
+}
+
+function readServerCatalogCache(){
+    try{
+        var raw=localStorage.getItem(SERVER_CATALOG_CACHE_KEY);
+        if(!raw)return null;
+        var parsed=JSON.parse(raw);
+        if(parsed&&parsed.payload)return parsed;
+        return {fetched_at:0,version:(parsed&&parsed.version)||0,payload:parsed};
+    }catch(e){return null;}
+}
+
+function writeServerCatalogCache(data){
+    try{
+        localStorage.setItem(SERVER_CATALOG_CACHE_KEY,JSON.stringify({
+            fetched_at:Date.now(),
+            version:(data&&data.version)||0,
+            payload:data
+        }));
+    }catch(e){}
+}
+
+async function loadServerCatalog(){
+    var cached=readServerCatalogCache();
+    if(cached&&cached.payload)serverCatalog=cached.payload;
+    if(cached&&cached.fetched_at&&Date.now()-cached.fetched_at<SERVER_CATALOG_TTL_MS)return serverCatalog;
+    try{
+        var resp=await fetch(SERVER_CATALOG_URL);
+        if(!resp.ok)return serverCatalog;
+        var data=await resp.json();
+        if(data&&data.positions&&data.vessel_types&&data.certs){
+            serverCatalog=data;
+            writeServerCatalogCache(data);
+        }
+    }catch(e){}
+    return serverCatalog;
 }
 
 async function loadOptionalCategories(){
@@ -915,7 +997,40 @@ async function onType(v){
     // All other entity types are disabled in v0.4.11; no-op.
     showToast('This entity type is coming soon — only Seafarer is available right now.','info');
 }
-function showWelcome(){show('scr-welcome');hide('scr-setup');hide('scr-content');hide('ribbon');hide('left-panel');hide('tabs');hide('statusbar');var mb=document.getElementById('modules-bar');if(mb)mb.style.display='none';}
+function showWelcome(){show('scr-welcome');hide('scr-setup');hide('scr-content');hide('ribbon');hide('left-panel');hide('tabs');hide('statusbar');var mb=document.getElementById('modules-bar');if(mb)mb.style.display='none';renderWelcomeRecent();}
+
+async function renderWelcomeRecent(){
+    var host=document.getElementById('welcome-recent');
+    if(!host)return;
+    var recent=[];
+    try{recent=await invoke('get_recent_vaults');}catch(e){}
+    if(!recent.length){host.innerHTML='';return;}
+    var esc=function(s){return (s||'').toString().replace(/[<>&"]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c];});};
+    var h='<div style="font-size:11px;color:var(--text2);text-align:left;margin-bottom:6px;">Recent vaults</div>';
+    h+='<div style="display:flex;flex-direction:column;gap:4px;">';
+    recent.slice(0,10).forEach(function(p){
+        var name=p.replace(/.*\//,'');
+        h+='<div style="display:flex;gap:6px;align-items:center;padding:6px 8px;background:var(--surface);border:1px solid var(--border);border-radius:4px;">'
+         +   '<button onclick="openRecentVault(\''+esc(p).replace(/&quot;/g,'')+'\')" style="flex:1;text-align:left;background:transparent;border:none;color:var(--text);cursor:pointer;font-size:13px;padding:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+esc(p)+'">'
+         +     '<span style="font-weight:600;">'+esc(name)+'</span>'
+         +     '<span style="color:var(--text2);margin-left:6px;font-size:11px;">'+esc(p)+'</span>'
+         +   '</button>'
+         +   '<button onclick="forgetRecent(\''+esc(p).replace(/&quot;/g,'')+'\')" style="background:transparent;border:none;color:var(--text2);cursor:pointer;padding:2px 6px;font-size:14px;" title="Remove from list">&times;</button>'
+         + '</div>';
+    });
+    h+='</div>';
+    host.innerHTML=h;
+}
+
+async function openRecentVault(path){
+    try{var info=await invoke('open_vault',{path:path});await loadVault(info);}
+    catch(e){showToast('Could not open: '+e,'error');try{await invoke('forget_recent_vault',{path:path});renderWelcomeRecent();}catch(_){}}
+}
+
+async function forgetRecent(path){
+    try{await invoke('forget_recent_vault',{path:path});}catch(e){}
+    renderWelcomeRecent();
+}
 
 function cleanVaultFolderPart(value,fallback){
     var s=(value||'').toString().trim();
@@ -1746,6 +1861,15 @@ async function loadVault(info){
     hide('scr-welcome');hide('scr-setup');show('scr-content');show('left-panel');show('tabs');show('statusbar');
     var mb=document.getElementById('modules-bar');if(mb)mb.style.display='flex';
     currentAccountType=info.account_type||'';
+    var prevPosition = currentWizardPosition;
+    currentWizardPosition=info.position||'';
+    currentWizardVesselCategory=info.vessel_category||'';
+    // If the rank-source changed (different vault opened), invalidate the
+    // Jobs cache so stale vacancies from another profile don't linger.
+    if (prevPosition !== currentWizardPosition) {
+        try { localStorage.removeItem('skipi-jobs-cache'); } catch(e){}
+        lastJobsItems = [];
+    }
     updateTitlebar(info.name,currentAccountType);
     // Update bottom-left vault name
     var vn=document.getElementById('pf-vault-name');if(vn)vn.textContent=info.name||'Vault';
@@ -2137,7 +2261,7 @@ async function renderDoc(d){
     h+='<div class="field"><label>'+fdot('doc_number',d.doc_number)+'Document No.</label><input placeholder="e.g. UA-12345" value="'+esc(d.doc_number)+'" onchange="saveF(\''+d.id+'\',\'doc_number\',this.value)"></div>';
     h+='<div class="field"><label>'+fdot('issued_by',d.issued_by)+'Issued By</label><input placeholder="e.g. Maritime Admin" value="'+esc(d.issued_by)+'" onchange="saveF(\''+d.id+'\',\'issued_by\',this.value)"></div>';
     h+='<div class="field"><label>'+fdot('valid_from',d.valid_from)+'Issue Date</label><input type="text" inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" value="'+(d.valid_from||'')+'" oninput="autoFormatDate(this)" onchange="saveF(\''+d.id+'\',\'valid_from\',this.value)"></div>';
-    h+='<div class="field"><label>'+fdot('valid_to',d.valid_to)+'Expiry Date</label><input type="text" inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" value="'+(d.valid_to||'')+'" oninput="autoFormatDate(this)" onchange="updExp(\''+d.id+'\',this.value)"></div>';
+    h+='<div class="field"><label>'+fdot('valid_to',d.valid_to)+'Expiry Date</label><input id="vt" type="text" inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" value="'+(d.valid_to||'')+'" oninput="autoFormatDate(this)" onchange="updExp(\''+d.id+'\',this.value)"></div>';
     h+='</div>';
 
     if(d.notes)h+='<p style="color:var(--text2);font-size:12px;margin-bottom:16px;">'+d.notes+'</p>';
@@ -2207,7 +2331,14 @@ async function saveF(id,f,v){
         allDocs=await invoke('get_documents');renderTree();
     }catch(e){showToast(''+e,'error');logError('op',e);}
 }
-async function updExp(id,v){if(!v)return;try{await invoke('update_expiry',{id:id,validTo:v});allDocs=await invoke('get_documents');renderTree();var d=allDocs.find(function(x){return x.id===id;});if(d)await renderDoc(d);updateStatus();}catch(e){showToast(''+e,'error');logError('op',e);}}
+async function updExp(id,v){if(!v)return;try{await invoke('update_expiry',{id:id,validTo:v});allDocs=await invoke('get_documents');renderTree();var d=allDocs.find(function(x){return x.id===id;});if(d)await renderDoc(d);updateStatus();
+    // Slice F3-lite — recheck banner on targeted expiry repair only.
+    var today=(new Date()).toISOString().slice(0,10);
+    if(v>today){
+        var p=_slfPendingRecheckForDoc(id,'expired');
+        if(p) _slfShowRecheckBanner(p);
+    }
+}catch(e){showToast(''+e,'error');logError('op',e);}}
 async function attachF(id){
     var f=await open({multiple:false,title:'Select file',filters:[{name:'Documents',extensions:['pdf','jpg','jpeg','png','doc','docx']}]});
     if(!f)return;
@@ -2230,6 +2361,29 @@ async function attachFFromPath(id,sourcePath){
         if(d)await renderDoc(d);
         updateStatus();
         showToast('File attached','success');
+        // Slice F3-lite/F4-lite — recheck banner on targeted file repair.
+        // First match: no_file pending (file slot existed, file added now).
+        // Second match: missing pending (catalog row was created earlier
+        // via add_catalog_doc, now the file lands → promote to file_attached
+        // kind so the banner copy switches to "File attached" and the
+        // primary action becomes Apply now).
+        var pfNoFile=_slfPendingRecheckForDoc(id,'no_file');
+        if(pfNoFile){
+            _slfShowRecheckBanner(pfNoFile);
+        } else {
+            var pfMissing=_slfPendingRecheckForDoc(id,'missing');
+            if(pfMissing){
+                _slfSetPendingRecheck({
+                    vacancyId:    pfMissing.vacancyId,
+                    vacancyTitle: pfMissing.vacancyTitle,
+                    replyTo:      pfMissing.replyTo,
+                    certId:       pfMissing.certId,
+                    docId:        pfMissing.docId,
+                    kind:         'file_attached',
+                });
+                _slfShowRecheckBanner(window._slfPendingRecheck);
+            }
+        }
         // Auto-scan with AI after file upload — only if AI is configured
         if(localStorage.getItem('skipi-ai-autoscan')!=='off'&&await aiIsConfigured()){
             setTimeout(function(){aiRec(id,true);},500);
@@ -2988,7 +3142,18 @@ async function loadJobsFeed(){
     try {
         var sp = {};
         try { sp = await invoke('get_seafarer_personal'); } catch(e) {}
+        // Effective rank: prefer the user-edited "Personal details" rank,
+        // otherwise fall back to the wizard slug mapped to canonical
+        // crewing-side terminology. Without this, profiles set up via the
+        // wizard but never opened in Personal Details show up unfiltered.
         var rank = sp.rank || null;
+        if (!rank && currentWizardPosition) {
+            rank = WIZARD_POSITION_TO_RANK[currentWizardPosition] || null;
+        }
+        // Crewings post terse ranks ("2nd Officer"); profiles often store
+        // the long form ("Second Officer"). Normalize before sending to
+        // the server-side exact-match filter.
+        if (rank) rank = canonicalRank(rank);
 
         var jobsP = invoke('fetch_jobs', { rank: rank, vesselType: null });
         var threadsP = (async function(){
@@ -3166,7 +3331,15 @@ function renderJobsFeed(items){
         if (hasThread) {
             html += '<button onclick="toggleVacancyThread(\''+esc(v.id)+'\')" style="padding:4px 12px;background:var(--accent);color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer;font-weight:600;">🔒 Open conversation</button>';
         } else if(v.reply_to){
-            html += '<button onclick="jobsApply(\''+esc(v.id)+'\',\''+esc(v.reply_to)+'\',\''+esc(title).replace(/&quot;/g,'')+'\')" style="padding:4px 12px;background:var(--accent);color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer;font-weight:600;">Apply</button>';
+            // If we already applied to this vacancy in this session, render
+            // a disabled "Applied ✓" instead of an active Apply — prevents
+            // double application even before the server-side thread shows up.
+            var alreadyApplied = (window._appliedVacancyIds || {})[v.id];
+            if (alreadyApplied) {
+                html += '<button disabled style="padding:4px 12px;background:var(--surface);color:var(--text2);border:1px solid var(--border);border-radius:4px;font-size:11px;font-weight:600;cursor:not-allowed;opacity:0.7;">Applied ✓</button>';
+            } else {
+                html += '<button id="apply-btn-'+esc(v.id)+'" onclick="jobsApply(\''+esc(v.id)+'\',\''+esc(v.reply_to)+'\',\''+esc(title).replace(/&quot;/g,'')+'\')" style="padding:4px 12px;background:var(--accent);color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer;font-weight:600;">Apply</button>';
+            }
         }
         html += '<button onclick="jobsHide(\''+esc(v.id)+'\')" style="padding:3px 10px;background:transparent;color:var(--text2);border:1px solid var(--border);border-radius:4px;font-size:11px;cursor:pointer;">Hide</button>';
         html += '</div>';
@@ -3254,7 +3427,7 @@ async function toggleVacancyThread(vacancyId){
         var ta = document.getElementById('vac-compose-'+vacancyId);
         if (ta && (document.activeElement === ta || (ta.value||'').length > 0)) return;
         refreshVacancyThread(vacancyId, /*silent=*/true);
-    }, 15000);
+    }, 5000);
     host.dataset.pollId = String(pollId);
 }
 
@@ -3297,7 +3470,9 @@ function renderChatBubble(m, mine, opts) {
         var label = mine ? '📄 You requested documents' : '📄 Documents requested';
         var actionBtn = '';
         if (!mine && opts.vacancyId) {
-            actionBtn = '<button class="btn btn-accent btn-sm" style="margin-top:8px;font-size:12px;padding:5px 12px;" onclick="respondWithDocs(\''+opts.vacancyId+'\')">📎 Send my CV</button>';
+            actionBtn = '<div style="margin-top:8px;">'
+                      +   '<button class="btn btn-accent btn-sm" style="font-size:12px;padding:5px 12px;" onclick="openSendDocsDialog(\''+opts.vacancyId+'\')">📎 Choose what to send…</button>'
+                      + '</div>';
         }
         return '<div class="'+classes+'"'+idAttr+'>'
              +   '<div class="msg-bubble" style="border:1px solid var(--accent);">'
@@ -3426,6 +3601,204 @@ async function respondWithDocs(vacancyId) {
     }
 }
 
+async function openSendDocsDialog(vacancyId) {
+    var host = document.getElementById('thread-'+vacancyId);
+    if (!host) { showToast('Chat not open', 'error'); return; }
+    var applicationId = host.dataset.applicationId;
+    var counterpart = host.dataset.counterpartId;
+    if (!applicationId || !counterpart) { showToast('No conversation context', 'error'); return; }
+
+    // Load packages so the user can pick a saved one (if any).
+    var packages = [];
+    try { packages = await invoke('get_packages') || []; } catch(e){}
+
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:99999;display:flex;align-items:center;justify-content:center;';
+    var pkgOptions = packages.length
+        ? packages.map(function(p){
+            return '<option value="'+p.id+'">'+(p.title||'(untitled)')+(p.file_count?' — '+p.file_count+' files':'')+'</option>';
+          }).join('')
+        : '<option value="" disabled>No packages prepared yet</option>';
+
+    var card = document.createElement('div');
+    card.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:20px 22px;max-width:440px;width:90%;color:var(--text);box-shadow:0 4px 16px rgba(0,0,0,0.5);';
+    card.innerHTML = ''
+      + '<div style="font-size:15px;font-weight:600;margin-bottom:14px;">Send to crewing</div>'
+      + '<label style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;cursor:pointer;">'
+      +   '<input type="checkbox" id="opt-cv" checked style="margin-top:3px;">'
+      +   '<div><div style="font-weight:600;font-size:13px;">Full resume (PDF)</div>'
+      +   '<div style="font-size:11px;color:var(--text2);">Same layout as your CV tab — full identity disclosed.</div></div>'
+      + '</label>'
+      + '<label style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;cursor:pointer;">'
+      +   '<input type="checkbox" id="opt-all-docs" style="margin-top:3px;">'
+      +   '<div><div style="font-weight:600;font-size:13px;">All vault documents</div>'
+      +   '<div style="font-size:11px;color:var(--text2);">Each cert / passport / book sent as separate encrypted file.</div></div>'
+      + '</label>'
+      + '<label style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;cursor:pointer;">'
+      +   '<input type="checkbox" id="opt-pkg" style="margin-top:3px;"'+(packages.length?'':' disabled')+'>'
+      +   '<div style="flex:1;"><div style="font-weight:600;font-size:13px;">Pre-prepared package</div>'
+      +   '<select id="opt-pkg-id" style="margin-top:6px;width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:6px 8px;font-size:12px;"'+(packages.length?'':' disabled')+'>'+pkgOptions+'</select></div>'
+      + '</label>'
+      + '<div id="send-docs-status" style="font-size:11px;color:var(--text2);margin:10px 0 0;min-height:14px;"></div>'
+      + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">'
+      +   '<button id="send-docs-cancel" class="btn btn-sm" style="font-size:12px;padding:6px 14px;background:var(--surface);border:1px solid var(--border);color:var(--text);">Cancel</button>'
+      +   '<button id="send-docs-go" class="btn btn-accent btn-sm" style="font-size:12px;padding:6px 14px;">Send 🔒</button>'
+      + '</div>';
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    var close = function(){ try { document.body.removeChild(overlay); } catch(e){} };
+    card.querySelector('#send-docs-cancel').onclick = close;
+    overlay.onclick = function(e){ if (e.target === overlay) close(); };
+    card.querySelector('#opt-pkg-id').onchange = function(){ card.querySelector('#opt-pkg').checked = true; };
+
+    card.querySelector('#send-docs-go').onclick = async function(){
+        var wantCv  = card.querySelector('#opt-cv').checked;
+        var wantAll = card.querySelector('#opt-all-docs').checked;
+        var wantPkg = card.querySelector('#opt-pkg').checked;
+        if (!wantCv && !wantAll && !wantPkg) {
+            card.querySelector('#send-docs-status').textContent = 'Pick at least one option.';
+            return;
+        }
+        var pkgId = wantPkg ? card.querySelector('#opt-pkg-id').value : '';
+        var status = card.querySelector('#send-docs-status');
+        status.textContent = 'Encrypting and uploading…';
+        var sent = 0, failed = 0;
+        var sendOne = async function(filePath, niceName) {
+            try {
+                var meta = await invoke('upload_encrypted_attachment', {
+                    applicationId: applicationId,
+                    toUserId: counterpart,
+                    filePath: filePath,
+                });
+                var marker = '[skipi:file_attached] '+JSON.stringify({
+                    id: meta.id,
+                    filename: meta.original_filename,
+                    mime: meta.mime_type,
+                    size: meta.size_bytes,
+                });
+                await invoke('send_encrypted_message', {
+                    applicationId: applicationId,
+                    toUserId: counterpart,
+                    plaintext: marker,
+                });
+                sent++;
+            } catch(e) {
+                failed++;
+                console.log('upload failed for', niceName||filePath, e);
+            }
+        };
+
+        // 1. Full CV PDF.
+        if (wantCv) {
+            try {
+                var sp = {};
+                try { sp = await invoke('get_seafarer_personal'); } catch(e){}
+                var ts = (new Date()).toISOString().slice(0,10);
+                var rankSafe = (sp.rank || 'CV').replace(/[^A-Za-z0-9_-]/g,'_');
+                var dl = await invoke('get_downloads_dir');
+                var fname = 'Skipi-CV_'+rankSafe+'_'+ts+'.pdf';
+                var p = (dl.endsWith('/')?dl:dl+'/') + fname;
+                await invoke('export_cv_pdf', { outputPath: p });
+                await sendOne(p, fname);
+            } catch(e){ status.textContent = 'CV export failed: '+e; }
+        }
+        // 2. All vault documents — packaged into a single structured ZIP
+        //    (manifest.json + files under their vault categories) so the
+        //    crewing receives one container that mirrors the seafarer's
+        //    Documents module layout, not N loose files.
+        if (wantAll) {
+            try {
+                var dlAll = await invoke('get_downloads_dir');
+                var bundleName = 'Skipi-documents-bundle.zip';
+                var bundlePath = (dlAll.endsWith('/')?dlAll:dlAll+'/') + bundleName;
+                await invoke('export_documents_bundle', { outputPath: bundlePath });
+                try {
+                    var bmeta = await invoke('upload_encrypted_attachment', {
+                        applicationId: applicationId,
+                        toUserId: counterpart,
+                        filePath: bundlePath,
+                    });
+                    // Special marker — crewing renders the structured viewer
+                    // button instead of a plain Download.
+                    var bmark = '[skipi:doc_bundle] '+JSON.stringify({
+                        id: bmeta.id,
+                        filename: bmeta.original_filename,
+                        mime: bmeta.mime_type,
+                        size: bmeta.size_bytes,
+                    });
+                    await invoke('send_encrypted_message', {
+                        applicationId: applicationId,
+                        toUserId: counterpart,
+                        plaintext: bmark,
+                    });
+                    sent++;
+                } catch (e) { failed++; console.log('bundle upload failed:', e); }
+            } catch(e){ status.textContent = 'Bundle export failed: '+e; }
+        }
+        // 3. Pre-prepared package — exported to a temp .zip then uploaded as one file.
+        if (wantPkg && pkgId) {
+            try {
+                var dl2 = await invoke('get_downloads_dir');
+                var pkgPath = (dl2.endsWith('/')?dl2:dl2+'/') + 'Skipi-package-'+pkgId+'.zip';
+                await invoke('export_package', { packageId: pkgId, destPath: pkgPath });
+                await sendOne(pkgPath, 'package.zip');
+            } catch(e){ status.textContent = 'Package export failed: '+e; }
+        }
+
+        if (sent) showToast(sent+' file'+(sent>1?'s':'')+' sent — encrypted 🔒'+(failed?' ('+failed+' failed)':''), 'success');
+        else showToast('Nothing sent — '+failed+' upload(s) failed', 'error');
+        close();
+        setTimeout(function(){ refreshVacancyThread(vacancyId, true); }, 0);
+    };
+}
+
+async function respondWithDocsBundle(vacancyId) {
+    var host = document.getElementById('thread-'+vacancyId);
+    if (!host) { showToast('Chat not open', 'error'); return; }
+    var applicationId = host.dataset.applicationId;
+    var counterpart = host.dataset.counterpartId;
+    if (!applicationId || !counterpart) {
+        showToast('No conversation context', 'error');
+        return;
+    }
+
+    var paths;
+    try {
+        paths = await open({ multiple: true, title: 'Select documents to send' });
+    } catch(e) { showToast('File picker error: '+e, 'error'); return; }
+    if (!paths) return;
+    if (typeof paths === 'string') paths = [paths];
+    if (!paths.length) return;
+
+    showToast('Encrypting and uploading '+paths.length+' file'+(paths.length>1?'s':'')+'…', 'info');
+    var sent = 0;
+    for (var i = 0; i < paths.length; i++) {
+        try {
+            var meta = await invoke('upload_encrypted_attachment', {
+                applicationId: applicationId,
+                toUserId: counterpart,
+                filePath: paths[i],
+            });
+            var marker = '[skipi:file_attached] '+JSON.stringify({
+                id: meta.id,
+                filename: meta.original_filename,
+                mime: meta.mime_type,
+                size: meta.size_bytes,
+            });
+            await invoke('send_encrypted_message', {
+                applicationId: applicationId,
+                toUserId: counterpart,
+                plaintext: marker,
+            });
+            sent++;
+        } catch(e) {
+            showToast('Failed: '+(paths[i].split('/').pop())+' — '+e, 'error');
+        }
+    }
+    if (sent) showToast(sent+' file'+(sent>1?'s':'')+' sent — encrypted 🔒', 'success');
+    setTimeout(function(){ refreshVacancyThread(vacancyId, true); }, 0);
+}
+
 async function downloadAttachment(attachmentId, counterpartId, filename) {
     showToast('Downloading and decrypting…', 'info');
     try {
@@ -3535,13 +3908,611 @@ async function sendVacancyReply(vacancyId){
     }
 }
 
+// Slice F — pre-apply gap check. Mirrors the server's Slice B/D logic
+// locally so the seafarer sees blockers before sending. Position aliases
+// match the server's matrix composer (they live in serverCatalog).
+function _slfPosAliases() {
+    return {
+        'master':'master','captain':'master',
+        'chief officer':'chief_officer','chief mate':'chief_officer','c/o':'chief_officer',
+        'second officer':'second_officer','2nd officer':'second_officer','2/o':'second_officer',
+        'third officer':'third_officer','3rd officer':'third_officer','3/o':'third_officer',
+        'chief engineer':'chief_engineer','c/e':'chief_engineer',
+        'second engineer':'second_engineer','2nd engineer':'second_engineer','2/e':'second_engineer',
+        'third engineer':'third_engineer','3rd engineer':'third_engineer','3/e':'third_engineer',
+        'fourth engineer':'fourth_engineer','4th engineer':'fourth_engineer','4/e':'fourth_engineer',
+        'electro-technical officer (eto)':'eto','electro-technical officer':'eto','eto':'eto',
+        'bosun':'bosun','boatswain':'bosun',
+        'able seaman (ab)':'ab','ab':'ab','able seaman':'ab',
+        'ordinary seaman (os)':'os','os':'os','ordinary seaman':'os',
+        'motorman':'motorman','oiler':'motorman',
+        'wiper':'wiper','fitter':'fitter','pumpman':'pumpman','pump man':'pumpman',
+        'cook':'cook','chief cook':'cook',
+        'messman / steward':'messman','messman':'messman','steward':'messman',
+        'deck cadet':'cadet_deck','engine cadet':'cadet_engine',
+        'electro-technical rating':'ete','etr':'ete',
+    };
+}
+
+function _slfRequiredCertIds(rank, vesselType, matrix) {
+    if (!matrix) return [];
+    var posIdx = matrix.position_natural_level || {};
+    var aliases = _slfPosAliases();
+    var posKey = String(rank||'').trim().toLowerCase();
+    var posId = aliases[posKey] || posKey;
+    if (!posIdx[posId]) return [];
+    var vesselAliases = matrix.vessel_group_aliases || {};
+    var vesselKey = String(vesselType||'').trim().toLowerCase();
+    var vesselGroup = vesselAliases[vesselKey] || null;
+    var level = posIdx[posId] || 'support';
+    var out = [], seen = {};
+    function addMany(ids) {
+        if (!ids) return;
+        for (var i = 0; i < ids.length; i++) {
+            if (!seen[ids[i]]) { out.push(ids[i]); seen[ids[i]] = true; }
+        }
+    }
+    addMany(matrix.universal);
+    addMany((matrix.levels || {})[level]);
+    addMany((matrix.positions || {})[posId]);
+    if (vesselGroup) {
+        var vmap = (matrix.vessels || {})[vesselGroup] || {};
+        addMany(vmap[level]);
+    }
+    return out;
+}
+
+// Best status across multiple docs sharing a template_id — an old expired
+// duplicate must not mask a valid uploaded file. Priority: ok > expired
+// > no_file > missing. Returns { status, doc } where doc is the row that
+// produced the chosen rank (so expired/no_file CTAs can deep-link to the
+// right vault row). For 'missing', doc is null.
+function _slfBestStatus(docs, cid, today) {
+    var matches = docs.filter(function(d){ return d.template_id === cid; });
+    if (!matches.length) return { status: 'missing', doc: null };
+    var bestRank = -1, bestDoc = null;
+    for (var i = 0; i < matches.length; i++) {
+        var d = matches[i];
+        var rank;
+        if (!d.file_name) rank = 0;
+        else if (d.valid_to && d.valid_to < today) rank = 1;
+        else rank = 2;
+        if (rank > bestRank) { bestRank = rank; bestDoc = d; }
+    }
+    return { status: ['no_file','expired','ok'][bestRank], doc: bestDoc };
+}
+
+// Look up cert metadata (label, category, has_expiry, regulatory_basis) in
+// cached serverCatalog.certs. Falls back to template_id verbatim for label
+// and 'Catalog' / false defaults for the rest, so a row remains renderable
+// even on catalog skew.
+function _slfCertMeta(cid) {
+    var certs = (serverCatalog && serverCatalog.certs) || [];
+    for (var i = 0; i < certs.length; i++) {
+        if (certs[i].id === cid) return certs[i];
+    }
+    return null;
+}
+
+async function computeApplyGaps(vacancy) {
+    if (!vacancy) return null;
+    var matrix = serverCatalog && serverCatalog.requirements_matrix;
+    if (!matrix) return null; // fail-open: no assessment available
+    var requiredIds = _slfRequiredCertIds(vacancy.rank, vacancy.vessel_type, matrix);
+    if (!requiredIds.length) return null; // unknown/empty requirements → skip
+    var docs;
+    try { docs = await invoke('get_documents') || []; }
+    catch(e) { return null; } // fail-open on read error
+    var today = (new Date()).toISOString().slice(0, 10);
+    // Slice F2-lite — preserve matrix order so groups render in the same
+    // order requirements_for produces them (universal → level → position
+    // → vessel). Each entry carries the metadata the modal needs to render
+    // a label and the doc row for deep-linking.
+    var missing = [], expired = [], no_file = [];
+    for (var i = 0; i < requiredIds.length; i++) {
+        var cid = requiredIds[i];
+        var info = _slfBestStatus(docs, cid, today);
+        if (info.status === 'ok') continue;
+        var meta = _slfCertMeta(cid);
+        var entry = {
+            cert_id: cid,
+            label: (meta && meta.label) || cid,
+            category: meta && meta.category,
+            has_expiry: !!(meta && meta.has_expiry),
+            regulatory_basis: meta && meta.regulatory_basis,
+            known: !!meta, // false → catalog skew, render row but no Add CTA
+            doc: info.doc, // existing vault row for expired/no_file
+        };
+        if (info.status === 'missing')      missing.push(entry);
+        else if (info.status === 'expired') expired.push(entry);
+        else if (info.status === 'no_file') no_file.push(entry);
+    }
+    if (!missing.length && !expired.length && !no_file.length) return null;
+    return { missing: missing, expired: expired, no_file: no_file };
+}
+
+// CSS @keyframes injected once for the deep-link pulse highlight (Slice
+// F2-lite). Reused by every CTA that lands on Documents view.
+function _slfEnsurePulseCss() {
+    if (document.getElementById('slf-pulse-style')) return;
+    var s = document.createElement('style');
+    s.id = 'slf-pulse-style';
+    s.textContent = '@keyframes slfPulse{0%{box-shadow:0 0 0 0 rgba(255,176,0,0.6);}'
+                  + '100%{box-shadow:0 0 0 14px rgba(255,176,0,0);} }'
+                  + '.slf-pulse{animation:slfPulse 2s ease-out 1;border-radius:6px;}';
+    document.head.appendChild(s);
+}
+
+function _slfPulse(el) {
+    if (!el) return;
+    _slfEnsurePulseCss();
+    el.classList.remove('slf-pulse');
+    // Force reflow so the animation restarts if same element pulses twice.
+    void el.offsetWidth;
+    el.classList.add('slf-pulse');
+    try { el.scrollIntoView({behavior:'smooth', block:'center'}); } catch(e){}
+}
+
+// Slice F3-lite — recheck-after-repair plumbing. A repair triggered from
+// a vacancy's gap modal carries a pending-recheck context; once the
+// significant change for that exact docId lands (file attached, expiry
+// updated, catalog row created), a mini action banner offers to re-run
+// the gap check. Last-wins replace; TTL 5 minutes; targeted only — random
+// edits in Documents view never raise the prompt.
+window._slfPendingRecheck = window._slfPendingRecheck || null;
+var SLF_RECHECK_TTL_MS = 5 * 60 * 1000;
+
+function _slfSetPendingRecheck(p) {
+    if (!p || !p.vacancyId || !p.docId) return;
+    window._slfPendingRecheck = {
+        vacancyId:    p.vacancyId,
+        vacancyTitle: p.vacancyTitle || 'this vacancy',
+        replyTo:      p.replyTo || '',
+        certId:       p.certId || null,
+        docId:        p.docId,
+        kind:         p.kind || null,
+        ts:           Date.now(),
+    };
+}
+
+function _slfPendingRecheckForDoc(docId, kind) {
+    var p = window._slfPendingRecheck;
+    if (!p) return null;
+    if (Date.now() - p.ts > SLF_RECHECK_TTL_MS) {
+        window._slfPendingRecheck = null;
+        return null;
+    }
+    if (p.docId !== docId) return null;
+    if (kind && p.kind !== kind) return null;
+    return p;
+}
+
+function _slfClearPendingRecheck() {
+    window._slfPendingRecheck = null;
+}
+
+// Mini action banner — bottom-right, 5-min TTL.
+// Slice F4-lite — copy + action set differ by kind:
+//   missing      → "Document slot added. Upload a file…"  [Upload now]   [Apply anyway] [Dismiss]
+//   no_file      → "File attached. Apply to re-check…"     [Apply now]   [Dismiss]
+//   expired      → "Expiry updated. Apply to re-check…"    [Apply now]   [Dismiss]
+//   file_attached (post-promotion of missing) → same as no_file copy.
+//   anything else → generic fallback.
+function _slfShowRecheckBanner(p) {
+    if (!p) return;
+    var existing = document.getElementById('slf-recheck-banner');
+    if (existing) existing.remove();
+    var esc = function(s){ return String(s||'').replace(/[&<>"']/g, function(c){
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });};
+    var vacancyLabel = esc(p.vacancyTitle || 'this vacancy');
+    var msg, primaryLabel, primaryAction, secondary; // secondary = optional 'Apply anyway' button
+    if (p.kind === 'missing') {
+        msg = 'Document slot added. Upload a file, then apply to re-check ' + vacancyLabel + '.';
+        primaryLabel  = 'Upload now';
+        primaryAction = 'upload';
+        secondary     = { label: 'Apply anyway', action: 'apply' };
+    } else if (p.kind === 'expired') {
+        msg = 'Expiry updated. Apply to re-check ' + vacancyLabel + '.';
+        primaryLabel  = 'Apply now';
+        primaryAction = 'apply';
+    } else if (p.kind === 'no_file' || p.kind === 'file_attached') {
+        msg = 'File attached. Apply to re-check ' + vacancyLabel + '.';
+        primaryLabel  = 'Apply now';
+        primaryAction = 'apply';
+    } else {
+        msg = 'Document updated. Apply to re-check ' + vacancyLabel + '.';
+        primaryLabel  = 'Apply now';
+        primaryAction = 'apply';
+    }
+
+    var btnSecondary = secondary
+        ? '<button id="slf-recheck-secondary" style="padding:5px 10px;background:transparent;color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:12px;cursor:pointer;">'+esc(secondary.label)+'</button>'
+        : '';
+
+    var html = '<div id="slf-recheck-banner" role="status" style="position:fixed;right:20px;bottom:20px;z-index:9998;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:14px 16px;max-width:380px;box-shadow:0 8px 24px rgba(0,0,0,0.35);">'
+             +   '<div style="font-size:13px;margin-bottom:10px;">'+msg+'</div>'
+             +   '<div style="display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;">'
+             +     '<button id="slf-recheck-dismiss" style="padding:5px 10px;background:transparent;color:var(--text2);border:1px solid var(--border);border-radius:4px;font-size:12px;cursor:pointer;">Dismiss</button>'
+             +     btnSecondary
+             +     '<button id="slf-recheck-primary" style="padding:5px 12px;background:var(--accent);color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer;font-weight:600;">'+esc(primaryLabel)+'</button>'
+             +   '</div>'
+             + '</div>';
+    var holder = document.createElement('div');
+    holder.innerHTML = html;
+    document.body.appendChild(holder.firstChild);
+
+    function close() {
+        var el = document.getElementById('slf-recheck-banner');
+        if (el) el.remove();
+    }
+
+    function onAction(action) {
+        if (action === 'apply') {
+            close();
+            _slfRecheckApplyNow(p);
+            _slfClearPendingRecheck();
+        } else if (action === 'upload') {
+            // Don't clear pending — attachFFromPath promotes missing → file_attached
+            // and fires the next banner on success.
+            close();
+            _slfUploadNow(p);
+        }
+    }
+
+    var dismiss = document.getElementById('slf-recheck-dismiss');
+    var primary = document.getElementById('slf-recheck-primary');
+    var secEl   = document.getElementById('slf-recheck-secondary');
+    if (dismiss) dismiss.addEventListener('click', function(){
+        close();
+        _slfClearPendingRecheck();
+    });
+    if (primary) primary.addEventListener('click', function(){ onAction(primaryAction); });
+    if (secEl)   secEl.addEventListener('click',   function(){ onAction(secondary.action); });
+
+    // Auto-clear pending when TTL elapses, even if the banner stays open.
+    setTimeout(function(){
+        var p2 = window._slfPendingRecheck;
+        if (p2 && Date.now() - p2.ts >= SLF_RECHECK_TTL_MS) {
+            close();
+            _slfClearPendingRecheck();
+        }
+    }, SLF_RECHECK_TTL_MS + 100);
+}
+
+// Upload now — open the file picker for the pending doc. Pending is
+// preserved (kind stays 'missing') so attachFFromPath can promote it on
+// success without losing the vacancy context.
+function _slfUploadNow(p) {
+    if (!p || !p.docId) return;
+    setTimeout(function(){
+        try { showView('files'); } catch(e){}
+        try { selDoc(p.docId); } catch(e){}
+        // Open the OS file picker. If the user cancels, the pending stays
+        // in place — they can still navigate manually or apply anyway.
+        setTimeout(function(){
+            try { attachF(p.docId); } catch(e){ showToast('Could not open file picker: '+e, 'error'); }
+        }, 80);
+    }, 0);
+}
+
+async function _slfRecheckApplyNow(p) {
+    if (!p || !p.vacancyId) return;
+    try { showView('jobs'); } catch(e){}
+    // Make sure the feed is loaded before we hunt for the vacancy.
+    var items = (typeof lastJobsItems !== 'undefined' && lastJobsItems) || [];
+    if (!items.length) {
+        try { await loadJobsFeed(); } catch(e){}
+        items = (typeof lastJobsItems !== 'undefined' && lastJobsItems) || [];
+    }
+    var v = items.find(function(x){ return x.id === p.vacancyId; });
+    if (!v) {
+        // One more refresh in case the cache was stale.
+        try { await loadJobsFeed(); } catch(e){}
+        items = (typeof lastJobsItems !== 'undefined' && lastJobsItems) || [];
+        v = items.find(function(x){ return x.id === p.vacancyId; });
+    }
+    if (!v) {
+        showToast('Vacancy no longer available', 'warn');
+        return;
+    }
+    // Locally hidden? Unhide just this one so the card renders.
+    try {
+        var hidden = jobsLoadHidden();
+        if (hidden && hidden[v.id]) {
+            delete hidden[v.id];
+            jobsSaveHidden(hidden);
+            try { renderJobsFeed(lastJobsItems || []); } catch(e){}
+        }
+    } catch(e){}
+    // Drop the in-flight guard so jobsApply runs the gap check again.
+    try {
+        if (window._appliedVacancyIds && window._appliedVacancyIds[v.id] === 'in-flight') {
+            delete window._appliedVacancyIds[v.id];
+        }
+    } catch(e){}
+    // Use jobsApply (not _jobsApplyProceed) so the new gap check runs.
+    var title = (typeof p.vacancyTitle === 'string' && p.vacancyTitle) ? p.vacancyTitle : (v.rank || 'vacancy');
+    var replyTo = p.replyTo || v.reply_to || '';
+    try { jobsApply(v.id, replyTo, title); } catch(e){ showToast('Apply failed: '+e, 'error'); }
+}
+
+// Deep-link CTAs from the gap modal — each schedules navigation +
+// highlight on the next tick so the modal is fully removed first.
+// `vacancyCtx` carries {vacancyId, vacancyTitle, replyTo} so the recheck
+// banner (Slice F3-lite) can target the correct vacancy on success.
+function _slfDeepLinkExpired(docId, certId, vacancyCtx) {
+    if (vacancyCtx && vacancyCtx.vacancyId && docId) {
+        _slfSetPendingRecheck({
+            vacancyId:    vacancyCtx.vacancyId,
+            vacancyTitle: vacancyCtx.vacancyTitle,
+            replyTo:      vacancyCtx.replyTo,
+            certId:       certId,
+            docId:        docId,
+            kind:         'expired',
+        });
+    }
+    setTimeout(function(){
+        try { showView('files'); } catch(e){}
+        try { selDoc(docId); } catch(e){}
+        // Allow the doc detail panel to render before we hunt for the
+        // valid_to input. The DOM in this codebase rebuilds via innerHTML.
+        setTimeout(function(){
+            var el = document.getElementById('vt') || document.querySelector('[id="vt"]');
+            if (el) { try { el.focus(); } catch(e){} _slfPulse(el); }
+        }, 80);
+    }, 0);
+}
+
+function _slfDeepLinkNoFile(docId, certId, vacancyCtx) {
+    if (vacancyCtx && vacancyCtx.vacancyId && docId) {
+        _slfSetPendingRecheck({
+            vacancyId:    vacancyCtx.vacancyId,
+            vacancyTitle: vacancyCtx.vacancyTitle,
+            replyTo:      vacancyCtx.replyTo,
+            certId:       certId,
+            docId:        docId,
+            kind:         'no_file',
+        });
+    }
+    setTimeout(function(){
+        try { showView('files'); } catch(e){}
+        try { selDoc(docId); } catch(e){}
+        setTimeout(function(){
+            var el = document.getElementById('file-drop-zone');
+            if (el) _slfPulse(el);
+        }, 80);
+    }, 0);
+}
+
+async function _slfDeepLinkMissing(entry, vacancyCtx) {
+    // Server-known cert → create a template-backed row, then deep-link to it.
+    if (!entry || !entry.known) {
+        // Catalog skew — fallback to plain Documents view scroll.
+        setTimeout(function(){ try { showView('files'); } catch(e){} }, 0);
+        return;
+    }
+    try {
+        var rec = await invoke('add_catalog_doc', {
+            templateId:       entry.cert_id,
+            title:            entry.label,
+            category:         entry.category || null,
+            hasExpiry:        !!entry.has_expiry,
+            regulatoryBasis:  entry.regulatory_basis || null,
+        });
+        // Refresh the in-memory document list so selDoc finds the new row.
+        try { allDocs = await invoke('get_documents') || allDocs; } catch(e){}
+        try { showView('files'); } catch(e){}
+        try { selDoc(rec.id); } catch(e){}
+        setTimeout(function(){
+            var el = document.getElementById('file-drop-zone');
+            if (el) _slfPulse(el);
+        }, 80);
+        // The catalog row exists now — show the recheck banner immediately.
+        // Next gap modal will honestly say "no_file" until a file is uploaded;
+        // copy reflects that ("Document added", not "blocker cleared").
+        if (vacancyCtx && vacancyCtx.vacancyId) {
+            _slfSetPendingRecheck({
+                vacancyId:    vacancyCtx.vacancyId,
+                vacancyTitle: vacancyCtx.vacancyTitle,
+                replyTo:      vacancyCtx.replyTo,
+                certId:       entry.cert_id,
+                docId:        rec.id,
+                kind:         'missing',
+            });
+            _slfShowRecheckBanner(window._slfPendingRecheck);
+        }
+    } catch (e) {
+        showToast('Could not add document: '+e, 'error');
+        try { showView('files'); } catch(e2){}
+    }
+}
+
+function showApplyGapModal(vacancyId, replyTo, title, gaps, onClose) {
+    var existing = document.getElementById('apply-gap-modal');
+    if (existing) existing.remove();
+    var esc = function(s){ return String(s||'').replace(/[&<>"']/g, function(c){
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });};
+
+    function close(reason) {
+        var el = document.getElementById('apply-gap-modal');
+        if (el) el.remove();
+        if (typeof onClose === 'function') {
+            try { onClose(reason); } catch(e){}
+        }
+    }
+
+    // Per-cert row builder. Each row gets a unique id so we can wire its
+    // CTA after the HTML lands in the DOM.
+    var rowSeq = 0;
+    var ctaWiring = []; // [{id, kind, payload}]
+    function rowHtml(entry, kind) {
+        var rowId = 'agm-row-'+(rowSeq++);
+        var meta = '';
+        if (kind === 'expired' && entry.doc && entry.doc.valid_to) {
+            meta = '<div style="font-size:11px;color:var(--text2);">last valid '+esc(entry.doc.valid_to)+'</div>';
+        } else if (entry.regulatory_basis) {
+            meta = '<div style="font-size:11px;color:var(--text2);">'+esc(entry.regulatory_basis)+'</div>';
+        }
+        var ctaLabel, ctaDisabled = false;
+        if (kind === 'missing') {
+            ctaLabel = entry.known ? 'Add document →' : 'Review documents →';
+        } else if (kind === 'expired') {
+            ctaLabel = 'Update expiry →';
+            if (!entry.doc) ctaDisabled = true;
+        } else {
+            ctaLabel = 'Upload file →';
+            if (!entry.doc) ctaDisabled = true;
+        }
+        ctaWiring.push({ id: rowId, kind: kind, entry: entry });
+        var btnStyle = ctaDisabled
+            ? 'padding:5px 10px;background:var(--surface);color:var(--text2);border:1px solid var(--border);border-radius:4px;font-size:11px;cursor:not-allowed;'
+            : 'padding:5px 10px;background:transparent;color:var(--accent);border:1px solid var(--accent);border-radius:4px;font-size:11px;cursor:pointer;font-weight:600;';
+        return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">'
+             +   '<div style="flex:1;min-width:0;">'
+             +     '<div style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(entry.label)+'</div>'
+             +     meta
+             +   '</div>'
+             +   '<button id="'+rowId+'" '+(ctaDisabled?'disabled':'')+' style="'+btnStyle+'">'+ctaLabel+'</button>'
+             + '</div>';
+    }
+
+    function sectionHtml(headLabel, count, color, list, kind) {
+        if (!list || !list.length) return '';
+        var head = '<div style="font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:0.4px;color:'+color+';margin:14px 0 4px;">'
+                 +   esc(headLabel)+' ('+count+')'
+                 + '</div>';
+        var body = list.map(function(e){ return rowHtml(e, kind); }).join('');
+        return head + body;
+    }
+
+    var sections = ''
+        + sectionHtml('Missing', gaps.missing.length, 'var(--red)', gaps.missing, 'missing')
+        + sectionHtml('Expired', gaps.expired.length, 'var(--red)', gaps.expired, 'expired')
+        + sectionHtml('Without uploaded file', gaps.no_file.length, 'var(--red)', gaps.no_file, 'no_file');
+
+    var html = '<div id="apply-gap-modal" style="position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;padding:20px;">'
+             +   '<div role="dialog" aria-labelledby="agm-title" style="background:var(--panel);border:1px solid var(--border);border-radius:8px;max-width:560px;width:100%;max-height:70vh;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,0.4);">'
+             +     '<div style="padding:22px 24px 14px;">'
+             +       '<div id="agm-title" style="font-size:18px;font-weight:600;margin-bottom:6px;">Before you apply</div>'
+             +       '<div style="font-size:13px;color:var(--text2);">'+esc(title || 'This vacancy')+' lists requirements your documents do not currently meet. Fix what you can — or apply now if you prefer.</div>'
+             +     '</div>'
+             +     '<div style="flex:1;min-height:0;overflow-y:auto;padding:0 24px 8px;">'+sections+'</div>'
+             +     '<div style="display:flex;flex-wrap:wrap;justify-content:flex-end;gap:10px;padding:14px 24px;border-top:1px solid var(--border);background:var(--panel);">'
+             +       '<button id="agm-review" style="padding:8px 16px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:13px;cursor:pointer;font-weight:600;">Review all documents</button>'
+             +       '<button id="agm-apply" style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;font-size:13px;cursor:pointer;font-weight:600;">Apply anyway</button>'
+             +     '</div>'
+             +   '</div>'
+             + '</div>';
+    var holder = document.createElement('div');
+    holder.innerHTML = html;
+    document.body.appendChild(holder.firstChild);
+
+    // Wire per-row CTAs.
+    var vacancyCtx = { vacancyId: vacancyId, vacancyTitle: title, replyTo: replyTo };
+    ctaWiring.forEach(function(w){
+        var btn = document.getElementById(w.id);
+        if (!btn || btn.disabled) return;
+        btn.addEventListener('click', function(){
+            close('row-'+w.kind);
+            if (w.kind === 'missing') {
+                _slfDeepLinkMissing(w.entry, vacancyCtx);
+            } else if (w.kind === 'expired') {
+                _slfDeepLinkExpired(w.entry.doc && w.entry.doc.id, w.entry.cert_id, vacancyCtx);
+            } else if (w.kind === 'no_file') {
+                _slfDeepLinkNoFile(w.entry.doc && w.entry.doc.id, w.entry.cert_id, vacancyCtx);
+            }
+        });
+    });
+
+    var review = document.getElementById('agm-review');
+    var apply  = document.getElementById('agm-apply');
+    if (review) review.addEventListener('click', function(){
+        close('review');
+        try { showView('files'); } catch(e){}
+    });
+    if (apply) apply.addEventListener('click', function(){
+        close('apply');
+        setTimeout(function(){ _jobsApplyProceed(vacancyId, replyTo, title); }, 0);
+    });
+    var modal = document.getElementById('apply-gap-modal');
+    if (modal) modal.addEventListener('click', function(e){
+        if (e.target === modal) close('cancel');
+    });
+}
+
 async function jobsApply(vacancyId, replyTo, title){
+    // Guard against double-click — Apply is non-idempotent (creates a new
+    // Application server-side every time). Bail out on subsequent attempts.
+    // Note: in-flight flag and job_apply_click are deferred until AFTER the
+    // pre-apply gap check (Slice F). Otherwise pressing Review documents
+    // would leave the vacancy stuck looking "in-flight" and inflate
+    // apply-click analytics.
+    window._appliedVacancyIds = window._appliedVacancyIds || {};
+    if (window._appliedVacancyIds[vacancyId]) return;
+
+    // Slice F — local pre-apply gap check. Reads vacancy.rank/vessel_type,
+    // looks up requirements_matrix in cached serverCatalog, compares against
+    // the local document vault. Any failure (no matrix, no requirements,
+    // can't read docs) → fail-open and proceed. Modal only when there are
+    // genuine blockers (missing/expired/no_file).
+    try {
+        var v0 = (lastJobsItems || []).find(function(x){ return x.id === vacancyId; }) || {};
+        var gaps = await computeApplyGaps(v0);
+        if (gaps) {
+            // Temporarily soft-lock the button so the user can't double-press
+            // the Apply button while the modal is open.
+            var btn0 = document.getElementById('apply-btn-'+vacancyId);
+            if (btn0) btn0.disabled = true;
+            showApplyGapModal(vacancyId, replyTo, title, gaps, function() {
+                if (btn0) btn0.disabled = false;
+            });
+            return;
+        }
+    } catch(e) { /* fail-open */ }
+
+    return _jobsApplyProceed(vacancyId, replyTo, title);
+}
+
+async function _jobsApplyProceed(vacancyId, replyTo, title){
+    window._appliedVacancyIds = window._appliedVacancyIds || {};
+    if (window._appliedVacancyIds[vacancyId]) return;
+    window._appliedVacancyIds[vacancyId] = 'in-flight';
+    var applyBtn = document.getElementById('apply-btn-'+vacancyId);
+    if (applyBtn) {
+        applyBtn.disabled = true;
+        applyBtn.textContent = 'Sending…';
+        applyBtn.style.cursor = 'not-allowed';
+        applyBtn.style.background = 'var(--surface)';
+        applyBtn.style.color = 'var(--text2)';
+        applyBtn.style.border = '1px solid var(--border)';
+    }
+
     try { await invoke('job_apply_click', { vacancyId: vacancyId }); } catch(e){}
 
     // Pull seafarer profile + work history → structured subject + body.
     var sp = {};
     try { sp = await invoke('get_seafarer_personal'); } catch(e) {}
     var v = (lastJobsItems || []).find(function(x){return x.id===vacancyId;}) || {};
+    // Cached items can lag behind reality — the crewing may have registered
+    // its E2E pubkey AFTER seafarer cached the vacancy. Refresh once before
+    // deciding E2E vs email so we never fall back to email when E2E is now
+    // available. Sync, single round-trip.
+    if (!v.crewing_pubkey || !v.crewing_user_id) {
+        try {
+            var fresh = await invoke('fetch_jobs', { rank: null, vesselType: null });
+            var freshV = (fresh||[]).find(function(x){return x.id===vacancyId;});
+            if (freshV && freshV.crewing_pubkey && freshV.crewing_user_id) {
+                v = Object.assign({}, v, freshV);
+                // Patch the in-memory cache so subsequent applies see the
+                // pubkey too without another network round-trip.
+                lastJobsItems = (lastJobsItems||[]).map(function(x){
+                    return x.id === vacancyId ? Object.assign({}, x, freshV) : x;
+                });
+            }
+        } catch(e) { /* fall through to whatever cache had */ }
+    }
 
     // Aggregate for both E2E summary and email body.
     var totalMo_ = 0, rankMo_ = 0;
@@ -3566,6 +4537,28 @@ async function jobsApply(vacancyId, replyTo, title){
             // Make sure our own pubkey is published.
             try { await invoke('register_my_pubkey'); } catch(e){}
             var initials_ = ((sp.first_name||'').charAt(0)+'. '+(sp.surname||'')).trim() || 'Skipi user';
+            // Slice C — structured cert list. Filter:
+            //   * only template-backed docs (template_id != null) — custom
+            //     entries don't map to canonical certs and would just noise
+            //     the crewing's compliance view.
+            //   * only docs with a file OR an expiry date — empty entries
+            //     have no signal.
+            //   * doc_number is included here for forward-compat; the
+            //     server strips it before persisting (privacy R5).
+            var certsSummary = [];
+            try {
+                var seafarerDocs = await invoke('get_documents');
+                certsSummary = (seafarerDocs || [])
+                    .filter(function(d){
+                        return d.template_id && (d.file_name || d.valid_to);
+                    })
+                    .map(function(d){ return {
+                        template_id: d.template_id,
+                        valid_to: d.valid_to || null,
+                        has_file: !!d.file_name,
+                    }; });
+            } catch(e){ /* leave empty — apply still goes through */ }
+
             var summary = {
                 redacted_initials: initials_,
                 rank: sp.rank,
@@ -3575,6 +4568,7 @@ async function jobsApply(vacancyId, replyTo, title){
                 available_from: sp.available_from,
                 min_salary: sp.min_salary,
                 min_salary_currency: sp.min_salary_currency,
+                certs_summary: certsSummary.length ? certsSummary : null,
             };
             var coverLines = [
                 'Hi,',
@@ -3596,14 +4590,51 @@ async function jobsApply(vacancyId, replyTo, title){
                 'Best regards,',
                 initials_,
             ].filter(Boolean).join('\n');
-            await invoke('apply_via_e2e', {
+            var ack = await invoke('apply_via_e2e', {
                 vacancyId: vacancyId,
                 crewingUserId: v.crewing_user_id,
                 crewingPubkeyB64: v.crewing_pubkey,
                 coverMessage: coverLines,
                 summaryJson: summary,
             });
-            showToast('Application sent — encrypted end-to-end 🔒', 'success');
+            showToast('Application sent 🔒  attaching CV…', 'info');
+
+            // Attach a redacted CV PDF as an encrypted file in the same
+            // thread so the crewing can review the candidate immediately,
+            // not just the summary text. Best-effort: failing this leaves
+            // the application landed but without the file tile.
+            try {
+                var applicationId = ack && ack.application_id;
+                if (!applicationId) throw new Error('no application_id from server');
+                var ts = (new Date()).toISOString().slice(0,10);
+                var rankSafe = (sp.rank || v.rank || 'CV').replace(/[^A-Za-z0-9_-]/g,'_');
+                var dl = await invoke('get_downloads_dir');
+                var fname = 'Skipi-redacted-CV_'+rankSafe+'_'+ts+'.pdf';
+                var attachPath = (dl.endsWith('/')?dl:dl+'/') + fname;
+                await invoke('export_redacted_cv_pdf', { outputPath: attachPath });
+                var meta = await invoke('upload_encrypted_attachment', {
+                    applicationId: applicationId,
+                    toUserId: v.crewing_user_id,
+                    filePath: attachPath,
+                });
+                var marker = '[skipi:file_attached] '+JSON.stringify({
+                    id: meta.id,
+                    filename: meta.original_filename,
+                    mime: meta.mime_type,
+                    size: meta.size_bytes,
+                });
+                await invoke('send_encrypted_message', {
+                    applicationId: applicationId,
+                    toUserId: v.crewing_user_id,
+                    plaintext: marker,
+                });
+                showToast('Application + redacted CV sent — encrypted 🔒', 'success');
+            } catch (cvErr) {
+                showToast('Application sent. CV attach failed: '+cvErr, 'warn');
+            }
+            // Mark as applied + repaint feed so the button stays "Applied ✓".
+            window._appliedVacancyIds[vacancyId] = 'sent';
+            try { renderJobsFeed(lastJobsItems || []); } catch(e){}
             return;
         } catch (e) {
             showToast('E2E apply failed: '+e+'. Falling back to email.', 'warn');
@@ -3687,8 +4718,20 @@ async function jobsApply(vacancyId, replyTo, title){
         } else {
             showToast('Email draft created in ~/Downloads/Skipi/Outbox/', 'success');
         }
+        // Even for the email path we treat it as "applied" — the user has
+        // committed to sending. Disabling Apply prevents accidentally
+        // generating a second .eml via double-click.
+        window._appliedVacancyIds = window._appliedVacancyIds || {};
+        window._appliedVacancyIds[vacancyId] = 'email-sent';
+        try { renderJobsFeed(lastJobsItems || []); } catch(e){}
     } catch (e) {
         showToast('Could not create email draft: '+e, 'error');
+        // Roll back the in-flight flag so user can retry — neither E2E nor
+        // email path completed.
+        if (window._appliedVacancyIds && window._appliedVacancyIds[vacancyId] === 'in-flight') {
+            delete window._appliedVacancyIds[vacancyId];
+            try { renderJobsFeed(lastJobsItems || []); } catch(e){}
+        }
     }
 }
 

@@ -254,3 +254,27 @@ pub fn get_vault_path(state: State<AppState>) -> Result<String, String> {
         .map(|p| p.to_string_lossy().to_string())
         .ok_or("No vault open".to_string())
 }
+
+#[tauri::command]
+pub fn get_recent_vaults() -> Vec<String> {
+    crate::load_recent_vaults()
+        .into_iter()
+        .filter(|p| std::path::Path::new(p).is_dir())
+        .collect()
+}
+
+#[tauri::command]
+pub fn forget_recent_vault(path: String) -> Result<(), String> {
+    use std::fs;
+    let cfg = crate::config_path();
+    let mut data: serde_json::Value = match fs::read_to_string(&cfg).ok().and_then(|t| serde_json::from_str(&t).ok()) {
+        Some(v) => v,
+        None => serde_json::json!({}),
+    };
+    let recent = crate::load_recent_vaults();
+    let kept: Vec<String> = recent.into_iter().filter(|p| p != &path).collect();
+    data["recent_vaults"] = serde_json::Value::Array(
+        kept.iter().map(|s| serde_json::Value::String(s.clone())).collect()
+    );
+    fs::write(&cfg, data.to_string()).map_err(|e| e.to_string())
+}

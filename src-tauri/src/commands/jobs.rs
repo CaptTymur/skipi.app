@@ -1,4 +1,4 @@
-//! Public jobs board client — polls https://api.skipi.app:8443/api/vacancies
+//! Public jobs board client — polls https://api.skipi.app/api/vacancies
 //! for vacancies that match the seafarer's profile (rank, vessel type).
 //!
 //! Privacy: the desktop app sends only the broad filter parameters in the
@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-const PROD_API: &str = "https://api.skipi.app:8443";
+const PROD_API: &str = "https://api.skipi.app";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublicVacancy {
@@ -50,6 +50,16 @@ pub struct PublicVacancy {
     #[serde(default)]
     pub expires_at: Option<String>,
     pub status: String,
+    #[serde(default)]
+    pub vessel_imo: Option<i64>,
+    /// Crewing's X25519 pubkey for E2E messaging. NULL means crewing
+    /// hasn't installed Skipi Crewing yet → seafarer apply falls back
+    /// to email/.eml.
+    #[serde(default)]
+    pub crewing_pubkey: Option<String>,
+    /// Crewing's E2E user_id (16-char base32). Paired with crewing_pubkey.
+    #[serde(default)]
+    pub crewing_user_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

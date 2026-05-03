@@ -27,7 +27,13 @@ pub(crate) fn config_path() -> PathBuf {
 
 pub(crate) fn save_last_vault(path: &str) {
     let cfg = config_path();
-    let data = serde_json::json!({ "last_vault": path });
+    // Preserve existing recent_vaults list and prepend (most-recent-first).
+    // Capped at 10 entries; duplicates removed.
+    let mut recent: Vec<String> = load_recent_vaults();
+    recent.retain(|p| p != path);
+    recent.insert(0, path.to_string());
+    recent.truncate(10);
+    let data = serde_json::json!({ "last_vault": path, "recent_vaults": recent });
     let _ = fs::write(cfg, data.to_string());
 }
 
@@ -36,6 +42,16 @@ pub(crate) fn load_last_vault() -> Option<String> {
     let text = fs::read_to_string(cfg).ok()?;
     let val: serde_json::Value = serde_json::from_str(&text).ok()?;
     val["last_vault"].as_str().map(|s| s.to_string())
+}
+
+pub(crate) fn load_recent_vaults() -> Vec<String> {
+    let cfg = config_path();
+    let Ok(text) = fs::read_to_string(cfg) else { return vec![]; };
+    let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) else { return vec![]; };
+    val["recent_vaults"]
+        .as_array()
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        .unwrap_or_default()
 }
 
 /// Wipe all user-facing content from an opened vault DB, preserving the
@@ -105,7 +121,10 @@ pub fn run() {
             documents::update_doc_field,
             documents::attach_file,
             documents::read_file_base64,
+            documents::get_document_file_path,
+            documents::export_documents_bundle,
             documents::add_custom_doc,
+            documents::add_catalog_doc,
             documents::delete_doc,
             // AI recognition
             ai::ai_recognize,
@@ -141,6 +160,8 @@ pub fn run() {
             profile::create_vessel_profile_vault,
             profile::create_demo_vault,
             profile::create_demo_vault_auto,
+            vault::get_recent_vaults,
+            vault::forget_recent_vault,
             profile::get_matchable_profile,
             profile::get_seafarer_personal,
             profile::set_seafarer_personal,
