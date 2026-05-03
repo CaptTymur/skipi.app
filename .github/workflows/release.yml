@@ -1,16 +1,20 @@
-# Skipi — Cross-platform release build
+# Skipi — Release workflow
 #
-# Trigger: push a git tag like `v0.1.0` or `v0.2.0-beta.1`
-#   git tag v0.1.0
-#   git push origin v0.1.0
+# Trigger: push a git tag like `v0.4.103`
+#   git tag v0.4.103
+#   git push origin v0.4.103
 #
-# What happens:
-#   1. Builds Skipi on macOS (arm64 + x64), Windows (x64), Linux (x64)
-#   2. Creates a GitHub Release with all installers attached
-#   3. Testers go to https://github.com/<owner>/<repo>/releases and download
-#
-# Cost: $0 (GitHub gives 2,000 free CI minutes/month for private repos,
-#        unlimited for public repos).
+# Slice G1, Rail 1 (2026-05-03):
+#   * Linux release MUST succeed even when Windows signing is broken or
+#     unconfigured. The matrix-style `needs: build` previously coupled
+#     publish-latest-json to a successful Windows build — when Azure
+#     Trusted Signing secrets expired/were missing, the entire release
+#     pipeline collapsed and Linux beta users couldn't auto-update.
+#   * Windows is now an independent best-effort job. Its outcome is
+#     consulted by publish-latest-json so a Windows manifest entry is
+#     included only when it actually built+signed.
+#   * A post-publish validation job (`verify-release`) downloads the
+#     just-published latest.json and asserts version, URLs, sigs.
 
 name: Release
 
@@ -22,19 +26,21 @@ on:
 permissions:
   contents: write
 
-# One release at a time
+# One release at a time.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # ----------------------------------------------------------------------
   # Pre-flight: parse the inline JS in dist/index.html and fail fast on
   # syntax errors. A single missing ')' inside an event handler or helper
   # function has shipped multiple broken releases before this gate existed
-  # (v0.4.36 / .37 / .38 all crashed on welcome screen due to one unclosed
-  # `order.forEach(function(cat){...})` — invisible until the app actually
-  # loads in WebView2/WebKitGTK). This step runs in ~10s and blocks the
-  # whole release pipeline if the bundled JS does not parse.
+  # (v0.4.36 / .37 / .38 all crashed on the welcome screen due to one
+  # unclosed `order.forEach(function(cat){...})` — invisible until the app
+  # actually loaded in WebView2/WebKitGTK). Runs in ~10s and blocks the
+  # whole pipeline if the bundled JS does not parse.
+  # ----------------------------------------------------------------------
   syntax-check:
     name: JS syntax check
     runs-on: ubuntu-22.04
@@ -60,35 +66,58 @@ jobs:
             }
           '
 
-  build:
-    needs: syntax-check
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Public repo → Actions minutes are unlimited on standard runners.
-          # Build only Windows + Linux for now. macOS is intentionally paused
-          # until the signing/notarization pipeline is worth the CI cost.
-          - platform: ubuntu-22.04
-            rust_targets: x86_64-unknown-linux-gnu
-            tauri_args: ""
-            name: Linux
-
-          - platform: windows-latest
-            rust_targets: x86_64-pc-windows-msvc
-            tauri_args: ""
-            name: Windows
-
-    runs-on: ${{ matrix.platform }}
-    name: Build (${{ matrix.name }})
-
+  # ----------------------------------------------------------------------
+  # Pre-flight: tagged commit MUST have its version files bumped. v0.4.96
+  # was tagged on a docs-only commit while Cargo.toml/tauri.conf were
+  # still at 0.4.78 — the published manifest therefore advertised 0.4.78
+  # under the v0.4.96 tag and broke auto-update. This guard rejects any
+  # tag whose name does not match the actual built version.
+  # ----------------------------------------------------------------------
+  version-check:
+    name: Version match (tag vs files)
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Linux: install system dependencies for Tauri + WebKitGTK
+      - name: Compare tag against version files
+        run: |
+          set -eu
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          CARGO_VERSION="$(grep -m1 -E '^version = "' src-tauri/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          CONF_VERSION="$(grep -m1 -E '"version"' src-tauri/tauri.conf.json | sed -E 's/.*"version"[^"]*"([^"]+)".*/\1/')"
+          HTML_VERSION="$(grep -m1 -E "var APP_VERSION='" dist/index.html | sed -E "s/.*APP_VERSION='([^']+)'.*/\1/")"
+          echo "tag:           $TAG_VERSION"
+          echo "Cargo.toml:    $CARGO_VERSION"
+          echo "tauri.conf:    $CONF_VERSION"
+          echo "APP_VERSION:   $HTML_VERSION"
+          fail=0
+          if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
+            echo "::error::tag $TAG_VERSION does not match Cargo.toml $CARGO_VERSION"
+            fail=1
+          fi
+          if [ "$TAG_VERSION" != "$CONF_VERSION" ]; then
+            echo "::error::tag $TAG_VERSION does not match tauri.conf.json $CONF_VERSION"
+            fail=1
+          fi
+          if [ "$TAG_VERSION" != "$HTML_VERSION" ]; then
+            echo "::error::tag $TAG_VERSION does not match dist/index.html APP_VERSION $HTML_VERSION"
+            fail=1
+          fi
+          exit "$fail"
+
+  # ----------------------------------------------------------------------
+  # Linux build — load-bearing for the Linux beta auto-updater audience.
+  # ----------------------------------------------------------------------
+  build-linux:
+    name: Build (Linux)
+    needs: [syntax-check, version-check]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Install Linux dependencies
-        if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -101,13 +130,11 @@ jobs:
             libsoup-3.0-dev \
             libjavascriptcoregtk-4.1-dev
 
-      # Install Rust with required targets
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.rust_targets }}
+          targets: x86_64-unknown-linux-gnu
 
-      # Cache Cargo registry only (not target — stale artifacts cause build failures)
       - name: Cache Cargo
         uses: actions/cache@v4
         with:
@@ -118,10 +145,59 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-registry-
 
-      # Windows releases must be signed. Fail before the expensive build if
-      # Azure Trusted Signing is not configured in repository secrets.
+      - name: Build Skipi (Linux)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Skipi ${{ github.ref_name }}"
+          releaseBody: |
+            ## Skipi ${{ github.ref_name }}
+
+            Maritime Document Management for Seafarers.
+
+            ### Download
+
+            | Platform | File | Signed? |
+            |----------|------|---------|
+            | Linux (Debian/Ubuntu) | `.deb` | minisign (updater) |
+            | Linux (universal) | `.AppImage` | minisign (updater) |
+            | Linux (RPM-based) | `.rpm` | minisign (updater) |
+            | Windows | `.msi` / `.exe` | Authenticode — only when build succeeded |
+
+            ### What's new
+
+            See [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
+
+            ---
+
+            > **Beta build.** This is a pre-release version for invited testers.
+            > All data stays on your computer.
+            >
+            > **Auto-update:** Existing Skipi installations will be notified about this update automatically.
+          releaseDraft: false
+          prerelease: false
+
+  # ----------------------------------------------------------------------
+  # Windows build — best-effort. Failure here MUST NOT block the Linux
+  # manifest from being published. Validates Authenticode secrets up
+  # front so a missing/expired secret fails fast with a clear message
+  # instead of bleeding into a 30-minute build.
+  # ----------------------------------------------------------------------
+  build-windows:
+    name: Build (Windows, best-effort)
+    needs: [syntax-check, version-check]
+    runs-on: windows-latest
+    # Don't fail the whole workflow if Windows signing is unavailable.
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Validate Windows signing secrets
-        if: matrix.platform == 'windows-latest'
         shell: bash
         env:
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
@@ -142,28 +218,41 @@ jobs:
             AZURE_CERT_PROFILE_NAME
           do
             if [ -z "${!name:-}" ]; then
-              echo "::error::Missing GitHub Actions secret: ${name}"
+              echo "::warning::Missing GitHub Actions secret: ${name}"
               missing=1
             fi
           done
-          exit "$missing"
+          if [ "$missing" -ne 0 ]; then
+            echo "::warning::Windows signing secrets missing; skipping Windows build."
+            echo "::warning::Linux release will still be published. Configure SignPath/Authenticode and retag to ship Windows."
+            exit 1
+          fi
 
-      # Windows: install Azure Trusted Signing CLI. Tauri calls it through
-      # src-tauri/tauri.windows.conf.json for every Windows binary/installer.
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+
       - name: Install trusted-signing-cli
-        if: matrix.platform == 'windows-latest'
         run: cargo install trusted-signing-cli --locked
         shell: bash
 
-      # Build the Tauri app
-      - name: Build Skipi
+      - name: Build Skipi (Windows)
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Updater signing — REQUIRED for auto-updates:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # Windows Authenticode signing — used by trusted-signing-cli.
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
@@ -173,41 +262,18 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Skipi ${{ github.ref_name }}"
-          releaseBody: |
-            ## Skipi ${{ github.ref_name }}
-
-            Maritime Document Management for Seafarers.
-
-            ### Download
-
-            | Platform | File | Signed? |
-            |----------|------|---------|
-            | Windows | `.msi` / `.exe` | Authenticode (Azure Trusted Signing) |
-            | Linux (Debian/Ubuntu) | `.deb` | minisign (updater) |
-            | Linux (universal) | `.AppImage` | minisign (updater) |
-            | Linux (RPM-based) | `.rpm` | minisign (updater) |
-
-            ### What's new
-
-            See [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
-
-            ---
-
-            > **Beta build.** This is a pre-release version for invited testers.
-            > All data stays on your computer — Skipi does not have a server yet.
-            >
-            > **Auto-update:** Existing Skipi installations will be notified about this update automatically.
           releaseDraft: false
           prerelease: false
-          args: ${{ matrix.tauri_args }}
 
-  # After all platform builds finish, assemble latest.json and attach it to the release.
-  # (publish-latest-json inherits the syntax-check gate transitively via `build`.)
-  # tauri-action itself does NOT aggregate per-platform signatures into one manifest
-  # when running across a matrix, so we have to do it in a follow-up job.
+  # ----------------------------------------------------------------------
+  # Manifest publication — Linux is mandatory; Windows is included only
+  # when the windows job completed successfully.
+  # ----------------------------------------------------------------------
   publish-latest-json:
     name: Publish latest.json
-    needs: build
+    needs: [build-linux, build-windows]
+    # Run as long as Linux succeeded — even if Windows skipped/failed.
+    if: always() && needs.build-linux.result == 'success'
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
@@ -218,38 +284,36 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
+          WIN_OUTCOME: ${{ needs.build-windows.result }}
         run: |
           set -eu
           VERSION="${TAG#v}"
           PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
 
+          echo "Windows job outcome: ${WIN_OUTCOME}"
+
           mkdir -p sigs
           cd sigs
-
-          # Pull every .sig asset from the release so we can embed the signatures
           gh release download "${TAG}" --repo "${REPO}" --pattern '*.sig' || true
           ls -la
 
-          # Read a signature file if present, otherwise return empty string.
           read_sig() {
             local f="$1"
             if [ -f "$f" ]; then cat "$f"; else echo ""; fi
           }
 
-          # Asset filenames follow tauri-action conventions.
-          MAC_SIG="$(read_sig "Skipi_universal.app.tar.gz.sig")"
-          MAC_URL="${BASE_URL}/Skipi_universal.app.tar.gz"
-
-          # Windows: prefer the NSIS .exe updater; fall back to .msi.
+          # Windows entry only when the Windows job actually finished.
           WIN_SIG=""
           WIN_URL=""
-          if [ -f "Skipi_${VERSION}_x64-setup.exe.sig" ]; then
-            WIN_SIG="$(read_sig "Skipi_${VERSION}_x64-setup.exe.sig")"
-            WIN_URL="${BASE_URL}/Skipi_${VERSION}_x64-setup.exe"
-          elif [ -f "Skipi_${VERSION}_x64_en-US.msi.sig" ]; then
-            WIN_SIG="$(read_sig "Skipi_${VERSION}_x64_en-US.msi.sig")"
-            WIN_URL="${BASE_URL}/Skipi_${VERSION}_x64_en-US.msi"
+          if [ "${WIN_OUTCOME}" = "success" ]; then
+            if [ -f "Skipi_${VERSION}_x64-setup.exe.sig" ]; then
+              WIN_SIG="$(read_sig "Skipi_${VERSION}_x64-setup.exe.sig")"
+              WIN_URL="${BASE_URL}/Skipi_${VERSION}_x64-setup.exe"
+            elif [ -f "Skipi_${VERSION}_x64_en-US.msi.sig" ]; then
+              WIN_SIG="$(read_sig "Skipi_${VERSION}_x64_en-US.msi.sig")"
+              WIN_URL="${BASE_URL}/Skipi_${VERSION}_x64_en-US.msi"
+            fi
           fi
 
           # Linux: prefer AppImage (self-contained, portable for updater).
@@ -260,16 +324,17 @@ jobs:
             LINUX_SIG="$(read_sig "$APPIMG")"
             LINUX_URL="${BASE_URL}/${APPIMG%.sig}"
           fi
+          if [ -z "$LINUX_URL" ]; then
+            echo "::error::Linux .AppImage.sig not found in release; manifest would be empty."
+            exit 1
+          fi
 
           cd ..
 
-          # Build the manifest with jq so strings with newlines/special chars are escaped correctly.
           jq -n \
             --arg version "$VERSION" \
             --arg pub_date "$PUB_DATE" \
             --arg notes "Skipi $VERSION" \
-            --arg mac_sig "$MAC_SIG" \
-            --arg mac_url "$MAC_URL" \
             --arg win_sig "$WIN_SIG" \
             --arg win_url "$WIN_URL" \
             --arg linux_sig "$LINUX_SIG" \
@@ -286,8 +351,6 @@ jobs:
               notes: $notes,
               platforms: (
                 {
-                  "darwin-aarch64": plat($mac_sig; $mac_url),
-                  "darwin-x86_64":  plat($mac_sig; $mac_url),
                   "windows-x86_64": plat($win_sig; $win_url),
                   "linux-x86_64":   plat($linux_sig; $linux_url)
                 }
@@ -306,5 +369,75 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -eu
-          # --clobber replaces the file if it already exists (e.g. on re-runs).
           gh release upload "${TAG}" latest.json --repo "${REPO}" --clobber
+
+  # ----------------------------------------------------------------------
+  # Post-release validation — re-fetches the just-uploaded latest.json
+  # and asserts that the manifest reports the tag's version, that every
+  # platform URL responds 200, and that .sig assets exist next to each
+  # binary. If any of these fail, the release is broken even though the
+  # earlier jobs reported success.
+  # ----------------------------------------------------------------------
+  verify-release:
+    name: Verify release manifest
+    needs: [publish-latest-json]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Verify
+        env:
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          VERSION="${TAG#v}"
+          BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
+          # Pause briefly so GitHub release CDN catches the freshly-uploaded
+          # asset — observed lag is sub-second but we leave headroom.
+          sleep 5
+
+          curl -sSLf -o latest.json "${BASE_URL}/latest.json"
+          echo "--- latest.json ---"
+          cat latest.json
+
+          MANIFEST_VERSION="$(jq -r .version latest.json)"
+          if [ "$MANIFEST_VERSION" != "$VERSION" ]; then
+            echo "::error::manifest version $MANIFEST_VERSION != tag $VERSION"
+            exit 1
+          fi
+
+          # .deb installs do not use the AppImage URL from latest.json for
+          # installation. The frontend detects deb installs and calls the
+          # Rust `install_deb_update(version)` command, which downloads this
+          # conventional asset name directly from the release. If it is
+          # missing, update checks would pass but every existing Linux beta
+          # user installed via dpkg would hit HTTP 404 on "Download".
+          for asset in \
+            "Skipi_${VERSION}_amd64.deb" \
+            "Skipi_${VERSION}_amd64.deb.sig"
+          do
+            url="${BASE_URL}/${asset}"
+            echo "checking release asset -> $url"
+            code="$(curl -sSL -o /dev/null -w '%{http_code}' "$url")"
+            if [ "$code" != "200" ]; then
+              echo "::error::required Linux .deb asset $url -> HTTP $code"
+              exit 1
+            fi
+          done
+
+          # Every URL inside platforms must respond 200, and each must
+          # have a non-empty signature embedded.
+          jq -r '.platforms | to_entries[] | "\(.key) \(.value.url) \(.value.signature|length)"' latest.json \
+          | while read -r plat url siglen; do
+              if [ -z "$url" ]; then
+                echo "::error::$plat has empty url"; exit 1
+              fi
+              if [ "$siglen" = "0" ]; then
+                echo "::error::$plat has empty signature"; exit 1
+              fi
+              echo "checking $plat -> $url"
+              code="$(curl -sSL -o /dev/null -w '%{http_code}' "$url")"
+              if [ "$code" != "200" ]; then
+                echo "::error::$plat $url -> HTTP $code"; exit 1
+              fi
+            done
+          echo "manifest OK"
