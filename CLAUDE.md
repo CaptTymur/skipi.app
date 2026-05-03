@@ -25,6 +25,8 @@ P0 backlog: в разделе `Experience / Sea Service` встроить кор
 
 В `skipi-server` уже есть задел: `GET /api/vessels/{imo}`, `GET /api/vessels/{imo}/reviews`, `POST /api/vessels/{imo}/reviews`, модели `Vessel`/`VesselReview`, pending moderation. В seafarer app пока нужен UI и локальный status/unlock.
 
+Operational P0: до широкой публикации reviews нужен contingency plan на внезапный рост: app-config kill switches, local-only fallback, production Postgres, backups/restore, rate limits, metrics/alerts, moderation capacity, downloads mirror. Подробный Obsidian runbook: `Documents/Test/Skipi Handoff/06 — Contingency Plan — Exponential Growth.md`.
+
 - **Автор:** Tymur Rudov (Master Mariner)
 - **Репозиторий:** https://github.com/CaptTymur/skipi.app (публичный)
 - **Последний релиз:** v0.4.14 (drag-and-drop добавлен)
