@@ -5,7 +5,23 @@
 
 ## Что это
 
-Skipi — desktop-приложение для моряков: локальное хранилище сертификатов с отслеживанием сроков годности и генерацией CV. Tauri v2 (Rust backend + single-file HTML/JS frontend).
+Skipi — desktop-приложение для моряков: локальное хранилище сертификатов с отслеживанием сроков годности, генерацией CV, отправкой документов в крюинги и доступом к отзывам о судах. Tauri v2 (Rust backend + single-file HTML/JS frontend).
+
+## P0 продуктовый фокус — Vessel Reviews
+
+Главная growth-гипотеза: Skipi будет успешным, если им будут пользоваться много моряков. Крюинги начнут платить только после того, как в Skipi уже есть моряки, данные и поток кандидатов.
+
+Поэтому seafarer app должен быть ценен сам по себе. Не только документы/CV/dispatch, но и возможность узнать правду о судне перед контрактом.
+
+P0 backlog: в разделе `Experience / Sea Service` встроить короткий survey судна:
+- пользователь добавляет контракт с IMO;
+- Skipi предлагает оценить судно “как на Booking”;
+- оценки: overall, vessel condition, internet, living conditions/cabin, food, paperwork/workload, company attitude;
+- review отправляется на сервер по IMO pseudonymously;
+- другой моряк может искать отзывы по IMO/названию или видеть summary в vacancy detail;
+- detailed reviews открываются после того, как пользователь сам отправил хотя бы один review.
+
+В `skipi-server` уже есть задел: `GET /api/vessels/{imo}`, `GET /api/vessels/{imo}/reviews`, `POST /api/vessels/{imo}/reviews`, модели `Vessel`/`VesselReview`, pending moderation. В seafarer app пока нужен UI и локальный status/unlock.
 
 - **Автор:** Tymur Rudov (Master Mariner)
 - **Репозиторий:** https://github.com/CaptTymur/skipi.app (публичный)
