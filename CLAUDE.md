@@ -27,6 +27,8 @@ P0 backlog: в разделе `Experience / Sea Service` встроить кор
 
 Operational P0: до широкой публикации reviews нужен contingency plan на внезапный рост: app-config kill switches, local-only fallback, production Postgres, backups/restore, rate limits, metrics/alerts, moderation capacity, downloads mirror. Подробный Obsidian runbook: `Documents/Test/Skipi Handoff/06 — Contingency Plan — Exponential Growth.md`.
 
+Infrastructure strategy: start on Contabo because cash matters, scale up within Contabo as a temporary buffer, but keep the system exit-ready from day one. No installers or critical files on VPS disk, production DB via `DATABASE_URL`, object storage external, backups off-provider, API behind `api.skipi.app`, migration drill required. Runbook: `Documents/Test/Skipi Handoff/08 — Infrastructure Migration Plan — Contabo First Exit Ready.md`.
+
 - **Автор:** Tymur Rudov (Master Mariner)
 - **Репозиторий:** https://github.com/CaptTymur/skipi.app (публичный)
 - **Последний релиз:** v0.4.14 (drag-and-drop добавлен)
