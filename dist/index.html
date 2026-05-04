@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.103';
+var APP_VERSION='0.4.104';
 // Window title is set via `set_window_title` Rust command inside
 // updateTitlebar() — direct JS setTitle() is blocked by Tauri 2 ACL.
 // Human-readable labels for account types that go into the OS window title.
@@ -204,6 +204,50 @@ input, select, button { font-family:var(--font-ui); }
 .badge-warning { background:rgba(226,185,61,.15); color:var(--yellow); }
 .badge-valid { background:rgba(78,201,112,.15); color:var(--green); }
 .badge-none { background:rgba(136,136,136,.15); color:var(--text2); }
+.vrev-strip { margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); font-size:11px; }
+.vrev-head { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+.vrev-title { color:var(--text2); font-weight:600; }
+.vrev-rating { color:var(--text); font-weight:700; }
+.vrev-metrics { display:flex; flex-wrap:wrap; gap:6px; margin-top:7px; }
+.vrev-chip { display:inline-flex; align-items:center; gap:4px; border:1px solid var(--border); border-radius:4px; padding:2px 7px; color:var(--text2); }
+.vrev-chip strong { color:var(--text); font-weight:700; }
+.vrev-risk { display:flex; flex-wrap:wrap; gap:5px; margin-top:7px; }
+.vrev-risk span { display:inline-block; border-radius:4px; padding:2px 7px; background:rgba(229,85,97,.12); color:var(--red); font-weight:600; }
+.vrev-muted { color:var(--text2); }
+.vrev-cta { margin-top:8px; }
+.vrev-cta a { color:var(--accent); cursor:pointer; text-decoration:underline; font-weight:600; }
+
+/* Review form modal */
+#review-form-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:99996; align-items:flex-start; justify-content:center; overflow-y:auto; padding:24px 12px; }
+#review-form-overlay.show { display:flex; }
+#review-form-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; max-width:760px; width:100%; box-shadow:0 12px 36px rgba(0,0,0,.5); overflow:hidden; display:flex; flex-direction:column; max-height:calc(100vh - 48px); }
+#review-form-card .rfh { padding:14px 18px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+#review-form-card .rfh h3 { font-size:16px; margin:0 0 4px 0; }
+#review-form-card .rfh .meta { font-size:11px; color:var(--text2); }
+#review-form-card .rfb { padding:14px 18px; overflow-y:auto; flex:1; }
+#review-form-card .rff { padding:12px 18px; border-top:1px solid var(--border); display:flex; gap:8px; justify-content:space-between; align-items:center; flex-wrap:wrap; }
+#review-form-card .rff .rstatus { font-size:11px; color:var(--text2); }
+.rev-section { border:1px solid var(--border); border-radius:6px; margin-bottom:10px; padding:10px 12px; }
+.rev-section-head { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+.rev-section-title { font-weight:600; font-size:13px; flex:1; min-width:0; }
+.rev-mode { display:inline-flex; gap:0; border:1px solid var(--border); border-radius:4px; overflow:hidden; }
+.rev-mode button { background:transparent; border:0; color:var(--text2); padding:3px 9px; font-size:11px; cursor:pointer; }
+.rev-mode button.active { background:var(--accent); color:#fff; }
+.rev-stars { display:inline-flex; gap:2px; }
+.rev-stars button { background:transparent; border:0; color:var(--text2); cursor:pointer; font-size:18px; padding:0 2px; line-height:1; }
+.rev-stars button.on { color:#e2b93d; }
+.rev-stars button.na { font-size:11px; color:var(--text2); padding:0 6px; }
+.rev-stars button.na.on { color:var(--accent); }
+.rev-section-body { margin-top:8px; }
+.rev-item { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:4px 0; font-size:12px; }
+.rev-item .il { flex:1; min-width:0; color:var(--text); }
+.rev-comment { width:100%; margin-top:6px; box-sizing:border-box; padding:6px 8px; border-radius:4px; border:1px solid var(--border); background:var(--bg); color:var(--text); font:inherit; font-size:12px; resize:vertical; min-height:32px; }
+.rev-flag-grid { display:flex; flex-wrap:wrap; gap:6px; }
+.rev-flag-grid label { border:1px solid var(--border); border-radius:4px; padding:4px 9px; font-size:11px; color:var(--text2); cursor:pointer; user-select:none; }
+.rev-flag-grid label.on { border-color:var(--red); color:var(--red); background:rgba(229,85,97,.08); }
+.rev-flag-grid label input { display:none; }
+.rev-validation { font-size:11px; color:var(--red); margin-top:4px; }
+.rev-validation.ok { color:var(--green); }
 
 /* File preview */
 .file-drop { margin-top:16px; padding:20px; border:2px dashed var(--border); border-radius:6px; text-align:center; cursor:pointer; color:var(--text2); font-size:12px; transition:border-color .15s, background-color .15s, color .15s; }
@@ -458,7 +502,7 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.103</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.104</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -2565,6 +2609,454 @@ async function showMissing(){
 
 // ========== Work history ==========
 function escAttr(s){return String(s||'').replace(/'/g,"&#39;").replace(/"/g,'&quot;');}
+var VESSEL_REVIEWS_API = 'https://api.skipi.app/api/vessels/';
+var VESSEL_REVIEW_CACHE_KEY = 'skipi-vessel-reviews-cache-v1';
+var VESSEL_REVIEW_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+var vesselReviewCache = null;
+
+function normalizeImo(imo){
+    var s=String(imo||'').replace(/\D/g,'');
+    return /^\d{7}$/.test(s)?s:null;
+}
+function readVesselReviewCache(){
+    if(vesselReviewCache)return vesselReviewCache;
+    try{vesselReviewCache=JSON.parse(localStorage.getItem(VESSEL_REVIEW_CACHE_KEY)||'{}')||{};}
+    catch(e){vesselReviewCache={};}
+    return vesselReviewCache;
+}
+function writeVesselReviewCache(cache){
+    vesselReviewCache=cache||{};
+    try{localStorage.setItem(VESSEL_REVIEW_CACHE_KEY,JSON.stringify(vesselReviewCache));}catch(e){}
+}
+async function fetchVesselReviewProjection(imo, force){
+    var cache=readVesselReviewCache();
+    var cached=cache[imo];
+    if(!force&&cached&&cached.fetched_at&&Date.now()-cached.fetched_at<VESSEL_REVIEW_CACHE_TTL_MS){
+        return cached;
+    }
+    try{
+        var resp=await fetch(VESSEL_REVIEWS_API+encodeURIComponent(imo),{headers:{'Accept':'application/json'}});
+        var entry;
+        if(resp.status===404){
+            entry={status:'not_found',imo:imo,fetched_at:Date.now()};
+        }else if(resp.ok){
+            entry={status:'ok',imo:imo,fetched_at:Date.now(),payload:await resp.json()};
+        }else{
+            throw new Error('server '+resp.status);
+        }
+        cache[imo]=entry;
+        writeVesselReviewCache(cache);
+        return entry;
+    }catch(e){
+        if(cached&&cached.payload){
+            cached.stale=true;
+            return cached;
+        }
+        return {status:'error',imo:imo,error:String(e),fetched_at:Date.now()};
+    }
+}
+function vrevMetric(label,value){
+    if(value===undefined||value===null||value==='')return '';
+    var n=Number(value);
+    if(!isFinite(n))return '';
+    return '<span class="vrev-chip">'+esc(label)+' <strong>'+n.toFixed(1)+'&#9733;</strong></span>';
+}
+function vrevSectionAvg(epoch,sectionId){
+    var rows=(epoch&&epoch.section_breakdown)||[];
+    for(var i=0;i<rows.length;i++){
+        if(rows[i].id===sectionId)return rows[i].avg;
+    }
+    return null;
+}
+function vrevFlagLabel(flag){
+    var labels={
+        delayed_crew_change:'delayed crew change',
+        salary_delays:'salary delays',
+        fake_rest_hours_pressure:'fake rest hours pressure',
+        no_shore_leave:'no shore leave',
+        poor_food:'poor food',
+        no_spares:'no spares',
+        unsafe_condition:'unsafe condition',
+        bullying_harassment:'bullying / harassment',
+        excessive_paperwork:'excessive paperwork',
+        bad_internet:'bad internet',
+        medical_support_denied:'medical support denied',
+        vetting_overtime:'vetting overtime',
+        inspection_panic_mode:'inspection panic mode',
+        painted_for_inspection_only:'painted for inspection',
+        shore_leave_cancelled_for_vetting:'shore leave cancelled',
+        crew_blamed_for_deficiencies:'crew blamed',
+        no_resources_for_vetting_prep:'no resources for prep'
+    };
+    return labels[flag]||String(flag||'').replace(/_/g,' ');
+}
+function vrevReviewCta(imo){
+    return '<div class="vrev-cta"><a onclick="openReviewFromImo(\''+escAttr(imo)+'\')">Write your review</a></div>';
+}
+function renderVesselReviewProjection(entry,imo){
+    if(!entry||entry.status==='error'){
+        return '<div class="vrev-head"><span class="vrev-title">Vessel reviews</span><span class="badge badge-none">Unavailable</span></div>'+vrevReviewCta(imo);
+    }
+    if(entry.status==='not_found'||!entry.payload){
+        return '<div class="vrev-head"><span class="vrev-title">Vessel reviews</span><span class="badge badge-none">No public reviews yet</span></div>'+vrevReviewCta(imo);
+    }
+    var data=entry.payload||{};
+    var reviews=data.reviews||{};
+    var byEpoch=reviews.by_epoch||[];
+    if(!byEpoch.length){
+        return '<div class="vrev-head"><span class="vrev-title">Vessel reviews</span><span class="badge badge-none">No public reviews yet</span></div>'+vrevReviewCta(imo);
+    }
+    var currentEpochIds={};
+    (data.manager_epochs||[]).forEach(function(ep){if(ep&&ep.is_current)currentEpochIds[ep.id]=true;});
+    var epoch=byEpoch.find(function(x){return x&&x.manager_epoch_id&&currentEpochIds[x.manager_epoch_id];})||byEpoch[0];
+    var indices=epoch.indices||{};
+    var n=epoch.n||0;
+    var overall=indices.overall;
+    var overallText=(overall!==undefined&&overall!==null)?Number(overall).toFixed(1)+'&#9733;':'Rated';
+    var metrics='';
+    metrics+=vrevMetric('Workload',indices.workload);
+    metrics+=vrevMetric('Company',indices.company);
+    metrics+=vrevMetric('Life',indices.life_onboard);
+    metrics+=vrevMetric('Inspection pressure',vrevSectionAvg(epoch,'vetting_pressure'));
+    var flags=(reviews.warning_flag_prevalence||[]).slice(0,3);
+    var risks='';
+    flags.forEach(function(f){
+        if(!f||!f.flag)return;
+        risks+='<span>'+esc(vrevFlagLabel(f.flag))+' '+Math.round(Number(f.pct||0)*100)+'%</span>';
+    });
+    var h='<div class="vrev-head">';
+    h+='<span class="vrev-title">Vessel reviews</span>';
+    h+='<span class="vrev-rating">'+overallText+' <span class="vrev-muted">&middot; '+n+' review'+(n===1?'':'s')+'</span></span>';
+    h+='</div>';
+    if(metrics)h+='<div class="vrev-metrics">'+metrics+'</div>';
+    if(risks)h+='<div class="vrev-risk">'+risks+'</div>';
+    h+=vrevReviewCta(imo);
+    return h;
+}
+function renderVesselReviewLoading(){
+    return '<div class="vrev-head"><span class="vrev-title">Vessel reviews</span><span class="badge badge-none">Checking</span></div>';
+}
+// === Vessel review form (write-side) ===
+// Schema is fetched from /api/review-schema/active and cached for 1h in memory + 24h localStorage.
+// review_pubkey is generated lazily on first submit attempt and stored in vault/_identity/review_sk.bin —
+// kept separate from the crewing-facing identity so reviews cannot be cross-linked with applications.
+var REVIEW_SCHEMA_CACHE=null;var REVIEW_SCHEMA_AT=0;var REVIEW_FORM_STATE=null;
+async function fetchReviewSchema(){
+    var now=Date.now();
+    if(REVIEW_SCHEMA_CACHE&&(now-REVIEW_SCHEMA_AT)<3600000)return REVIEW_SCHEMA_CACHE;
+    try{
+        var ls=localStorage.getItem('skipi-review-schema');
+        if(ls){
+            var parsed=JSON.parse(ls);
+            if(parsed&&parsed.version_id&&(now-(parsed.fetched_at||0))<86400000){
+                REVIEW_SCHEMA_CACHE=parsed;REVIEW_SCHEMA_AT=now;
+                refreshReviewSchemaAsync().catch(function(){});
+                return parsed;
+            }
+        }
+    }catch(_){}
+    return refreshReviewSchemaAsync();
+}
+async function refreshReviewSchemaAsync(){
+    var r=await fetch('https://api.skipi.app/api/review-schema/active');
+    if(!r.ok)throw new Error('schema HTTP '+r.status);
+    var d=await r.json();d.fetched_at=Date.now();
+    try{localStorage.setItem('skipi-review-schema',JSON.stringify(d));}catch(_){}
+    REVIEW_SCHEMA_CACHE=d;REVIEW_SCHEMA_AT=Date.now();
+    return d;
+}
+function bucketForDate(s){
+    if(!s)return null;
+    var m=String(s).match(/^(\d{4})-(\d{2})/);
+    if(!m)return null;
+    return m[1]+'-H'+(parseInt(m[2],10)<=6?'1':'2');
+}
+function monthsBetween(a,b){
+    if(!a||!b)return null;
+    var da=new Date(a),db=new Date(b);
+    if(isNaN(da)||isNaN(db))return null;
+    var n=(db.getFullYear()-da.getFullYear())*12+(db.getMonth()-da.getMonth());
+    if(n<1)n=1;if(n>36)n=36;
+    return n;
+}
+function reviewDraftKey(workId){return 'skipi-review-draft:'+workId;}
+function loadReviewDraft(workId){try{var raw=localStorage.getItem(reviewDraftKey(workId));return raw?JSON.parse(raw):null;}catch(_){return null;}}
+function saveReviewDraft(){
+    var s=REVIEW_FORM_STATE;if(!s||!s.work)return;
+    try{
+        var copy={sections:s.sections,warning_flags:s.warning_flags,best_thing:s.best_thing,worst_thing:s.worst_thing,advice:s.advice,evidence_level:s.evidence_level,_saved_at:Date.now()};
+        localStorage.setItem(reviewDraftKey(s.work.id),JSON.stringify(copy));
+    }catch(_){}
+}
+function clearReviewDraft(workId){try{localStorage.removeItem(reviewDraftKey(workId));}catch(_){}}
+async function openReviewFromEntryId(entryId){
+    try{
+        var entries=await invoke('get_work_history')||[];
+        var w=entries.find(function(e){return e.id===entryId;});
+        if(!w){showToast('Entry not found','error');return;}
+        await openReviewForm(w);
+    }catch(e){showToast('Error: '+e,'error');logError('open_review',e);}
+}
+async function openReviewFromImo(imo){
+    try{
+        var entries=await invoke('get_work_history')||[];
+        var matches=entries.filter(function(e){return normalizeImo(e.imo)===String(imo);});
+        if(!matches.length){showToast('Add this vessel to your Sea Service first to write a review','warn');return;}
+        // pick the most recent contract on this vessel
+        matches.sort(function(a,b){
+            return String(b.sign_on||b.sign_off||'').localeCompare(String(a.sign_on||a.sign_off||''));
+        });
+        await openReviewForm(matches[0]);
+    }catch(e){showToast('Error: '+e,'error');logError('open_review_imo',e);}
+}
+async function openReviewForm(workEntry){
+    if(!workEntry||!workEntry.id)return;
+    var imo=normalizeImo(workEntry.imo);
+    if(!imo){showToast('Vessel needs an IMO to write a review','warn');return;}
+    var schema;
+    try{schema=await fetchReviewSchema();}catch(e){showToast('Could not load review form: '+e,'error');return;}
+    var draft=loadReviewDraft(workEntry.id)||{};
+    REVIEW_FORM_STATE={
+        schema:schema,work:workEntry,imo:imo,
+        sections:draft.sections||{},warning_flags:draft.warning_flags||[],
+        best_thing:draft.best_thing||'',worst_thing:draft.worst_thing||'',advice:draft.advice||'',
+        evidence_level:draft.evidence_level||'vault_experience',retro:false,submitting:false
+    };
+    var el=document.getElementById('review-form-overlay');
+    if(!el){
+        el=document.createElement('div');el.id='review-form-overlay';
+        el.innerHTML='<div id="review-form-card"></div>';
+        el.addEventListener('click',function(ev){if(ev.target===el)closeReviewForm();});
+        document.body.appendChild(el);
+    }
+    el.classList.add('show');
+    renderReviewForm();
+}
+function closeReviewForm(){
+    REVIEW_FORM_STATE=null;
+    var el=document.getElementById('review-form-overlay');
+    if(el)el.classList.remove('show');
+}
+function reviewSectionState(sid){
+    var s=REVIEW_FORM_STATE.sections[sid];
+    if(!s){s={mode:null,rating:null,comment:'',items:{}};REVIEW_FORM_STATE.sections[sid]=s;}
+    return s;
+}
+function setSectionMode(sid,mode){
+    var s=reviewSectionState(sid);if(s.mode===mode)return;
+    s.mode=mode;if(mode!=='rough')s.rating=null;
+    saveReviewDraft();renderReviewForm();
+}
+function setSectionRating(sid,rating){
+    var s=reviewSectionState(sid);if(s.mode!=='rough')s.mode='rough';
+    s.rating=rating;saveReviewDraft();renderReviewForm();
+}
+function setItemRating(sid,iid,rating){
+    var s=reviewSectionState(sid);if(s.mode!=='detailed')s.mode='detailed';
+    s.items[iid]=s.items[iid]||{rating:null,comment:''};
+    s.items[iid].rating=rating;s.rating=null;
+    saveReviewDraft();renderReviewForm();
+}
+function setSectionComment(sid,val){var s=reviewSectionState(sid);s.comment=val;saveReviewDraft();}
+function toggleWarningFlag(flag){
+    var arr=REVIEW_FORM_STATE.warning_flags;var i=arr.indexOf(flag);
+    if(i>=0)arr.splice(i,1);else arr.push(flag);
+    saveReviewDraft();renderReviewForm();
+}
+function setReviewText(field,val){
+    REVIEW_FORM_STATE[field]=val;saveReviewDraft();
+    var v=validateReviewForm();
+    var el=document.getElementById('rev-validation');
+    if(el){el.textContent=v.ok?'Ready to submit':v.errors[0];el.className=v.ok?'rev-validation ok':'rev-validation';}
+    var btn=document.getElementById('rev-submit');if(btn)btn.disabled=!v.ok;
+}
+function validateReviewForm(){
+    var s=REVIEW_FORM_STATE;if(!s)return{ok:false,errors:['No state'],rated:0,min:10};
+    var def=(s.schema&&s.schema.definition)||{};
+    var minRated=(def.minimum_required&&def.minimum_required.rated_sections)||10;
+    var minChars=(def.minimum_required&&def.minimum_required.warning_flag_or_best_worst_chars)||20;
+    var rated=0;
+    Object.keys(s.sections).forEach(function(sid){
+        var sec=s.sections[sid];if(!sec||!sec.mode||sec.mode==='na')return;
+        if(sec.mode==='rough'&&sec.rating!=null)rated++;
+        else if(sec.mode==='detailed'){
+            var any=Object.keys(sec.items||{}).some(function(iid){return sec.items[iid]&&sec.items[iid].rating!=null;});
+            if(any)rated++;
+        }
+    });
+    var errors=[];
+    if(rated<minRated)errors.push('Need at least '+minRated+' rated sections (currently '+rated+')');
+    if(!s.warning_flags.length){
+        var best=(s.best_thing||'').trim();var worst=(s.worst_thing||'').trim();
+        if(!best||!worst||(best.length+worst.length)<minChars){
+            errors.push('Mark a warning flag, OR fill Best+Worst (≥'+minChars+' chars combined)');
+        }
+    }
+    return{ok:errors.length===0,errors:errors,rated:rated,min:minRated};
+}
+function renderReviewForm(){
+    var s=REVIEW_FORM_STATE;if(!s)return;
+    var card=document.querySelector('#review-form-overlay #review-form-card');if(!card)return;
+    var sch=(s.schema&&s.schema.definition)||{};
+    var sections=sch.sections||[];var flags=sch.warning_flags||[];var w=s.work;
+    var h='';
+    h+='<div class="rfh"><div>';
+    h+='<h3>Review your contract on '+esc(w.vessel_name)+'</h3>';
+    h+='<div class="meta">IMO '+esc(s.imo)+(w.position?' &middot; '+esc(w.position):'')+' &middot; '+esc((w.sign_on||'?')+' → '+(w.sign_off||'present'))+'</div>';
+    h+='<div class="meta">Public projection shows section averages only. Reviewer identity stays HMAC-only on the server, separate from your crewing-facing identity.</div>';
+    h+='</div><button class="btn btn-sm btn-outline" onclick="closeReviewForm()">&times;</button></div>';
+    h+='<div class="rfb">';
+    sections.forEach(function(sec){
+        var st=reviewSectionState(sec.id);
+        h+='<div class="rev-section">';
+        h+='<div class="rev-section-head"><div class="rev-section-title">'+esc(sec.title)+'</div>';
+        h+='<div class="rev-mode">';
+        ['rough','detailed','na'].forEach(function(m){
+            var lbl=m==='rough'?'Quick':m==='detailed'?'Detailed':'N/A';
+            var on=st.mode===m?'active':'';
+            h+='<button class="'+on+'" onclick="setSectionMode(\''+sec.id+'\',\''+m+'\')">'+lbl+'</button>';
+        });
+        h+='</div></div>';
+        if(st.mode==='rough'){
+            h+='<div class="rev-section-body"><span class="rev-stars">';
+            for(var i=1;i<=5;i++){
+                var on=(st.rating&&i<=st.rating)?'on':'';
+                h+='<button class="'+on+'" onclick="setSectionRating(\''+sec.id+'\','+i+')">&#9733;</button>';
+            }
+            h+='</span>';
+            h+='<textarea class="rev-comment" placeholder="Optional comment" oninput="setSectionComment(\''+sec.id+'\',this.value)" rows="1">'+esc(st.comment||'')+'</textarea>';
+            h+='</div>';
+        }else if(st.mode==='detailed'){
+            h+='<div class="rev-section-body">';
+            (sec.items||[]).forEach(function(it){
+                var ist=(st.items&&st.items[it.id])||{rating:null,comment:''};
+                h+='<div class="rev-item"><span class="il">'+esc(it.title)+'</span><span class="rev-stars">';
+                for(var j=1;j<=5;j++){
+                    var on=(ist.rating&&j<=ist.rating)?'on':'';
+                    h+='<button class="'+on+'" onclick="setItemRating(\''+sec.id+'\',\''+it.id+'\','+j+')">&#9733;</button>';
+                }
+                var naOn=(ist.rating==null)?'on':'';
+                h+='<button class="na '+naOn+'" onclick="setItemRating(\''+sec.id+'\',\''+it.id+'\',null)">N/A</button>';
+                h+='</span></div>';
+            });
+            h+='<textarea class="rev-comment" placeholder="Optional section comment" oninput="setSectionComment(\''+sec.id+'\',this.value)" rows="1">'+esc(st.comment||'')+'</textarea>';
+            h+='</div>';
+        }
+        h+='</div>';
+    });
+    h+='<div class="rev-section"><div class="rev-section-title">Warning flags from your contract</div>';
+    h+='<div class="rev-section-body"><div class="rev-flag-grid">';
+    flags.forEach(function(fl){
+        var fid=(typeof fl==='string')?fl:fl.id;
+        if(!fid)return;
+        var label=(typeof fl==='string')?String(fl).replace(/_/g,' '):(fl.title||fid.replace(/_/g,' '));
+        var on=s.warning_flags.indexOf(fid)>=0?'on':'';
+        h+='<label class="'+on+'"><input type="checkbox" onchange="toggleWarningFlag(\''+fid+'\')"'+(on?' checked':'')+'/>'+esc(label)+'</label>';
+    });
+    h+='</div></div></div>';
+    h+='<div class="rev-section"><div class="rev-section-title">Free text (optional)</div><div class="rev-section-body">';
+    h+='<textarea class="rev-comment" placeholder="Best thing onboard" oninput="setReviewText(\'best_thing\',this.value)" rows="2">'+esc(s.best_thing||'')+'</textarea>';
+    h+='<textarea class="rev-comment" placeholder="Worst thing onboard" oninput="setReviewText(\'worst_thing\',this.value)" rows="2">'+esc(s.worst_thing||'')+'</textarea>';
+    h+='<textarea class="rev-comment" placeholder="Advice to next crew" oninput="setReviewText(\'advice\',this.value)" rows="2">'+esc(s.advice||'')+'</textarea>';
+    h+='</div></div>';
+    h+='</div>';
+    var v=validateReviewForm();
+    h+='<div class="rff"><div><div id="rev-validation" class="rev-validation'+(v.ok?' ok':'')+'">'+esc(v.ok?'Ready to submit':(v.errors[0]||''))+'</div>';
+    h+='<div class="rstatus">Draft autosaved · '+(v.rated||0)+'/'+v.min+' sections rated</div></div>';
+    h+='<div style="display:flex;gap:6px;"><button class="btn btn-outline" onclick="closeReviewForm()">Close</button>';
+    h+='<button id="rev-submit" class="btn btn-accent" onclick="submitReviewForm()"'+(v.ok?'':' disabled')+'>Submit for moderation</button></div></div>';
+    card.innerHTML=h;
+}
+async function submitReviewForm(){
+    var s=REVIEW_FORM_STATE;if(!s||s.submitting)return;
+    var v=validateReviewForm();if(!v.ok){showToast(v.errors[0],'warn');return;}
+    s.submitting=true;
+    try{
+        var pubkey=await invoke('get_or_create_review_pubkey');
+        var leh=await invoke('compute_local_experience_hash',{workHistoryId:s.work.id});
+        var sectionRatings=[];var itemRatings=[];
+        Object.keys(s.sections).forEach(function(sid){
+            var sec=s.sections[sid];if(!sec||!sec.mode)return;
+            var hasDetailedRating=false;
+            if(sec.mode==='detailed'){
+                hasDetailedRating=Object.keys(sec.items||{}).some(function(iid){
+                    return sec.items[iid]&&sec.items[iid].rating!=null;
+                });
+                if(!hasDetailedRating)return;
+            }
+            if(sec.mode==='rough'&&sec.rating==null)return;
+            sectionRatings.push({
+                section_id:sid,
+                rating_mode:sec.mode,
+                section_rating:sec.mode==='rough'?sec.rating:null,
+                comment:(sec.comment||'').trim()||null
+            });
+            if(sec.mode==='detailed'){
+                Object.keys(sec.items||{}).forEach(function(iid){
+                    var it=sec.items[iid];
+                    if(it&&(it.rating!=null||(it.comment||'').trim())){
+                        itemRatings.push({section_id:sid,item_id:iid,rating:it.rating,comment:(it.comment||'').trim()||null});
+                    }
+                });
+            }
+        });
+        var payload={
+            review_pubkey:pubkey,
+            local_experience_hash:leh,
+            vessel_imo:parseInt(s.imo,10),
+            schema_version:s.schema.version_id||null,
+            evidence_level:s.evidence_level,
+            rank_at_time:s.work.position||null,
+            company_at_time:s.work.company||null,
+            sign_on_bucket:bucketForDate(s.work.sign_on),
+            sign_off_bucket:bucketForDate(s.work.sign_off),
+            contract_months:monthsBetween(s.work.sign_on,s.work.sign_off)||1,
+            retro:!!s.retro,
+            best_thing:(s.best_thing||'').trim()||null,
+            worst_thing:(s.worst_thing||'').trim()||null,
+            advice:(s.advice||'').trim()||null,
+            warning_flags:s.warning_flags,
+            section_ratings:sectionRatings,
+            item_ratings:itemRatings
+        };
+        var r=await fetch('https://api.skipi.app/api/reviews',{
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify(payload)
+        });
+        if(!r.ok){
+            var body=await r.text();
+            throw new Error('HTTP '+r.status+': '+body.slice(0,300));
+        }
+        clearReviewDraft(s.work.id);
+        var imo=normalizeImo(s.work.imo);
+        closeReviewForm();
+        showToast('Review submitted — pending moderation','success');
+        if(imo){
+            try{await fetchVesselReviewProjection(imo,true);}catch(_){}
+        }
+    }catch(e){
+        showToast('Submit failed: '+e,'error');logError('review_submit',e);
+    }finally{s.submitting=false;}
+}
+
+async function hydrateVesselReviews(entries){
+    var imos={};
+    (entries||[]).forEach(function(row){
+        var imo=normalizeImo(row.imo);
+        if(!imo)return;
+        imos[imo]=true;
+        var host=document.getElementById('vrev-'+row.id);
+        if(host)host.innerHTML=renderVesselReviewLoading();
+    });
+    Object.keys(imos).forEach(function(imo){
+        fetchVesselReviewProjection(imo,false).then(function(entry){
+            document.querySelectorAll('[data-vrev-imo="'+imo+'"]').forEach(function(host){
+                host.innerHTML=renderVesselReviewProjection(entry,imo);
+            });
+        }).catch(function(e){logError('vessel_reviews:'+imo,e);});
+    });
+}
 async function showWorkHistory(){
     var entries=[];
     try{entries=await invoke('get_work_history');}catch(e){showToast('Error: '+e,'error');logError('op',e);return;}
@@ -2591,9 +3083,16 @@ async function showWorkHistory(){
             h+='</div>';
             h+='<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;">';
             h+='<button class="btn btn-sm btn-outline" onclick="attachWorkFile(\''+e.id+'\')">+ Attach</button>';
+            if(normalizeImo(e.imo)){
+                h+='<button class="btn btn-sm btn-outline" onclick="openReviewFromEntryId(\''+e.id+'\')" title="Write a structured review of this vessel">&#9733; Write review</button>';
+            }
             h+='<button class="btn btn-sm btn-outline btn-red" onclick="delWork(\''+e.id+'\')">Delete</button>';
             h+='</div>';
             h+='</div>';
+            var normImo=normalizeImo(e.imo);
+            if(normImo){
+                h+='<div class="vrev-strip" id="vrev-'+escAttr(e.id)+'" data-vrev-imo="'+normImo+'"></div>';
+            }
             // Evidence folder — a pointer to a folder on the user's own disk
             // where they keep contract evidence (photos aboard, crew list,
             // discharge letter, payslips). Files stay outside the vault;
@@ -2630,6 +3129,7 @@ async function showWorkHistory(){
         }
     }
     document.getElementById('scr-content').innerHTML=h;show('scr-content');updateTabs('Sea Service');
+    hydrateVesselReviews(entries);
 }
 
 async function attachWorkFile(entryId){

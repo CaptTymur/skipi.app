@@ -9,3 +9,4 @@ pub mod email;
 pub mod jobs;
 pub mod messaging;
 pub mod mail_intent;
+pub mod review;

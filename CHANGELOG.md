@@ -7,6 +7,19 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.104] — 2026-05-04
+
+### Added
+- **Vessel Reviews MVP** — Sea Service now shows public vessel review
+  projections by IMO and lets seafarers submit structured contract reviews
+  against the live `review_schema v1`.
+- Added a separate review identity stored under `_identity/review_sk.bin`,
+  kept apart from the crewing-facing vault identity. Review submissions send
+  only the review pubkey for server-side HMAC derivation and a local
+  experience hash for per-contract deduplication.
+- Added schema-driven review form with Quick / Detailed / N/A per section,
+  warning flags, local draft autosave, live validation, and submit-to-moderation.
+
 ## [0.4.103] — 2026-05-03
 
 ### Added

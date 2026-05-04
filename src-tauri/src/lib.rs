@@ -78,7 +78,7 @@ pub(crate) fn base64_encode(data: &[u8]) -> String {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    use commands::{vault, documents, ai, packages, profile, cv_commands, work_history, email, jobs, messaging, mail_intent};
+    use commands::{vault, documents, ai, packages, profile, cv_commands, work_history, email, jobs, messaging, mail_intent, review};
 
     tauri::Builder::default()
         .manage(AppState {
@@ -208,6 +208,9 @@ pub fn run() {
             messaging::upload_encrypted_attachment,
             messaging::download_encrypted_attachment,
             messaging::open_path_with_default,
+            // Vessel review identity (separate from crewing-facing identity)
+            review::get_or_create_review_pubkey,
+            review::compute_local_experience_hash,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
