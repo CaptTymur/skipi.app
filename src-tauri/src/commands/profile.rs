@@ -1,5 +1,5 @@
 use crate::db::{self, VaultInfo};
-use crate::{frameworks, identity, profiles, demo, AppState};
+use crate::{demo, frameworks, identity, profiles, AppState};
 use rusqlite::Connection;
 use std::fs;
 use std::path::PathBuf;
@@ -7,30 +7,39 @@ use tauri::State;
 
 #[tauri::command]
 pub fn get_profile_taxonomy() -> serde_json::Value {
-    let levels: Vec<serde_json::Value> = profiles::StcwLevel::all().iter().map(|l| {
-        serde_json::json!({
-            "id": l.id(),
-            "label": l.label(),
+    let levels: Vec<serde_json::Value> = profiles::StcwLevel::all()
+        .iter()
+        .map(|l| {
+            serde_json::json!({
+                "id": l.id(),
+                "label": l.label(),
+            })
         })
-    }).collect();
+        .collect();
 
-    let vessel_nodes: Vec<serde_json::Value> = profiles::vessel_tree().iter().map(|v| {
-        serde_json::json!({
-            "id": v.id,
-            "label": v.label,
-            "parent": v.parent,
-            "is_leaf": v.is_leaf,
+    let vessel_nodes: Vec<serde_json::Value> = profiles::vessel_tree()
+        .iter()
+        .map(|v| {
+            serde_json::json!({
+                "id": v.id,
+                "label": v.label,
+                "parent": v.parent,
+                "is_leaf": v.is_leaf,
+            })
         })
-    }).collect();
+        .collect();
 
-    let pos: Vec<serde_json::Value> = profiles::positions().iter().map(|p| {
-        serde_json::json!({
-            "id": p.id,
-            "label": p.label,
-            "level": p.level.id(),
-            "dept": p.dept,
+    let pos: Vec<serde_json::Value> = profiles::positions()
+        .iter()
+        .map(|p| {
+            serde_json::json!({
+                "id": p.id,
+                "label": p.label,
+                "level": p.level.id(),
+                "dept": p.dept,
+            })
         })
-    }).collect();
+        .collect();
 
     serde_json::json!({
         "levels": levels,
@@ -41,22 +50,34 @@ pub fn get_profile_taxonomy() -> serde_json::Value {
 
 #[tauri::command]
 pub fn get_optional_categories() -> Vec<String> {
-    profiles::optional_categories().into_iter().map(|s| s.to_string()).collect()
+    profiles::optional_categories()
+        .into_iter()
+        .map(|s| s.to_string())
+        .collect()
 }
 
 #[tauri::command]
-pub fn get_required_docs(level_id: String, vessel_id: String, position_id: String) -> Result<Vec<serde_json::Value>, String> {
+pub fn get_required_docs(
+    level_id: String,
+    vessel_id: String,
+    position_id: String,
+) -> Result<Vec<serde_json::Value>, String> {
     let level = profiles::StcwLevel::from_id(&level_id).ok_or("Unknown STCW level")?;
     let templates = profiles::required_docs_for_profile(level, &vessel_id, &position_id);
-    Ok(templates.iter().map(|t| serde_json::json!({
-        "id": t.id,
-        "title": t.title,
-        "category": t.category,
-        "regulatory_basis": t.regulatory_basis,
-        "has_expiry": t.has_expiry,
-        "typical_years": t.typical_years,
-        "notes": t.notes,
-    })).collect())
+    Ok(templates
+        .iter()
+        .map(|t| {
+            serde_json::json!({
+                "id": t.id,
+                "title": t.title,
+                "category": t.category,
+                "regulatory_basis": t.regulatory_basis,
+                "has_expiry": t.has_expiry,
+                "typical_years": t.typical_years,
+                "notes": t.notes,
+            })
+        })
+        .collect())
 }
 
 #[tauri::command]
@@ -85,18 +106,20 @@ pub fn create_profile_vault(
     db::set_vault_info(&conn, "vessel_category", &vessel_category).map_err(|e| e.to_string())?;
     db::set_vault_info(&conn, "position", &position).map_err(|e| e.to_string())?;
 
-    let rank_label: Option<String> = if let Some(lbl) = position_label.as_ref().filter(|s| !s.trim().is_empty()) {
-        db::set_vault_info(&conn, "position_custom", lbl).map_err(|e| e.to_string())?;
-        Some(lbl.trim().to_string())
-    } else if let Some(p) = profiles::position(&position) {
-        Some(p.label.to_string())
-    } else {
-        None
-    };
+    let rank_label: Option<String> =
+        if let Some(lbl) = position_label.as_ref().filter(|s| !s.trim().is_empty()) {
+            db::set_vault_info(&conn, "position_custom", lbl).map_err(|e| e.to_string())?;
+            Some(lbl.trim().to_string())
+        } else if let Some(p) = profiles::position(&position) {
+            Some(p.label.to_string())
+        } else {
+            None
+        };
     if let Some(ref lbl) = rank_label {
         db::set_vault_info(&conn, "rank", lbl).map_err(|e| e.to_string())?;
     }
-    let vessel_label: Option<String> = profiles::vessel_tree().into_iter()
+    let vessel_label: Option<String> = profiles::vessel_tree()
+        .into_iter()
         .find(|v| v.id == vessel_category)
         .map(|v| v.label.to_string());
     if let Some(lbl) = &vessel_label {
@@ -122,7 +145,13 @@ pub fn create_profile_vault(
         .to_string();
         let rec_id = rec.id.clone();
         db::insert_doc(&conn, &rec).map_err(|e| e.to_string())?;
-        let _ = db::log_event(&conn, "doc_added", "document", Some(&rec_id), Some(&payload));
+        let _ = db::log_event(
+            &conn,
+            "doc_added",
+            "document",
+            Some(&rec_id),
+            Some(&payload),
+        );
     }
 
     let info = db::get_vault_info(&conn).map_err(|e| e.to_string())?;
@@ -130,6 +159,176 @@ pub fn create_profile_vault(
     *state.vault_path.lock().unwrap_or_else(|e| e.into_inner()) = Some(vault_path);
     *state.conn.lock().unwrap_or_else(|e| e.into_inner()) = Some(conn);
     Ok(info)
+}
+
+fn current_required_profile_templates(
+    conn: &Connection,
+) -> Result<Vec<profiles::DocTemplate>, String> {
+    let g = |k: &str| db::get_vault_info_value(conn, k);
+    if g("account_type").as_deref() != Some("seafarer") {
+        return Ok(Vec::new());
+    }
+
+    let level_id = match g("stcw_level") {
+        Some(v) if !v.is_empty() => v,
+        _ => return Ok(Vec::new()),
+    };
+    let vessel_category = g("vessel_category").unwrap_or_default();
+    let position = g("position").unwrap_or_default();
+    let level = match profiles::StcwLevel::from_id(&level_id) {
+        Some(l) => l,
+        None => return Ok(Vec::new()),
+    };
+
+    Ok(profiles::required_docs_for_profile(
+        level,
+        &vessel_category,
+        &position,
+    ))
+}
+
+fn set_vault_info_if_changed(conn: &Connection, key: &str, value: &str) -> Result<bool, String> {
+    if db::get_vault_info_value(conn, key).as_deref() == Some(value) {
+        return Ok(false);
+    }
+    db::set_vault_info(conn, key, value).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+fn json_field_string(fields: &serde_json::Value, key: &str) -> Option<String> {
+    let value = fields.get(key)?;
+    let s = match value {
+        serde_json::Value::Null => return None,
+        serde_json::Value::String(s) => s.clone(),
+        other => other.to_string(),
+    };
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn template_change_items(
+    templates: &[profiles::DocTemplate],
+    other_ids: &std::collections::HashSet<String>,
+) -> Vec<serde_json::Value> {
+    templates
+        .iter()
+        .filter(|t| !other_ids.contains(t.id))
+        .map(|t| {
+            serde_json::json!({
+                "id": t.id,
+                "title": t.title,
+                "category": t.category,
+                "regulatory_basis": t.regulatory_basis,
+            })
+        })
+        .collect()
+}
+
+fn sync_seafarer_document_framework(
+    conn: &Connection,
+    vault_path: &std::path::Path,
+    fields: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    if db::get_vault_info_value(conn, "account_type").as_deref() != Some("seafarer") {
+        return Ok(serde_json::json!({
+            "metadata_changed": false,
+            "requirements_changed": false,
+            "docs_added": 0,
+            "requirements_added": [],
+            "requirements_removed": [],
+        }));
+    }
+
+    let before_templates = current_required_profile_templates(conn)?;
+    let before_ids: std::collections::HashSet<String> =
+        before_templates.iter().map(|t| t.id.to_string()).collect();
+
+    let rank_input = json_field_string(fields, "rank")
+        .or_else(|| db::get_vault_info_value(conn, "personal_rank"))
+        .or_else(|| db::get_vault_info_value(conn, "rank"));
+    let vessel_input = json_field_string(fields, "preferred_vessel_types")
+        .or_else(|| db::get_vault_info_value(conn, "preferred_vessel_types"))
+        .or_else(|| db::get_vault_info_value(conn, "vessel_category"))
+        .or_else(|| db::get_vault_info_value(conn, "vessel_type"));
+
+    let mut changed = false;
+    let mut framework_known = false;
+    let mut position_id: Option<&'static str> = None;
+    let mut level_id: Option<&'static str> = None;
+    let mut vessel_id: Option<&'static str> = None;
+
+    if let Some(rank) = rank_input.as_deref() {
+        if let Some(pid) = profiles::position_id_from_rank_label(rank) {
+            position_id = Some(pid);
+            framework_known = true;
+            changed |= set_vault_info_if_changed(conn, "position", pid)?;
+            if let Some(pos) = profiles::position(pid) {
+                level_id = Some(pos.level.id());
+                changed |= set_vault_info_if_changed(conn, "stcw_level", pos.level.id())?;
+                changed |= set_vault_info_if_changed(conn, "rank", pos.label)?;
+            }
+        }
+    }
+
+    if let Some(vessel) = vessel_input.as_deref() {
+        if let Some(vid) = profiles::vessel_id_from_label_or_id(vessel) {
+            vessel_id = Some(vid);
+            framework_known = true;
+            changed |= set_vault_info_if_changed(conn, "vessel_category", vid)?;
+            if let Some(label) = profiles::vessel_label(vid) {
+                changed |= set_vault_info_if_changed(conn, "vessel_type", label)?;
+            }
+        }
+    }
+
+    let docs_added = if framework_known {
+        ensure_profile_templates(conn, vault_path)?
+    } else {
+        0
+    };
+
+    let after_templates = current_required_profile_templates(conn)?;
+    let after_ids: std::collections::HashSet<String> =
+        after_templates.iter().map(|t| t.id.to_string()).collect();
+    let requirements_added = template_change_items(&after_templates, &before_ids);
+    let requirements_removed = template_change_items(&before_templates, &after_ids);
+    let requirements_changed = before_ids != after_ids;
+    let result = serde_json::json!({
+        "metadata_changed": changed,
+        "requirements_changed": requirements_changed,
+        "docs_added": docs_added,
+        "requirements_added": requirements_added,
+        "requirements_removed": requirements_removed,
+        "position": position_id,
+        "stcw_level": level_id,
+        "vessel_category": vessel_id,
+        "rank": position_id.and_then(profiles::position).map(|p| p.label.to_string()),
+        "vessel_type": vessel_id.and_then(profiles::vessel_label),
+    });
+
+    if changed || docs_added > 0 || requirements_changed {
+        let payload = serde_json::json!({
+            "position": position_id,
+            "stcw_level": level_id,
+            "vessel_category": vessel_id,
+            "docs_added": docs_added,
+            "requirements_changed": requirements_changed,
+        })
+        .to_string();
+        let _ = db::log_event(
+            conn,
+            "profile_framework_updated",
+            "vault_info",
+            None,
+            Some(&payload),
+        );
+    }
+
+    Ok(result)
 }
 
 /// Seeds missing required-template rows into an existing vault.
@@ -142,26 +341,33 @@ pub fn create_profile_vault(
 pub fn ensure_profile_templates(
     conn: &rusqlite::Connection,
     vault_path: &std::path::Path,
-) -> Result<(), String> {
+) -> Result<usize, String> {
+    let _ = crate::commands::documents::normalize_known_custom_docs(conn);
+    let _ = crate::commands::documents::refresh_known_template_metadata(conn);
+    let _ = crate::commands::documents::prune_empty_catalog_only_docs(conn);
     let g = |k: &str| db::get_vault_info_value(conn, k);
     if g("account_type").as_deref() != Some("seafarer") {
-        return Ok(());
+        return Ok(0);
     }
     let level_id = match g("stcw_level") {
         Some(v) if !v.is_empty() => v,
-        _ => return Ok(()),
+        _ => return Ok(0),
     };
     let vessel_category = g("vessel_category").unwrap_or_default();
     let position = g("position").unwrap_or_default();
 
     let level = match profiles::StcwLevel::from_id(&level_id) {
         Some(l) => l,
-        None => return Ok(()),
+        None => return Ok(0),
     };
     let templates = profiles::required_docs_for_profile(level, &vessel_category, &position);
+    for t in &templates {
+        let _ = crate::commands::documents::mark_template_visible(conn, t.id);
+    }
+    let hidden_templates = crate::commands::documents::hidden_template_ids(conn);
 
     // Collect existing template_ids in one query to avoid N selects.
-    let existing: std::collections::HashSet<String> = {
+    let mut existing: std::collections::HashSet<String> = {
         let mut stmt = conn
             .prepare("SELECT template_id FROM documents WHERE template_id IS NOT NULL")
             .map_err(|e| e.to_string())?;
@@ -171,6 +377,7 @@ pub fn ensure_profile_templates(
         rows.filter_map(|r| r.ok()).collect()
     };
 
+    let mut inserted = 0usize;
     for t in &templates {
         if existing.contains(t.id) {
             continue;
@@ -187,10 +394,69 @@ pub fn ensure_profile_templates(
         })
         .to_string();
         let rec_id = rec.id.clone();
+        if let Some(template_id) = rec.template_id.clone() {
+            existing.insert(template_id);
+        }
         db::insert_doc(conn, &rec).map_err(|e| e.to_string())?;
-        let _ = db::log_event(conn, "doc_seeded", "document", Some(&rec_id), Some(&payload));
+        let _ = db::log_event(
+            conn,
+            "doc_seeded",
+            "document",
+            Some(&rec_id),
+            Some(&payload),
+        );
+        inserted += 1;
     }
-    Ok(())
+    for t in profiles::conditional_seafarer_doc_templates() {
+        if hidden_templates.contains(t.id) {
+            continue;
+        }
+        if existing.contains(t.id) {
+            continue;
+        }
+        let rec = frameworks::record_from_profile_template(&t);
+        let cat_dir = vault_path.join(&rec.category);
+        let _ = std::fs::create_dir_all(&cat_dir);
+        let payload = serde_json::json!({
+            "category": rec.category.clone(),
+            "kind": "conditional_framework",
+            "template_id": rec.template_id.clone(),
+            "account_type": "seafarer",
+            "source": "ensure_profile_templates",
+        })
+        .to_string();
+        let rec_id = rec.id.clone();
+        if let Some(template_id) = rec.template_id.clone() {
+            existing.insert(template_id);
+        }
+        db::insert_doc(conn, &rec).map_err(|e| e.to_string())?;
+        let _ = db::log_event(
+            conn,
+            "doc_seeded",
+            "document",
+            Some(&rec_id),
+            Some(&payload),
+        );
+    }
+    Ok(inserted)
+}
+
+#[tauri::command]
+pub fn get_active_template_ids(state: State<AppState>) -> Result<Vec<String>, String> {
+    let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = lock.as_ref().ok_or("No vault open")?;
+    Ok(current_required_profile_templates(conn)?
+        .into_iter()
+        .map(|t| t.id.to_string())
+        .collect())
+}
+
+#[tauri::command]
+pub fn get_conditional_template_ids() -> Vec<String> {
+    profiles::conditional_seafarer_doc_templates()
+        .into_iter()
+        .map(|t| t.id.to_string())
+        .collect()
 }
 
 #[tauri::command]
@@ -200,7 +466,11 @@ pub fn get_seafarer_frameworks(
     position_id: String,
 ) -> Result<Vec<profiles::Framework>, String> {
     let level = profiles::StcwLevel::from_id(&level_id).ok_or("Unknown STCW level")?;
-    Ok(profiles::applicable_frameworks_for_seafarer(level, &vessel_id, &position_id))
+    Ok(profiles::applicable_frameworks_for_seafarer(
+        level,
+        &vessel_id,
+        &position_id,
+    ))
 }
 
 #[tauri::command]
@@ -211,7 +481,9 @@ pub fn get_vessel_frameworks(
 ) -> Result<Vec<profiles::Framework>, String> {
     let size = profiles::VesselSize::from_id(&size_id).ok_or("Unknown vessel size band")?;
     let trade = profiles::TradeArea::from_id(&trade_id).ok_or("Unknown trade area")?;
-    Ok(profiles::applicable_frameworks_for_vessel(&vessel_id, size, trade))
+    Ok(profiles::applicable_frameworks_for_vessel(
+        &vessel_id, size, trade,
+    ))
 }
 
 #[tauri::command]
@@ -223,35 +495,45 @@ pub fn get_vessel_required_docs(
     let size = profiles::VesselSize::from_id(&size_id).ok_or("Unknown vessel size band")?;
     let trade = profiles::TradeArea::from_id(&trade_id).ok_or("Unknown trade area")?;
     let templates = profiles::required_docs_for_vessel(&vessel_id, size, trade);
-    Ok(templates.iter().map(|t| serde_json::json!({
-        "id": t.id,
-        "title": t.title,
-        "category": t.category,
-        "regulatory_basis": t.regulatory_basis,
-        "has_expiry": t.has_expiry,
-        "typical_years": t.typical_years,
-        "notes": t.notes,
-    })).collect())
+    Ok(templates
+        .iter()
+        .map(|t| {
+            serde_json::json!({
+                "id": t.id,
+                "title": t.title,
+                "category": t.category,
+                "regulatory_basis": t.regulatory_basis,
+                "has_expiry": t.has_expiry,
+                "typical_years": t.typical_years,
+                "notes": t.notes,
+            })
+        })
+        .collect())
 }
 
 #[tauri::command]
 pub fn get_vessel_taxonomy() -> serde_json::Value {
-    let vessel_nodes: Vec<serde_json::Value> = profiles::vessel_tree().iter().map(|v| {
-        serde_json::json!({
-            "id": v.id,
-            "label": v.label,
-            "parent": v.parent,
-            "is_leaf": v.is_leaf,
+    let vessel_nodes: Vec<serde_json::Value> = profiles::vessel_tree()
+        .iter()
+        .map(|v| {
+            serde_json::json!({
+                "id": v.id,
+                "label": v.label,
+                "parent": v.parent,
+                "is_leaf": v.is_leaf,
+            })
         })
-    }).collect();
+        .collect();
 
-    let sizes: Vec<serde_json::Value> = profiles::VesselSize::all().iter().map(|s| {
-        serde_json::json!({ "id": s.id(), "label": s.label() })
-    }).collect();
+    let sizes: Vec<serde_json::Value> = profiles::VesselSize::all()
+        .iter()
+        .map(|s| serde_json::json!({ "id": s.id(), "label": s.label() }))
+        .collect();
 
-    let trades: Vec<serde_json::Value> = profiles::TradeArea::all().iter().map(|t| {
-        serde_json::json!({ "id": t.id(), "label": t.label() })
-    }).collect();
+    let trades: Vec<serde_json::Value> = profiles::TradeArea::all()
+        .iter()
+        .map(|t| serde_json::json!({ "id": t.id(), "label": t.label() }))
+        .collect();
 
     serde_json::json!({
         "vessel_tree": vessel_nodes,
@@ -293,7 +575,8 @@ pub fn create_vessel_profile_vault(
         db::set_vault_info(&conn, "imo", i.trim()).map_err(|e| e.to_string())?;
     }
 
-    let vessel_label: Option<String> = profiles::vessel_tree().into_iter()
+    let vessel_label: Option<String> = profiles::vessel_tree()
+        .into_iter()
         .find(|v| v.id == vessel_category)
         .map(|v| v.label.to_string());
     if let Some(lbl) = &vessel_label {
@@ -320,7 +603,13 @@ pub fn create_vessel_profile_vault(
         .to_string();
         let rec_id = rec.id.clone();
         db::insert_doc(&conn, &rec).map_err(|e| e.to_string())?;
-        let _ = db::log_event(&conn, "doc_added", "document", Some(&rec_id), Some(&payload));
+        let _ = db::log_event(
+            &conn,
+            "doc_added",
+            "document",
+            Some(&rec_id),
+            Some(&payload),
+        );
     }
 
     let info = db::get_vault_info(&conn).map_err(|e| e.to_string())?;
@@ -447,8 +736,10 @@ pub fn get_seafarer_personal(state: State<AppState>) -> Result<serde_json::Value
     let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = lock.as_ref().ok_or("No vault open")?;
     let g = |k: &str| db::get_vault_info_value(conn, k);
+    let rank = g("personal_rank").or_else(|| g("rank"));
+    let preferred_vessel_types = g("preferred_vessel_types").or_else(|| g("vessel_category"));
     Ok(serde_json::json!({
-        "rank": g("personal_rank"),
+        "rank": rank,
         "available_from": g("personal_available_from"),
         "surname": g("personal_surname"),
         "first_name": g("personal_first_name"),
@@ -484,7 +775,7 @@ pub fn get_seafarer_personal(state: State<AppState>) -> Result<serde_json::Value
         "currency": g("personal_currency"),
         "languages": g("personal_languages"),
         "english_level": g("personal_english_level"),
-        "preferred_vessel_types": g("preferred_vessel_types"),
+        "preferred_vessel_types": preferred_vessel_types,
         "ready_for_offers": g("personal_ready_for_offers"),
         "preferred_messenger": g("personal_preferred_messenger"),
     }))
@@ -494,7 +785,12 @@ pub fn get_seafarer_personal(state: State<AppState>) -> Result<serde_json::Value
 pub fn set_seafarer_personal(
     state: State<AppState>,
     fields: serde_json::Value,
-) -> Result<(), String> {
+) -> Result<serde_json::Value, String> {
+    let vault_path = state
+        .vault_path
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
     let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = lock.as_ref().ok_or("No vault open")?;
     let allowed = [
@@ -552,16 +848,41 @@ pub fn set_seafarer_personal(
     if changed {
         let _ = db::log_event(conn, "profile_updated", "vault_info", None, None);
     }
-    Ok(())
+    let framework = if let Some(path) = vault_path.as_ref() {
+        sync_seafarer_document_framework(conn, path, &fields)?
+    } else {
+        serde_json::json!({
+            "metadata_changed": false,
+            "requirements_changed": false,
+            "docs_added": 0,
+            "requirements_added": [],
+            "requirements_removed": [],
+        })
+    };
+    let framework_changed = framework
+        .get("metadata_changed")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+        || framework
+            .get("requirements_changed")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+    let docs_added = framework
+        .get("docs_added")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    Ok(serde_json::json!({
+        "saved": changed,
+        "framework_changed": framework_changed,
+        "docs_added": docs_added,
+        "framework": framework,
+    }))
 }
 
 // ========== PROFILE PHOTO ========================================
 
 #[tauri::command]
-pub fn upload_profile_photo(
-    state: State<AppState>,
-    source_path: String,
-) -> Result<String, String> {
+pub fn upload_profile_photo(state: State<AppState>, source_path: String) -> Result<String, String> {
     let src = PathBuf::from(&source_path);
     if !src.exists() {
         return Err("Source photo does not exist".to_string());
@@ -679,37 +1000,62 @@ pub fn get_profile_status(state: State<AppState>) -> Result<serde_json::Value, S
 
     let docs = db::get_all_docs(conn).map_err(|e| e.to_string())?;
 
-    let (required, missing, completeness): (Vec<serde_json::Value>, Vec<String>, f64) = if let (Some(l), Some(v), Some(p)) = (stcw_level.clone(), vessel_category.clone(), position.clone()) {
-        if let Some(level) = profiles::StcwLevel::from_id(&l) {
-            let tpls = profiles::required_docs_for_profile(level, &v, &p);
-            let have: std::collections::HashSet<String> = docs.iter().filter_map(|d| {
-                let filled = d.file_name.is_some()
-                    || (d.doc_number.as_ref().map(|s| !s.is_empty()).unwrap_or(false))
-                    || (d.valid_to.as_ref().map(|s| !s.is_empty()).unwrap_or(false));
-                if filled { d.template_id.clone() } else { None }
-            }).collect();
+    let (required, missing, completeness): (Vec<serde_json::Value>, Vec<String>, f64) =
+        if let (Some(l), Some(v), Some(p)) = (
+            stcw_level.clone(),
+            vessel_category.clone(),
+            position.clone(),
+        ) {
+            if let Some(level) = profiles::StcwLevel::from_id(&l) {
+                let tpls = profiles::required_docs_for_profile(level, &v, &p);
+                let have: std::collections::HashSet<String> = docs
+                    .iter()
+                    .filter_map(|d| {
+                        let filled = d.file_name.is_some()
+                            || (d
+                                .doc_number
+                                .as_ref()
+                                .map(|s| !s.is_empty())
+                                .unwrap_or(false))
+                            || (d.valid_to.as_ref().map(|s| !s.is_empty()).unwrap_or(false));
+                        if filled {
+                            d.template_id.clone()
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
 
-            let total = tpls.len() as f64;
-            let mut missing_ids: Vec<String> = Vec::new();
-            let required_json: Vec<serde_json::Value> = tpls.iter().map(|t| {
-                let has = have.contains(t.id);
-                if !has { missing_ids.push(t.id.to_string()); }
-                serde_json::json!({
-                    "id": t.id,
-                    "title": t.title,
-                    "category": t.category,
-                    "regulatory_basis": t.regulatory_basis,
-                    "has": has,
-                })
-            }).collect();
-            let pct = if total > 0.0 { (total - missing_ids.len() as f64) / total * 100.0 } else { 0.0 };
-            (required_json, missing_ids, pct)
+                let total = tpls.len() as f64;
+                let mut missing_ids: Vec<String> = Vec::new();
+                let required_json: Vec<serde_json::Value> = tpls
+                    .iter()
+                    .map(|t| {
+                        let has = have.contains(t.id);
+                        if !has {
+                            missing_ids.push(t.id.to_string());
+                        }
+                        serde_json::json!({
+                            "id": t.id,
+                            "title": t.title,
+                            "category": t.category,
+                            "regulatory_basis": t.regulatory_basis,
+                            "has": has,
+                        })
+                    })
+                    .collect();
+                let pct = if total > 0.0 {
+                    (total - missing_ids.len() as f64) / total * 100.0
+                } else {
+                    0.0
+                };
+                (required_json, missing_ids, pct)
+            } else {
+                (vec![], vec![], 0.0)
+            }
         } else {
             (vec![], vec![], 0.0)
-        }
-    } else {
-        (vec![], vec![], 0.0)
-    };
+        };
 
     Ok(serde_json::json!({
         "stcw_level": stcw_level,
@@ -719,4 +1065,107 @@ pub fn get_profile_status(state: State<AppState>) -> Result<serde_json::Value, S
         "missing_ids": missing,
         "completeness_pct": completeness,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn rank_change_adds_master_slots_without_deleting_oow_history() {
+        let vault_path = std::env::temp_dir().join(format!(
+            "skipi-framework-migration-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&vault_path).unwrap();
+        let conn = db::open_db(&vault_path).unwrap();
+
+        db::set_vault_info(&conn, "account_type", "seafarer").unwrap();
+        db::set_vault_info(&conn, "stcw_level", "operational").unwrap();
+        db::set_vault_info(&conn, "vessel_category", "bulker").unwrap();
+        db::set_vault_info(&conn, "position", "second_officer").unwrap();
+        db::set_vault_info(&conn, "rank", "Second Officer").unwrap();
+
+        let level = profiles::StcwLevel::from_id("operational").unwrap();
+        for t in profiles::required_docs_for_profile(level, "bulker", "second_officer") {
+            let rec = frameworks::record_from_profile_template(&t);
+            db::insert_doc(&conn, &rec).unwrap();
+        }
+
+        let fields = serde_json::json!({
+            "rank": "Master",
+            "preferred_vessel_types": "bulker",
+        });
+        let sync = sync_seafarer_document_framework(&conn, &vault_path, &fields).unwrap();
+        assert_eq!(sync["metadata_changed"].as_bool(), Some(true));
+        assert_eq!(sync["requirements_changed"].as_bool(), Some(true));
+        assert!(sync["docs_added"].as_u64().unwrap_or(0) >= 4);
+        let added = sync["requirements_added"].as_array().unwrap();
+        assert!(added.iter().any(|d| d["id"] == "sso"));
+
+        let active_ids: HashSet<&'static str> = current_required_profile_templates(&conn)
+            .unwrap()
+            .into_iter()
+            .map(|t| t.id)
+            .collect();
+        assert!(active_ids.contains("sso"));
+        assert!(active_ids.contains("radar_arpa"));
+        assert!(active_ids.contains("coc_master"));
+        assert!(!active_ids.contains("polar_advanced"));
+        assert!(!active_ids.contains("dangerous_hazardous_substances"));
+        assert!(!active_ids.contains("flag_coc_endorsement"));
+        assert!(!active_ids.contains("flag_seamans_book"));
+        assert!(!active_ids.contains("coc_oow"));
+
+        let docs = db::get_all_docs(&conn).unwrap();
+        assert!(docs
+            .iter()
+            .any(|d| d.template_id.as_deref() == Some("polar_advanced")));
+        assert!(!docs
+            .iter()
+            .any(|d| d.template_id.as_deref() == Some("dangerous_hazardous_substances")));
+        assert!(docs
+            .iter()
+            .any(|d| d.template_id.as_deref() == Some("flag_coc_endorsement")));
+        assert!(docs
+            .iter()
+            .any(|d| d.template_id.as_deref() == Some("flag_seamans_book")));
+        assert!(docs.iter().any(|d| d.template_id.as_deref() == Some("sso")));
+        assert!(docs
+            .iter()
+            .any(|d| d.template_id.as_deref() == Some("coc_oow")));
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(vault_path);
+    }
+
+    #[test]
+    fn hidden_conditional_template_is_not_reseeded() {
+        let vault_path =
+            std::env::temp_dir().join(format!("skipi-framework-hidden-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&vault_path).unwrap();
+        let conn = db::open_db(&vault_path).unwrap();
+
+        db::set_vault_info(&conn, "account_type", "seafarer").unwrap();
+        db::set_vault_info(&conn, "stcw_level", "operational").unwrap();
+        db::set_vault_info(&conn, "vessel_category", "bulker").unwrap();
+        db::set_vault_info(&conn, "position", "second_officer").unwrap();
+        crate::commands::documents::mark_template_hidden(&conn, "polar_advanced").unwrap();
+
+        ensure_profile_templates(&conn, &vault_path).unwrap();
+        let docs = db::get_all_docs(&conn).unwrap();
+        assert!(!docs
+            .iter()
+            .any(|d| d.template_id.as_deref() == Some("polar_advanced")));
+        assert!(docs
+            .iter()
+            .any(|d| d.template_id.as_deref() == Some("flag_coc_endorsement")));
+        assert!(docs
+            .iter()
+            .any(|d| d.template_id.as_deref() == Some("ecdis")));
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(vault_path);
+    }
 }

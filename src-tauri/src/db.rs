@@ -184,6 +184,14 @@ fn migrations() -> Vec<(u32, &'static str)> {
         (5, r#"
             ALTER TABLE work_history ADD COLUMN evidence_folder TEXT;
         "#),
+        // Migration 6: promote AI corrections into a local OCR-label stream.
+        // Values may contain document identifiers and OCR text, so this stays
+        // inside the private vault unless the user explicitly exports labels.
+        (6, r#"
+            ALTER TABLE ai_corrections ADD COLUMN doc_id TEXT;
+            ALTER TABLE ai_corrections ADD COLUMN file_sha256 TEXT;
+            ALTER TABLE ai_corrections ADD COLUMN label_json TEXT;
+        "#),
     ]
 }
 
@@ -570,6 +578,36 @@ pub fn save_correction(conn: &Connection, doc_type: &str, field_name: &str, ai_v
     conn.execute(
         "INSERT INTO ai_corrections (doc_type, field_name, ai_value, correct_value, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
         params![doc_type, field_name, ai_value, correct_value, now],
+    )?;
+    Ok(())
+}
+
+pub fn save_ocr_label(
+    conn: &Connection,
+    doc_id: &str,
+    doc_type: &str,
+    field_name: &str,
+    ai_value: &str,
+    correct_value: &str,
+    file_sha256: Option<&str>,
+) -> Result<()> {
+    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+    let label_json = serde_json::json!({
+        "entity_type": "ocr_field",
+        "entity_id": doc_id,
+        "task": "maritime_document_ocr",
+        "doc_type": doc_type,
+        "field_name": field_name,
+        "prediction": ai_value,
+        "human_label": correct_value,
+        "file_sha256": file_sha256,
+        "created_at": now,
+    }).to_string();
+    conn.execute(
+        "INSERT INTO ai_corrections
+         (doc_type, field_name, ai_value, correct_value, created_at, doc_id, file_sha256, label_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![doc_type, field_name, ai_value, correct_value, now, doc_id, file_sha256, label_json],
     )?;
     Ok(())
 }

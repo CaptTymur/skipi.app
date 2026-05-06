@@ -369,7 +369,6 @@ pub fn open_email_with_attachment(state: State<AppState>, package_id: String, to
         return Err("Package ZIP not found".to_string());
     }
 
-    let zip_str = zip_path.to_string_lossy().to_string();
     let body_str = body.unwrap_or_default();
 
     #[cfg(target_os = "linux")]
@@ -403,6 +402,10 @@ pub fn open_email_with_attachment(state: State<AppState>, package_id: String, to
         }
         return Ok(attach);
     }
+
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    let zip_str = zip_path.to_string_lossy().to_string();
+
     #[cfg(target_os = "macos")]
     {
         let script = format!(
@@ -474,6 +477,7 @@ pub fn open_email_with_attachment(state: State<AppState>, package_id: String, to
             .spawn();
     }
 
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     Ok(zip_str)
 }
 

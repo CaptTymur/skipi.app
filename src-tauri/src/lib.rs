@@ -46,11 +46,19 @@ pub(crate) fn load_last_vault() -> Option<String> {
 
 pub(crate) fn load_recent_vaults() -> Vec<String> {
     let cfg = config_path();
-    let Ok(text) = fs::read_to_string(cfg) else { return vec![]; };
-    let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) else { return vec![]; };
+    let Ok(text) = fs::read_to_string(cfg) else {
+        return vec![];
+    };
+    let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return vec![];
+    };
     val["recent_vaults"]
         .as_array()
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -78,7 +86,10 @@ pub(crate) fn base64_encode(data: &[u8]) -> String {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    use commands::{vault, documents, ai, packages, profile, cv_commands, work_history, email, jobs, messaging, mail_intent, review};
+    use commands::{
+        ai, cv_commands, documents, email, jobs, mail_intent, messaging, packages, profile, review,
+        vault, work_history,
+    };
 
     tauri::Builder::default()
         .manage(AppState {
@@ -90,7 +101,8 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
             #[cfg(desktop)]
-            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -106,6 +118,7 @@ pub fn run() {
             vault::get_last_vault,
             vault::get_app_version,
             vault::get_platform,
+            vault::get_default_vault_parent,
             vault::get_linux_install_type,
             vault::open_external_url,
             vault::install_deb_update,
@@ -115,6 +128,8 @@ pub fn run() {
             vault::close_vault,
             vault::get_current_vault_path,
             vault::get_vault_path,
+            vault::export_vault_backup,
+            vault::import_vault_backup,
             // Documents
             documents::get_documents,
             documents::update_expiry,
@@ -131,6 +146,7 @@ pub fn run() {
             ai::save_api_key,
             ai::get_api_key,
             ai::save_ai_correction,
+            ai::save_ocr_label,
             ai::get_ai_corrections,
             ai::category_has_template,
             ai::update_field_statuses,
@@ -150,6 +166,8 @@ pub fn run() {
             // Profile
             profile::get_profile_taxonomy,
             profile::get_optional_categories,
+            profile::get_active_template_ids,
+            profile::get_conditional_template_ids,
             profile::get_required_docs,
             profile::create_profile_vault,
             profile::get_profile_status,
@@ -194,8 +212,10 @@ pub fn run() {
             email::send_email_smtp,
             // Public jobs board
             jobs::fetch_jobs,
+            jobs::fetch_mailing_requests,
             jobs::job_apply_click,
             jobs::job_hide,
+            jobs::mailing_request_send_click,
             jobs::open_mail_with_attachment,
             jobs::get_downloads_dir,
             mail_intent::create_email_file,

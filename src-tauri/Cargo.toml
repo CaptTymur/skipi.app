@@ -1,6 +1,6 @@
 [package]
 name = "skipi"
-version = "0.4.104"
+version = "0.4.105"
 description = "Skipi — Maritime Document Management"
 authors = ["Tymur Rudov"]
 license = "MIT"
@@ -26,7 +26,7 @@ tauri-plugin-process = "2"
 
 [target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
 tauri-plugin-updater = "2"
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.32", features = ["bundled", "backup"] }
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
 reqwest = { version = "0.12", features = ["blocking", "json"] }

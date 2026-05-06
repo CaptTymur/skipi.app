@@ -3,6 +3,10 @@
 Skipi handles seafarers' identity documents, certificates, and career
 records. Security is treated as a primary concern, not an afterthought.
 
+For the internal cross-project threat model covering the desktop app,
+`skipi-server`, Skipi Crewing, updater trust, fraud, abuse, and incident
+readiness, see `SECURITY_THREAT_MODEL.md`.
+
 ## Reporting a vulnerability
 
 **Please do not open a public GitHub issue for security vulnerabilities.**

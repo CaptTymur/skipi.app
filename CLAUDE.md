@@ -29,6 +29,8 @@ Operational P0: до широкой публикации reviews нужен cont
 
 Infrastructure strategy: start on Contabo because cash matters, scale up within Contabo as a temporary buffer, but keep the system exit-ready from day one. No installers or critical files on VPS disk, production DB via `DATABASE_URL`, object storage external, backups off-provider, API behind `api.skipi.app`, migration drill required. Runbook: `Documents/Test/Skipi Handoff/08 — Infrastructure Migration Plan — Contabo First Exit Ready.md`.
 
+Security P0: before wide launch, keep the local-first boundary strict: server must not become a central vault for seafarer passports/certificates/contracts. Current security layer and gaps are captured in `SECURITY_THREAT_MODEL.md` and `skipi-server/SECURITY.md`. Highest-priority fixes: replace shared `ADMIN_TOKEN` with per-organization scoped tokens, add object-level authorization tests, pin seafarer user_id to application threads, add rate limits/WAF, add `/api/app-config` kill switches, move production to Postgres + Alembic + off-provider restore-tested backups, harden updater/release secrets, add CSP, and narrow Tauri FS capabilities.
+
 - **Автор:** Tymur Rudov (Master Mariner)
 - **Репозиторий:** https://github.com/CaptTymur/skipi.app (публичный)
 - **Последний релиз:** v0.4.14 (drag-and-drop добавлен)

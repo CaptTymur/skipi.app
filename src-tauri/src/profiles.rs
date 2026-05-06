@@ -46,7 +46,11 @@ impl StcwLevel {
     }
 
     pub fn all() -> &'static [StcwLevel] {
-        &[StcwLevel::Support, StcwLevel::Operational, StcwLevel::Management]
+        &[
+            StcwLevel::Support,
+            StcwLevel::Operational,
+            StcwLevel::Management,
+        ]
     }
 }
 
@@ -66,23 +70,125 @@ pub struct VesselNode {
 pub fn vessel_tree() -> Vec<VesselNode> {
     vec![
         // Root groups
-        VesselNode { id: "cargo",  label: "Dry Cargo",  parent: None, is_leaf: false },
-        VesselNode { id: "tanker", label: "Tanker",     parent: None, is_leaf: false },
-        VesselNode { id: "passenger", label: "Passenger Ship", parent: None, is_leaf: true },
-        VesselNode { id: "offshore",  label: "Offshore / Special Purpose", parent: None, is_leaf: true },
-
+        VesselNode {
+            id: "cargo",
+            label: "Dry Cargo",
+            parent: None,
+            is_leaf: false,
+        },
+        VesselNode {
+            id: "tanker",
+            label: "Tanker",
+            parent: None,
+            is_leaf: false,
+        },
+        VesselNode {
+            id: "passenger",
+            label: "Passenger Ship",
+            parent: None,
+            is_leaf: true,
+        },
+        VesselNode {
+            id: "offshore",
+            label: "Offshore / Special Purpose",
+            parent: None,
+            is_leaf: true,
+        },
         // Dry cargo children
-        VesselNode { id: "bulker",        label: "Bulk Carrier",    parent: Some("cargo"), is_leaf: true },
-        VesselNode { id: "container",     label: "Container Ship",  parent: Some("cargo"), is_leaf: true },
-        VesselNode { id: "general_cargo", label: "General Cargo",   parent: Some("cargo"), is_leaf: true },
-        VesselNode { id: "car_carrier",   label: "Car Carrier / RoRo", parent: Some("cargo"), is_leaf: true },
-        VesselNode { id: "reefer",        label: "Refrigerated Cargo", parent: Some("cargo"), is_leaf: true },
-
+        VesselNode {
+            id: "bulker",
+            label: "Bulk Carrier",
+            parent: Some("cargo"),
+            is_leaf: true,
+        },
+        VesselNode {
+            id: "container",
+            label: "Container Ship",
+            parent: Some("cargo"),
+            is_leaf: true,
+        },
+        VesselNode {
+            id: "general_cargo",
+            label: "General Cargo",
+            parent: Some("cargo"),
+            is_leaf: true,
+        },
+        VesselNode {
+            id: "car_carrier",
+            label: "Car Carrier / RoRo",
+            parent: Some("cargo"),
+            is_leaf: true,
+        },
+        VesselNode {
+            id: "reefer",
+            label: "Refrigerated Cargo",
+            parent: Some("cargo"),
+            is_leaf: true,
+        },
         // Tanker children
-        VesselNode { id: "oil_tanker",      label: "Oil Tanker",      parent: Some("tanker"), is_leaf: true },
-        VesselNode { id: "chemical_tanker", label: "Chemical Tanker", parent: Some("tanker"), is_leaf: true },
-        VesselNode { id: "gas_carrier",     label: "Gas Carrier (LNG/LPG)", parent: Some("tanker"), is_leaf: true },
+        VesselNode {
+            id: "oil_tanker",
+            label: "Oil Tanker",
+            parent: Some("tanker"),
+            is_leaf: true,
+        },
+        VesselNode {
+            id: "chemical_tanker",
+            label: "Chemical Tanker",
+            parent: Some("tanker"),
+            is_leaf: true,
+        },
+        VesselNode {
+            id: "gas_carrier",
+            label: "Gas Carrier (LNG/LPG)",
+            parent: Some("tanker"),
+            is_leaf: true,
+        },
     ]
+}
+
+fn normalized_lookup_key(value: &str) -> String {
+    value
+        .trim()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .flat_map(|c| c.to_lowercase())
+        .collect()
+}
+
+pub fn vessel_id_from_label_or_id(value: &str) -> Option<&'static str> {
+    let first = value.split(',').next().unwrap_or(value).trim();
+    if first.is_empty() {
+        return None;
+    }
+
+    let key = normalized_lookup_key(first);
+    for v in vessel_tree() {
+        if normalized_lookup_key(v.id) == key || normalized_lookup_key(v.label) == key {
+            return Some(v.id);
+        }
+    }
+
+    match key.as_str() {
+        "bulk" | "bulker" | "bulkcarrier" => Some("bulker"),
+        "container" | "containership" => Some("container"),
+        "generalcargo" | "generalcargoship" => Some("general_cargo"),
+        "roro" | "roroship" | "carcarrier" | "carcarrierroro" => Some("car_carrier"),
+        "reefer" | "refrigeratedcargo" => Some("reefer"),
+        "oil" | "oiltanker" => Some("oil_tanker"),
+        "chemical" | "chemicaltanker" => Some("chemical_tanker"),
+        "gas" | "lng" | "lpg" | "lnglpg" | "gascarrier" => Some("gas_carrier"),
+        "passenger" | "passengership" | "cruise" | "cruiseship" => Some("passenger"),
+        "offshore" | "osv" | "specialpurpose" | "offshorespecialpurpose" => Some("offshore"),
+        _ => None,
+    }
+}
+
+pub fn vessel_label(id: &str) -> Option<&'static str> {
+    vessel_tree()
+        .into_iter()
+        .find(|v| v.id == id)
+        .map(|v| v.label)
 }
 
 // --- Positions -----------------------------------------------------------
@@ -99,31 +205,149 @@ pub fn positions() -> Vec<Position> {
     use StcwLevel::*;
     vec![
         // Management
-        Position { id: "master",           label: "Master",              level: Management, dept: "deck" },
-        Position { id: "chief_officer",    label: "Chief Officer",       level: Management, dept: "deck" },
-        Position { id: "chief_engineer",   label: "Chief Engineer",      level: Management, dept: "engine" },
-        Position { id: "second_engineer",  label: "Second Engineer",     level: Management, dept: "engine" },
+        Position {
+            id: "master",
+            label: "Master",
+            level: Management,
+            dept: "deck",
+        },
+        Position {
+            id: "chief_officer",
+            label: "Chief Officer",
+            level: Management,
+            dept: "deck",
+        },
+        Position {
+            id: "chief_engineer",
+            label: "Chief Engineer",
+            level: Management,
+            dept: "engine",
+        },
+        Position {
+            id: "second_engineer",
+            label: "Second Engineer",
+            level: Management,
+            dept: "engine",
+        },
         // Operational
-        Position { id: "second_officer",   label: "Second Officer",      level: Operational, dept: "deck" },
-        Position { id: "third_officer",    label: "Third Officer",       level: Operational, dept: "deck" },
-        Position { id: "third_engineer",   label: "Third Engineer",      level: Operational, dept: "engine" },
-        Position { id: "fourth_engineer",  label: "Fourth Engineer",     level: Operational, dept: "engine" },
-        Position { id: "eto",              label: "Electro-Technical Officer (ETO)", level: Operational, dept: "engine" },
+        Position {
+            id: "second_officer",
+            label: "Second Officer",
+            level: Operational,
+            dept: "deck",
+        },
+        Position {
+            id: "third_officer",
+            label: "Third Officer",
+            level: Operational,
+            dept: "deck",
+        },
+        Position {
+            id: "third_engineer",
+            label: "Third Engineer",
+            level: Operational,
+            dept: "engine",
+        },
+        Position {
+            id: "fourth_engineer",
+            label: "Fourth Engineer",
+            level: Operational,
+            dept: "engine",
+        },
+        Position {
+            id: "eto",
+            label: "Electro-Technical Officer (ETO)",
+            level: Operational,
+            dept: "engine",
+        },
         // Support
-        Position { id: "bosun",            label: "Bosun",               level: Support, dept: "deck" },
-        Position { id: "ab",               label: "Able Seaman (AB)",    level: Support, dept: "deck" },
-        Position { id: "os",               label: "Ordinary Seaman (OS)",level: Support, dept: "deck" },
-        Position { id: "motorman",         label: "Motorman",            level: Support, dept: "engine" },
-        Position { id: "wiper",            label: "Wiper",               level: Support, dept: "engine" },
-        Position { id: "ete",              label: "Electro-Technical Rating", level: Support, dept: "engine" },
-        Position { id: "fitter",           label: "Fitter",              level: Support, dept: "engine" },
-        Position { id: "cook",             label: "Cook",                level: Support, dept: "catering" },
-        Position { id: "messman",          label: "Messman / Steward",   level: Support, dept: "catering" },
+        Position {
+            id: "bosun",
+            label: "Bosun",
+            level: Support,
+            dept: "deck",
+        },
+        Position {
+            id: "ab",
+            label: "Able Seaman (AB)",
+            level: Support,
+            dept: "deck",
+        },
+        Position {
+            id: "os",
+            label: "Ordinary Seaman (OS)",
+            level: Support,
+            dept: "deck",
+        },
+        Position {
+            id: "motorman",
+            label: "Motorman",
+            level: Support,
+            dept: "engine",
+        },
+        Position {
+            id: "wiper",
+            label: "Wiper",
+            level: Support,
+            dept: "engine",
+        },
+        Position {
+            id: "ete",
+            label: "Electro-Technical Rating",
+            level: Support,
+            dept: "engine",
+        },
+        Position {
+            id: "fitter",
+            label: "Fitter",
+            level: Support,
+            dept: "engine",
+        },
+        Position {
+            id: "cook",
+            label: "Cook",
+            level: Support,
+            dept: "catering",
+        },
+        Position {
+            id: "messman",
+            label: "Messman / Steward",
+            level: Support,
+            dept: "catering",
+        },
     ]
 }
 
 pub fn position(id: &str) -> Option<Position> {
     positions().into_iter().find(|p| p.id == id)
+}
+
+pub fn position_id_from_rank_label(value: &str) -> Option<&'static str> {
+    let key = normalized_lookup_key(value);
+    if key.is_empty() {
+        return None;
+    }
+
+    for p in positions() {
+        if normalized_lookup_key(p.id) == key || normalized_lookup_key(p.label) == key {
+            return Some(p.id);
+        }
+    }
+
+    match key.as_str() {
+        "captain" | "capt" | "mastermariner" => Some("master"),
+        "chiefmate" | "1stofficer" | "firstofficer" | "1o" | "co" => Some("chief_officer"),
+        "secondmate" | "2ndofficer" | "2officer" | "2o" => Some("second_officer"),
+        "thirdmate" | "3rdofficer" | "3officer" | "3o" => Some("third_officer"),
+        "electrotechnicalofficer" | "electrotechnicalofficereto" => Some("eto"),
+        "electrician" | "electrotechnicalrating" | "etr" => Some("ete"),
+        "ableseaman" | "ablebodiedseaman" => Some("ab"),
+        "ordinaryseaman" => Some("os"),
+        "chiefcook" => Some("cook"),
+        "steward" => Some("messman"),
+        "oiler" => Some("motorman"),
+        _ => None,
+    }
 }
 
 // --- Document templates with regulatory basis ----------------------------
@@ -144,31 +368,74 @@ pub struct DocTemplate {
 pub fn universal_base() -> Vec<DocTemplate> {
     vec![
         // Passport
-        DocTemplate { id: "passport", title: "Passport (Travel)", category: "Passport",
-            regulatory_basis: "ICAO 9303", has_expiry: true, typical_years: Some(10),
-            notes: "National travel passport" },
+        DocTemplate {
+            id: "passport",
+            title: "Passport (Travel)",
+            category: "Passport",
+            regulatory_basis: "ICAO 9303",
+            has_expiry: true,
+            typical_years: Some(10),
+            notes: "National travel passport",
+        },
         // Seaman's Book — national (primary). Additional flag-state books can be added by user.
-        DocTemplate { id: "seamans_book", title: "Seaman's Book (Discharge Book)", category: "Seaman's Book",
-            regulatory_basis: "National (flag state)", has_expiry: false, typical_years: None,
-            notes: "National seaman's book. Additional flag-state books can be added." },
+        DocTemplate {
+            id: "seamans_book",
+            title: "Seaman's Book (Discharge Book)",
+            category: "Seaman's Book",
+            regulatory_basis: "National (flag state)",
+            has_expiry: false,
+            typical_years: None,
+            notes: "National seaman's book. Additional flag-state books can be added.",
+        },
         // Seafarer's Identity Document
-        DocTemplate { id: "sid", title: "Seafarer's Identity Document (SID)", category: "Seaman's Book",
-            regulatory_basis: "ILO C185", has_expiry: true, typical_years: Some(5),
-            notes: "ILO Seafarers' Identity Documents Convention" },
+        DocTemplate {
+            id: "sid",
+            title: "Seafarer's Identity Document (SID)",
+            category: "Seaman's Book",
+            regulatory_basis: "ILO C185",
+            has_expiry: true,
+            typical_years: Some(5),
+            notes: "ILO Seafarers' Identity Documents Convention",
+        },
         // Visas
-        DocTemplate { id: "visa_us", title: "USA Visa (C1/D)", category: "Visas",
-            regulatory_basis: "US Immigration and Nationality Act", has_expiry: true, typical_years: Some(10),
-            notes: "Transit/crewman visa. Required by ~50% of employers." },
-        DocTemplate { id: "visa_schengen", title: "Schengen Visa", category: "Visas",
-            regulatory_basis: "EU Regulation 810/2009 (Visa Code)", has_expiry: true, typical_years: Some(5),
-            notes: "Short-stay visa covering the Schengen Area. Useful for crew changes in EU ports." },
+        DocTemplate {
+            id: "visa_us",
+            title: "USA Visa (C1/D)",
+            category: "Visas",
+            regulatory_basis: "US Immigration and Nationality Act",
+            has_expiry: true,
+            typical_years: Some(10),
+            notes: "Transit/crewman visa. Required by ~50% of employers.",
+        },
+        DocTemplate {
+            id: "visa_schengen",
+            title: "Schengen Visa",
+            category: "Visas",
+            regulatory_basis: "EU Regulation 810/2009 (Visa Code)",
+            has_expiry: true,
+            typical_years: Some(5),
+            notes:
+                "Short-stay visa covering the Schengen Area. Useful for crew changes in EU ports.",
+        },
         // Medical
-        DocTemplate { id: "medical_cert", title: "Medical Fitness Certificate", category: "Medical",
-            regulatory_basis: "STCW I/9; MLC 2006 A1.2", has_expiry: true, typical_years: Some(2),
-            notes: "ENG1 or equivalent" },
-        DocTemplate { id: "yellow_fever", title: "Yellow Fever Vaccination", category: "Medical",
-            regulatory_basis: "WHO IHR 2005", has_expiry: false, typical_years: None,
-            notes: "Depending on trading area" },
+        DocTemplate {
+            id: "medical_cert",
+            title: "Medical Fitness Certificate",
+            category: "Medical",
+            regulatory_basis: "STCW I/9; MLC 2006 A1.2",
+            has_expiry: true,
+            typical_years: Some(2),
+            notes: "ENG1 or equivalent",
+        },
+        DocTemplate {
+            id: "yellow_fever",
+            title: "Yellow Fever Vaccination",
+            category: "Medical",
+            regulatory_basis: "WHO IHR 2005",
+            has_expiry: false,
+            typical_years: None,
+            notes: "Depending on trading area",
+        },
     ]
 }
 
@@ -176,34 +443,75 @@ pub fn universal_base() -> Vec<DocTemplate> {
 
 pub fn level_base(level: StcwLevel) -> Vec<DocTemplate> {
     let mut out: Vec<DocTemplate> = vec![
-        DocTemplate { id: "bst", title: "Basic Safety Training (BST)",
-            category: "STCW Mandatory", regulatory_basis: "STCW VI/1",
-            has_expiry: true, typical_years: Some(5),
-            notes: "PST, FPFF, EFA, PSSR" },
-        DocTemplate { id: "pscrb", title: "Proficiency in Survival Craft and Rescue Boats (PSCRB)",
-            category: "STCW Mandatory", regulatory_basis: "STCW VI/2",
-            has_expiry: true, typical_years: Some(5), notes: "" },
-        DocTemplate { id: "sec_awareness", title: "Security Awareness Training",
-            category: "STCW Mandatory", regulatory_basis: "STCW VI/6-1",
-            has_expiry: false, typical_years: None, notes: "ISPS" },
+        DocTemplate {
+            id: "bst",
+            title: "Basic Safety Training (BST)",
+            category: "STCW Mandatory",
+            regulatory_basis: "STCW VI/1",
+            has_expiry: true,
+            typical_years: Some(5),
+            notes: "PST, FPFF, EFA, PSSR",
+        },
+        DocTemplate {
+            id: "pscrb",
+            title: "Proficiency in Survival Craft and Rescue Boats (PSCRB)",
+            category: "STCW Mandatory",
+            regulatory_basis: "STCW VI/2",
+            has_expiry: true,
+            typical_years: Some(5),
+            notes: "",
+        },
+        DocTemplate {
+            id: "sec_awareness",
+            title: "Security Awareness Training",
+            category: "STCW Mandatory",
+            regulatory_basis: "STCW VI/6-1",
+            has_expiry: false,
+            typical_years: None,
+            notes: "ISPS",
+        },
     ];
 
     if matches!(level, StcwLevel::Operational | StcwLevel::Management) {
-        out.push(DocTemplate { id: "advanced_ff", title: "Advanced Firefighting",
-            category: "STCW Mandatory", regulatory_basis: "STCW VI/3",
-            has_expiry: true, typical_years: Some(5), notes: "" });
-        out.push(DocTemplate { id: "medical_first_aid", title: "Medical First Aid",
-            category: "STCW Mandatory", regulatory_basis: "STCW VI/4-1",
-            has_expiry: false, typical_years: None, notes: "" });
+        out.push(DocTemplate {
+            id: "advanced_ff",
+            title: "Advanced Firefighting",
+            category: "STCW Mandatory",
+            regulatory_basis: "STCW VI/3",
+            has_expiry: true,
+            typical_years: Some(5),
+            notes: "",
+        });
+        out.push(DocTemplate {
+            id: "medical_first_aid",
+            title: "Medical First Aid",
+            category: "STCW Mandatory",
+            regulatory_basis: "STCW VI/4-1",
+            has_expiry: false,
+            typical_years: None,
+            notes: "",
+        });
     }
 
     if matches!(level, StcwLevel::Management) {
-        out.push(DocTemplate { id: "medical_care", title: "Medical Care on Board",
-            category: "STCW Mandatory", regulatory_basis: "STCW VI/4-2",
-            has_expiry: false, typical_years: None, notes: "" });
-        out.push(DocTemplate { id: "dsd", title: "Designated Security Duties",
-            category: "STCW Mandatory", regulatory_basis: "STCW VI/6-2",
-            has_expiry: false, typical_years: None, notes: "" });
+        out.push(DocTemplate {
+            id: "medical_care",
+            title: "Medical Care on Board",
+            category: "STCW Mandatory",
+            regulatory_basis: "STCW VI/4-2",
+            has_expiry: false,
+            typical_years: None,
+            notes: "",
+        });
+        out.push(DocTemplate {
+            id: "dsd",
+            title: "Designated Security Duties",
+            category: "STCW Mandatory",
+            regulatory_basis: "STCW VI/6-2",
+            has_expiry: false,
+            typical_years: None,
+            notes: "",
+        });
     }
 
     out
@@ -221,9 +529,12 @@ pub fn position_docs(pos_id: &str) -> Vec<DocTemplate> {
             DocTemplate { id: "gmdss_goc", title: "GMDSS General Operator's Certificate (GOC)",
                 category: "Certificate of Competency", regulatory_basis: "STCW IV/2",
                 has_expiry: true, typical_years: Some(5), notes: "" },
-            DocTemplate { id: "ecdis", title: "ECDIS Training",
+            DocTemplate { id: "ecdis", title: "ECDIS Generic Training",
                 category: "Deck Training", regulatory_basis: "STCW A-II/1, A-II/2",
-                has_expiry: false, typical_years: None, notes: "Generic + type-specific" },
+                has_expiry: false, typical_years: None, notes: "Generic ECDIS competence required for deck officers. Equipment/type-specific ECDIS certificates are added separately." },
+            DocTemplate { id: "radar_arpa", title: "Radar Navigation, Radar Plotting and ARPA",
+                category: "Deck Training", regulatory_basis: "STCW A-II/1, A-II/2",
+                has_expiry: false, typical_years: None, notes: "Radar observer / ARPA training" },
             DocTemplate { id: "brm", title: "Bridge Resource Management (BRM)",
                 category: "Deck Training", regulatory_basis: "STCW A-II/1, A-II/2",
                 has_expiry: false, typical_years: None, notes: "" },
@@ -238,9 +549,12 @@ pub fn position_docs(pos_id: &str) -> Vec<DocTemplate> {
             DocTemplate { id: "gmdss_goc", title: "GMDSS General Operator's Certificate (GOC)",
                 category: "Certificate of Competency", regulatory_basis: "STCW IV/2",
                 has_expiry: true, typical_years: Some(5), notes: "" },
-            DocTemplate { id: "ecdis", title: "ECDIS Training",
+            DocTemplate { id: "ecdis", title: "ECDIS Generic Training",
                 category: "Deck Training", regulatory_basis: "STCW A-II/1, A-II/2",
-                has_expiry: false, typical_years: None, notes: "" },
+                has_expiry: false, typical_years: None, notes: "Generic ECDIS competence required for deck officers. Equipment/type-specific ECDIS certificates are added separately." },
+            DocTemplate { id: "radar_arpa", title: "Radar Navigation, Radar Plotting and ARPA",
+                category: "Deck Training", regulatory_basis: "STCW A-II/1, A-II/2",
+                has_expiry: false, typical_years: None, notes: "Radar observer / ARPA training" },
             DocTemplate { id: "brm", title: "Bridge Resource Management (BRM)",
                 category: "Deck Training", regulatory_basis: "STCW A-II/1, A-II/2",
                 has_expiry: false, typical_years: None, notes: "" },
@@ -252,9 +566,12 @@ pub fn position_docs(pos_id: &str) -> Vec<DocTemplate> {
             DocTemplate { id: "gmdss_goc", title: "GMDSS General Operator's Certificate (GOC)",
                 category: "Certificate of Competency", regulatory_basis: "STCW IV/2",
                 has_expiry: true, typical_years: Some(5), notes: "" },
-            DocTemplate { id: "ecdis", title: "ECDIS Training",
+            DocTemplate { id: "ecdis", title: "ECDIS Generic Training",
                 category: "Deck Training", regulatory_basis: "STCW A-II/1",
-                has_expiry: false, typical_years: None, notes: "" },
+                has_expiry: false, typical_years: None, notes: "Generic ECDIS competence required for deck officers. Equipment/type-specific ECDIS certificates are added separately." },
+            DocTemplate { id: "radar_arpa", title: "Radar Navigation, Radar Plotting and ARPA",
+                category: "Deck Training", regulatory_basis: "STCW A-II/1",
+                has_expiry: false, typical_years: None, notes: "Radar observer / ARPA training" },
             DocTemplate { id: "brm", title: "Bridge Resource Management (BRM)",
                 category: "Deck Training", regulatory_basis: "STCW A-II/1",
                 has_expiry: false, typical_years: None, notes: "" },
@@ -347,55 +664,123 @@ pub fn vessel_extras(vessel_id: &str, level: StcwLevel) -> Vec<DocTemplate> {
     use StcwLevel::*;
     match (vessel_id, level) {
         // Oil / Chemical tankers — basic training covers both (grouped in STCW V/1-1)
-        ("oil_tanker", Support) | ("chemical_tanker", Support) => vec![
-            DocTemplate { id: "tank_basic_oilchem", title: "Basic Training for Oil and Chemical Tanker Cargo Operations",
-                category: "Tanker Training", regulatory_basis: "STCW V/1-1-1",
-                has_expiry: false, typical_years: None, notes: "" },
-        ],
+        ("oil_tanker", Support) | ("chemical_tanker", Support) => vec![DocTemplate {
+            id: "tank_basic_oilchem",
+            title: "Basic Training for Oil and Chemical Tanker Cargo Operations",
+            category: "Tanker Training",
+            regulatory_basis: "STCW V/1-1-1",
+            has_expiry: false,
+            typical_years: None,
+            notes: "",
+        }],
         ("oil_tanker", Operational) | ("oil_tanker", Management) => vec![
-            DocTemplate { id: "tank_basic_oilchem", title: "Basic Training for Oil and Chemical Tanker Cargo Operations",
-                category: "Tanker Training", regulatory_basis: "STCW V/1-1-1",
-                has_expiry: false, typical_years: None, notes: "" },
-            DocTemplate { id: "tank_adv_oil", title: "Advanced Training for Oil Tanker Cargo Operations",
-                category: "Tanker Training", regulatory_basis: "STCW V/1-1-2",
-                has_expiry: false, typical_years: None, notes: "" },
-            DocTemplate { id: "cof_oil", title: "Certificate of Fitness (Oil)",
-                category: "Tanker Documents", regulatory_basis: "MARPOL Annex I",
-                has_expiry: true, typical_years: Some(5), notes: "Vessel-level, listed for reference" },
+            DocTemplate {
+                id: "tank_basic_oilchem",
+                title: "Basic Training for Oil and Chemical Tanker Cargo Operations",
+                category: "Tanker Training",
+                regulatory_basis: "STCW V/1-1-1",
+                has_expiry: false,
+                typical_years: None,
+                notes: "",
+            },
+            DocTemplate {
+                id: "tank_adv_oil",
+                title: "Advanced Training for Oil Tanker Cargo Operations",
+                category: "Tanker Training",
+                regulatory_basis: "STCW V/1-1-2",
+                has_expiry: false,
+                typical_years: None,
+                notes: "",
+            },
+            DocTemplate {
+                id: "cof_oil",
+                title: "Certificate of Fitness (Oil)",
+                category: "Tanker Documents",
+                regulatory_basis: "MARPOL Annex I",
+                has_expiry: true,
+                typical_years: Some(5),
+                notes: "Vessel-level, listed for reference",
+            },
         ],
         ("chemical_tanker", Operational) | ("chemical_tanker", Management) => vec![
-            DocTemplate { id: "tank_basic_oilchem", title: "Basic Training for Oil and Chemical Tanker Cargo Operations",
-                category: "Tanker Training", regulatory_basis: "STCW V/1-1-1",
-                has_expiry: false, typical_years: None, notes: "" },
-            DocTemplate { id: "tank_adv_chem", title: "Advanced Training for Chemical Tanker Cargo Operations",
-                category: "Tanker Training", regulatory_basis: "STCW V/1-1-3",
-                has_expiry: false, typical_years: None, notes: "" },
+            DocTemplate {
+                id: "tank_basic_oilchem",
+                title: "Basic Training for Oil and Chemical Tanker Cargo Operations",
+                category: "Tanker Training",
+                regulatory_basis: "STCW V/1-1-1",
+                has_expiry: false,
+                typical_years: None,
+                notes: "",
+            },
+            DocTemplate {
+                id: "tank_adv_chem",
+                title: "Advanced Training for Chemical Tanker Cargo Operations",
+                category: "Tanker Training",
+                regulatory_basis: "STCW V/1-1-3",
+                has_expiry: false,
+                typical_years: None,
+                notes: "",
+            },
         ],
-        ("gas_carrier", Support) => vec![
-            DocTemplate { id: "tank_basic_gas", title: "Basic Training for Liquefied Gas Tanker Cargo Operations",
-                category: "Tanker Training", regulatory_basis: "STCW V/1-2-1",
-                has_expiry: false, typical_years: None, notes: "" },
-        ],
+        ("gas_carrier", Support) => vec![DocTemplate {
+            id: "tank_basic_gas",
+            title: "Basic Training for Liquefied Gas Tanker Cargo Operations",
+            category: "Tanker Training",
+            regulatory_basis: "STCW V/1-2-1",
+            has_expiry: false,
+            typical_years: None,
+            notes: "",
+        }],
         ("gas_carrier", Operational) | ("gas_carrier", Management) => vec![
-            DocTemplate { id: "tank_basic_gas", title: "Basic Training for Liquefied Gas Tanker Cargo Operations",
-                category: "Tanker Training", regulatory_basis: "STCW V/1-2-1",
-                has_expiry: false, typical_years: None, notes: "" },
-            DocTemplate { id: "tank_adv_gas", title: "Advanced Training for Liquefied Gas Tanker Cargo Operations",
-                category: "Tanker Training", regulatory_basis: "STCW V/1-2-2",
-                has_expiry: false, typical_years: None, notes: "" },
+            DocTemplate {
+                id: "tank_basic_gas",
+                title: "Basic Training for Liquefied Gas Tanker Cargo Operations",
+                category: "Tanker Training",
+                regulatory_basis: "STCW V/1-2-1",
+                has_expiry: false,
+                typical_years: None,
+                notes: "",
+            },
+            DocTemplate {
+                id: "tank_adv_gas",
+                title: "Advanced Training for Liquefied Gas Tanker Cargo Operations",
+                category: "Tanker Training",
+                regulatory_basis: "STCW V/1-2-2",
+                has_expiry: false,
+                typical_years: None,
+                notes: "",
+            },
         ],
 
         // Passenger ships
         ("passenger", _) => vec![
-            DocTemplate { id: "pax_crowd", title: "Crowd Management Training",
-                category: "Passenger Ship Training", regulatory_basis: "STCW V/2",
-                has_expiry: false, typical_years: None, notes: "" },
-            DocTemplate { id: "pax_crisis", title: "Crisis Management and Human Behaviour Training",
-                category: "Passenger Ship Training", regulatory_basis: "STCW V/2",
-                has_expiry: false, typical_years: None, notes: "" },
-            DocTemplate { id: "pax_safety", title: "Passenger Safety, Cargo Safety and Hull Integrity Training",
-                category: "Passenger Ship Training", regulatory_basis: "STCW V/2",
-                has_expiry: false, typical_years: None, notes: "" },
+            DocTemplate {
+                id: "pax_crowd",
+                title: "Crowd Management Training",
+                category: "Passenger Ship Training",
+                regulatory_basis: "STCW V/2",
+                has_expiry: false,
+                typical_years: None,
+                notes: "",
+            },
+            DocTemplate {
+                id: "pax_crisis",
+                title: "Crisis Management and Human Behaviour Training",
+                category: "Passenger Ship Training",
+                regulatory_basis: "STCW V/2",
+                has_expiry: false,
+                typical_years: None,
+                notes: "",
+            },
+            DocTemplate {
+                id: "pax_safety",
+                title: "Passenger Safety, Cargo Safety and Hull Integrity Training",
+                category: "Passenger Ship Training",
+                regulatory_basis: "STCW V/2",
+                has_expiry: false,
+                typical_years: None,
+                notes: "",
+            },
         ],
 
         _ => vec![],
@@ -416,7 +801,11 @@ pub fn optional_categories() -> Vec<&'static str> {
 
 // --- Build a complete required set for a profile ------------------------
 
-fn merge(out: &mut Vec<DocTemplate>, seen: &mut std::collections::HashSet<&'static str>, v: Vec<DocTemplate>) {
+fn merge(
+    out: &mut Vec<DocTemplate>,
+    seen: &mut std::collections::HashSet<&'static str>,
+    v: Vec<DocTemplate>,
+) {
     for t in v {
         if seen.insert(t.id) {
             out.push(t);
@@ -424,7 +813,11 @@ fn merge(out: &mut Vec<DocTemplate>, seen: &mut std::collections::HashSet<&'stat
     }
 }
 
-pub fn required_docs_for_profile(level: StcwLevel, vessel_id: &str, pos_id: &str) -> Vec<DocTemplate> {
+pub fn required_docs_for_profile(
+    level: StcwLevel,
+    vessel_id: &str,
+    pos_id: &str,
+) -> Vec<DocTemplate> {
     let mut out: Vec<DocTemplate> = Vec::new();
     let mut seen: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
     merge(&mut out, &mut seen, universal_base());
@@ -432,6 +825,108 @@ pub fn required_docs_for_profile(level: StcwLevel, vessel_id: &str, pos_id: &str
     merge(&mut out, &mut seen, position_docs(pos_id));
     merge(&mut out, &mut seen, vessel_extras(vessel_id, level));
     out
+}
+
+pub fn all_seafarer_doc_templates() -> Vec<DocTemplate> {
+    let mut out: Vec<DocTemplate> = Vec::new();
+    let mut seen: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
+    merge(&mut out, &mut seen, universal_base());
+    for level in StcwLevel::all() {
+        merge(&mut out, &mut seen, level_base(*level));
+    }
+    for pos in positions() {
+        merge(&mut out, &mut seen, position_docs(pos.id));
+    }
+    for vessel in vessel_tree().into_iter().filter(|v| v.is_leaf) {
+        for level in StcwLevel::all() {
+            merge(&mut out, &mut seen, vessel_extras(vessel.id, *level));
+        }
+    }
+    merge(&mut out, &mut seen, conditional_seafarer_doc_templates());
+    merge(&mut out, &mut seen, catalog_only_seafarer_doc_templates());
+    out
+}
+
+pub fn conditional_seafarer_doc_templates() -> Vec<DocTemplate> {
+    vec![
+        DocTemplate { id: "polar_basic", title: "Basic Training for Ships Operating in Polar Waters",
+            category: "STCW Specific", regulatory_basis: "STCW V/4; Polar Code",
+            has_expiry: true, typical_years: Some(5), notes: "Required when serving on ships operating in polar waters, by role and duties" },
+        DocTemplate { id: "polar_advanced", title: "Advanced Training for Ships Operating in Polar Waters",
+            category: "STCW Specific", regulatory_basis: "STCW V/4; Polar Code",
+            has_expiry: true, typical_years: Some(5), notes: "Advanced polar/ice navigation training for masters and officers with operational duties in polar waters" },
+        DocTemplate { id: "flag_coc_endorsement", title: "Flag CoC Endorsement",
+            category: "Flag CoC Endorsement", regulatory_basis: "STCW I/10; Flag State",
+            has_expiry: true, typical_years: Some(5), notes: "Flag-state recognition/endorsement of a foreign Certificate of Competency. Usually needed when ship flag differs from the seafarer's issuing administration." },
+        DocTemplate { id: "flag_seamans_book", title: "Flag Seaman's Book",
+            category: "Flag Seaman's Book", regulatory_basis: "Flag State",
+            has_expiry: true, typical_years: Some(5), notes: "Flag-state seaman's book/discharge book. Usually needed when serving under a flag different from the seafarer's national book." },
+    ]
+}
+
+pub fn catalog_only_seafarer_doc_templates() -> Vec<DocTemplate> {
+    vec![
+        DocTemplate { id: "dangerous_hazardous_substances", title: "Dangerous and Hazardous Substances (Solid Bulk and Packaged)",
+            category: "Bulk Carrier Specific", regulatory_basis: "STCW B-V/b, B-V/c; IMDG/IMSBC Code",
+            has_expiry: true, typical_years: Some(5), notes: "Cargo-specific training for ships carrying dangerous and hazardous substances in solid bulk or packaged form" },
+    ]
+}
+
+pub fn doc_template_by_title_or_id(value: &str) -> Option<DocTemplate> {
+    let key = normalized_lookup_key(value);
+    if key.is_empty() {
+        return None;
+    }
+    let alias_id = match key.as_str() {
+        "sso" | "shipsecurityofficer" | "shipsecurityofficersso" => Some("sso"),
+        "dsd" | "designatedsecurityduties" => Some("dsd"),
+        "ecdis" | "ecdistraining" | "ecdisgeneric" | "ecdisgenerictraining" => Some("ecdis"),
+        "radar" | "arpa" | "radararpa" | "radarnavigationradarplottingandarpa" => {
+            Some("radar_arpa")
+        }
+        "polar" | "polarwaters" | "polarcode" | "ice" | "icenavigation" => Some("polar_basic"),
+        "polaradvanced"
+        | "polarwatersadvanced"
+        | "polarcodeadvanced"
+        | "iceadvanced"
+        | "icenavigationadvanced"
+        | "icenavigationadvancedtraining"
+        | "advancedtrainingforshipsoperatinginpolarwaters" => Some("polar_advanced"),
+        "polarbasic"
+        | "polarwatersbasic"
+        | "polarcodebasic"
+        | "basictrainingforshipsoperatinginpolarwaters" => Some("polar_basic"),
+        "dangerousgoods"
+        | "dangerouscargo"
+        | "hazmat"
+        | "hazardoussubstances"
+        | "dangerousandhazardoussubstances"
+        | "dangerousandhazardoussubstancessolidbulkandpackaged"
+        | "shipscarryingdangerousandhazardoussubstancesinsolidformbulkandpackagedform"
+        | "shipscarryingdangerousandhazardoussubstancesinsolidforminbulkandinpackagedform"
+        | "solidbulkdangerousgoods"
+        | "bulkcarrierdangerousgoods" => Some("dangerous_hazardous_substances"),
+        "flagcocendorsement"
+        | "flagstatecocendorsement"
+        | "cocendorsement"
+        | "certificateofendorsement"
+        | "flagendorsement"
+        | "endorsementcertificate"
+        | "flagstateendorsement" => Some("flag_coc_endorsement"),
+        "flagseamansbook"
+        | "flagseamanbook"
+        | "flagdischargebook"
+        | "flagbook"
+        | "flagstateseamansbook"
+        | "flagstateseamanbook" => Some("flag_seamans_book"),
+        "goc" | "gmdssgoc" | "gmdssgeneraloperatorscertificate" => Some("gmdss_goc"),
+        _ => None,
+    };
+    all_seafarer_doc_templates().into_iter().find(|t| {
+        Some(t.id) == alias_id
+            || normalized_lookup_key(t.id) == key
+            || normalized_lookup_key(t.title) == key
+    })
 }
 
 // ================================================================================
@@ -449,31 +944,50 @@ pub fn required_docs_for_profile(level: StcwLevel, vessel_id: &str, pos_id: &str
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Framework {
-    pub short_name: &'static str,     // "STCW"
-    pub full_name: &'static str,      // "Standards of Training, Certification and Watchkeeping, 1978 as amended"
-    pub scope: &'static str,          // "seafarer" | "vessel" | "both"
-    pub articles: Vec<&'static str>,  // ["II/1", "VI/1", "A-II/1"]
-    pub note: &'static str,           // human-readable one-liner
-    pub requires: Vec<&'static str>,  // certificates / documents mandated by this framework
-    pub explanation: &'static str,    // 1–2 sentence plain-English "why it applies & what it mandates"
+    pub short_name: &'static str,    // "STCW"
+    pub full_name: &'static str, // "Standards of Training, Certification and Watchkeeping, 1978 as amended"
+    pub scope: &'static str,     // "seafarer" | "vessel" | "both"
+    pub articles: Vec<&'static str>, // ["II/1", "VI/1", "A-II/1"]
+    pub note: &'static str,      // human-readable one-liner
+    pub requires: Vec<&'static str>, // certificates / documents mandated by this framework
+    pub explanation: &'static str, // 1–2 sentence plain-English "why it applies & what it mandates"
 }
 
-fn fw(short: &'static str, full: &'static str, scope: &'static str,
-      articles: &[&'static str], note: &'static str) -> Framework {
+fn fw(
+    short: &'static str,
+    full: &'static str,
+    scope: &'static str,
+    articles: &[&'static str],
+    note: &'static str,
+) -> Framework {
     Framework {
-        short_name: short, full_name: full, scope,
-        articles: articles.to_vec(), note,
-        requires: Vec::new(), explanation: "",
+        short_name: short,
+        full_name: full,
+        scope,
+        articles: articles.to_vec(),
+        note,
+        requires: Vec::new(),
+        explanation: "",
     }
 }
 
-fn fw_req(short: &'static str, full: &'static str, scope: &'static str,
-      articles: &[&'static str], note: &'static str,
-      requires: &[&'static str], explanation: &'static str) -> Framework {
+fn fw_req(
+    short: &'static str,
+    full: &'static str,
+    scope: &'static str,
+    articles: &[&'static str],
+    note: &'static str,
+    requires: &[&'static str],
+    explanation: &'static str,
+) -> Framework {
     Framework {
-        short_name: short, full_name: full, scope,
-        articles: articles.to_vec(), note,
-        requires: requires.to_vec(), explanation,
+        short_name: short,
+        full_name: full,
+        scope,
+        articles: articles.to_vec(),
+        note,
+        requires: requires.to_vec(),
+        explanation,
     }
 }
 
@@ -536,11 +1050,11 @@ pub fn applicable_frameworks_for_seafarer(
     if matches!(pos_id, "master" | "chief_officer") {
         stcw_articles.push("II/2 Master and Chief Mate ≥ 500 GT");
         stcw_articles.push("IV/2 GMDSS General Operator");
-        stcw_articles.push("A-II/1, A-II/2 ECDIS, BRM");
+        stcw_articles.push("A-II/1, A-II/2 ECDIS, Radar/ARPA, BRM");
     } else if matches!(pos_id, "second_officer" | "third_officer") {
         stcw_articles.push("II/1 Officer in Charge of a Navigational Watch");
         stcw_articles.push("IV/2 GMDSS General Operator");
-        stcw_articles.push("A-II/1 ECDIS, BRM");
+        stcw_articles.push("A-II/1 ECDIS, Radar/ARPA, BRM");
     } else if matches!(pos_id, "bosun" | "ab") {
         stcw_articles.push("II/4 Rating forming part of a Navigational Watch");
         stcw_articles.push("II/5 Able Seafarer Deck");
@@ -608,11 +1122,18 @@ pub fn applicable_frameworks_for_seafarer(
         stcw_requires.push("Medical Care on Board (VI/4-2)");
         stcw_requires.push("Designated Security Duties (VI/6-2)");
     }
-    if matches!(pos_id, "master" | "chief_officer" | "second_officer" | "third_officer") {
+    if matches!(
+        pos_id,
+        "master" | "chief_officer" | "second_officer" | "third_officer"
+    ) {
         stcw_requires.push("ECDIS Training Certificate");
+        stcw_requires.push("Radar / ARPA Training");
         stcw_requires.push("Bridge Resource Management");
     }
-    if matches!(pos_id, "chief_engineer" | "second_engineer" | "third_engineer" | "fourth_engineer") {
+    if matches!(
+        pos_id,
+        "chief_engineer" | "second_engineer" | "third_engineer" | "fourth_engineer"
+    ) {
         stcw_requires.push("Engine Room Resource Management");
     }
     if pos_id == "eto" {
@@ -692,47 +1213,54 @@ pub fn applicable_frameworks_for_seafarer(
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum VesselSize {
-    Under500,    // < 500 GT — reduced SOLAS applicability
-    Under3000,   // 500–2999 GT
-    Under10000,  // 3000–9999 GT
-    Under50000,  // 10000–49999 GT
-    Over50000,   // ≥ 50000 GT
+    Under500,   // < 500 GT — reduced SOLAS applicability
+    Under3000,  // 500–2999 GT
+    Under10000, // 3000–9999 GT
+    Under50000, // 10000–49999 GT
+    Over50000,  // ≥ 50000 GT
 }
 
 impl VesselSize {
     pub fn id(&self) -> &'static str {
         match self {
-            VesselSize::Under500   => "under_500",
-            VesselSize::Under3000  => "under_3000",
+            VesselSize::Under500 => "under_500",
+            VesselSize::Under3000 => "under_3000",
             VesselSize::Under10000 => "under_10000",
             VesselSize::Under50000 => "under_50000",
-            VesselSize::Over50000  => "over_50000",
+            VesselSize::Over50000 => "over_50000",
         }
     }
     pub fn label(&self) -> &'static str {
         match self {
-            VesselSize::Under500   => "< 500 GT",
-            VesselSize::Under3000  => "500 – 2 999 GT",
+            VesselSize::Under500 => "< 500 GT",
+            VesselSize::Under3000 => "500 – 2 999 GT",
             VesselSize::Under10000 => "3 000 – 9 999 GT",
             VesselSize::Under50000 => "10 000 – 49 999 GT",
-            VesselSize::Over50000  => "≥ 50 000 GT",
+            VesselSize::Over50000 => "≥ 50 000 GT",
         }
     }
     pub fn from_id(id: &str) -> Option<Self> {
         match id {
-            "under_500"   => Some(VesselSize::Under500),
-            "under_3000"  => Some(VesselSize::Under3000),
+            "under_500" => Some(VesselSize::Under500),
+            "under_3000" => Some(VesselSize::Under3000),
             "under_10000" => Some(VesselSize::Under10000),
             "under_50000" => Some(VesselSize::Under50000),
-            "over_50000"  => Some(VesselSize::Over50000),
+            "over_50000" => Some(VesselSize::Over50000),
             _ => None,
         }
     }
     pub fn all() -> &'static [VesselSize] {
-        &[VesselSize::Under500, VesselSize::Under3000, VesselSize::Under10000,
-          VesselSize::Under50000, VesselSize::Over50000]
+        &[
+            VesselSize::Under500,
+            VesselSize::Under3000,
+            VesselSize::Under10000,
+            VesselSize::Under50000,
+            VesselSize::Over50000,
+        ]
     }
-    pub fn is_solas(&self) -> bool { !matches!(self, VesselSize::Under500) }
+    pub fn is_solas(&self) -> bool {
+        !matches!(self, VesselSize::Under500)
+    }
 }
 
 /// Trading area — affects Load Line, MARPOL Annex VI ECA, ISPS port-state controls.
@@ -740,35 +1268,39 @@ impl VesselSize {
 #[serde(rename_all = "snake_case")]
 pub enum TradeArea {
     International,
-    Coastal,       // limited to flag-state waters
-    Domestic,      // inland / sheltered
+    Coastal,  // limited to flag-state waters
+    Domestic, // inland / sheltered
 }
 
 impl TradeArea {
     pub fn id(&self) -> &'static str {
         match self {
             TradeArea::International => "international",
-            TradeArea::Coastal       => "coastal",
-            TradeArea::Domestic      => "domestic",
+            TradeArea::Coastal => "coastal",
+            TradeArea::Domestic => "domestic",
         }
     }
     pub fn label(&self) -> &'static str {
         match self {
             TradeArea::International => "International voyages",
-            TradeArea::Coastal       => "Coastal / near-coastal",
-            TradeArea::Domestic      => "Domestic / sheltered",
+            TradeArea::Coastal => "Coastal / near-coastal",
+            TradeArea::Domestic => "Domestic / sheltered",
         }
     }
     pub fn from_id(id: &str) -> Option<Self> {
         match id {
             "international" => Some(TradeArea::International),
-            "coastal"       => Some(TradeArea::Coastal),
-            "domestic"      => Some(TradeArea::Domestic),
+            "coastal" => Some(TradeArea::Coastal),
+            "domestic" => Some(TradeArea::Domestic),
             _ => None,
         }
     }
     pub fn all() -> &'static [TradeArea] {
-        &[TradeArea::International, TradeArea::Coastal, TradeArea::Domestic]
+        &[
+            TradeArea::International,
+            TradeArea::Coastal,
+            TradeArea::Domestic,
+        ]
     }
 }
 
@@ -779,74 +1311,182 @@ impl TradeArea {
 /// on size / trade / type.
 fn vessel_statutory_base() -> Vec<DocTemplate> {
     vec![
-        DocTemplate { id: "v_registry", title: "Certificate of Registry",
-            category: "Statutory Certificates", regulatory_basis: "National (flag state)",
-            has_expiry: false, typical_years: None, notes: "Nationality and ownership" },
-        DocTemplate { id: "v_itc", title: "International Tonnage Certificate (ITC 1969)",
-            category: "Statutory Certificates", regulatory_basis: "Tonnage Convention 1969",
-            has_expiry: false, typical_years: None, notes: "" },
-        DocTemplate { id: "v_illc", title: "International Load Line Certificate (ILLC)",
-            category: "Statutory Certificates", regulatory_basis: "Load Lines 1966 / Protocol 1988",
-            has_expiry: true, typical_years: Some(5), notes: "Annual/intermediate/renewal surveys" },
-        DocTemplate { id: "v_msm", title: "Minimum Safe Manning Certificate",
-            category: "Statutory Certificates", regulatory_basis: "SOLAS V/14",
-            has_expiry: false, typical_years: None, notes: "Flag State" },
-        DocTemplate { id: "v_csr", title: "Continuous Synopsis Record (CSR)",
-            category: "Statutory Certificates", regulatory_basis: "SOLAS XI-1/5",
-            has_expiry: false, typical_years: None, notes: "History of ownership/flag" },
+        DocTemplate {
+            id: "v_registry",
+            title: "Certificate of Registry",
+            category: "Statutory Certificates",
+            regulatory_basis: "National (flag state)",
+            has_expiry: false,
+            typical_years: None,
+            notes: "Nationality and ownership",
+        },
+        DocTemplate {
+            id: "v_itc",
+            title: "International Tonnage Certificate (ITC 1969)",
+            category: "Statutory Certificates",
+            regulatory_basis: "Tonnage Convention 1969",
+            has_expiry: false,
+            typical_years: None,
+            notes: "",
+        },
+        DocTemplate {
+            id: "v_illc",
+            title: "International Load Line Certificate (ILLC)",
+            category: "Statutory Certificates",
+            regulatory_basis: "Load Lines 1966 / Protocol 1988",
+            has_expiry: true,
+            typical_years: Some(5),
+            notes: "Annual/intermediate/renewal surveys",
+        },
+        DocTemplate {
+            id: "v_msm",
+            title: "Minimum Safe Manning Certificate",
+            category: "Statutory Certificates",
+            regulatory_basis: "SOLAS V/14",
+            has_expiry: false,
+            typical_years: None,
+            notes: "Flag State",
+        },
+        DocTemplate {
+            id: "v_csr",
+            title: "Continuous Synopsis Record (CSR)",
+            category: "Statutory Certificates",
+            regulatory_basis: "SOLAS XI-1/5",
+            has_expiry: false,
+            typical_years: None,
+            notes: "History of ownership/flag",
+        },
     ]
 }
 
 /// SOLAS certificates required only on ships subject to SOLAS (≥ 500 GT, international).
 fn vessel_solas_certificates() -> Vec<DocTemplate> {
     vec![
-        DocTemplate { id: "v_scc", title: "Safety Construction Certificate (SCC)",
-            category: "SOLAS Certificates", regulatory_basis: "SOLAS Chapter II-1",
-            has_expiry: true, typical_years: Some(5), notes: "" },
-        DocTemplate { id: "v_sec", title: "Safety Equipment Certificate (SEC)",
-            category: "SOLAS Certificates", regulatory_basis: "SOLAS Chapter III",
-            has_expiry: true, typical_years: Some(5), notes: "" },
-        DocTemplate { id: "v_src", title: "Safety Radio Certificate (SRC)",
-            category: "SOLAS Certificates", regulatory_basis: "SOLAS Chapter IV",
-            has_expiry: true, typical_years: Some(5), notes: "" },
-        DocTemplate { id: "v_issc", title: "International Ship Security Certificate (ISSC)",
-            category: "SOLAS Certificates", regulatory_basis: "SOLAS XI-2 / ISPS Code",
-            has_expiry: true, typical_years: Some(5), notes: "" },
-        DocTemplate { id: "v_smc", title: "Safety Management Certificate (SMC)",
-            category: "SOLAS Certificates", regulatory_basis: "SOLAS IX / ISM Code",
-            has_expiry: true, typical_years: Some(5), notes: "Company-specific" },
-        DocTemplate { id: "v_doc", title: "Document of Compliance (DOC)",
-            category: "SOLAS Certificates", regulatory_basis: "SOLAS IX / ISM Code",
-            has_expiry: true, typical_years: Some(5), notes: "Held by the company, copy onboard" },
+        DocTemplate {
+            id: "v_scc",
+            title: "Safety Construction Certificate (SCC)",
+            category: "SOLAS Certificates",
+            regulatory_basis: "SOLAS Chapter II-1",
+            has_expiry: true,
+            typical_years: Some(5),
+            notes: "",
+        },
+        DocTemplate {
+            id: "v_sec",
+            title: "Safety Equipment Certificate (SEC)",
+            category: "SOLAS Certificates",
+            regulatory_basis: "SOLAS Chapter III",
+            has_expiry: true,
+            typical_years: Some(5),
+            notes: "",
+        },
+        DocTemplate {
+            id: "v_src",
+            title: "Safety Radio Certificate (SRC)",
+            category: "SOLAS Certificates",
+            regulatory_basis: "SOLAS Chapter IV",
+            has_expiry: true,
+            typical_years: Some(5),
+            notes: "",
+        },
+        DocTemplate {
+            id: "v_issc",
+            title: "International Ship Security Certificate (ISSC)",
+            category: "SOLAS Certificates",
+            regulatory_basis: "SOLAS XI-2 / ISPS Code",
+            has_expiry: true,
+            typical_years: Some(5),
+            notes: "",
+        },
+        DocTemplate {
+            id: "v_smc",
+            title: "Safety Management Certificate (SMC)",
+            category: "SOLAS Certificates",
+            regulatory_basis: "SOLAS IX / ISM Code",
+            has_expiry: true,
+            typical_years: Some(5),
+            notes: "Company-specific",
+        },
+        DocTemplate {
+            id: "v_doc",
+            title: "Document of Compliance (DOC)",
+            category: "SOLAS Certificates",
+            regulatory_basis: "SOLAS IX / ISM Code",
+            has_expiry: true,
+            typical_years: Some(5),
+            notes: "Held by the company, copy onboard",
+        },
     ]
 }
 
 /// MARPOL certificates — always needed on SOLAS ships, specific annexes depend on type.
 fn vessel_marpol_certificates(vessel_id: &str) -> Vec<DocTemplate> {
     let mut v = vec![
-        DocTemplate { id: "v_iopp", title: "IOPP Certificate (Oil Pollution Prevention)",
-            category: "MARPOL Certificates", regulatory_basis: "MARPOL Annex I",
-            has_expiry: true, typical_years: Some(5), notes: "" },
-        DocTemplate { id: "v_ispp", title: "ISPP Certificate (Sewage)",
-            category: "MARPOL Certificates", regulatory_basis: "MARPOL Annex IV",
-            has_expiry: true, typical_years: Some(5), notes: "" },
-        DocTemplate { id: "v_iapp", title: "IAPP Certificate (Air Pollution)",
-            category: "MARPOL Certificates", regulatory_basis: "MARPOL Annex VI",
-            has_expiry: true, typical_years: Some(5), notes: "" },
-        DocTemplate { id: "v_iee", title: "IEE Certificate (Energy Efficiency)",
-            category: "MARPOL Certificates", regulatory_basis: "MARPOL Annex VI Ch. 4",
-            has_expiry: false, typical_years: None, notes: "Technical efficiency" },
-        DocTemplate { id: "v_sopep", title: "SOPEP (Shipboard Oil Pollution Emergency Plan)",
-            category: "MARPOL Plans", regulatory_basis: "MARPOL Annex I Reg. 37",
-            has_expiry: false, typical_years: None, notes: "Approved" },
-        DocTemplate { id: "v_seemp", title: "SEEMP (Ship Energy Efficiency Management Plan)",
-            category: "MARPOL Plans", regulatory_basis: "MARPOL Annex VI Reg. 22",
-            has_expiry: false, typical_years: None, notes: "" },
+        DocTemplate {
+            id: "v_iopp",
+            title: "IOPP Certificate (Oil Pollution Prevention)",
+            category: "MARPOL Certificates",
+            regulatory_basis: "MARPOL Annex I",
+            has_expiry: true,
+            typical_years: Some(5),
+            notes: "",
+        },
+        DocTemplate {
+            id: "v_ispp",
+            title: "ISPP Certificate (Sewage)",
+            category: "MARPOL Certificates",
+            regulatory_basis: "MARPOL Annex IV",
+            has_expiry: true,
+            typical_years: Some(5),
+            notes: "",
+        },
+        DocTemplate {
+            id: "v_iapp",
+            title: "IAPP Certificate (Air Pollution)",
+            category: "MARPOL Certificates",
+            regulatory_basis: "MARPOL Annex VI",
+            has_expiry: true,
+            typical_years: Some(5),
+            notes: "",
+        },
+        DocTemplate {
+            id: "v_iee",
+            title: "IEE Certificate (Energy Efficiency)",
+            category: "MARPOL Certificates",
+            regulatory_basis: "MARPOL Annex VI Ch. 4",
+            has_expiry: false,
+            typical_years: None,
+            notes: "Technical efficiency",
+        },
+        DocTemplate {
+            id: "v_sopep",
+            title: "SOPEP (Shipboard Oil Pollution Emergency Plan)",
+            category: "MARPOL Plans",
+            regulatory_basis: "MARPOL Annex I Reg. 37",
+            has_expiry: false,
+            typical_years: None,
+            notes: "Approved",
+        },
+        DocTemplate {
+            id: "v_seemp",
+            title: "SEEMP (Ship Energy Efficiency Management Plan)",
+            category: "MARPOL Plans",
+            regulatory_basis: "MARPOL Annex VI Reg. 22",
+            has_expiry: false,
+            typical_years: None,
+            notes: "",
+        },
     ];
     if matches!(vessel_id, "oil_tanker" | "chemical_tanker" | "gas_carrier") {
-        v.push(DocTemplate { id: "v_sobpeep", title: "SMPEP (Shipboard Marine Pollution Emergency Plan)",
-            category: "MARPOL Plans", regulatory_basis: "MARPOL Annex II Reg. 17",
-            has_expiry: false, typical_years: None, notes: "Oil + NLS" });
+        v.push(DocTemplate {
+            id: "v_sobpeep",
+            title: "SMPEP (Shipboard Marine Pollution Emergency Plan)",
+            category: "MARPOL Plans",
+            regulatory_basis: "MARPOL Annex II Reg. 17",
+            has_expiry: false,
+            typical_years: None,
+            notes: "Oil + NLS",
+        });
     }
     v
 }
@@ -854,44 +1494,90 @@ fn vessel_marpol_certificates(vessel_id: &str) -> Vec<DocTemplate> {
 /// MLC 2006 (labour) — applies to all ships ≥ 500 GT international.
 fn vessel_mlc_certificates() -> Vec<DocTemplate> {
     vec![
-        DocTemplate { id: "v_mlc", title: "Maritime Labour Certificate (MLC)",
-            category: "MLC Certificates", regulatory_basis: "MLC 2006 Title 5",
-            has_expiry: true, typical_years: Some(5), notes: "" },
-        DocTemplate { id: "v_dmlc1", title: "DMLC Part I",
-            category: "MLC Certificates", regulatory_basis: "MLC 2006 A5.1.3",
-            has_expiry: false, typical_years: None, notes: "Flag state declaration" },
-        DocTemplate { id: "v_dmlc2", title: "DMLC Part II",
-            category: "MLC Certificates", regulatory_basis: "MLC 2006 A5.1.3",
-            has_expiry: false, typical_years: None, notes: "Shipowner declaration" },
+        DocTemplate {
+            id: "v_mlc",
+            title: "Maritime Labour Certificate (MLC)",
+            category: "MLC Certificates",
+            regulatory_basis: "MLC 2006 Title 5",
+            has_expiry: true,
+            typical_years: Some(5),
+            notes: "",
+        },
+        DocTemplate {
+            id: "v_dmlc1",
+            title: "DMLC Part I",
+            category: "MLC Certificates",
+            regulatory_basis: "MLC 2006 A5.1.3",
+            has_expiry: false,
+            typical_years: None,
+            notes: "Flag state declaration",
+        },
+        DocTemplate {
+            id: "v_dmlc2",
+            title: "DMLC Part II",
+            category: "MLC Certificates",
+            regulatory_basis: "MLC 2006 A5.1.3",
+            has_expiry: false,
+            typical_years: None,
+            notes: "Shipowner declaration",
+        },
     ]
 }
 
 /// Class + hull / machinery certificates.
 fn vessel_class_certificates() -> Vec<DocTemplate> {
-    vec![
-        DocTemplate { id: "v_class", title: "Classification Certificate",
-            category: "Class Certificates", regulatory_basis: "IACS / Class society rules",
-            has_expiry: true, typical_years: Some(5), notes: "Annual/intermediate/renewal surveys" },
-    ]
+    vec![DocTemplate {
+        id: "v_class",
+        title: "Classification Certificate",
+        category: "Class Certificates",
+        regulatory_basis: "IACS / Class society rules",
+        has_expiry: true,
+        typical_years: Some(5),
+        notes: "Annual/intermediate/renewal surveys",
+    }]
 }
 
 /// Liability / insurance certificates — required for most international trading vessels.
 fn vessel_liability_certificates(vessel_id: &str) -> Vec<DocTemplate> {
     let mut v = vec![
-        DocTemplate { id: "v_bunker", title: "Bunker Convention Certificate",
-            category: "Liability Certificates", regulatory_basis: "Bunker Convention 2001",
-            has_expiry: true, typical_years: Some(1), notes: "Pollution damage from bunkers" },
-        DocTemplate { id: "v_wreck", title: "Wreck Removal Convention Certificate",
-            category: "Liability Certificates", regulatory_basis: "Nairobi WRC 2007",
-            has_expiry: true, typical_years: Some(1), notes: "" },
-        DocTemplate { id: "v_pni", title: "P&I Club Certificate of Entry",
-            category: "Liability Certificates", regulatory_basis: "Club rules",
-            has_expiry: true, typical_years: Some(1), notes: "20 Feb renewal standard" },
+        DocTemplate {
+            id: "v_bunker",
+            title: "Bunker Convention Certificate",
+            category: "Liability Certificates",
+            regulatory_basis: "Bunker Convention 2001",
+            has_expiry: true,
+            typical_years: Some(1),
+            notes: "Pollution damage from bunkers",
+        },
+        DocTemplate {
+            id: "v_wreck",
+            title: "Wreck Removal Convention Certificate",
+            category: "Liability Certificates",
+            regulatory_basis: "Nairobi WRC 2007",
+            has_expiry: true,
+            typical_years: Some(1),
+            notes: "",
+        },
+        DocTemplate {
+            id: "v_pni",
+            title: "P&I Club Certificate of Entry",
+            category: "Liability Certificates",
+            regulatory_basis: "Club rules",
+            has_expiry: true,
+            typical_years: Some(1),
+            notes: "20 Feb renewal standard",
+        },
     ];
     if vessel_id == "oil_tanker" {
-        v.push(DocTemplate { id: "v_clc", title: "CLC Certificate (Oil Pollution Liability)",
-            category: "Liability Certificates", regulatory_basis: "CLC 1992 Protocol",
-            has_expiry: true, typical_years: Some(1), notes: "Required for persistent oil carriage" });
+        v.push(DocTemplate {
+            id: "v_clc",
+            title: "CLC Certificate (Oil Pollution Liability)",
+            category: "Liability Certificates",
+            regulatory_basis: "CLC 1992 Protocol",
+            has_expiry: true,
+            typical_years: Some(1),
+            notes: "Required for persistent oil carriage",
+        });
     }
     v
 }
@@ -899,12 +1585,24 @@ fn vessel_liability_certificates(vessel_id: &str) -> Vec<DocTemplate> {
 /// Anti-fouling + Ballast water — environmental add-ons.
 fn vessel_environmental_certificates() -> Vec<DocTemplate> {
     vec![
-        DocTemplate { id: "v_iafs", title: "IAFS Certificate (Anti-Fouling)",
-            category: "Environmental Certificates", regulatory_basis: "AFS Convention 2001",
-            has_expiry: false, typical_years: None, notes: "Re-issued after hull coating" },
-        DocTemplate { id: "v_bwm", title: "International Ballast Water Management Certificate",
-            category: "Environmental Certificates", regulatory_basis: "BWM Convention 2004",
-            has_expiry: true, typical_years: Some(5), notes: "" },
+        DocTemplate {
+            id: "v_iafs",
+            title: "IAFS Certificate (Anti-Fouling)",
+            category: "Environmental Certificates",
+            regulatory_basis: "AFS Convention 2001",
+            has_expiry: false,
+            typical_years: None,
+            notes: "Re-issued after hull coating",
+        },
+        DocTemplate {
+            id: "v_bwm",
+            title: "International Ballast Water Management Certificate",
+            category: "Environmental Certificates",
+            regulatory_basis: "BWM Convention 2004",
+            has_expiry: true,
+            typical_years: Some(5),
+            notes: "",
+        },
     ]
 }
 
@@ -912,52 +1610,122 @@ fn vessel_environmental_certificates() -> Vec<DocTemplate> {
 fn vessel_type_extras(vessel_id: &str) -> Vec<DocTemplate> {
     match vessel_id {
         "bulker" => vec![
-            DocTemplate { id: "v_grain", title: "Document of Authorization (Grain Code)",
-                category: "Bulk Carrier Specific", regulatory_basis: "SOLAS VI / Grain Code",
-                has_expiry: false, typical_years: None, notes: "" },
-            DocTemplate { id: "v_csm", title: "Cargo Securing Manual (CSM)",
-                category: "Bulk Carrier Specific", regulatory_basis: "SOLAS VI/5",
-                has_expiry: false, typical_years: None, notes: "" },
-            DocTemplate { id: "v_esp", title: "Enhanced Survey Report (ESP)",
-                category: "Bulk Carrier Specific", regulatory_basis: "SOLAS XI-1/2 + 2011 ESP Code",
-                has_expiry: true, typical_years: Some(1), notes: "" },
+            DocTemplate {
+                id: "v_grain",
+                title: "Document of Authorization (Grain Code)",
+                category: "Bulk Carrier Specific",
+                regulatory_basis: "SOLAS VI / Grain Code",
+                has_expiry: false,
+                typical_years: None,
+                notes: "",
+            },
+            DocTemplate {
+                id: "v_csm",
+                title: "Cargo Securing Manual (CSM)",
+                category: "Bulk Carrier Specific",
+                regulatory_basis: "SOLAS VI/5",
+                has_expiry: false,
+                typical_years: None,
+                notes: "",
+            },
+            DocTemplate {
+                id: "v_esp",
+                title: "Enhanced Survey Report (ESP)",
+                category: "Bulk Carrier Specific",
+                regulatory_basis: "SOLAS XI-1/2 + 2011 ESP Code",
+                has_expiry: true,
+                typical_years: Some(1),
+                notes: "",
+            },
         ],
         "oil_tanker" | "chemical_tanker" => vec![
-            DocTemplate { id: "v_cof", title: "Certificate of Fitness (IBC/IGC Code)",
-                category: "Tanker Specific", regulatory_basis: "IBC Code / IGC Code",
-                has_expiry: true, typical_years: Some(5), notes: "Issued with class/SCC" },
-            DocTemplate { id: "v_igs", title: "Inert Gas System Certificate",
-                category: "Tanker Specific", regulatory_basis: "SOLAS II-2/4.5",
-                has_expiry: true, typical_years: Some(1), notes: "" },
-            DocTemplate { id: "v_pa_manual", title: "P&A Manual (Tanker)",
-                category: "Tanker Specific", regulatory_basis: "MARPOL Annex I Reg. 31",
-                has_expiry: false, typical_years: None, notes: "" },
-            DocTemplate { id: "v_sire", title: "SIRE / CDI Inspection Report",
-                category: "Tanker Specific", regulatory_basis: "OCIMF SIRE 2.0 / CDI",
-                has_expiry: true, typical_years: Some(1), notes: "Industry scheme" },
+            DocTemplate {
+                id: "v_cof",
+                title: "Certificate of Fitness (IBC/IGC Code)",
+                category: "Tanker Specific",
+                regulatory_basis: "IBC Code / IGC Code",
+                has_expiry: true,
+                typical_years: Some(5),
+                notes: "Issued with class/SCC",
+            },
+            DocTemplate {
+                id: "v_igs",
+                title: "Inert Gas System Certificate",
+                category: "Tanker Specific",
+                regulatory_basis: "SOLAS II-2/4.5",
+                has_expiry: true,
+                typical_years: Some(1),
+                notes: "",
+            },
+            DocTemplate {
+                id: "v_pa_manual",
+                title: "P&A Manual (Tanker)",
+                category: "Tanker Specific",
+                regulatory_basis: "MARPOL Annex I Reg. 31",
+                has_expiry: false,
+                typical_years: None,
+                notes: "",
+            },
+            DocTemplate {
+                id: "v_sire",
+                title: "SIRE / CDI Inspection Report",
+                category: "Tanker Specific",
+                regulatory_basis: "OCIMF SIRE 2.0 / CDI",
+                has_expiry: true,
+                typical_years: Some(1),
+                notes: "Industry scheme",
+            },
         ],
         "gas_carrier" => vec![
-            DocTemplate { id: "v_cof_gas", title: "Certificate of Fitness (IGC Code)",
-                category: "Tanker Specific", regulatory_basis: "IGC Code",
-                has_expiry: true, typical_years: Some(5), notes: "" },
-            DocTemplate { id: "v_pa_manual_gas", title: "P&A Manual (Gas Carrier)",
-                category: "Tanker Specific", regulatory_basis: "IGC Code Ch. 18",
-                has_expiry: false, typical_years: None, notes: "" },
+            DocTemplate {
+                id: "v_cof_gas",
+                title: "Certificate of Fitness (IGC Code)",
+                category: "Tanker Specific",
+                regulatory_basis: "IGC Code",
+                has_expiry: true,
+                typical_years: Some(5),
+                notes: "",
+            },
+            DocTemplate {
+                id: "v_pa_manual_gas",
+                title: "P&A Manual (Gas Carrier)",
+                category: "Tanker Specific",
+                regulatory_basis: "IGC Code Ch. 18",
+                has_expiry: false,
+                typical_years: None,
+                notes: "",
+            },
         ],
         "passenger" => vec![
-            DocTemplate { id: "v_pax_cert", title: "Passenger Ship Safety Certificate",
-                category: "Passenger Ship Specific", regulatory_basis: "SOLAS I/12 (all annexes)",
-                has_expiry: true, typical_years: Some(1), notes: "Combined SCC/SEC/SRC" },
-            DocTemplate { id: "v_pax_sar", title: "SAR Cooperation Plan",
-                category: "Passenger Ship Specific", regulatory_basis: "SOLAS V/7.3",
-                has_expiry: false, typical_years: None, notes: "" },
+            DocTemplate {
+                id: "v_pax_cert",
+                title: "Passenger Ship Safety Certificate",
+                category: "Passenger Ship Specific",
+                regulatory_basis: "SOLAS I/12 (all annexes)",
+                has_expiry: true,
+                typical_years: Some(1),
+                notes: "Combined SCC/SEC/SRC",
+            },
+            DocTemplate {
+                id: "v_pax_sar",
+                title: "SAR Cooperation Plan",
+                category: "Passenger Ship Specific",
+                regulatory_basis: "SOLAS V/7.3",
+                has_expiry: false,
+                typical_years: None,
+                notes: "",
+            },
         ],
         _ => vec![],
     }
 }
 
 /// Resolve required vessel documents for (category, size, trade).
-pub fn required_docs_for_vessel(vessel_id: &str, size: VesselSize, trade: TradeArea) -> Vec<DocTemplate> {
+pub fn required_docs_for_vessel(
+    vessel_id: &str,
+    size: VesselSize,
+    trade: TradeArea,
+) -> Vec<DocTemplate> {
     let mut out: Vec<DocTemplate> = Vec::new();
     let mut seen: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
 
@@ -970,7 +1738,11 @@ pub fn required_docs_for_vessel(vessel_id: &str, size: VesselSize, trade: TradeA
         merge(&mut out, &mut seen, vessel_marpol_certificates(vessel_id));
         merge(&mut out, &mut seen, vessel_mlc_certificates());
         merge(&mut out, &mut seen, vessel_environmental_certificates());
-        merge(&mut out, &mut seen, vessel_liability_certificates(vessel_id));
+        merge(
+            &mut out,
+            &mut seen,
+            vessel_liability_certificates(vessel_id),
+        );
     } else if trade == TradeArea::Coastal && size.is_solas() {
         // Coastal still needs most statutory/MARPOL but relaxed
         merge(&mut out, &mut seen, vessel_marpol_certificates(vessel_id));
@@ -1156,4 +1928,3 @@ pub fn applicable_frameworks_for_vessel(
 
     out
 }
-

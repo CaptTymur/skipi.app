@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.104';
+var APP_VERSION='0.4.105';
 // Window title is set via `set_window_title` Rust command inside
 // updateTitlebar() — direct JS setTitle() is blocked by Tauri 2 ACL.
 // Human-readable labels for account types that go into the OS window title.
@@ -107,7 +107,7 @@ document.addEventListener('DOMContentLoaded',function(){updateTitlebar();});
 }
 body { background:var(--bg); color:var(--text); font-family:var(--font-ui); font-size:var(--font-size-ui); height:100vh; display:flex; flex-direction:column; overflow:hidden; }
 ::selection { background:var(--accent-bg2); }
-input, select, button { font-family:var(--font-ui); }
+input, select, textarea, button { font-family:var(--font-ui); }
 
 /* Title bar */
 /* Vault switcher and settings gear live on the right of the modules bar
@@ -153,18 +153,35 @@ input, select, button { font-family:var(--font-ui); }
 .tree-folder-header .arrow { font-size:9px; width:12px; transition:transform .12s; }
 .tree-folder-header .arrow.open { transform:rotate(90deg); }
 .tree-folder-header .cnt { margin-left:auto; font-size:10px; font-weight:400; }
-.tree-folder-header .dot { width:6px; height:6px; border-radius:50%; margin-left:auto; margin-right:4px; }
 .tree-items { display:none; }
 .tree-items.open { display:block; }
 .tree-file { height:26px; display:flex; align-items:center; padding:0 8px 0 32px; gap:6px; font-size:12px; cursor:pointer; color:var(--text); }
 .tree-file:hover { background:var(--hover); }
+.tree-file.req { box-shadow:inset 3px 0 0 var(--accent); padding-left:29px; }
+.tree-file.conditional { box-shadow:inset 3px 0 0 #2aa198; padding-left:29px; }
+.tree-file.flagdoc { box-shadow:inset 3px 0 0 #4f9dff; padding-left:29px; }
+.tree-file.specific { box-shadow:inset 3px 0 0 #b887ff; padding-left:29px; color:var(--text2); }
+.tree-file.custom { box-shadow:inset 3px 0 0 var(--orange); padding-left:29px; color:var(--text2); }
+.tree-file.inactive-template { opacity:.72; }
 .tree-file.active { background:var(--accent); color:#fff; font-weight:600; box-shadow:inset 3px 0 0 #fff; }
-.tree-file.active .icon, .tree-file.active .st { color:#fff; }
+.tree-file.active .icon { color:#fff; }
 .tree-file .icon { font-size:11px; color:var(--text2); width:14px; text-align:center; }
-.tree-file .name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.tree-file .st { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+.tree-file .name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .tree-file.pkg-sel { background:rgba(78,201,112,.12); }
 .tree-file .req-mark { color:var(--accent); font-size:9px; margin-right:4px; opacity:.75; }
+.kind-badge { flex-shrink:0; border:1px solid var(--border); border-radius:3px; padding:1px 4px; font-size:8px; line-height:1.2; text-transform:uppercase; letter-spacing:.04em; color:var(--text2); background:var(--bg); cursor:pointer; user-select:none; }
+.kind-badge:hover { filter:brightness(1.08); }
+.kind-badge.req { color:var(--accent); border-color:rgba(93,95,239,.55); background:rgba(93,95,239,.08); }
+.kind-badge.conditional { color:#2aa198; border-color:rgba(42,161,152,.55); background:rgba(42,161,152,.10); }
+.kind-badge.flagdoc { color:#4f9dff; border-color:rgba(79,157,255,.55); background:rgba(79,157,255,.10); }
+.kind-badge.specific { color:#b887ff; border-color:rgba(184,135,255,.55); background:rgba(184,135,255,.10); }
+.kind-badge.custom { color:var(--orange); border-color:rgba(216,155,101,.55); background:rgba(216,155,101,.08); }
+.kind-badge.history { color:var(--text2); border-style:dashed; opacity:.8; }
+.kind-badge.exp-warning { color:#8a6500; border-color:rgba(226,185,61,.85); background:rgba(226,185,61,.24); }
+.kind-badge.exp-critical { color:var(--red); border-color:rgba(229,85,97,.85); background:rgba(229,85,97,.18); }
+.tree-file.active .kind-badge { color:#fff; border-color:rgba(255,255,255,.65); background:rgba(255,255,255,.14); }
+.tree-file.active .kind-badge.exp-warning { color:#ffe8a3; border-color:rgba(255,232,163,.9); background:rgba(226,185,61,.25); }
+.tree-file.active .kind-badge.exp-critical { color:#ffd8dc; border-color:rgba(255,216,220,.9); background:rgba(229,85,97,.28); }
 
 /* Center */
 .center { flex:1; display:flex; flex-direction:column; overflow:hidden; }
@@ -192,12 +209,13 @@ input, select, button { font-family:var(--font-ui); }
 .doc-meta { font-size:12px; color:var(--text2); margin-bottom:24px; }
 .field-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px 12px; margin-bottom:20px; }
 .field label { display:flex; align-items:center; gap:5px; font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--text2); margin-bottom:3px; }
-.field input { width:100%; padding:5px 8px; background:var(--bg); border:1px solid var(--border); border-radius:3px; color:var(--text); font-size:13px; outline:none; }
+.field input:not([type="checkbox"]):not([type="radio"]), .field select, .field textarea { width:100%; padding:5px 8px; background:var(--bg); border:1px solid var(--border); border-radius:3px; color:var(--text); font-size:13px; outline:none; box-sizing:border-box; }
+.field textarea { resize:vertical; }
 .field-dot { width:8px; height:8px; border-radius:50%; display:inline-block; cursor:pointer; flex-shrink:0; transition:background 0.2s; }
 .field-dot.empty { background:var(--red); }
 .field-dot.ai { background:var(--yellow); }
 .field-dot.verified { background:var(--green); }
-.field input:focus { border-color:var(--accent); }
+.field input:focus, .field select:focus, .field textarea:focus { border-color:var(--accent); }
 .badge { display:inline-block; padding:2px 8px; border-radius:3px; font-size:11px; font-weight:600; }
 .badge-expired { background:rgba(229,85,97,.15); color:var(--red); }
 .badge-critical { background:rgba(216,155,101,.15); color:var(--orange); }
@@ -216,6 +234,43 @@ input, select, button { font-family:var(--font-ui); }
 .vrev-muted { color:var(--text2); }
 .vrev-cta { margin-top:8px; }
 .vrev-cta a { color:var(--accent); cursor:pointer; text-decoration:underline; font-weight:600; }
+.vdb-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:10px; }
+.vdb-card { border:1px solid var(--border); border-radius:6px; padding:12px 14px; background:var(--bg); min-width:0; }
+.vdb-card-title { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+.vdb-card-title strong { font-size:14px; line-height:1.25; overflow:hidden; text-overflow:ellipsis; }
+.vdb-meta { color:var(--text2); font-size:11px; line-height:1.45; margin-top:4px; }
+.vdb-lookup-shell { max-width:860px; }
+.vdb-lookup-row { display:flex; gap:8px; align-items:flex-end; margin-bottom:16px; }
+.vdb-lookup-row .field { flex:1; min-width:180px; }
+.vdb-result { display:flex; flex-direction:column; gap:12px; }
+.vdb-hero { border:1px solid var(--border); border-radius:6px; padding:14px 16px; background:var(--surface); }
+.vdb-hero h2 { font-size:20px; margin:0 0 8px; line-height:1.25; }
+.vdb-badges { display:flex; flex-wrap:wrap; gap:6px; }
+.vdb-section { border:1px solid var(--border); border-radius:6px; padding:12px 14px; background:var(--bg); }
+.vdb-section h3 { font-size:14px; margin:0 0 10px; }
+.vdb-kv { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:8px 12px; }
+.vdb-kv div { min-width:0; }
+.vdb-kv span { display:block; font-size:10px; color:var(--text2); text-transform:uppercase; letter-spacing:.05em; margin-bottom:2px; }
+.vdb-kv strong { display:block; font-size:13px; overflow-wrap:anywhere; }
+.vdb-list { display:flex; flex-direction:column; gap:8px; }
+.vdb-row { border-left:3px solid var(--accent); padding:7px 10px; background:var(--surface); font-size:12px; line-height:1.45; }
+.vdb-row-title { font-weight:700; }
+.vdb-row-meta { color:var(--text2); font-size:11px; margin-top:2px; }
+.vdb-stars { display:flex; align-items:center; gap:10px; margin:2px 0 10px; flex-wrap:wrap; }
+.vdb-starline { font-size:20px; line-height:1; letter-spacing:1px; color:var(--yellow); font-family:var(--font-ui); }
+.vdb-stars.empty .vdb-starline { color:var(--text2); opacity:.55; }
+.vdb-stars.locked .vdb-starline { color:var(--yellow); opacity:.45; }
+.vdb-star-meta { color:var(--text2); font-size:12px; }
+.vdb-score-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:8px; }
+.vdb-score { border:1px solid var(--border); border-radius:5px; padding:8px 10px; background:var(--surface); }
+.vdb-score span { display:block; color:var(--text2); font-size:11px; margin-bottom:4px; }
+.vdb-score strong { font-size:16px; }
+@media (max-width:700px){ .vdb-lookup-row { flex-direction:column; align-items:stretch; } }
+.sea-lock { border:1px solid var(--border); border-radius:6px; padding:14px 16px; background:var(--surface); margin-bottom:14px; }
+.sea-lock h3 { font-size:15px; margin:0 0 6px; }
+.sea-lock p { color:var(--text2); font-size:12px; line-height:1.45; margin:0 0 10px; }
+.sea-lock-list { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 12px; }
+.sea-lock-list span { border:1px solid var(--border); border-radius:4px; padding:3px 7px; color:var(--text2); font-size:11px; background:var(--bg); }
 
 /* Review form modal */
 #review-form-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:99996; align-items:flex-start; justify-content:center; overflow-y:auto; padding:24px 12px; }
@@ -257,7 +312,10 @@ input, select, button { font-family:var(--font-ui); }
 .file-info.drag-over { background:rgba(93,95,239,.08); border-radius:6px; }
 #drop-overlay { display:none; position:fixed; inset:0; background:rgba(93,95,239,.14); backdrop-filter:blur(2px); z-index:99997; pointer-events:none; align-items:center; justify-content:center; }
 #drop-overlay .drop-card { background:var(--surface); border:2px dashed var(--accent); padding:22px 32px; border-radius:10px; font-size:14px; color:var(--accent); box-shadow:0 8px 28px rgba(0,0,0,.35); }
-.file-preview { margin-top:12px; border:1px solid var(--border); border-radius:6px; overflow:hidden; background:#111; min-height:200px; display:flex; align-items:center; justify-content:center; }
+.file-preview { margin-top:12px; border:1px solid var(--border); border-radius:6px; overflow:hidden; background:#111; min-height:200px; display:flex; align-items:center; justify-content:center; contain:content; }
+.file-preview img { display:block; max-width:100%; max-height:70vh; object-fit:contain; }
+.file-preview iframe { display:block; width:100%; height:70vh; border:none; background:#fff; }
+.preview-message { color:var(--text2); padding:20px; text-align:center; font-size:12px; }
 .file-info { display:flex; align-items:center; justify-content:space-between; margin-top:12px; font-size:12px; }
 .file-info .fname { color:var(--green); }
 
@@ -282,6 +340,44 @@ input, select, button { font-family:var(--font-ui); }
 .urgent-item { height:30px; display:flex; align-items:center; gap:8px; padding:0 4px; cursor:pointer; font-size:12px; }
 .urgent-item:hover { background:var(--hover); }
 
+/* Information */
+.info-wrap { max-width:1060px; margin:0 auto; padding-bottom:24px; }
+.info-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:14px; }
+.info-head h2 { font-size:18px; margin:0 0 4px; }
+.info-sub { color:var(--text2); font-size:12px; line-height:1.45; max-width:680px; }
+.info-meta { color:var(--text2); font-size:11px; text-align:right; line-height:1.45; min-width:180px; }
+.info-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(230px,1fr)); gap:10px; margin:10px 0 18px; }
+.info-card { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:12px 14px; min-width:0; }
+.info-card.locked { border-style:dashed; background:var(--bg); }
+.info-card h3 { font-size:13px; margin:0 0 6px; color:var(--text); }
+.info-card p { margin:0; color:var(--text2); font-size:12px; line-height:1.45; }
+.info-kicker { color:var(--accent); font-size:10px; font-weight:700; letter-spacing:.7px; text-transform:uppercase; margin-bottom:6px; }
+.info-row { display:flex; align-items:center; justify-content:space-between; gap:10px; border-top:1px solid var(--border); padding-top:8px; margin-top:8px; font-size:12px; }
+.info-pill { display:inline-flex; align-items:center; border:1px solid var(--border); border-radius:999px; padding:2px 8px; color:var(--text2); font-size:10px; white-space:nowrap; }
+.info-band { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-top:10px; }
+.info-band div { background:var(--bg); border:1px solid var(--border); border-radius:5px; padding:7px 8px; text-align:center; }
+.info-band b { display:block; font-size:14px; color:var(--text); }
+.info-band span { display:block; font-size:10px; color:var(--text2); }
+.info-country-list { display:grid; gap:8px; margin:10px 0 18px; }
+.info-country-row { display:grid; grid-template-columns:32px minmax(110px,1fr) repeat(4,minmax(72px,auto)); gap:10px; align-items:center; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:10px 12px; font-size:12px; min-width:0; }
+.info-country-row.head { background:transparent; color:var(--text2); font-size:10px; font-weight:700; text-transform:uppercase; }
+.info-country-name { font-weight:700; color:var(--text); }
+.info-country-num { text-align:right; color:var(--text); }
+.info-country-num small { display:none; color:var(--text2); font-size:10px; margin-right:4px; }
+.info-offer-result { margin-top:10px; border:1px solid var(--border); border-radius:6px; padding:10px 12px; font-size:12px; line-height:1.45; }
+.info-offer-result.good { border-color:var(--green); }
+.info-offer-result.warn { border-color:var(--orange); }
+.info-offer-result.strong { border-color:var(--accent); }
+.info-empty { border:1px dashed var(--border); border-radius:6px; padding:14px; color:var(--text2); font-size:12px; }
+@media(max-width:720px){
+    .info-head{flex-direction:column;}
+    .info-meta{text-align:left;}
+    .info-country-row{grid-template-columns:32px 1fr 1fr; align-items:start;}
+    .info-country-row.head{display:none;}
+    .info-country-num{text-align:left;}
+    .info-country-num small{display:block;}
+}
+
 /* Buttons */
 .btn { padding:4px 12px; border:none; border-radius:4px; cursor:pointer; font-size:12px; font-weight:600; }
 .btn-accent { background:var(--accent); color:#fff; }
@@ -290,6 +386,8 @@ input, select, button { font-family:var(--font-ui); }
 .btn-sm { padding:3px 8px; font-size:11px; }
 .btn-red { color:var(--red); border-color:var(--red); }
 .btn:hover { opacity:.85; }
+.btn:disabled { opacity:.45; cursor:not-allowed; }
+.btn:disabled:hover { opacity:.45; }
 
 /* Update banner */
 .update-banner { display:none; position:fixed; top:28px; left:0; right:0; background:linear-gradient(90deg, var(--accent), #5b4fd6); color:#fff; padding:8px 16px; font-size:12px; z-index:90; display:none; align-items:center; gap:10px; }
@@ -311,6 +409,13 @@ input, select, button { font-family:var(--font-ui); }
 .modal-panel .field input[type="text"], .modal-panel .field select { width:100%; padding:8px 10px; background:var(--bg); border:1px solid var(--border); border-radius:5px; color:var(--text); font-size:13px; box-sizing:border-box; }
 .modal-panel .field input:focus, .modal-panel .field select:focus { outline:none; border-color:var(--accent); }
 .modal-panel .actions .btn { margin-left:8px; }
+.requirements-change-list { margin:10px 0 0; border:1px solid var(--border); border-radius:6px; overflow:hidden; }
+.requirements-change-row { display:flex; align-items:flex-start; gap:8px; padding:8px 10px; border-top:1px solid var(--border); font-size:12px; }
+.requirements-change-row:first-child { border-top:none; }
+.requirements-change-row .sign { width:18px; height:18px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-weight:700; font-size:12px; }
+.requirements-change-row.add .sign { color:var(--green); background:rgba(78,201,112,.12); }
+.requirements-change-row.remove .sign { color:var(--orange); background:rgba(216,155,101,.12); }
+.requirements-change-row .basis { margin-top:2px; color:var(--text2); font-family:var(--font-mono); font-size:10px; }
 
 /* Panel header "+" button */
 .panel-header .actions span { cursor:pointer; opacity:0.55; padding:0 4px; transition:opacity 0.15s; }
@@ -449,8 +554,10 @@ input, select, button { font-family:var(--font-ui); }
     <div class="mod-tab" onclick="showView('dashboard')" id="mt-dash" title="Dashboard"><span>Dashboard</span></div>
     <div class="mod-tab" onclick="showView('cv')" id="mt-cv" title="CV"><span>CV</span></div>
     <div class="mod-tab" onclick="showView('packages')" id="mt-pkg" title="Packages"><span>Packages</span></div>
-    <div class="mod-tab" onclick="showView('dispatch')" id="mt-disp" title="Dispatch"><span class="mi">&#128231;</span><span>Dispatch</span></div>
-    <div class="mod-tab" onclick="showView('jobs')" id="mt-jobs" title="Jobs — receive matching offers"><span class="mi">&#9875;</span><span>Jobs</span></div>
+    <div class="mod-tab" onclick="showView('dispatch')" id="mt-disp" title="Mailings"><span>Рассылки</span></div>
+    <div class="mod-tab" onclick="showView('jobs')" id="mt-jobs" title="Jobs — receive matching offers"><span>Jobs</span></div>
+    <div class="mod-tab" onclick="showView('information')" id="mt-info" title="Information - market pulse"><span>Information</span></div>
+    <div class="mod-tab" onclick="showView('vessels')" id="mt-vessels" title="База судов"><span>База судов</span></div>
     <div class="mb-spacer"></div>
     <div class="mb-vault" id="mb-vault" onclick="openVaultSwitcher(event)" title="Switch vault">
         <span>&#128451;</span>
@@ -464,11 +571,13 @@ input, select, button { font-family:var(--font-ui); }
     <!-- Legacy ribbon kept hidden for back-compat with showView() logic -->
     <div class="ribbon" id="ribbon" style="display:none !important;">
         <div class="ribbon-icon active" onclick="showView('files')" id="ri-files" title="Files">&#128451;</div>
+        <div class="ribbon-icon" onclick="showView('experience')" id="ri-exp" title="Work Experience">&#9875;</div>
         <div class="ribbon-icon" onclick="showView('dashboard')" id="ri-dash" title="Dashboard">&#9632;</div>
         <div class="ribbon-icon" onclick="showView('cv')" id="ri-cv" title="CV">&#128100;</div>
-        <div class="ribbon-icon" onclick="showView('experience')" id="ri-exp" title="Work Experience">&#9875;</div>
         <div class="ribbon-icon" onclick="showView('packages')" id="ri-pkg" title="Packages">&#128230;</div>
-        <div class="ribbon-icon" onclick="showView('dispatch')" id="ri-disp" title="Dispatch (Рассылка)">&#128231;</div>
+        <div class="ribbon-icon" onclick="showView('dispatch')" id="ri-disp" title="Рассылки">&#128231;</div>
+        <div class="ribbon-icon" onclick="showView('information')" id="ri-info" title="Information">i</div>
+        <div class="ribbon-icon" onclick="showView('vessels')" id="ri-vessels" title="База судов">&#9973;</div>
         <div class="ribbon-spacer"></div>
         <div class="ribbon-icon" onclick="openSettings()" id="ri-set" title="Settings">&#9881;</div>
     </div>
@@ -484,8 +593,8 @@ input, select, button { font-family:var(--font-ui); }
     <div id="add-custom-overlay" class="modal-overlay" style="display:none;" onclick="if(event.target===this)hideAddCustomDoc();">
         <div class="modal-panel" style="max-width:420px;">
             <h3 style="margin-top:0;margin-bottom:4px;font-size:16px;">Add Custom Certificate</h3>
-            <p style="color:var(--text2);font-size:12px;margin-top:0;margin-bottom:14px;">Add a certificate that isn't in the standard template — e.g. a company-specific training, a local endorsement, or an extra course you took.</p>
-            <div class="field"><label>Title *</label><input type="text" id="ac-title" placeholder="e.g. Dangerous Goods by Air (IATA DGR)"></div>
+            <p style="color:var(--text2);font-size:12px;margin-top:0;margin-bottom:14px;">Add a certificate that isn't in the standard template — e.g. a company-specific training, ECDIS type-specific course, local endorsement, or an extra course you took.</p>
+            <div class="field"><label>Title *</label><input type="text" id="ac-title" placeholder="e.g. ECDIS Type-Specific — Furuno"></div>
             <div class="field"><label>Category</label><select id="ac-category"></select></div>
             <div class="field"><label><input type="checkbox" id="ac-has-expiry" checked style="margin-right:6px;">This certificate has an expiry date</label></div>
             <div class="actions" style="margin-top:18px;text-align:right;">
@@ -502,8 +611,8 @@ input, select, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.104</span></p>
-                <button class="btn btn-accent" onclick="showSetup()">Create New Vault</button>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.105</span></p>
+                <button class="btn btn-accent" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
                 <div style="margin-top:12px;font-size:11px;color:var(--text2);line-height:1.45;max-width:360px;">
@@ -878,17 +987,8 @@ async function init() {
     showWelcome();
     // Check for updates even without a vault open
     setTimeout(function(){checkForUpdate(true);},3000);
-    // Background poll for new vacancies on the public board (5-min cadence)
-    startJobsPolling();
-    // Pre-warm the Jobs cache so the tab opens instantly on first click.
-    // Runs silently — doesn't touch the DOM until the user navigates there.
-    setTimeout(function(){
-        if (typeof loadJobsFeed === 'function' && currentView !== 'jobs') {
-            // No host element yet — loadJobsFeed already handles that and
-            // just populates lastJobsItems + localStorage cache.
-            loadJobsFeed().catch(function(){});
-        }
-    }, 800);
+    // No vault is open yet. Do not touch the jobs board here: network polling
+    // starts only after a seafarer vault is opened and "Ready for offers" is on.
 }
 
 // ========== Profile taxonomy (STCW levels, vessel tree, positions) ==========
@@ -897,13 +997,27 @@ var serverCatalog = null; // cached server catalog for future cert-matrix slices
 var SERVER_CATALOG_CACHE_KEY = 'skipi-catalog';
 var SERVER_CATALOG_TTL_MS = 60 * 60 * 1000;
 var SERVER_CATALOG_URL = 'https://api.skipi.app/api/catalogs';
-var wizardState = {step:1,name:'',level:'',vessel_root:'',vessel_leaf:'',position:'',positionCustom:''};
+var wizardState = {step:1,name:'',level:'',vessel_root:'',vessel_leaf:'',position:'',positionCustom:'',vault_path:''};
 
 // Categories whose docs are pre-seeded but not "mandatory" — e.g. Banking.
 // Populated from backend `get_optional_categories` once at startup; used by
-// docStatusColor/Rank to skip the red-missing marker and by renderTree to
-// sort these categories to the end of the list by default.
+// docStatusRank uses it to skip the red-missing priority, and renderTree uses
+// it to sort these categories to the end of the list by default.
 var optionalCategories = [];
+var activeTemplateIds = [];
+var activeTemplateIdSet = {};
+var activeTemplateIdsLoaded = false;
+var conditionalTemplateIds = [];
+var conditionalTemplateIdSet = {};
+var conditionalTemplateIdsLoaded = false;
+var fixedAddDocCategories = [
+    'ECDIS Specific',
+    'STCW Specific',
+    'Flag CoC Endorsement',
+    "Flag Seaman's Book",
+    'Bulk Carrier Specific',
+    'Custom'
+];
 
 async function loadTaxonomy(){
     if(!profileTax){profileTax=await invoke('get_profile_taxonomy');}
@@ -955,6 +1069,169 @@ async function loadOptionalCategories(){
 
 function isOptionalCategory(cat){
     return optionalCategories.indexOf(cat)!==-1;
+}
+
+async function loadActiveTemplateIds(){
+    try{
+        var ids=await invoke('get_active_template_ids');
+        activeTemplateIds=Array.isArray(ids)?ids.slice():[];
+        activeTemplateIdSet={};
+        activeTemplateIds.forEach(function(id){activeTemplateIdSet[id]=true;});
+        activeTemplateIdsLoaded=true;
+    }catch(e){
+        activeTemplateIds=[];
+        activeTemplateIdSet={};
+        activeTemplateIdsLoaded=false;
+    }
+}
+
+async function loadConditionalTemplateIds(){
+    try{
+        var ids=await invoke('get_conditional_template_ids');
+        conditionalTemplateIds=Array.isArray(ids)?ids.slice():[];
+        conditionalTemplateIdSet={};
+        conditionalTemplateIds.forEach(function(id){conditionalTemplateIdSet[id]=true;});
+        conditionalTemplateIdsLoaded=true;
+    }catch(e){
+        conditionalTemplateIds=[];
+        conditionalTemplateIdSet={};
+        conditionalTemplateIdsLoaded=false;
+    }
+}
+
+function isActiveTemplateId(id){
+    if(!id)return false;
+    if(!activeTemplateIdsLoaded)return true;
+    return activeTemplateIdSet[id]===true;
+}
+
+function isConditionalTemplateId(id){
+    if(!id||!conditionalTemplateIdsLoaded)return false;
+    return conditionalTemplateIdSet[id]===true;
+}
+
+function isFlagTemplateId(id){
+    return id==='flag_coc_endorsement'||id==='flag_seamans_book';
+}
+
+function isEcdisSpecificDoc(d){
+    return !!(d&&d.category==='ECDIS Specific');
+}
+
+function isActiveRequiredDoc(d){
+    return !!(d&&d.template_id&&isActiveTemplateId(d.template_id)&&!isOptionalCategory(d.category));
+}
+
+function docTreeGroup(d){
+    if(isActiveRequiredDoc(d))return 0;
+    if(d&&d.template_id&&isConditionalTemplateId(d.template_id))return 1;
+    if(isEcdisSpecificDoc(d))return 1;
+    if(d&&d.template_id&&isActiveTemplateId(d.template_id))return 2;
+    if(d&&d.template_id)return 3;
+    return 4;
+}
+
+function docKindClass(d){
+    if(isActiveRequiredDoc(d))return ' req';
+    if(d&&d.template_id&&isFlagTemplateId(d.template_id))return ' flagdoc';
+    if(d&&d.template_id&&isConditionalTemplateId(d.template_id))return ' conditional';
+    if(isEcdisSpecificDoc(d))return ' specific';
+    if(d&&d.template_id&&!isActiveTemplateId(d.template_id))return ' inactive-template';
+    if(d&&!d.template_id)return ' custom';
+    return '';
+}
+
+function docExpiryBadgeClass(d){
+    if(!d || !d.file_name || !d.has_expiry || !d.valid_to) return '';
+    var dl=Math.floor((new Date(d.valid_to)-new Date())/864e5);
+    if(dl<30) return ' exp-critical';
+    if(dl<90) return ' exp-warning';
+    return '';
+}
+
+function docKindBadgeHtml(d,label,cls,title){
+    return '<span class="kind-badge '+cls+docExpiryBadgeClass(d)+'" data-doc-id="'+esc(d&&d.id||'')+'" title="'+esc(title)+'" onclick="showDocRequirement(event)">'+label+'</span>';
+}
+
+function docKindBadge(d){
+    if(isActiveRequiredDoc(d))return docKindBadgeHtml(d,'REQ','req','Required by the active profile framework. Click to view the regulatory basis.');
+    if(d&&d.template_id&&isFlagTemplateId(d.template_id))return docKindBadgeHtml(d,'FLAG','flagdoc','Known flag-state document. Click to view the regulatory basis.');
+    if(d&&d.template_id&&isConditionalTemplateId(d.template_id))return docKindBadgeHtml(d,'STCW','conditional','Known STCW-specific certificate. Click to view the regulatory basis.');
+    if(isEcdisSpecificDoc(d))return docKindBadgeHtml(d,'SPEC','specific','Equipment/type-specific certificate. Click to view the requirement.');
+    if(d&&d.template_id&&!isActiveTemplateId(d.template_id))return docKindBadgeHtml(d,'Old','history','Template document kept from another profile framework. Click to view the regulatory basis.');
+    if(d&&!d.template_id)return docKindBadgeHtml(d,'Custom','custom','User-added custom document. Click to view details.');
+    return '';
+}
+
+function docKindMeta(d){
+    if(isActiveRequiredDoc(d))return ' '+docKindBadgeHtml(d,'Required','req','Required by the active profile framework. Click to view the regulatory basis.');
+    if(d&&d.template_id&&isFlagTemplateId(d.template_id))return ' '+docKindBadgeHtml(d,'Flag Document','flagdoc','Known flag-state document. Click to view the regulatory basis.');
+    if(d&&d.template_id&&isConditionalTemplateId(d.template_id))return ' '+docKindBadgeHtml(d,'STCW Specific','conditional','Known STCW-specific certificate. Click to view the regulatory basis.');
+    if(isEcdisSpecificDoc(d))return ' '+docKindBadgeHtml(d,'ECDIS Specific','specific','Equipment/type-specific certificate. Click to view the requirement.');
+    if(d&&d.template_id&&!isActiveTemplateId(d.template_id))return ' '+docKindBadgeHtml(d,'Historical','history','Template document kept from another profile framework. Click to view the regulatory basis.');
+    if(d&&!d.template_id)return ' '+docKindBadgeHtml(d,'Custom','custom','User-added custom document. Click to view details.');
+    return '';
+}
+
+function docRequirementKind(d){
+    if(isActiveRequiredDoc(d))return {label:'Required',cls:'req',text:'This slot is part of the active document framework for the current seafarer profile.'};
+    if(d&&d.template_id&&isFlagTemplateId(d.template_id))return {label:'Flag document',cls:'flagdoc',text:'Known flag-state document. It is usually needed when the vessel flag differs from the seafarer national or issuing administration.'};
+    if(d&&d.template_id&&isConditionalTemplateId(d.template_id))return {label:'STCW specific',cls:'conditional',text:'Known STCW-specific certificate. It is required only for certain vessel types, trades, areas or duties.'};
+    if(isEcdisSpecificDoc(d))return {label:'ECDIS specific',cls:'specific',text:'Equipment/type-specific ECDIS certificate. A navigator can have several type-specific certificates in addition to generic ECDIS training.'};
+    if(d&&d.template_id&&!isActiveTemplateId(d.template_id))return {label:'Historical',cls:'history',text:'This known template is kept from another profile framework and is not mandatory for the current active profile.'};
+    return {label:'Custom',cls:'custom',text:'User-added document. Skipi does not attach a fixed convention requirement to this custom slot.'};
+}
+
+function closeDocRequirement(){
+    var el=document.getElementById('doc-requirement-overlay');
+    if(el)el.remove();
+}
+
+function showDocRequirement(ev){
+    if(ev){ev.preventDefault();ev.stopPropagation();}
+    var id=ev&&ev.currentTarget?ev.currentTarget.getAttribute('data-doc-id'):'';
+    var d=allDocs.find(function(x){return x.id===id;});
+    if(!d)return;
+    var kind=docRequirementKind(d);
+    var rawBasis=String(d.regulatory_basis||'').trim();
+    var hasRealBasis=rawBasis && rawBasis.toLowerCase()!=='custom';
+    var s=classify(d);
+    var dl=days(d);
+    var expiryText='';
+    if(d.file_name&&d.has_expiry&&dl!==null){
+        if(dl<0)expiryText='Expired '+Math.abs(dl)+' day(s) ago';
+        else if(dl===0)expiryText='Expires today';
+        else expiryText='Expires in '+dl+' day(s)';
+    }else if(d.has_expiry){
+        expiryText='Expiry date is expected but not filled yet';
+    }else{
+        expiryText='No expiry rule';
+    }
+    var h='<div id="doc-requirement-overlay" class="modal-overlay open" onclick="if(event.target===this)closeDocRequirement();">';
+    h+='<div class="modal-panel" style="width:min(560px,92vw);">';
+    h+='<h3 style="margin:0 0 6px;font-size:16px;">'+esc(d.title)+'</h3>';
+    h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;"><span class="kind-badge '+kind.cls+docExpiryBadgeClass(d)+'" style="cursor:default;">'+esc(kind.label)+'</span><span style="font-size:11px;color:var(--text2);">'+esc(d.category)+'</span></div>';
+    h+='<div style="font-size:12px;line-height:1.5;color:var(--text2);margin-bottom:12px;">'+esc(kind.text)+'</div>';
+    h+='<div style="border:1px solid var(--border);border-radius:6px;padding:10px 12px;background:var(--bg);">';
+    h+='<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);font-weight:700;margin-bottom:4px;">Regulatory basis</div>';
+    h+='<div style="font-family:var(--font-mono);font-size:12px;color:var(--text);">'+esc(hasRealBasis?rawBasis:'No fixed regulatory basis recorded')+'</div>';
+    h+='</div>';
+    h+='<div style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:12px;color:var(--text2);"><span class="badge badge-'+s+'">'+esc(s)+'</span><span>'+esc(expiryText)+'</span></div>';
+    h+='<div style="margin-top:16px;text-align:right;"><button class="btn btn-accent btn-sm" onclick="closeDocRequirement()">OK</button></div>';
+    h+='</div></div>';
+    document.body.insertAdjacentHTML('beforeend',h);
+}
+
+function canDeleteDoc(d){
+    if(!d)return false;
+    return !isActiveRequiredDoc(d);
+}
+
+function deleteDocLabel(d){
+    if(!d||!d.template_id)return 'custom document';
+    if(isFlagTemplateId(d.template_id))return 'flag document';
+    if(isConditionalTemplateId(d.template_id))return 'conditional document';
+    return 'historical document';
 }
 
 // User-reordered category list — persisted in localStorage (global for now;
@@ -1020,20 +1297,10 @@ function onCatDrop(ev){
     renderTree();
 }
 
-function showSetup(){
+async function showSetup(){
     hide('scr-welcome');
-    var h='<div class="setup"><h2>Create Vault</h2>';
-    h+='<div class="field"><label>Entity type</label><select id="s-type" onchange="onType(this.value)">'
-        +'<option value="">-- Select --</option>'
-        +'<option value="seafarer">Seafarer</option>'
-        +'<option value="crewing" disabled>Crewing (coming soon)</option>'
-        +'<option value="vessel" disabled>Vessel (coming soon)</option>'
-        +'<option value="manager" disabled>Ship Manager (coming soon)</option>'
-        +'<option value="agent" disabled>Agent (coming soon)</option>'
-        +'</select></div>';
-    h+='<p style="color:var(--text2);font-size:12px;margin-top:-4px;margin-bottom:14px;">Only Seafarer is enabled in this beta. Other entity types are under development.</p>';
-    h+='<div class="actions"><button class="btn btn-outline" onclick="showWelcome()">Cancel</button></div></div>';
-    document.getElementById('scr-setup').innerHTML=h;show('scr-setup');
+    hide('scr-content');
+    await startSeafarerWizard();
 }
 async function onType(v){
     if(!v)return;
@@ -1066,6 +1333,15 @@ async function renderWelcomeRecent(){
     host.innerHTML=h;
 }
 
+function jsString(s){
+    return String(s||'')
+        .replace(/\\/g,'\\\\')
+        .replace(/'/g,"\\'")
+        .replace(/"/g,'&quot;')
+        .replace(/\r/g,'')
+        .replace(/\n/g,'\\n');
+}
+
 async function openRecentVault(path){
     try{var info=await invoke('open_vault',{path:path});await loadVault(info);}
     catch(e){showToast('Could not open: '+e,'error');try{await invoke('forget_recent_vault',{path:path});renderWelcomeRecent();}catch(_){}}
@@ -1096,8 +1372,17 @@ function vaultFolderName(kind,name,extra){
     if(suffix)return 'Skipi '+kind+' - '+label+' - '+suffix;
     return 'Skipi '+kind+' - '+label;
 }
+async function defaultVaultParent(){
+    try{return await invoke('get_default_vault_parent');}catch(e){}
+    try{return await invoke('get_downloads_dir');}catch(e){}
+    return '';
+}
+async function defaultVaultPath(folder){
+    var parent=await defaultVaultParent();
+    return parent?joinFolderPath(parent,folder):folder;
+}
 function confirmVaultCreate(path){
-    return confirm('Skipi will create this vault folder:\n\n'+path+'\n\nThe folder name is visible in your file manager, so it is easier to find and open later.');
+    return uiConfirm('Skipi will create this vault folder:\n\n'+path+'\n\nThe folder name is visible in your file manager, so it is easier to find and open later.', {confirmLabel:'Create vault'});
 }
 
 async function doLegacyCreate(t){
@@ -1107,7 +1392,7 @@ async function doLegacyCreate(t){
     var folder=vaultFolderName(kind,n,vt);
     var dir=await open({directory:true,title:'Choose parent folder for '+folder});if(!dir)return;
     var path=joinFolderPath(dir,folder);
-    if(!confirmVaultCreate(path))return;
+    if(!await confirmVaultCreate(path))return;
     try{var info=await invoke('create_vault',{path:path,accountType:t,name:n,rank:null,vesselType:vt});await loadVault(info);}catch(e){showToast('Could not create vault: '+e,'error');logError('create_vault',e);}
 }
 
@@ -1228,7 +1513,7 @@ async function startSeafarerWizard(){
         logError('startSeafarerWizard/loadTaxonomy',e);
         return;
     }
-    wizardState={step:1,name:'',level:'',vessel_root:'',vessel_leaf:'',position:'',positionCustom:''};
+    wizardState={step:1,name:'',level:'',vessel_root:'',vessel_leaf:'',position:'',positionCustom:'',vault_path:''};
     renderWizard();
 }
 
@@ -1242,7 +1527,7 @@ function renderWizard(){
     if(s===1){
         h+='<p style="color:var(--text2);font-size:12px;margin-bottom:14px;">Let\'s build your profile step by step. Start with your name as it appears in your seaman\'s book.</p>';
         h+='<div class="field"><label>Full Name</label><input id="w-name" value="'+(wizardState.name||'')+'" placeholder="e.g. Tymur Rudov" autofocus></div>';
-        h+='<div class="actions"><button class="btn btn-accent" onclick="wNext()">Next &rarr;</button> <button class="btn btn-outline" onclick="showSetup()">Cancel</button></div>';
+        h+='<div class="actions"><button class="btn btn-accent" onclick="wNext()">Next &rarr;</button> <button class="btn btn-outline" onclick="showWelcome()">Cancel</button></div>';
     } else if(s===2){
         h+='<p style="color:var(--text2);font-size:12px;margin-bottom:14px;">Choose your STCW responsibility level. This follows the international Standards of Training, Certification and Watchkeeping Convention.</p>';
         profileTax.levels.forEach(function(l){
@@ -1324,6 +1609,13 @@ function renderWizard(){
         h+='<div><b>Vessel:</b> '+vessLabel+'</div>';
         h+='<div><b>Position:</b> '+posLabel+'</div>';
         h+='</div>';
+        h+='<div class="field" style="margin-bottom:12px;"><label>Vault folder</label>';
+        h+='<div style="display:flex;gap:8px;align-items:center;">';
+        h+='<input id="w-vault-path" value="'+esc(wizardState.vault_path||'')+'" readonly placeholder="Default: Documents/Skipi" style="flex:1;min-width:0;">';
+        h+='<button class="btn btn-outline btn-sm" onclick="wChooseVaultPath()">Change location...</button>';
+        h+='</div>';
+        h+='<div style="font-size:11px;color:var(--text2);margin-top:5px;">Default location is <code>Documents/Skipi</code>. You can create the vault without choosing a folder.</div>';
+        h+='</div>';
         h+='<div class="actions"><button class="btn btn-accent" onclick="wFinish()">Create Vault &amp; Generate Structure</button> <button class="btn btn-outline" onclick="wBack()">&larr; Back</button></div>';
     }
     h+='</div>'; // close wizard-col-left
@@ -1331,6 +1623,7 @@ function renderWizard(){
     h+='</div>'; // close wizard-wrap
     document.getElementById('scr-setup').innerHTML=h;show('scr-setup');
     refreshSeafarerFramework();
+    if(s===5)hydrateWizardVaultPath();
 }
 
 function wPick(key,val){wizardState[key]=val;renderWizard();}
@@ -1378,11 +1671,33 @@ function wNext(){
     wizardState.step++;renderWizard();
 }
 
-async function wFinish(){
+async function hydrateWizardVaultPath(){
+    if(wizardState.vault_path)return;
     var folder=vaultFolderName('Seafarer',wizardState.name);
-    var dir=await open({directory:true,title:'Choose parent folder for '+folder});if(!dir)return;
-    var path=joinFolderPath(dir,folder);
-    if(!confirmVaultCreate(path))return;
+    wizardState.vault_path=await defaultVaultPath(folder);
+    var el=document.getElementById('w-vault-path');
+    if(el)el.value=wizardState.vault_path;
+}
+
+async function wChooseVaultPath(){
+    if(!saveDlg){showToast('Save dialog not available','error');return;}
+    var folder=vaultFolderName('Seafarer',wizardState.name);
+    var def=wizardState.vault_path||await defaultVaultPath(folder);
+    try{
+        var path=await saveDlg({title:'Choose where to save Skipi vault',defaultPath:def});
+        if(!path)return;
+        wizardState.vault_path=path;
+        var el=document.getElementById('w-vault-path');
+        if(el)el.value=path;
+    }catch(e){showToast('Could not choose location: '+e,'error');logError('wChooseVaultPath',e);}
+}
+
+async function wFinish(){
+    if(!wizardState.vault_path){
+        await wChooseVaultPath();
+        if(!wizardState.vault_path)return;
+    }
+    var path=wizardState.vault_path;
     var vessId=wizardState.vessel_leaf||wizardState.vessel_root;
     try{
         var info=await invoke('create_profile_vault',{
@@ -1647,7 +1962,7 @@ async function openForcedProfile(forceOpen){
     // If already complete, don't force (unless forceOpen=true).
     try{
         var data=await invoke('get_seafarer_personal');
-        var minSal=localStorage.getItem('skipi-sp-min_salary')||'';
+        var minSal=String(data.min_salary||localStorage.getItem('skipi-sp-min_salary')||'');
         if(!forceOpen){
             var allSet=true;
             fpRequiredKeys().forEach(function(k){
@@ -1666,7 +1981,7 @@ async function openForcedProfile(forceOpen){
         populateSelect(document.getElementById('fp-rank'),RANKS,data.rank||'','-- Select rank --');
         populateAirportDatalist();
         var curSel=document.getElementById('fp-min_salary_currency');
-        populateSelect(curSel,CURRENCIES,localStorage.getItem('skipi-sp-min_salary_currency')||'USD','');
+        populateSelect(curSel,CURRENCIES,data.currency||localStorage.getItem('skipi-sp-min_salary_currency')||'USD','');
         ['surname','first_name','date_of_birth','place_of_birth','phones','email','nearest_airport','nearest_intl_airport','available_from','home_address'].forEach(function(k){
             var el=document.getElementById('fp-'+k);
             if(el)el.value=data[k]||'';
@@ -1691,7 +2006,8 @@ async function fpSubmit(){
         var el=document.getElementById('fp-'+k);
         var v=el?(el.value||'').trim():'';
         if(!v)missing.push(labelMap[k]||k);
-        if(k!=='min_salary')fields[k]=v;
+        if(k==='min_salary')fields.min_salary=v;
+        else fields[k]=v;
     });
     var errEl=document.getElementById('fp-err');
     if(missing.length){
@@ -1703,16 +2019,21 @@ async function fpSubmit(){
     fields.ready_for_offers=rdy&&rdy.checked?'true':'false';
     var msgr=document.getElementById('fp-preferred_messenger');
     if(msgr)fields.preferred_messenger=msgr.value;
+    var cs=document.getElementById('fp-min_salary_currency');
+    if(cs&&cs.value)fields.currency=cs.value;
     try{
-        await invoke('set_seafarer_personal',{fields:fields});
+        var result=await invoke('set_seafarer_personal',{fields:fields});
         var ms=document.getElementById('fp-min_salary');
         localStorage.setItem('skipi-sp-min_salary',ms?ms.value.trim():'');
-        var cs=document.getElementById('fp-min_salary_currency');
         if(cs&&cs.value)localStorage.setItem('skipi-sp-min_salary_currency',cs.value);
+        await refreshDocsAfterFrameworkChange();
         _forcedProfileActive=false;
         var overlay=document.getElementById('forced-profile-overlay');
         if(overlay)overlay.style.display='none';
-        showToast('Profile saved','success');
+        showRequirementChangeNotice(result);
+        var added=result&&result.docs_added?parseInt(result.docs_added,10):0;
+        var changed=result&&result.framework_changed;
+        showToast(changed?'Profile saved - requirements updated'+(added>0?' (+'+added+' slots)':''):'Profile saved','success');
     }catch(e){
         if(errEl){errEl.style.display='block';errEl.textContent='Save error: '+e;}
         logError('fpSubmit',e);
@@ -1880,7 +2201,7 @@ async function vwFinish(){
     var folder=vaultFolderName('Vessel',vesselWizardState.name,extra);
     var dir=await open({directory:true,title:'Choose parent folder for '+folder});if(!dir)return;
     var path=joinFolderPath(dir,folder);
-    if(!confirmVaultCreate(path))return;
+    if(!await confirmVaultCreate(path))return;
     var catId=vesselWizardState.category_leaf||vesselWizardState.category_root;
     try{
         var info=await invoke('create_vessel_profile_vault',{
@@ -1897,7 +2218,39 @@ async function vwFinish(){
 }
 
 async function openExisting(){
-    var dir=await open({directory:true,title:'Select a Skipi vault folder, e.g. Skipi Seafarer - Tymur Rudov'});if(!dir)return;
+    var recent=[];
+    try{recent=await invoke('get_recent_vaults');}catch(e){}
+    if(recent&&recent.length){showOpenExistingVaultDialog(recent);return;}
+    await browseExistingVault();
+}
+
+function showOpenExistingVaultDialog(recent){
+    closeOpenExistingVaultDialog();
+    var h='<div id="open-vault-overlay" class="modal-overlay open" onclick="if(event.target===this)closeOpenExistingVaultDialog();">';
+    h+='<div class="modal-panel" style="width:min(620px,92vw);">';
+    h+='<h3 style="margin-top:0;margin-bottom:6px;">Open Existing Vault</h3>';
+    h+='<div style="font-size:12px;color:var(--text2);margin-bottom:12px;">Choose one of the vaults previously opened on this computer, or browse for a folder that contains <code>skipi.db</code>.</div>';
+    h+='<div style="display:flex;flex-direction:column;gap:6px;max-height:320px;overflow:auto;margin-bottom:14px;">';
+    recent.slice(0,10).forEach(function(p){
+        var name=String(p||'').replace(/[\\\/]+$/,'').split(/[\\\/]/).pop()||p;
+        h+='<button class="btn btn-outline" style="text-align:left;display:block;width:100%;padding:8px 10px;" onclick="closeOpenExistingVaultDialog();openRecentVault(\''+jsString(p)+'\')">';
+        h+='<div style="font-weight:600;">'+esc(name)+'</div>';
+        h+='<div style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(p)+'</div>';
+        h+='</button>';
+    });
+    h+='</div>';
+    h+='<div style="display:flex;gap:8px;justify-content:flex-end;"><button class="btn btn-outline" onclick="closeOpenExistingVaultDialog()">Cancel</button><button class="btn btn-accent" onclick="closeOpenExistingVaultDialog();browseExistingVault()">Browse...</button></div>';
+    h+='</div></div>';
+    document.body.insertAdjacentHTML('beforeend',h);
+}
+
+function closeOpenExistingVaultDialog(){
+    var el=document.getElementById('open-vault-overlay');
+    if(el)el.remove();
+}
+
+async function browseExistingVault(){
+    var dir=await open({directory:true,title:'Select a Skipi vault folder (the folder containing skipi.db)'});if(!dir)return;
     try{var info=await invoke('open_vault',{path:dir});await loadVault(info);}catch(e){showToast('Could not open vault: '+e+'. Select the named folder that contains skipi.db, for example "Skipi Seafarer - Your Name".','error');logError('open_vault',e);}
 }
 
@@ -1925,19 +2278,31 @@ async function loadVault(info){
     var expIcon=document.getElementById('ri-exp');
     var cvIcon=document.getElementById('ri-cv');
     var dispIcon=document.getElementById('ri-disp');
+    var vesselsIcon=document.getElementById('ri-vessels');
+    var infoIcon=document.getElementById('ri-info');
     var isSeafarer=currentAccountType==='seafarer'||currentAccountType===''||!currentAccountType;
     if(expIcon)expIcon.style.display=isSeafarer?'flex':'none';
     if(cvIcon)cvIcon.style.display=isSeafarer?'flex':'none';
     if(dispIcon)dispIcon.style.display=isSeafarer?'flex':'none';
+    if(vesselsIcon)vesselsIcon.style.display=isSeafarer?'flex':'none';
+    if(infoIcon)infoIcon.style.display=isSeafarer?'flex':'none';
     // Same for new top module tabs
     var mtExp=document.getElementById('mt-exp');if(mtExp)mtExp.style.display=isSeafarer?'flex':'none';
     var mtCv=document.getElementById('mt-cv');if(mtCv)mtCv.style.display=isSeafarer?'flex':'none';
     var mtDisp=document.getElementById('mt-disp');if(mtDisp)mtDisp.style.display=isSeafarer?'flex':'none';
+    var mtVessels=document.getElementById('mt-vessels');if(mtVessels)mtVessels.style.display=isSeafarer?'flex':'none';
+    var mtInfo=document.getElementById('mt-info');if(mtInfo)mtInfo.style.display=isSeafarer?'flex':'none';
     await loadOptionalCategories();
+    await loadConditionalTemplateIds();
+    await loadActiveTemplateIds();
     allDocs=await invoke('get_documents');
     renderTree();showDashboard();updateStatus();
     // Check for updates silently after vault loads
     setTimeout(function(){checkForUpdate(true);},3000);
+    if(isSeafarer){
+        startJobsPolling();
+        setTimeout(prewarmJobsFeedIfReady, 800);
+    }
     // If this is a Seafarer vault with an incomplete profile, force completion.
     if(isSeafarer){ setTimeout(function(){ openForcedProfile(false); },400); }
 }
@@ -1958,31 +2323,11 @@ function autoFormatDate(el){
 function classify(d){if(!d.has_expiry||!d.valid_to)return'none';var dl=Math.floor((new Date(d.valid_to)-new Date())/864e5);if(dl<0)return'expired';if(dl<30)return'critical';if(dl<90)return'warning';return'valid';}
 function days(d){if(!d.valid_to)return null;return Math.floor((new Date(d.valid_to)-new Date())/864e5);}
 function stColor(s){return{expired:'var(--red)',critical:'var(--orange)',warning:'#d4a017',valid:'var(--green)',none:'var(--text2)'}[s]||'var(--text2)';}
-// Status color that reflects user-centric meaning (used for sidebar dots):
-// - required doc without a file attached -> RED (missing)
-// - expired or <30 days -> RED/ORANGE
-// - 30-90 days -> full yellow (#d4a017)
-// - 90-180 days -> medium yellow (#eac94f)
-// - 180-365 days -> light yellow (#f7e38d)
-// - >365 days -> green
-// - no expiry rule -> neutral
-function docStatusColor(d){
-    // Optional categories (Banking etc.) never trigger "required missing" red.
-    var isReq = !!d.template_id && !isOptionalCategory(d.category);
-    if(!d.file_name && isReq) return 'var(--red)'; // required but nothing uploaded
-    if(!d.has_expiry||!d.valid_to) return 'var(--text2)';
-    var dl=Math.floor((new Date(d.valid_to)-new Date())/864e5);
-    if(dl<0) return 'var(--red)';
-    if(dl<30) return 'var(--orange)';
-    if(dl<90) return '#d4a017';  // dark yellow
-    if(dl<180) return '#eac94f'; // medium yellow
-    if(dl<365) return '#f7e38d'; // light yellow
-    return 'var(--green)';
-}
 // Numeric priority for aggregating worst-status per category in the sidebar.
 function docStatusRank(d){
-    var isReq = !!d.template_id && !isOptionalCategory(d.category);
+    var isReq = isActiveRequiredDoc(d);
     if(!d.file_name && isReq) return 6;
+    if(!d.file_name) return 0;
     if(!d.has_expiry||!d.valid_to) return 0;
     var dl=Math.floor((new Date(d.valid_to)-new Date())/864e5);
     if(dl<0) return 7;       // expired beats missing (both red)
@@ -1992,18 +2337,17 @@ function docStatusRank(d){
     if(dl<365) return 2;
     return 1;
 }
-
 function showView(v){
     currentView=v;
     document.querySelectorAll('.ribbon-icon').forEach(function(el){el.classList.remove('active');});
     document.querySelectorAll('.modules-bar .mod-tab').forEach(function(el){el.classList.remove('active');});
-    var shortMap={files:'files',dashboard:'dash',cv:'cv',experience:'exp',packages:'pkg',dispatch:'disp',jobs:'jobs',settings:'set'};
+    var shortMap={files:'files',dashboard:'dash',cv:'cv',experience:'exp',vessels:'vessels',packages:'pkg',dispatch:'disp',jobs:'jobs',information:'info',settings:'set'};
     var ri=document.getElementById('ri-'+shortMap[v]);
     if(ri)ri.classList.add('active');
     var mt=document.getElementById('mt-'+shortMap[v]);
     if(mt)mt.classList.add('active');
-    document.getElementById('panel-title').textContent={files:'Files & data input',dashboard:'Dashboard',cv:'CV',experience:'Sea Service',packages:'Packages',dispatch:'Dispatch',jobs:'Jobs',settings:'Settings'}[v]||v;
-    document.getElementById('left-panel').style.display=(v==='dashboard'||v==='cv'||v==='experience'||v==='dispatch'||v==='jobs')?'none':'';
+    document.getElementById('panel-title').textContent={files:'Files & data input',dashboard:'Dashboard',cv:'CV',experience:'Sea Service',vessels:'База судов',packages:'Packages',dispatch:'Рассылки',jobs:'Jobs',information:'Information',settings:'Settings'}[v]||v;
+    document.getElementById('left-panel').style.display=(v==='dashboard'||v==='cv'||v==='experience'||v==='vessels'||v==='dispatch'||v==='jobs'||v==='information')?'none':'';
     // The second tabs row (breadcrumb-style tab with the current document name)
     // is only useful in Files view — in the other panels the panel title above
     // already says the same thing. Hide it everywhere else. We also clear the
@@ -2023,12 +2367,19 @@ function showView(v){
     if(addBtn)addBtn.style.display=(v==='files')?'inline':'none';
     pkgMode=v==='packages';pkgSelected=[];
     renderTree();
-    if(v==='dashboard')showDashboard();
+    if(v==='files'){
+        var currentDoc = selectedDocId ? allDocs.find(function(d){return d.id===selectedDocId;}) : null;
+        if(currentDoc) renderDoc(currentDoc);
+        else showDashboard();
+    }
+    else if(v==='dashboard')showDashboard();
     else if(v==='cv')showCv();
     else if(v==='experience')showWorkHistory();
+    else if(v==='vessels')showVesselDatabase();
     else if(v==='packages')showPackages();
     else if(v==='dispatch')showDispatch();
     else if(v==='jobs')showJobs();
+    else if(v==='information')showInformation();
     else if(v==='settings')openSettings();
 }
 
@@ -2224,10 +2575,8 @@ function renderTree(){
     var cats={};
     allDocs.forEach(function(d){
         if(searchTerm&&d.title.toLowerCase().indexOf(searchTerm)===-1)return;
-        if(!cats[d.category])cats[d.category]={docs:[],worstRank:-1,worstColor:'var(--text2)'};
+        if(!cats[d.category])cats[d.category]={docs:[]};
         cats[d.category].docs.push(d);
-        var r=docStatusRank(d);
-        if(r>cats[d.category].worstRank){cats[d.category].worstRank=r;cats[d.category].worstColor=docStatusColor(d);}
     });
     var h='';
     var order=orderedCategories(cats);
@@ -2235,8 +2584,8 @@ function renderTree(){
         // Within a category: required-with-template first, optional templates
         // next, user-added custom docs last; within each group, most-urgent first.
         data.docs.sort(function(a,b){
-            var aReq=a.template_id && !isOptionalCategory(a.category)?0:(a.template_id?1:2);
-            var bReq=b.template_id && !isOptionalCategory(b.category)?0:(b.template_id?1:2);
+            var aReq=docTreeGroup(a);
+            var bReq=docTreeGroup(b);
             if(aReq!==bReq) return aReq-bReq;
             return docStatusRank(b)-docStatusRank(a);
         });
@@ -2252,18 +2601,20 @@ function renderTree(){
         data.docs.forEach(function(d){
             var a=d.id===selectedDocId?' active':'';
             var ic=d.file_name?'&#128196;':'&#128195;';
-            var col=docStatusColor(d);
+            var kindClass=docKindClass(d);
+            var kindBadge=docKindBadge(d);
+            var nameHtml='<span class="name">'+esc(d.title)+'</span>';
             if(pkgMode){
                 var hasFile=!!d.file_name;
                 var sel=pkgSelected.indexOf(d.id)!==-1;
                 var bg=sel?' pkg-sel':'';
                 if(!hasFile){
-                    h+='<div class="tree-file" style="opacity:0.45;cursor:not-allowed;" title="No file attached — upload one first" onclick="showToast(\'Upload a file before packaging\',\'warn\')"><span class="icon" style="font-size:18px;line-height:1;">&#9744;</span><span class="name">'+d.title+'</span><span class="st" style="background:'+col+'"></span></div>';
+                    h+='<div class="tree-file'+kindClass+'" style="opacity:0.45;cursor:not-allowed;" title="No file attached — upload one first" onclick="showToast(\'Upload a file before packaging\',\'warn\')"><span class="icon" style="font-size:18px;line-height:1;">&#9744;</span>'+nameHtml+kindBadge+'</div>';
                 }else{
-                    h+='<div class="tree-file'+bg+'" onclick="togglePkg(\''+d.id+'\')"><span class="icon" style="font-size:18px;line-height:1;">'+(sel?'&#9745;':'&#9744;')+'</span><span class="name">'+d.title+'</span><span class="st" style="background:'+col+'"></span></div>';
+                    h+='<div class="tree-file'+kindClass+bg+'" onclick="togglePkg(\''+d.id+'\')"><span class="icon" style="font-size:18px;line-height:1;">'+(sel?'&#9745;':'&#9744;')+'</span>'+nameHtml+kindBadge+'</div>';
                 }
             }else{
-                h+='<div class="tree-file'+a+'" onclick="selDoc(\''+d.id+'\')"><span class="icon">'+ic+'</span><span class="name">'+d.title+'</span><span class="st" style="background:'+col+'"></span></div>';
+                h+='<div class="tree-file'+kindClass+a+'" onclick="selDoc(\''+d.id+'\')"><span class="icon">'+ic+'</span>'+nameHtml+kindBadge+'</div>';
             }
         });
         h+='</div></div>';
@@ -2272,6 +2623,41 @@ function renderTree(){
 }
 
 function toggleF(el){var a=el.querySelector('.arrow'),d=el.nextElementSibling;d.classList.toggle('open');a.classList.toggle('open');}
+
+function escAttr(v){return String(v||'').replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function formatBytes(n){
+    n=Number(n||0);if(!n)return'';
+    if(n<1024)return n+' B';
+    if(n<1024*1024)return Math.round(n/1024)+' KB';
+    return (n/(1024*1024)).toFixed(n<10*1024*1024?1:0)+' MB';
+}
+async function renderDocFilePreview(d){
+    var el=document.getElementById('fprev');if(!el||!d||!d.file_name)return;
+    var maxInline=8*1024*1024;
+    if(Number(d.file_size||0)>maxInline){
+        el.innerHTML='<div class="preview-message">Preview skipped · '+formatBytes(d.file_size)+'</div>';
+        return;
+    }
+    try{
+        var r=await invoke('read_file_base64',{docId:d.id});
+        if(selectedDocId!==d.id)return;
+        el=document.getElementById('fprev');if(!el)return;
+        var b64=r[0],mime=r[1],name=escAttr(d.file_name);
+        if(mime.indexOf('image/')===0){
+            el.innerHTML='<img src="data:'+escAttr(mime)+';base64,'+b64+'" alt="'+name+'" loading="lazy" decoding="async">';
+        }else if(mime==='application/pdf'){
+            var bin=atob(b64);var arr=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
+            var blob=new Blob([arr],{type:'application/pdf'});var burl=URL.createObjectURL(blob);
+            el.innerHTML='<iframe src="'+burl+'" title="'+name+'"></iframe>';
+        }else{
+            var size=formatBytes(d.file_size);
+            el.innerHTML='<div class="preview-message">Preview not available'+(size?' · '+size:'')+'</div>';
+        }
+    }catch(e){
+        var pe=document.getElementById('fprev');
+        if(pe)pe.innerHTML='<div class="preview-message" style="color:var(--red);">'+escAttr(e)+'</div>';
+    }
+}
 
 async function selDoc(id){
     selectedDocId=id;renderTree();
@@ -2286,8 +2672,13 @@ async function renderDoc(d){
     var esc=function(v){return(v||'').replace(/"/g,'&quot;');};
 
     var h='<div class="editor-narrow">';
-    h+='<div class="doc-title">'+d.title+'</div>';
-    h+='<div class="doc-meta">'+d.category+' <span class="badge '+bc+'">'+st+'</span>'+(dlt?' <span style="margin-left:6px;">'+dlt+'</span>':'')+(d.regulatory_basis?' <span class="reg-basis" title="Regulatory basis">'+d.regulatory_basis+'</span>':'')+'</div>';
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:2px;">';
+    h+='<div class="doc-title" style="margin-bottom:0;">'+d.title+'</div>';
+    if(canDeleteDoc(d)){
+        h+='<button class="btn btn-outline btn-sm btn-red" onclick="deleteDocFromView(\''+d.id+'\')">Delete</button>';
+    }
+    h+='</div>';
+    h+='<div class="doc-meta">'+d.category+docKindMeta(d)+' <span class="badge '+bc+'">'+st+'</span>'+(dlt?' <span style="margin-left:6px;">'+dlt+'</span>':'')+(d.regulatory_basis?' <span class="reg-basis" title="Regulatory basis">'+d.regulatory_basis+'</span>':'')+'</div>';
 
     // AI scan buttons removed per UX decision (v0.4.11) — keep hidden status span
     // if(d.file_name){
@@ -2321,18 +2712,22 @@ async function renderDoc(d){
     document.getElementById('scr-content').innerHTML=h;show('scr-content');
     updateTabs(d.title);
 
-    if(d.file_name){
-        try{
-            var r=await invoke('read_file_base64',{docId:d.id});var b64=r[0],mime=r[1];var el=document.getElementById('fprev');if(!el)return;
-            if(mime.startsWith('image/'))el.innerHTML='<img src="data:'+mime+';base64,'+b64+'" style="max-width:100%;max-height:70vh;object-fit:contain;">';
-            else if(mime==='application/pdf'){
-                var bin=atob(b64);var arr=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
-                var blob=new Blob([arr],{type:'application/pdf'});var burl=URL.createObjectURL(blob);
-                el.innerHTML='<iframe src="'+burl+'" style="width:100%;height:70vh;border:none;"></iframe>';
-            }
-            else el.innerHTML='<span style="color:var(--text2);padding:20px;">Preview not available</span>';
-        }catch(e){var pe=document.getElementById('fprev');if(pe)pe.innerHTML='<span style="color:var(--red);padding:12px;">'+e+'</span>';}
-    }
+    if(d.file_name)renderDocFilePreview(d);
+}
+
+async function deleteDocFromView(id){
+    var d=allDocs.find(function(x){return x.id===id;});
+    if(!canDeleteDoc(d))return;
+    if(!await uiConfirm('Delete '+deleteDocLabel(d)+' "'+d.title+'"?', {confirmLabel:'Delete', danger:true}))return;
+    try{
+        await invoke('delete_doc',{id:id});
+        allDocs=await invoke('get_documents');
+        selectedDocId=null;
+        renderTree();
+        updateStatus();
+        showDashboard();
+        showToast('Document deleted','success');
+    }catch(e){showToast('Delete error: '+e,'error');logError('deleteDocFromView',e);}
 }
 
 function updateTabs(title){
@@ -2364,7 +2759,8 @@ async function saveF(id,f,v){
         if(lastAiResult[id] && lastAiResult[id][f] !== undefined && lastAiResult[id][f] !== v && v){
             var doc=allDocs.find(function(x){return x.id===id;});
             var docType=doc?(doc.template_id||doc.category||doc.title||'Unknown'):'Unknown';
-            try{await invoke('save_ai_correction',{docType:docType,fieldName:f,aiValue:lastAiResult[id][f]||'',correctValue:v});}catch(e2){}
+            try{await invoke('save_ocr_label',{docId:id,docType:docType,fieldName:f,aiValue:lastAiResult[id][f]||'',correctValue:v});}
+            catch(e2){try{await invoke('save_ai_correction',{docType:docType,fieldName:f,aiValue:lastAiResult[id][f]||'',correctValue:v});}catch(e3){}}
         }
         await invoke('update_doc_field',{id:id,field:f,value:v});
         // Mark field as verified (user touched it)
@@ -2428,8 +2824,9 @@ async function attachFFromPath(id,sourcePath){
                 _slfShowRecheckBanner(window._slfPendingRecheck);
             }
         }
-        // Auto-scan with AI after file upload — only if AI is configured
-        if(localStorage.getItem('skipi-ai-autoscan')!=='off'&&await aiIsConfigured()){
+        // Auto-scan is opt-in: it can be slow on local vision models and should
+        // never surprise the user during a plain file replacement.
+        if(aiAutoscanEnabled()&&await aiIsConfigured()){
             setTimeout(function(){aiRec(id,true);},500);
         }
     }catch(e){showToast(''+e,'error');logError('attachFFromPath',e);}
@@ -2490,6 +2887,8 @@ async function setupDragDrop(){
 
 // Check whether any AI backend (local Ollama or cloud API key) is reachable/configured.
 // Used to guard auto-scan so first-run users don't get error toasts on every upload.
+function aiAutoscanEnabled(){return localStorage.getItem('skipi-ai-autoscan')==='on';}
+function setAiAutoscan(on){localStorage.setItem('skipi-ai-autoscan',on?'on':'off');}
 async function aiIsConfigured(){
     try{
         var key=await invoke('get_api_key');
@@ -2507,7 +2906,7 @@ async function aiIsConfigured(){
 
 var _aiRec=async function(id,local){
     var st=document.getElementById('ai-st');var key='';
-    if(!local){try{key=await invoke('get_api_key');}catch(e){}if(!key){key=prompt('Anthropic API key:');if(!key)return;try{await invoke('save_api_key',{key:key});}catch(e){}}}
+    if(!local){try{key=await invoke('get_api_key');}catch(e){}if(!key){key=await uiPrompt('Anthropic API key:','');if(!key)return;try{await invoke('save_api_key',{key:key});}catch(e){}}}
     var beforeDoc=allDocs.find(function(x){return x.id===id;});
     var docTitle=beforeDoc?beforeDoc.title:'';
     // Use template_id if available (stable catalog id like 'passport', 'sid',
@@ -2539,7 +2938,7 @@ async function showDashboard(){
     // (template rows without file_name) must not be counted as documents — they
     // represent expected certificates, not actual ones.
     var uploadedDocs=allDocs.filter(function(d){return !!d.file_name;});
-    var requiredMissing=allDocs.filter(function(d){return !d.file_name && d.template_id && !isOptionalCategory(d.category);}).length;
+    var requiredMissing=allDocs.filter(function(d){return !d.file_name && isActiveRequiredDoc(d);}).length;
     var c={expired:0,critical:0,warning:0,warning_soft:0,valid:0,none:0};
     uploadedDocs.forEach(function(d){c[classify(d)]++;});
     var h='<h2 style="font-size:18px;margin-bottom:16px;">Dashboard</h2>';
@@ -2558,7 +2957,7 @@ async function showDashboard(){
         if(profile.missing_ids&&profile.missing_ids.length){
             h+='<div style="margin-top:8px;font-size:11px;color:var(--text2);">'+profile.missing_ids.length+' documents still needed. <a href="#" onclick="showMissing();return false;" style="color:var(--accent);">Show missing</a></div>';
         }
-        h+='<div style="margin-top:6px;font-size:11px;"><a href="#" onclick="showWorkHistory();return false;" style="color:var(--accent);">Work history</a> &middot; <a href="#" onclick="showMissing();return false;" style="color:var(--accent);">Missing documents</a></div>';
+        h+='<div style="margin-top:6px;font-size:11px;"><a href="#" onclick="showWorkHistory();return false;" style="color:var(--accent);">Work history</a> &middot; <a href="#" onclick="showView(\'vessels\');return false;" style="color:var(--accent);">База судов</a> &middot; <a href="#" onclick="showMissing();return false;" style="color:var(--accent);">Missing documents</a></div>';
         h+='</div>';
     }
 
@@ -2610,7 +3009,8 @@ async function showMissing(){
 // ========== Work history ==========
 function escAttr(s){return String(s||'').replace(/'/g,"&#39;").replace(/"/g,'&quot;');}
 var VESSEL_REVIEWS_API = 'https://api.skipi.app/api/vessels/';
-var VESSEL_REVIEW_CACHE_KEY = 'skipi-vessel-reviews-cache-v1';
+var VESSEL_REVIEWS_FALLBACK_API = 'http://127.0.0.1:8000/api/vessels/';
+var VESSEL_REVIEW_CACHE_KEY = 'skipi-vessel-reviews-cache-v2';
 var VESSEL_REVIEW_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 var vesselReviewCache = null;
 
@@ -2628,6 +3028,51 @@ function writeVesselReviewCache(cache){
     vesselReviewCache=cache||{};
     try{localStorage.setItem(VESSEL_REVIEW_CACHE_KEY,JSON.stringify(vesselReviewCache));}catch(e){}
 }
+function vesselApiBases(){
+    var bases=[VESSEL_REVIEWS_API];
+    if(VESSEL_REVIEWS_FALLBACK_API&&bases.indexOf(VESSEL_REVIEWS_FALLBACK_API)===-1)bases.push(VESSEL_REVIEWS_FALLBACK_API);
+    return bases;
+}
+async function fetchWithTimeout(url,options,timeoutMs){
+    if(typeof AbortController==='undefined')return fetch(url,options);
+    var controller=new AbortController();
+    var timer=setTimeout(function(){controller.abort();},timeoutMs||3500);
+    var opts=Object.assign({},options||{},{signal:controller.signal});
+    try{return await fetch(url,opts);}
+    finally{clearTimeout(timer);}
+}
+async function requestVesselProjection(imo){
+    var bases=vesselApiBases();
+    return new Promise(function(resolve){
+        var pending=bases.length;
+        var done=false;
+        var sawNotFound=false;
+        var lastError='';
+        function finishFallback(){
+            if(done)return;
+            if(pending>0)return;
+            done=true;
+            resolve(sawNotFound?{status:'not_found',imo:imo}:{status:'error',imo:imo,error:lastError||'network error'});
+        }
+        bases.forEach(function(base){
+            fetchWithTimeout(base+encodeURIComponent(imo),{headers:{'Accept':'application/json'}},3500).then(function(resp){
+                if(done)return null;
+                if(resp.status===404){sawNotFound=true;return null;}
+                if(resp.ok){
+                    done=true;
+                    return resp.json().then(function(payload){resolve({status:'ok',imo:imo,payload:payload});});
+                }
+                lastError='server '+resp.status;
+                return null;
+            }).catch(function(e){
+                lastError=String(e);
+            }).finally(function(){
+                pending--;
+                finishFallback();
+            });
+        });
+    });
+}
 async function fetchVesselReviewProjection(imo, force){
     var cache=readVesselReviewCache();
     var cached=cache[imo];
@@ -2635,15 +3080,8 @@ async function fetchVesselReviewProjection(imo, force){
         return cached;
     }
     try{
-        var resp=await fetch(VESSEL_REVIEWS_API+encodeURIComponent(imo),{headers:{'Accept':'application/json'}});
-        var entry;
-        if(resp.status===404){
-            entry={status:'not_found',imo:imo,fetched_at:Date.now()};
-        }else if(resp.ok){
-            entry={status:'ok',imo:imo,fetched_at:Date.now(),payload:await resp.json()};
-        }else{
-            throw new Error('server '+resp.status);
-        }
+        var entry=await requestVesselProjection(imo);
+        entry.fetched_at=Date.now();
         cache[imo]=entry;
         writeVesselReviewCache(cache);
         return entry;
@@ -2736,6 +3174,283 @@ function renderVesselReviewProjection(entry,imo){
 function renderVesselReviewLoading(){
     return '<div class="vrev-head"><span class="vrev-title">Vessel reviews</span><span class="badge badge-none">Checking</span></div>';
 }
+
+async function getSeaServiceUnlockState(){
+    var profile=null, error=null;
+    try{profile=await invoke('get_profile_status');}catch(e){error=String(e);}
+    var required=(profile&&Array.isArray(profile.required))?profile.required:[];
+    var docs=[];
+    try{
+        docs=await invoke('get_documents')||[];
+        allDocs=docs;
+    }catch(e){
+        docs=allDocs||[];
+        if(!error)error=String(e);
+    }
+    var byTemplate={};
+    docs.forEach(function(d){
+        if(d&&d.template_id&&d.file_name)byTemplate[d.template_id]=true;
+    });
+    var missing=required.filter(function(r){return !byTemplate[r.id];});
+    return {
+        ok:!error&&required.length>0&&missing.length===0,
+        profile:profile,
+        error:error,
+        required_count:required.length,
+        missing:missing
+    };
+}
+function renderSeaServiceLock(gate,title){
+    gate=gate||{};
+    var missing=gate.missing||[];
+    var h='<div class="sea-lock">';
+    h+='<h3>'+esc(title||'Minimum profile required')+'</h3>';
+    if(gate.error){
+        h+='<p>Skipi cannot read the current profile status: '+esc(gate.error)+'</p>';
+    }else if(!gate.required_count){
+        h+='<p>Create or complete the seafarer framework first. Sea Service and vessel-database contributions need an active minimum document structure.</p>';
+    }else{
+        h+='<p>Sea Service unlocks after every document in the active minimum structure has an attached file. This keeps the Vessel Database tied to real seafarer profiles instead of anonymous free-form edits.</p>';
+        if(missing.length){
+            h+='<div class="sea-lock-list">';
+            missing.slice(0,10).forEach(function(m){h+='<span>'+esc(m.title||m.id)+'</span>';});
+            if(missing.length>10)h+='<span>+'+(missing.length-10)+' more</span>';
+            h+='</div>';
+        }
+    }
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+    h+='<button class="btn btn-accent btn-sm" onclick="showMissing()">Show missing documents</button>';
+    h+='<button class="btn btn-outline btn-sm" onclick="showView(\'files\')">Open documents</button>';
+    h+='</div></div>';
+    return h;
+}
+function showSeaServiceLock(gate,title,tabTitle){
+    document.getElementById('scr-content').innerHTML=renderSeaServiceLock(gate,title);
+    show('scr-content');updateTabs(tabTitle||'Locked');
+}
+
+function groupVesselsFromWorkHistory(entries){
+    var map={};
+    (entries||[]).forEach(function(e){
+        var imo=normalizeImo(e.imo);
+        if(!imo)return;
+        if(!map[imo]){
+            map[imo]={imo:imo,name:e.vessel_name||'',type:e.vessel_type||'',flag:e.flag||'',company:e.company||'',contracts:0,last:''};
+        }
+        var row=map[imo];
+        row.contracts++;
+        var marker=String(e.sign_off||e.sign_on||e.created_at||'');
+        if(marker>=String(row.last||'')){
+            row.last=marker;
+            row.name=e.vessel_name||row.name;
+            row.type=e.vessel_type||row.type;
+            row.flag=e.flag||row.flag;
+            row.company=e.company||row.company;
+        }
+    });
+    return Object.keys(map).map(function(k){return map[k];}).sort(function(a,b){return String(b.last||'').localeCompare(String(a.last||''));});
+}
+
+async function hydrateVesselDatabaseReviews(vessels){
+    (vessels||[]).forEach(function(v){
+        var host=document.getElementById('vdb-vrev-'+v.imo);
+        if(host)host.innerHTML=renderVesselReviewLoading();
+        fetchVesselReviewProjection(v.imo,false).then(function(entry){
+            var el=document.getElementById('vdb-vrev-'+v.imo);
+            if(el)el.innerHTML=renderVesselReviewProjection(entry,v.imo);
+        }).catch(function(e){logError('vessel_db_reviews:'+v.imo,e);});
+    });
+}
+
+function vdbText(v){
+    if(v===null||v===undefined||v==='')return '—';
+    return String(v);
+}
+function vdbNumber(v){
+    var n=Number(v);
+    if(!isFinite(n))return vdbText(v);
+    return n.toLocaleString();
+}
+function vdbDate(v){
+    if(!v)return '—';
+    return String(v).slice(0,10);
+}
+function vdbLabel(v){
+    return String(v||'').replace(/_/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase();});
+}
+function vdbKv(label,value){
+    return '<div><span>'+esc(label)+'</span><strong>'+esc(vdbText(value))+'</strong></div>';
+}
+function vdbScore(label,value,suffix){
+    if(value===null||value===undefined||value==='')return '';
+    return '<div class="vdb-score"><span>'+esc(label)+'</span><strong>'+esc(vdbText(value))+(suffix||'')+'</strong></div>';
+}
+function vdbStarLine(value){
+    var n=Number(value);
+    var full=isFinite(n)?Math.max(0,Math.min(5,Math.round(n))):0;
+    var out='';
+    for(var i=1;i<=5;i++)out+=i<=full?'★':'☆';
+    return out;
+}
+function renderVesselDbStars(data){
+    var access=data.rating_access||{};
+    var n=Number(data.average_overall);
+    if(access.unlocked&&isFinite(n)){
+        return '<div class="vdb-stars"><div class="vdb-starline">'+vdbStarLine(n)+'</div><div class="vdb-star-meta">'+n.toFixed(1)+'/5'+(data.review_count?' · '+esc(data.review_count)+' reviews':'')+'</div></div>';
+    }
+    if(access.signals_available){
+        return '<div class="vdb-stars locked"><div class="vdb-starline">☆☆☆☆☆</div><div class="vdb-star-meta">Rating signals exist, access is locked</div></div>';
+    }
+    return '<div class="vdb-stars empty"><div class="vdb-starline">☆☆☆☆☆</div><div class="vdb-star-meta">No public rating yet</div></div>';
+}
+function vdbFactValue(value){
+    if(value===null||value===undefined||value==='')return '';
+    if(typeof value!=='object')return String(value);
+    var parts=[];
+    Object.keys(value).forEach(function(k){
+        var v=value[k];
+        parts.push(vdbLabel(k)+': '+(typeof v==='object'?JSON.stringify(v):String(v)));
+    });
+    return parts.join(', ');
+}
+function renderVesselDbRatings(data){
+    var h='<div class="vdb-section"><h3>Ratings and scores</h3>';
+    h+=renderVesselDbStars(data);
+    var scores='';
+    scores+=vdbScore('Technical index',data.skipi_technical_index,'/100');
+    scores+=vdbScore('Comfort score',data.skipi_comfort_score,'/100');
+    scores+=vdbScore('Commercial reliability',data.skipi_commercial_reliability,'/100');
+    scores+=vdbScore('Safety culture',data.skipi_safety_culture,'/100');
+    scores+=vdbScore('Operational risk',data.skipi_operational_risk,'');
+    scores+=vdbScore('Confidence',data.skipi_score_confidence,'');
+    if(scores){
+        h+='<div class="vdb-score-grid">'+scores+'</div>';
+        if(data.review_count)h+='<div class="vdb-row-meta" style="margin-top:8px;">'+esc(data.review_count)+' approved review signals included.</div>';
+    }else{
+        var access=data.rating_access||{};
+        var text=access.signals_available?'Rating signals exist, but this client does not have rating access yet.':'No public rating signals are available for this IMO yet.';
+        h+='<div class="vdb-row"><div class="vdb-row-title">'+esc(text)+'</div><div class="vdb-row-meta">Basic vessel data, manager history, facts and events stay visible.</div></div>';
+    }
+    h+='</div>';
+    return h;
+}
+function renderVesselDbManagers(data){
+    var rows=data.manager_epochs||[];
+    var h='<div class="vdb-section"><h3>Management history</h3><div class="vdb-list">';
+    if(rows.length){
+        rows.forEach(function(ep){
+            var dates=(ep.valid_from?vdbDate(ep.valid_from):'unknown')+' - '+(ep.valid_to?vdbDate(ep.valid_to):'current');
+            h+='<div class="vdb-row"><div class="vdb-row-title">'+esc(vdbText(ep.manager_name))+'</div>';
+            h+='<div class="vdb-row-meta">'+esc(vdbLabel(ep.manager_role))+' &middot; '+esc(dates);
+            if(ep.confidence!==null&&ep.confidence!==undefined)h+=' &middot; confidence '+esc(ep.confidence);
+            h+='</div></div>';
+        });
+    }else{
+        var fallback=[];
+        if(data.current_technical_manager_name)fallback.push(['Technical manager',data.current_technical_manager_name,data.current_technical_manager_country]);
+        if(data.current_commercial_manager_name)fallback.push(['Commercial manager',data.current_commercial_manager_name,data.current_commercial_manager_country]);
+        if(data.current_owner_name)fallback.push(['Owner',data.current_owner_name,data.current_owner_country]);
+        if(fallback.length){
+            fallback.forEach(function(r){h+='<div class="vdb-row"><div class="vdb-row-title">'+esc(r[1])+'</div><div class="vdb-row-meta">'+esc(r[0])+(r[2]?' &middot; '+esc(r[2]):'')+'</div></div>';});
+        }else{
+            h+='<div class="vdb-row"><div class="vdb-row-title">No management history recorded yet.</div></div>';
+        }
+    }
+    h+='</div></div>';
+    return h;
+}
+function renderVesselDbBiography(data){
+    var facts=data.facts||[];
+    var events=data.events||[];
+    var sanctions=data.sanctions||[];
+    var h='<div class="vdb-section"><h3>Biography facts</h3><div class="vdb-list">';
+    if(!facts.length&&!events.length&&!sanctions.length){
+        h+='<div class="vdb-row"><div class="vdb-row-title">No public facts or events recorded yet.</div></div>';
+    }
+    sanctions.forEach(function(s){
+        h+='<div class="vdb-row"><div class="vdb-row-title">'+esc(vdbLabel(s.list_name))+' sanction: '+esc(vdbLabel(s.status))+'</div>';
+        h+='<div class="vdb-row-meta">'+esc(vdbDate(s.designation_date))+(s.removal_date?' to '+esc(vdbDate(s.removal_date)):'')+(s.reason?' &middot; '+esc(s.reason):'')+'</div></div>';
+    });
+    events.forEach(function(ev){
+        h+='<div class="vdb-row"><div class="vdb-row-title">'+esc(ev.title||vdbLabel(ev.event_type))+'</div>';
+        h+='<div class="vdb-row-meta">'+esc(vdbDate(ev.occurred_at))+' &middot; '+esc(vdbLabel(ev.event_type))+(ev.severity?' &middot; '+esc(vdbLabel(ev.severity)):'')+'</div>';
+        if(ev.summary)h+='<div style="margin-top:4px;">'+esc(ev.summary)+'</div>';
+        h+='</div>';
+    });
+    facts.forEach(function(f){
+        var value=vdbFactValue(f.value);
+        h+='<div class="vdb-row"><div class="vdb-row-title">'+esc(vdbLabel(f.fact_type))+(value?': '+esc(value):'')+'</div>';
+        h+='<div class="vdb-row-meta">'+(f.observed_at?'Observed '+esc(vdbDate(f.observed_at)):'Claim')+(f.confidence!==null&&f.confidence!==undefined?' &middot; confidence '+esc(f.confidence):'')+'</div></div>';
+    });
+    h+='</div></div>';
+    return h;
+}
+function renderVesselDbSummary(data){
+    var name=data.name_current||('IMO '+data.imo);
+    var h='<div class="vdb-hero">';
+    h+='<h2>'+esc(name)+'</h2>';
+    h+='<div class="vdb-badges">';
+    h+='<span class="badge badge-none">IMO '+esc(data.imo)+'</span>';
+    if(data.status)h+='<span class="badge badge-valid">'+esc(vdbLabel(data.status))+'</span>';
+    if(data.flag_current)h+='<span class="badge badge-none">'+esc(data.flag_current)+'</span>';
+    if(data.vessel_type)h+='<span class="badge badge-none">'+esc(vdbLabel(data.vessel_type))+'</span>';
+    h+='</div></div>';
+    h+='<div class="vdb-section"><h3>Vessel data</h3><div class="vdb-kv">';
+    h+=vdbKv('Type',data.vessel_type? vdbLabel(data.vessel_type):'');
+    h+=vdbKv('Subtype',data.vessel_subtype? vdbLabel(data.vessel_subtype):'');
+    h+=vdbKv('Flag',data.flag_current);
+    h+=vdbKv('Built year',data.built_year);
+    h+=vdbKv('DWT',data.dwt!==null&&data.dwt!==undefined?vdbNumber(data.dwt):'');
+    h+=vdbKv('Gross tonnage',data.gross_tonnage!==null&&data.gross_tonnage!==undefined?vdbNumber(data.gross_tonnage):'');
+    h+=vdbKv('Class society',data.class_society);
+    h+=vdbKv('Builder',[(data.builder_yard||''),(data.builder_origin||'')].filter(Boolean).join(', '));
+    h+=vdbKv('Owner company',data.owner_company);
+    h+=vdbKv('Operator company',data.operator_company);
+    h+='</div></div>';
+    h+=renderVesselDbRatings(data);
+    h+=renderVesselDbManagers(data);
+    h+=renderVesselDbBiography(data);
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-outline btn-sm" onclick="openReviewFromImo(\''+escAttr(data.imo)+'\')">Write review</button><button class="btn btn-outline btn-sm" onclick="lookupVesselByImo(true)">Refresh</button></div>';
+    return h;
+}
+async function lookupVesselByImo(force){
+    var input=document.getElementById('vdb-imo-input');
+    var result=document.getElementById('vdb-result');
+    var btn=document.getElementById('vdb-search-btn');
+    if(!input||!result)return;
+    var imo=normalizeImo(input.value);
+    if(!imo){
+        result.innerHTML='<div class="sea-lock"><h3>Enter a valid IMO number</h3><p>IMO must contain exactly 7 digits.</p></div>';
+        input.focus();
+        return;
+    }
+    input.value=imo;
+    if(btn)btn.disabled=true;
+    result.innerHTML='<div class="sea-lock"><h3>Searching IMO '+esc(imo)+'</h3><p>Reading the vessel database...</p></div>';
+    try{
+        var entry=await fetchVesselReviewProjection(imo,!!force);
+        if(entry.status==='ok'&&entry.payload){
+            result.innerHTML=renderVesselDbSummary(entry.payload);
+        }else if(entry.status==='not_found'){
+            result.innerHTML='<div class="sea-lock"><h3>No vessel found</h3><p>Skipi does not have a public record for IMO '+esc(imo)+' yet.</p></div>';
+        }else{
+            result.innerHTML='<div class="sea-lock"><h3>Vessel database unavailable</h3><p>'+esc(entry.error||'Network error')+'</p></div>';
+        }
+    }finally{
+        if(btn)btn.disabled=false;
+    }
+}
+function showVesselDatabase(){
+    var h='<div class="editor-narrow vdb-lookup-shell">';
+    h+='<div class="vdb-lookup-row">';
+    h+='<div class="field"><label>IMO number</label><input id="vdb-imo-input" inputmode="numeric" pattern="[0-9]*" maxlength="7" placeholder="e.g. 9855552" onkeydown="if(event.key===\'Enter\')lookupVesselByImo(false)"></div>';
+    h+='<button class="btn btn-accent" id="vdb-search-btn" onclick="lookupVesselByImo(false)">Search</button>';
+    h+='</div>';
+    h+='<div class="vdb-result" id="vdb-result"></div>';
+    h+='</div>';
+    document.getElementById('scr-content').innerHTML=h;show('scr-content');updateTabs('База судов');
+    setTimeout(function(){var input=document.getElementById('vdb-imo-input');if(input)input.focus();},0);
+}
 // === Vessel review form (write-side) ===
 // Schema is fetched from /api/review-schema/active and cached for 1h in memory + 24h localStorage.
 // review_pubkey is generated lazily on first submit attempt and stored in vault/_identity/review_sk.bin —
@@ -2799,8 +3514,10 @@ async function openReviewFromEntryId(entryId){
 }
 async function openReviewFromImo(imo){
     try{
+        var target=normalizeImo(imo);
+        if(!target){showToast('Vessel needs a valid IMO to write a review','warn');return;}
         var entries=await invoke('get_work_history')||[];
-        var matches=entries.filter(function(e){return normalizeImo(e.imo)===String(imo);});
+        var matches=entries.filter(function(e){return normalizeImo(e.imo)===target;});
         if(!matches.length){showToast('Add this vessel to your Sea Service first to write a review','warn');return;}
         // pick the most recent contract on this vessel
         matches.sort(function(a,b){
@@ -2813,6 +3530,12 @@ async function openReviewForm(workEntry){
     if(!workEntry||!workEntry.id)return;
     var imo=normalizeImo(workEntry.imo);
     if(!imo){showToast('Vessel needs an IMO to write a review','warn');return;}
+    var gate=await getSeaServiceUnlockState();
+    if(!gate.ok){
+        showToast('Complete the minimum document structure before adding vessel reviews','warn');
+        showSeaServiceLock(gate,'Vessel reviews are locked','Sea Service locked');
+        return;
+    }
     var schema;
     try{schema=await fetchReviewSchema();}catch(e){showToast('Could not load review form: '+e,'error');return;}
     var draft=loadReviewDraft(workEntry.id)||{};
@@ -2839,7 +3562,8 @@ function closeReviewForm(){
 }
 function reviewSectionState(sid){
     var s=REVIEW_FORM_STATE.sections[sid];
-    if(!s){s={mode:null,rating:null,comment:'',items:{}};REVIEW_FORM_STATE.sections[sid]=s;}
+    if(!s){s={mode:'rough',rating:null,comment:'',items:{}};REVIEW_FORM_STATE.sections[sid]=s;}
+    else if(!s.mode)s.mode='rough';
     return s;
 }
 function setSectionMode(sid,mode){
@@ -2897,6 +3621,8 @@ function validateReviewForm(){
 function renderReviewForm(){
     var s=REVIEW_FORM_STATE;if(!s)return;
     var card=document.querySelector('#review-form-overlay #review-form-card');if(!card)return;
+    var prevBody=card.querySelector('.rfb');
+    var prevScroll=prevBody?prevBody.scrollTop:null;
     var sch=(s.schema&&s.schema.definition)||{};
     var sections=sch.sections||[];var flags=sch.warning_flags||[];var w=s.work;
     var h='';
@@ -2966,10 +3692,18 @@ function renderReviewForm(){
     h+='<div style="display:flex;gap:6px;"><button class="btn btn-outline" onclick="closeReviewForm()">Close</button>';
     h+='<button id="rev-submit" class="btn btn-accent" onclick="submitReviewForm()"'+(v.ok?'':' disabled')+'>Submit for moderation</button></div></div>';
     card.innerHTML=h;
+    if(prevScroll!==null){
+        requestAnimationFrame(function(){
+            var body=card.querySelector('.rfb');
+            if(body)body.scrollTop=prevScroll;
+        });
+    }
 }
 async function submitReviewForm(){
     var s=REVIEW_FORM_STATE;if(!s||s.submitting)return;
     var v=validateReviewForm();if(!v.ok){showToast(v.errors[0],'warn');return;}
+    var gate=await getSeaServiceUnlockState();
+    if(!gate.ok){showToast('Complete the minimum document structure before submitting vessel reviews','warn');return;}
     s.submitting=true;
     try{
         var pubkey=await invoke('get_or_create_review_pubkey');
@@ -3060,13 +3794,16 @@ async function hydrateVesselReviews(entries){
 async function showWorkHistory(){
     var entries=[];
     try{entries=await invoke('get_work_history');}catch(e){showToast('Error: '+e,'error');logError('op',e);return;}
+    var gate=await getSeaServiceUnlockState();
     var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">';
     h+='<h2 style="font-size:18px;">Sea Service Record</h2>';
-    h+='<button class="btn btn-accent" onclick="showAddWork()">+ Add Entry</button>';
+    if(gate.ok)h+='<button class="btn btn-accent" onclick="showAddWork()">+ Add Entry</button>';
+    else h+='<button class="btn btn-outline" onclick="showMissing()">Complete profile</button>';
     h+='</div>';
     h+='<p style="color:var(--text2);font-size:12px;margin-bottom:16px;">Your career track. Add each contract with dates and vessel details. Attach supporting documents (contract, discharge letter, sea service letter, flight tickets) to build a verifiable record.</p>';
+    if(!gate.ok)h+=renderSeaServiceLock(gate,'Sea Service is locked');
     if(!entries.length){
-        h+='<p style="color:var(--text2)">No entries yet. Click "Add Entry" to start building your sea service record.</p>';
+        h+='<p style="color:var(--text2)">'+(gate.ok?'No entries yet. Click "Add Entry" to start building your sea service record.':'No entries yet. Complete the minimum document structure first, then add your contracts.')+'</p>';
     }else{
         for(var i=0;i<entries.length;i++){
             var e=entries[i];
@@ -3136,7 +3873,7 @@ async function attachWorkFile(entryId){
     if(!open){showToast('File dialog not available','error');return;}
     var f=await open({multiple:false,title:'Select supporting document',filters:[{name:'Documents',extensions:['pdf','jpg','jpeg','png','doc','docx','txt']}]});
     if(!f)return;
-    var kind=prompt('Document type (optional): e.g. contract, sea_service_letter, discharge_letter, flight_ticket','');
+    var kind=await uiPrompt('Document type (optional): e.g. contract, sea_service_letter, discharge_letter, flight_ticket','');
     try{
         await invoke('attach_work_file',{entryId:entryId,sourcePath:f,kind:kind||null});
         await showWorkHistory();
@@ -3148,11 +3885,17 @@ async function openWorkFile(id){
 }
 
 async function delWorkFile(id){
-    if(!confirm('Remove this attachment?'))return;
+    if(!await uiConfirm('Remove this attachment?', {confirmLabel:'Remove', danger:true}))return;
     try{await invoke('delete_work_file',{id:id});await showWorkHistory();}catch(err){showToast('Error: '+err,'error');logError('op',err);}
 }
 
 async function showAddWork(){
+    var gate=await getSeaServiceUnlockState();
+    if(!gate.ok){
+        showToast('Complete the minimum document structure before adding Sea Service','warn');
+        showSeaServiceLock(gate,'Sea Service is locked','Sea Service locked');
+        return;
+    }
     var h='<h2 style="font-size:18px;margin-bottom:16px;">Add Work Entry</h2>';
     h+='<div style="max-width:480px;">';
     h+='<div class="field-grid">';
@@ -3208,6 +3951,12 @@ async function saveWork(){
     var v=function(id){return document.getElementById(id).value.trim()||null;};
     var vessel=v('wh-vessel'),pos=v('wh-position');
     if(!vessel||!pos){alert('Vessel name and Position are required');return;}
+    var gate=await getSeaServiceUnlockState();
+    if(!gate.ok){
+        showToast('Complete the minimum document structure before adding Sea Service','warn');
+        showSeaServiceLock(gate,'Sea Service is locked','Sea Service locked');
+        return;
+    }
     try{
         await invoke('add_work_history',{
             vesselName:vessel,
@@ -3225,7 +3974,7 @@ async function saveWork(){
 }
 
 async function delWork(id){
-    if(!confirm('Delete this entry?'))return;
+    if(!await uiConfirm('Delete this entry?', {confirmLabel:'Delete', danger:true}))return;
     try{await invoke('delete_work_entry',{id:id});await showWorkHistory();}catch(e){showToast('Error: '+e,'error');logError('op',e);}
 }
 
@@ -3262,7 +4011,7 @@ async function openEvidenceFolder(entryId){
         var msg=String(err);
         // Folder moved or removed since it was linked — offer a re-link.
         if(msg.indexOf('no longer exists')!==-1 || msg.indexOf('not a folder')!==-1 || msg.indexOf('No evidence folder')!==-1){
-            if(confirm(msg+'\n\nLink a different folder?')){
+            if(await uiConfirm(msg+'\n\nLink a different folder?', {confirmLabel:'Link folder'})){
                 await linkEvidenceFolder(entryId);
             }
         } else {
@@ -3273,7 +4022,7 @@ async function openEvidenceFolder(entryId){
 }
 
 async function unlinkEvidenceFolder(entryId){
-    if(!confirm('Unlink this evidence folder?\n\nThe folder and files stay on your disk — only the link inside Skipi is removed.'))return;
+    if(!await uiConfirm('Unlink this evidence folder?\n\nThe folder and files stay on your disk — only the link inside Skipi is removed.', {confirmLabel:'Unlink'}))return;
     try{
         await invoke('set_work_evidence_folder',{entryId:entryId, folderPath:null});
         await showWorkHistory();
@@ -3512,7 +4261,12 @@ function showAddCustomDoc(){
     allDocs.forEach(function(d){
         if(d.category && !seen[d.category]){seen[d.category]=true;opts+='<option value="'+d.category.replace(/"/g,'&quot;')+'">'+d.category+'</option>';}
     });
-    opts+='<option value="Custom">Custom</option>';
+    fixedAddDocCategories.forEach(function(category){
+        if(!seen[category]){
+            seen[category]=true;
+            opts+='<option value="'+category.replace(/"/g,'&quot;')+'">'+category+'</option>';
+        }
+    });
     sel.innerHTML=opts;
     document.getElementById('ac-title').value='';
     document.getElementById('ac-has-expiry').checked=true;
@@ -3542,6 +4296,367 @@ async function doAddCustomDoc(){
             await selDoc(rec.id);
         }
     }catch(e){showToast('Error: '+e,'error');logError('op',e);}
+}
+
+// Information module - seafarer market pulse. Privacy rule: only coarse
+// rank/vessel filters may be sent to the server. Offered salary is checked
+// locally in the browser and is never uploaded.
+var INFORMATION_API = 'https://api.skipi.app/api/information/snapshot';
+var INFORMATION_CACHE_KEY = 'skipi-information-snapshot-v2';
+var informationSnapshot = null;
+var informationPersonal = {};
+
+function informationFallbackSnapshot(){
+    var now=(new Date()).toISOString();
+    return {
+        schema_version:1,
+        generated_at:now,
+        cache_ttl_hours:24,
+        source_note:'Local fallback. Live aggregate snapshot unavailable.',
+        salary_index:[],
+        industry_signals:[
+            {id:'fallback_docs',title:'Complete document packs reduce friction',impact:'A current CV and certificate package helps a crewing manager assess you faster.',severity:'info',confidence:'curated',source:'Skipi local guidance',last_updated:now},
+            {id:'fallback_offer_terms',title:'Contract terms matter beyond salary',impact:'Check internet access, joining window, relief plan, and repatriation terms before accepting.',severity:'info',confidence:'curated',source:'Skipi local guidance',last_updated:now},
+            {id:'fallback_reviews',title:'Sea Service unlocks vessel intelligence',impact:'Adding contracts with IMO numbers makes vessel review signals useful inside Skipi.',severity:'info',confidence:'curated',source:'Skipi local guidance',last_updated:now},
+            {id:'fallback_samples',title:'Small samples stay hidden',impact:'Skipi does not show salary slices until enough aggregate observations exist.',severity:'warning',confidence:'curated',source:'Skipi aggregation policy',last_updated:now}
+        ],
+        reference_signals:[
+            {id:'fallback_bimco',title:'Qualified officers remain a structural concern',summary:'Industry bodies continue to focus on officer supply, training, and retention.',implication:'Use salary as one signal, but check workload, training requirements, and onboard support.',source:'BIMCO seafarer policy update',source_url:'https://www.bimco.org/news-insights/bimco-news/2026/03/focus-on-seafarers/',source_date:'2026-03',confidence:'public_reference'},
+            {id:'fallback_imo',title:'Fatigue and STCW review stay active',summary:'IMO work on fatigue, rest hours, and STCW modernization keeps competence and workload in focus.',implication:'Ask how rest hours are actually managed onboard before accepting.',source:'IMO human element / STCW update',source_url:'https://www.imo.org/en/MediaCentre/PressBriefings/Pages/Seafarer-fatigue-work-hours-harassment.aspx',source_date:'2026',confidence:'public_reference'},
+            {id:'fallback_numbeo',title:'Purchasing power needs a separate lens',summary:'Cost-of-living and local purchasing-power indices give a rough outside baseline.',implication:'A higher salary is not always a better between-contract life if the base is expensive.',source:'Numbeo Local Purchasing Power Index 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?displayColumn=5',source_date:'2026',confidence:'public_reference'}
+        ],
+        country_baselines:[
+            {id:'ua',country:'Ukraine',cost_of_living_index:28.2,rent_index:8.2,cost_plus_rent_index:19.2,groceries_index:28.8,restaurant_price_index:25.4,local_purchasing_power_index:50.0,usd_salary_stretch_rank:1,note:'Lowest cost-plus-rent baseline in this set. War-related safety, mobility, and regional risk are outside the index.',source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
+            {id:'ge',country:'Georgia',cost_of_living_index:33.1,rent_index:12.7,cost_plus_rent_index:24.0,groceries_index:32.3,restaurant_price_index:36.2,local_purchasing_power_index:43.0,usd_salary_stretch_rank:2,note:'Low cost base for USD income, but local purchasing power is the weakest in this comparison.',source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
+            {id:'ru',country:'Russia',cost_of_living_index:36.5,rent_index:12.3,cost_plus_rent_index:25.7,groceries_index:35.7,restaurant_price_index:35.4,local_purchasing_power_index:61.6,usd_salary_stretch_rank:3,note:'Lower cost than EU options in this set. Entry, banking, sanctions, and political risk are outside the cost index.',source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
+            {id:'md',country:'Moldova',cost_of_living_index:35.8,rent_index:14.7,cost_plus_rent_index:26.4,groceries_index:33.6,restaurant_price_index:32.5,local_purchasing_power_index:54.1,usd_salary_stretch_rank:4,note:'Low daily-cost baseline, with rent pressure higher than Ukraine, Georgia, Romania, and Bulgaria.',source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
+            {id:'ro',country:'Romania',cost_of_living_index:40.6,rent_index:12.0,cost_plus_rent_index:27.8,groceries_index:39.0,restaurant_price_index:43.5,local_purchasing_power_index:76.8,usd_salary_stretch_rank:5,note:'Moderate EU cost base with materially stronger local purchasing power than non-EU options.',source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
+            {id:'bg',country:'Bulgaria',cost_of_living_index:41.6,rent_index:11.1,cost_plus_rent_index:28.0,groceries_index:42.6,restaurant_price_index:42.6,local_purchasing_power_index:84.1,usd_salary_stretch_rank:6,note:'EU option with low rent pressure and stronger local purchasing power than Romania in this table.',source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
+            {id:'pl',country:'Poland',cost_of_living_index:47.3,rent_index:18.4,cost_plus_rent_index:34.4,groceries_index:41.1,restaurant_price_index:48.1,local_purchasing_power_index:97.1,usd_salary_stretch_rank:7,note:'Highest cost-plus-rent baseline in this set, but also the strongest local purchasing power.',source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'}
+        ],
+        places:[
+            {id:'ge_tbilisi',label:'Tbilisi, Georgia',summary:'Low tax, good flight access via TBS, moderate rent, strong fit for a between-contract base.',salary_power:'strong',flight_access:'medium',visa_residency:'strong',confidence:'curated'},
+            {id:'ge_batumi',label:'Batumi, Georgia',summary:'Black Sea port city with low living costs and easy regional travel, but fewer long-haul flight options.',salary_power:'strong',flight_access:'low',visa_residency:'strong',confidence:'curated'},
+            {id:'tr_istanbul',label:'Istanbul, Turkiye',summary:'Major maritime hub with excellent flights and services; rent is higher but agency access is strong.',salary_power:'medium',flight_access:'strong',visa_residency:'medium',confidence:'curated'},
+            {id:'bg_varna',label:'Varna, Bulgaria',summary:'Practical Black Sea base with maritime services, EU access, and moderate living costs.',salary_power:'medium',flight_access:'medium',visa_residency:'medium',confidence:'curated'},
+            {id:'ph_manila',label:'Manila, Philippines',summary:'Deep crewing ecosystem, training access, and good salary purchasing power for many ranks.',salary_power:'strong',flight_access:'strong',visa_residency:'medium',confidence:'curated'}
+        ],
+        vessel_employer_trends:[
+            {kind:'reviews',label:'Vessel and employer signals',summary:'Live trend summaries need more approved seafarer reviews.',sample_size:0,confidence:'low'}
+        ]
+    };
+}
+
+function informationEffectiveRank(sp){
+    var rank=(sp&&sp.rank)||null;
+    if(!rank&&currentWizardPosition)rank=WIZARD_POSITION_TO_RANK[currentWizardPosition]||null;
+    if(rank&&typeof canonicalRank==='function')rank=canonicalRank(rank);
+    return rank||null;
+}
+
+function informationEffectiveVesselType(sp,profile){
+    var vt=(sp&&sp.preferred_vessel_types?sp.preferred_vessel_types:'').split(',')[0].trim();
+    if(!vt&&profile&&profile.vessel_category)vt=profile.vessel_category;
+    return vt||null;
+}
+
+async function loadInformationSnapshot(profile,sp){
+    var q=[];
+    var rank=informationEffectiveRank(sp);
+    var vesselType=informationEffectiveVesselType(sp,profile);
+    if(rank)q.push('rank='+encodeURIComponent(rank));
+    if(vesselType)q.push('vessel_type='+encodeURIComponent(vesselType));
+    var url=INFORMATION_API+(q.length?'?'+q.join('&'):'');
+    try{
+        var ctrl=new AbortController();
+        var timer=setTimeout(function(){try{ctrl.abort();}catch(e){}},8000);
+        var r=await fetch(url,{signal:ctrl.signal});
+        clearTimeout(timer);
+        if(!r.ok)throw new Error('server '+r.status);
+        var snap=await r.json();
+        snap._source='live';
+        try{localStorage.setItem(INFORMATION_CACHE_KEY,JSON.stringify(snap));}catch(e){}
+        informationSnapshot=snap;
+        return snap;
+    }catch(e){
+        logError('information_snapshot',e);
+        try{
+            var raw=localStorage.getItem(INFORMATION_CACHE_KEY);
+            if(raw){
+                var cached=JSON.parse(raw);
+                cached._source='cache';
+                informationSnapshot=cached;
+                return cached;
+            }
+        }catch(_){}
+        var fallback=informationFallbackSnapshot();
+        fallback._source='fallback';
+        informationSnapshot=fallback;
+        return fallback;
+    }
+}
+
+function informationDate(iso){
+    if(!iso)return 'unknown';
+    var d=new Date(iso);
+    if(isNaN(d.getTime()))return String(iso).slice(0,10);
+    return d.toISOString().slice(0,10);
+}
+
+function informationSourceLabel(snap){
+    if(!snap)return '';
+    if(snap._source==='cache')return 'Cached snapshot';
+    if(snap._source==='fallback')return 'Local fallback';
+    return 'Live aggregate';
+}
+
+function informationPickBand(snapshot,sp){
+    var bands=(snapshot&&snapshot.salary_index)||[];
+    if(!bands.length)return null;
+    var rank=(informationEffectiveRank(sp)||'').toLowerCase();
+    var vessel=(informationEffectiveVesselType(sp,{})||'').toLowerCase();
+    for(var i=0;i<bands.length;i++){
+        var b=bands[i];
+        if(rank&&String(b.rank||'').toLowerCase()!==rank)continue;
+        if(vessel&&String(b.vessel_type||'').toLowerCase()!==vessel)continue;
+        return b;
+    }
+    if(rank){
+        for(var j=0;j<bands.length;j++){
+            if(String(bands[j].rank||'').toLowerCase()===rank)return bands[j];
+        }
+    }
+    return bands[0]||null;
+}
+
+function renderInformationSignals(snapshot){
+    var signals=(snapshot&&snapshot.industry_signals)||[];
+    if(!signals.length)return '<div class="info-empty">No market signals available yet.</div>';
+    var h='<div class="info-grid">';
+    signals.slice(0,7).forEach(function(s){
+        h+='<div class="info-card">';
+        h+='<div class="info-kicker">'+esc(s.severity||'info')+'</div>';
+        h+='<h3>'+esc(s.title)+'</h3>';
+        h+='<p>'+esc(s.impact)+'</p>';
+        h+='<div class="info-row"><span>'+esc(s.source||'aggregate')+'</span><span class="info-pill">'+esc(s.confidence||'low')+'</span></div>';
+        h+='</div>';
+    });
+    h+='</div>';
+    return h;
+}
+
+function renderInformationSalaryBands(snapshot){
+    var bands=(snapshot&&snapshot.salary_index)||[];
+    if(!bands.length){
+        return '<div class="info-empty">Not enough aggregate salary data yet. Skipi hides salary slices below the minimum sample threshold.</div>';
+    }
+    var h='<div class="info-grid">';
+    bands.slice(0,6).forEach(function(b){
+        h+='<div class="info-card">';
+        h+='<div class="info-kicker">'+esc(b.currency||'USD')+' per '+esc(b.period||'month')+'</div>';
+        h+='<h3>'+esc(b.rank)+' / '+esc(b.vessel_type)+'</h3>';
+        h+='<div class="info-band">';
+        h+='<div><b>'+esc(b.p25)+'</b><span>p25</span></div>';
+        h+='<div><b>'+esc(b.p50)+'</b><span>median</span></div>';
+        h+='<div><b>'+esc(b.p75)+'</b><span>p75</span></div>';
+        h+='</div>';
+        h+='<div class="info-row"><span>'+esc(b.sample_size)+' observations</span><span class="info-pill">'+esc(b.confidence)+'</span></div>';
+        h+='<p style="margin-top:8px;">Observed '+esc(b.observed_from)+' to '+esc(b.observed_to)+'.</p>';
+        h+='</div>';
+    });
+    h+='</div>';
+    return h;
+}
+
+function renderInformationBenchmarkCard(snapshot){
+    var band=informationPickBand(snapshot,informationPersonal);
+    if(!band){
+        return '<div class="info-card locked"><div class="info-kicker">Internal benchmark</div><h3>Salary index is still building</h3><p>Skipi hides salary bands until there are at least 5 usable observations for a slice. Until then, use the external reference cards below as market context, not as a salary benchmark.</p><div class="info-row"><span>Source</span><span class="info-pill">Skipi aggregate</span></div></div>';
+    }
+    var h='<div class="info-card">';
+    h+='<div class="info-kicker">Internal benchmark</div>';
+    h+='<h3>'+esc(band.rank)+' / '+esc(band.vessel_type)+'</h3>';
+    h+='<div class="info-band">';
+    h+='<div><b>'+esc(band.currency)+' '+esc(band.p25)+'</b><span>low edge</span></div>';
+    h+='<div><b>'+esc(band.currency)+' '+esc(band.p50)+'</b><span>normal point</span></div>';
+    h+='<div><b>'+esc(band.currency)+' '+esc(band.p75)+'</b><span>strong edge</span></div>';
+    h+='</div>';
+    h+='<div class="info-row"><span>'+esc(band.sample_size)+' observations</span><span class="info-pill">'+esc(band.confidence)+'</span></div>';
+    h+='</div>';
+    return h;
+}
+
+function renderInformationReferences(snapshot){
+    var refs=(snapshot&&snapshot.reference_signals)||[];
+    if(!refs.length)return '<div class="info-empty">No external reference signals available.</div>';
+    var h='<div class="info-grid">';
+    refs.slice(0,5).forEach(function(r){
+        h+='<div class="info-card">';
+        h+='<div class="info-kicker">'+esc(r.confidence||'reference')+'</div>';
+        h+='<h3>'+esc(r.title)+'</h3>';
+        h+='<p>'+esc(r.summary)+'</p>';
+        h+='<p style="margin-top:8px;color:var(--text);">'+esc(r.implication)+'</p>';
+        h+='<div class="info-row"><span>'+esc(r.source_date||'')+'</span><a href="'+escAttr(r.source_url||'#')+'" onclick="openInformationSource(this.href);return false;" style="color:var(--accent);">source</a></div>';
+        h+='</div>';
+    });
+    h+='</div>';
+    return h;
+}
+
+async function openInformationSource(url){
+    try{await invoke('open_external_url',{url:url});}
+    catch(e){window.open(url,'_blank');}
+}
+
+function renderInformationOfferCard(profileComplete,snapshot,sp){
+    if(!profileComplete){
+        return '<div class="info-card locked"><div class="info-kicker">Personalized</div><h3>Offer Check</h3><p>Complete your profile to personalize salary and market signals.</p><div class="info-row"><button class="btn btn-outline btn-sm" onclick="openSettings()">Open profile</button><span class="info-pill">85% needed</span></div></div>';
+    }
+    var band=informationPickBand(snapshot,sp);
+    if(!band){
+        return '<div class="info-card locked"><div class="info-kicker">Offer Check</div><h3>Waiting for salary sample</h3><p>Skipi does not have enough aggregate salary observations for your current rank and vessel type yet.</p></div>';
+    }
+    var cur=band.currency||'USD';
+    var h='<div class="info-card">';
+    h+='<div class="info-kicker">Local only</div><h3>Offer Check</h3>';
+    h+='<p>Type an offered monthly salary. It stays on this device and is compared with the aggregate band only.</p>';
+    h+='<div class="field" style="margin-top:10px;"><label>Offered salary ('+esc(cur)+')</label><input id="info-offer-input" type="number" min="0" step="50" oninput="renderInformationOfferCheck()" placeholder="'+esc(band.p50)+'" style="width:100%;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:13px;"></div>';
+    h+='<div id="info-offer-result" class="info-offer-result">Range: '+esc(cur)+' '+esc(band.p25)+'-'+esc(band.p75)+' per month. Sample '+esc(band.sample_size)+', '+esc(band.confidence)+' confidence.</div>';
+    h+='</div>';
+    return h;
+}
+
+function renderInformationOfferCheck(){
+    var el=document.getElementById('info-offer-result');
+    var input=document.getElementById('info-offer-input');
+    if(!el||!input)return;
+    var band=informationPickBand(informationSnapshot,informationPersonal);
+    if(!band)return;
+    var v=parseFloat(input.value);
+    el.className='info-offer-result';
+    if(!v||v<=0){
+        el.textContent='Range: '+band.currency+' '+band.p25+'-'+band.p75+' per month. Sample '+band.sample_size+', '+band.confidence+' confidence.';
+        return;
+    }
+    if(v<band.p25){
+        el.className+=' warn';
+        el.textContent='Below market range for this aggregate slice. Compare the offer against contract length, trade area, internet, and relief terms. Sample '+band.sample_size+', '+band.confidence+' confidence.';
+    }else if(v>band.p75){
+        el.className+=' strong';
+        el.textContent='Strong offer against this aggregate slice. Still check contract length, deductions, and joining conditions. Sample '+band.sample_size+', '+band.confidence+' confidence.';
+    }else{
+        el.className+=' good';
+        el.textContent='Normal range for this aggregate slice. Median is '+band.currency+' '+band.p50+'. Sample '+band.sample_size+', '+band.confidence+' confidence.';
+    }
+}
+
+function informationIndexValue(v){
+    var n=parseFloat(v);
+    if(isNaN(n))return 'n/a';
+    return n.toFixed(1);
+}
+
+function renderInformationCountryBaselines(snapshot){
+    var countries=((snapshot&&snapshot.country_baselines)||[]).slice();
+    if(!countries.length)return '<div class="info-empty">No country baseline available.</div>';
+    countries.sort(function(a,b){return (a.usd_salary_stretch_rank||999)-(b.usd_salary_stretch_rank||999);});
+    var first=countries[0]||{};
+    var sourceUrl=first.source_url||'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026';
+    var h='<div class="info-country-list">';
+    h+='<div class="info-country-row head"><span>#</span><span>Country</span><span class="info-country-num">Cost+rent</span><span class="info-country-num">Rent</span><span class="info-country-num">Groceries</span><span class="info-country-num">Local power</span></div>';
+    countries.forEach(function(c){
+        h+='<div class="info-country-row">';
+        h+='<span class="info-pill">#'+esc(c.usd_salary_stretch_rank||'')+'</span>';
+        h+='<span class="info-country-name">'+esc(c.country||'')+'</span>';
+        h+='<span class="info-country-num"><small>Cost+rent</small>'+esc(informationIndexValue(c.cost_plus_rent_index))+'</span>';
+        h+='<span class="info-country-num"><small>Rent</small>'+esc(informationIndexValue(c.rent_index))+'</span>';
+        h+='<span class="info-country-num"><small>Groceries</small>'+esc(informationIndexValue(c.groceries_index))+'</span>';
+        h+='<span class="info-country-num"><small>Local power</small>'+esc(informationIndexValue(c.local_purchasing_power_index))+'</span>';
+        h+='</div>';
+    });
+    h+='</div>';
+    h+='<div class="info-empty">Sorted by lower cost-plus-rent for a USD salary. Local purchasing power reflects local income, not seafarer contracts. War, visa, tax, banking, and safety are not included. <a href="'+escAttr(sourceUrl)+'" onclick="openInformationSource(this.href);return false;" style="color:var(--accent);">Numbeo 2026 source</a></div>';
+    return h;
+}
+
+function renderInformationPlaces(snapshot){
+    var places=(snapshot&&snapshot.places)||[];
+    if(!places.length)return '<div class="info-empty">No places snapshot available.</div>';
+    var h='<div class="info-grid">';
+    places.slice(0,5).forEach(function(p){
+        h+='<div class="info-card">';
+        h+='<div class="info-kicker">'+esc(p.confidence||'curated')+'</div>';
+        h+='<h3>'+esc(p.label)+'</h3>';
+        h+='<p>'+esc(p.summary)+'</p>';
+        h+='<div class="info-row"><span>Salary power</span><span class="info-pill">'+esc(p.salary_power)+'</span></div>';
+        h+='<div class="info-row"><span>Flights</span><span class="info-pill">'+esc(p.flight_access)+'</span></div>';
+        h+='<div class="info-row"><span>Visa/residency</span><span class="info-pill">'+esc(p.visa_residency)+'</span></div>';
+        h+='</div>';
+    });
+    h+='</div>';
+    return h;
+}
+
+function renderInformationTrends(snapshot,seaServiceCount){
+    if(!seaServiceCount){
+        return '<div class="info-card locked"><div class="info-kicker">Vessel intelligence</div><h3>Add sea service to unlock vessel/employer intelligence.</h3><p>Contracts with IMO numbers let Skipi connect market information with vessel reviews and trends.</p><div class="info-row"><button class="btn btn-outline btn-sm" onclick="showView(\'experience\')">Sea Service</button><span class="info-pill">local vault</span></div></div>';
+    }
+    var trends=(snapshot&&snapshot.vessel_employer_trends)||[];
+    if(!trends.length)return '<div class="info-empty">No vessel/employer aggregate trends available yet.</div>';
+    var h='<div class="info-grid">';
+    trends.slice(0,5).forEach(function(t){
+        h+='<div class="info-card">';
+        h+='<div class="info-kicker">'+esc(t.kind||'trend')+'</div>';
+        h+='<h3>'+esc(t.label)+'</h3>';
+        h+='<p>'+esc(t.summary)+'</p>';
+        h+='<div class="info-row"><span>'+esc(t.sample_size)+' approved reviews</span><span class="info-pill">'+esc(t.confidence||'low')+'</span></div>';
+        h+='</div>';
+    });
+    h+='</div>';
+    return h;
+}
+
+async function showInformation(){
+    var content=document.getElementById('scr-content');
+    content.innerHTML='<div class="info-wrap"><div class="info-empty">Loading Information snapshot...</div></div>';
+    show('scr-content');updateTabs('Information');
+    var profile=null, sp={}, work=[];
+    try{profile=await invoke('get_profile_status');}catch(e){}
+    try{sp=await invoke('get_seafarer_personal');}catch(e){}
+    try{work=await invoke('get_work_history');}catch(e){work=[];}
+    informationPersonal=sp||{};
+    var snap=await loadInformationSnapshot(profile,sp);
+    var pct=profile?Math.round(profile.completeness_pct||0):0;
+    var profileComplete=pct>=85;
+    var seaServiceCount=(work||[]).filter(function(w){return String(w.imo||'').replace(/\D/g,'').length===7;}).length;
+    var rank=informationEffectiveRank(sp)||'not set';
+    var vessel=informationEffectiveVesselType(sp,profile)||'not set';
+    var hasInternalBand=!!informationPickBand(snap,sp);
+    var h='<div class="info-wrap">';
+    h+='<div class="info-head"><div><h2>Information</h2><div class="info-sub">A reference point for a seafarer: what is normal, what is changing, and what needs a second look.</div></div>';
+    h+='<div class="info-meta">'+informationSourceLabel(snap)+'<br>Updated '+esc(informationDate(snap.generated_at))+'<br>'+esc(rank)+' / '+esc(vessel)+'</div></div>';
+    h+='<div class="info-grid">';
+    h+=renderInformationBenchmarkCard(snap);
+    h+=renderInformationOfferCard(profileComplete,snap,sp);
+    h+='<div class="info-card"><div class="info-kicker">Method</div><h3>Confidence before precision</h3><p>Internal salary bands use Skipi vacancy aggregates only. Small samples are hidden; external cards are context, not salary truth.</p><div class="info-row"><span>Profile</span><span class="info-pill">'+pct+'%</span></div></div>';
+    h+='</div>';
+    if(!profileComplete){
+        h+='<div class="info-empty" style="margin-bottom:14px;">Complete your profile to personalize salary and market signals. Until then, this module shows broad reference points.</div>';
+    }
+    if(!hasInternalBand){
+        h+='<h3 style="font-size:14px;margin:18px 0 8px;">External reference</h3>';
+        h+=renderInformationReferences(snap);
+    }else{
+        h+='<h3 style="font-size:14px;margin:18px 0 8px;">Internal market signals</h3>';
+        h+=renderInformationSignals(snap);
+    }
+    h+='<h3 style="font-size:14px;margin:18px 0 8px;">Country baseline</h3>';
+    h+=renderInformationCountryBaselines(snap);
+    h+='<h3 style="font-size:14px;margin:18px 0 8px;">Vessel / employer baseline</h3>';
+    h+=renderInformationTrends(snap,seaServiceCount);
+    h+='<div class="info-empty" style="margin-top:12px;">'+esc(snap.source_note||'Aggregate snapshot only.')+'</div>';
+    h+='</div>';
+    content.innerHTML=h;
 }
 
 // ========== Dispatch (Рассылка) ==========
@@ -3630,9 +4745,7 @@ async function loadJobsFeed(){
         lastJobsItems = cached;
         renderJobsFeed(cached);
     } else if (host) {
-        // No "Loading…" text — leaves an empty pane that fills in <1s.
-        // Avoids the impression that the app is hanging on first click.
-        host.innerHTML = '';
+        host.innerHTML = '<div style="border:1px dashed var(--border);border-radius:8px;padding:20px;color:var(--text2);font-size:12px;">Loading matching vacancies...</div>';
     }
 
     // 2. Pubkey registration is idempotent — fire-and-forget, never block UI.
@@ -3756,6 +4869,16 @@ function startJobsPolling(){
     jobsPollTimer = setInterval(checkNewJobsBackground, 60*1000);
 }
 
+async function prewarmJobsFeedIfReady(){
+    if (currentView === 'jobs') return;
+    try {
+        var sp = await invoke('get_seafarer_personal');
+        if (sp && sp.ready_for_offers === 'true') {
+            await loadJobsFeed();
+        }
+    } catch(e) {}
+}
+
 function jobsLoadHidden(){
     try { return JSON.parse(localStorage.getItem('skipi-jobs-hidden')||'{}'); }
     catch(e){ return {}; }
@@ -3815,7 +4938,7 @@ function renderJobsFeed(items){
             // WhatsApp-style snippet: last message preview if we have it cached.
             var preview = lastSeafarerPreview(v._thread.application_id);
             if (preview && preview.text) {
-                html += '<div style="display:flex;justify-content:space-between;gap:8px;margin-top:8px;align-items:center;">'
+                html += '<div class="vac-preview-row" style="display:flex;justify-content:space-between;gap:8px;margin-top:8px;align-items:center;">'
                      +    '<div style="font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">'
                      +      (preview.mine?'<span>You: </span>':'')+esc(preview.text)
                      +    '</div>'
@@ -3925,7 +5048,7 @@ async function toggleVacancyThread(vacancyId){
             return;
         }
         var ta = document.getElementById('vac-compose-'+vacancyId);
-        if (ta && (document.activeElement === ta || (ta.value||'').length > 0)) return;
+        if (ta && (ta.value||'').length > 0) return;
         refreshVacancyThread(vacancyId, /*silent=*/true);
     }, 5000);
     host.dataset.pollId = String(pollId);
@@ -4014,6 +5137,31 @@ function renderChatBubble(m, mine, opts) {
              +       '</div>'
              +     '</div>'
              +     dlBtn
+             +     '<div class="msg-meta">'+escSafe(time)+(ticks?' <span>'+ticks+'</span>':'')+'</div>'
+             +   '</div>'
+             + '</div>';
+    }
+    if (raw.indexOf('[skipi:doc_bundle]') === 0) {
+        var bundleJson = raw.replace('[skipi:doc_bundle]','').trim();
+        var bundle = {};
+        try { bundle = JSON.parse(bundleJson); } catch(e){}
+        var bSizeKb = bundle.size ? Math.round(bundle.size/1024)+' KB' : '';
+        var bName = bundle.filename || 'Skipi-documents-bundle.zip';
+        var bCounterpart = (window._myIdentityCache && window._myIdentityCache.user_id === m.from_user_id)
+            ? m.to_user_id : m.from_user_id;
+        var bDlBtn = bundle.id
+            ? '<button class="btn btn-accent btn-sm" style="margin-top:6px;font-size:12px;padding:5px 12px;" onclick="downloadAttachment(\''+bundle.id+'\',\''+bCounterpart+'\',\''+escAttr(bName)+'\')">⬇ Download</button>'
+            : '';
+        return '<div class="'+classes+'"'+idAttr+'>'
+             +   '<div class="msg-bubble" style="border:1px solid var(--ok);max-width:300px;">'
+             +     '<div style="display:flex;align-items:center;gap:8px;">'
+             +       '<div style="font-size:24px;">🗂️</div>'
+             +       '<div style="flex:1;min-width:0;">'
+             +         '<div style="font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Documents bundle</div>'
+             +         '<div style="font-size:11px;opacity:0.7;">'+escSafe(bSizeKb)+' · structured</div>'
+             +       '</div>'
+             +     '</div>'
+             +     bDlBtn
              +     '<div class="msg-meta">'+escSafe(time)+(ticks?' <span>'+ticks+'</span>':'')+'</div>'
              +   '</div>'
              + '</div>';
@@ -4353,6 +5501,34 @@ async function refreshVacancyThread(vacancyId, silent) {
     box.innerHTML = renderVacancyMessages(msgs, myId, vacancyId);
     box.dataset.msgCount = String(msgs.length);
     if (nearBottom) box.scrollTop = box.scrollHeight;
+    var v = (lastJobsItems||[]).find(function(x){return x.id===vacancyId;});
+    if (v && v._thread) {
+        v._thread.message_count = msgs.length;
+        patchSeafarerVacancyPreview(v);
+        try { localStorage.setItem('skipi-jobs-cache', JSON.stringify(lastJobsItems)); } catch(e){}
+    }
+}
+
+function refreshOpenJobsThreads() {
+    if (currentView !== 'jobs') return;
+    var hosts = document.querySelectorAll('[id^="thread-"]');
+    hosts.forEach(function(host){
+        if (!host || host.dataset.loaded !== '1' || host.style.display === 'none') return;
+        var vacancyId = host.id.replace(/^thread-/, '');
+        var ta = document.getElementById('vac-compose-'+vacancyId);
+        if (ta && (ta.value||'').length > 0) return;
+        refreshVacancyThread(vacancyId, true);
+    });
+}
+
+if (!window._jobsThreadFocusRefreshInstalled) {
+    window._jobsThreadFocusRefreshInstalled = true;
+    window.addEventListener('focus', function(){
+        setTimeout(refreshOpenJobsThreads, 0);
+    });
+    document.addEventListener('visibilitychange', function(){
+        if (!document.hidden) setTimeout(refreshOpenJobsThreads, 0);
+    });
 }
 
 async function sendVacancyReply(vacancyId){
@@ -5300,7 +6476,24 @@ function lastSeafarerPreview(applicationId) {
     if (!msgs || !msgs.length) return null;
     var last = msgs[msgs.length-1];
     var myId = window._myIdentityCache ? window._myIdentityCache.user_id : '';
-    return {text: (last.plaintext||'').slice(0,80), time: last.sent_at, mine: last.from_user_id === myId};
+    return {text: jobsPreviewTextFromPlaintext(last.plaintext||'').slice(0,80), time: last.sent_at, mine: last.from_user_id === myId};
+}
+
+function jobsPreviewTextFromPlaintext(raw) {
+    raw = raw || '';
+    if (raw.indexOf('[skipi:request_docs]') === 0) return 'Documents requested';
+    if (raw.indexOf('[skipi:docs_response]') === 0) return 'Documents sent';
+    if (raw.indexOf('[skipi:doc_bundle]') === 0) return 'Documents bundle';
+    if (raw.indexOf('[skipi:file_attached]') === 0) {
+        var jsonStr = raw.replace('[skipi:file_attached]','').trim();
+        try {
+            var info = JSON.parse(jsonStr);
+            return info.filename || 'File attached';
+        } catch(e) {
+            return 'File attached';
+        }
+    }
+    return raw;
 }
 
 function formatJobsRowTime(iso) {
@@ -5337,8 +6530,13 @@ async function showDispatch(){
     var pkgs=[], dispatches=[];
     try{pkgs=await invoke('get_packages');}catch(e){}
     try{dispatches=await invoke('get_dispatches');}catch(e){}
-    var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><h2 style="font-size:18px;">Dispatch</h2></div>';
-    h+='<p style="color:var(--text2);font-size:12px;margin-bottom:16px;">Choose how to send your application. Privacy-protected CV hides your personal data — employers see your qualifications but not your identity.</p>';
+    var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><h2 style="font-size:18px;">Рассылки</h2></div>';
+    h+='<p style="color:var(--text2);font-size:12px;margin-bottom:16px;">Send your CV/documents to specific email addresses, or fill the recipient list from accredited agency mailing requests published on skipi.app.</p>';
+    h+='<div style="border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:14px;background:var(--bg);">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">';
+    h+='<div><div style="font-size:13px;font-weight:700;">Agency mailing requests</div><div style="font-size:11px;color:var(--text2);margin-top:3px;">Accredited crewings can publish standing requests to receive CVs for a rank/vessel profile.</div></div>';
+    h+='<button class="btn btn-outline btn-sm" onclick="loadDispatchMailingRequests()">Load matching requests</button>';
+    h+='</div><div id="disp-mailing-host" style="margin-top:10px;"></div></div>';
     h+='<div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:20px;background:var(--bg);">';
 
     // 1. Recipients
@@ -5392,7 +6590,68 @@ async function showDispatch(){
         });
         h+='</tbody></table>';
     }
-    document.getElementById('scr-content').innerHTML=h;show('scr-content');updateTabs('Dispatch');
+    document.getElementById('scr-content').innerHTML=h;show('scr-content');updateTabs('Рассылки');
+}
+
+var lastDispatchMailingRequests = [];
+var lastPreparedDispatchDir = '';
+
+async function loadDispatchMailingRequests(){
+    var host=document.getElementById('disp-mailing-host');
+    if(host)host.innerHTML='<div style="font-size:12px;color:var(--text2);">Loading...</div>';
+    try{
+        var sp={};
+        try{sp=await invoke('get_seafarer_personal');}catch(e){}
+        var rank=sp.rank||null;
+        if(rank)rank=canonicalRank(rank);
+        var items=await invoke('fetch_mailing_requests',{rank:rank,vesselType:null});
+        lastDispatchMailingRequests=Array.isArray(items)?items:[];
+        renderDispatchMailingRequests(lastDispatchMailingRequests);
+    }catch(e){
+        if(host)host.innerHTML='<div style="font-size:12px;color:var(--red);">Failed to load: '+esc(e)+'</div>';
+    }
+}
+
+function renderDispatchMailingRequests(items){
+    var host=document.getElementById('disp-mailing-host');
+    if(!host)return;
+    if(!items||!items.length){
+        host.innerHTML='<div style="border:1px dashed var(--border);border-radius:6px;padding:12px;color:var(--text2);font-size:12px;">No active mailing requests match your current rank yet.</div>';
+        return;
+    }
+    var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
+        +'<div style="font-size:12px;color:var(--text2);">'+items.length+' active request'+(items.length>1?'s':'')+'</div>'
+        +'<button class="btn btn-accent btn-sm" onclick="useDispatchMailingRecipients()">Use selected recipients</button>'
+        +'</div>';
+    items.forEach(function(r){
+        h+='<label style="display:block;border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:6px;background:var(--surface);cursor:pointer;">';
+        h+='<div style="display:flex;gap:10px;align-items:flex-start;">';
+        h+='<input type="checkbox" class="disp-mailing-check" value="'+escAttr(r.id)+'" checked style="margin-top:3px;width:15px;height:15px;accent-color:var(--accent);">';
+        h+='<div style="flex:1;min-width:0;">';
+        h+='<div style="font-size:13px;font-weight:700;">'+esc(r.title||r.crewing_ref)+'</div>';
+        h+='<div style="font-size:11px;color:var(--text2);margin-top:2px;">'+esc(r.crewing_ref)+' · '+esc(r.rank)+' · '+esc(r.vessel_type)+' · '+esc(r.reply_to)+'</div>';
+        if(r.client_name)h+='<div style="font-size:11px;color:var(--accent);margin-top:2px;">Client: '+esc(r.client_name)+'</div>';
+        if(r.description)h+='<div style="font-size:12px;color:var(--text);margin-top:6px;white-space:pre-wrap;line-height:1.35;max-height:54px;overflow:hidden;">'+esc(r.description)+'</div>';
+        h+='</div></div></label>';
+    });
+    host.innerHTML=h;
+}
+
+async function useDispatchMailingRecipients(){
+    var checks=Array.prototype.slice.call(document.querySelectorAll('.disp-mailing-check:checked'));
+    var selectedIds=checks.map(function(c){return c.value;});
+    var selected=lastDispatchMailingRequests.filter(function(r){return selectedIds.indexOf(r.id)!==-1;});
+    if(!selected.length){showToast('Select at least one mailing request','warn');return;}
+    var seen={},emails=[];
+    selected.forEach(function(r){
+        var e=(r.reply_to||'').trim();
+        var key=e.toLowerCase();
+        if(e&&!seen[key]){seen[key]=true;emails.push(e);}
+    });
+    var ta=document.getElementById('disp-to');
+    if(ta)ta.value=emails.join('\n');
+    selected.forEach(function(r){invoke('mailing_request_send_click',{requestId:r.id}).catch(function(){});});
+    showToast(emails.length+' recipient'+(emails.length>1?'s':'')+' loaded from agency requests','success');
 }
 
 function onToggleDispatchDocs(){
@@ -5408,24 +6667,37 @@ async function doDispatchPrepare(){
     var cvMode=(document.querySelector('input[name="disp-cv-mode"]:checked')||{}).value||'redacted';
     try{
         var dispDir=await invoke('get_dispatch_dir');
+        lastPreparedDispatchDir=dispDir;
         if(cvMode==='redacted'){
-            await invoke('export_redacted_cv_pdf',{outputPath:dispDir+'/Skipi_Privacy_Protected_CV.pdf'});
+            await invoke('export_redacted_cv_pdf',{outputPath:joinFolderPath(dispDir,'Skipi_Privacy_Protected_CV.pdf')});
         }else{
-            await invoke('export_cv_pdf',{outputPath:dispDir+'/Skipi_Full_CV.pdf'});
+            await invoke('export_cv_pdf',{outputPath:joinFolderPath(dispDir,'Skipi_Full_CV.pdf')});
         }
         var includeDocs=!!(document.getElementById('disp-include-docs')||{}).checked;
         var files=[cvMode==='redacted'?'Skipi_Privacy_Protected_CV.pdf':'Skipi_Full_CV.pdf'];
-        if(includeDocs){files.push('documents.zip');}
+        if(includeDocs){
+            var pkgSel=document.getElementById('disp-pkg');
+            var pkgId=pkgSel?pkgSel.value:'';
+            if(!pkgId){alert('Select a package');return;}
+            await invoke('export_package',{packageId:pkgId,destPath:joinFolderPath(dispDir,'documents.zip')});
+            files.push('documents.zip');
+        }
         // Show staging panel
         var h='<div style="border:1px solid var(--green);border-radius:8px;padding:16px;margin-bottom:20px;background:var(--bg);">';
         h+='<div style="font-size:14px;font-weight:600;color:var(--green);margin-bottom:8px;">Files ready</div>';
         files.forEach(function(f){h+='<div style="font-size:12px;margin:4px 0;">&#128196; '+f+'</div>';});
         h+='<p style="font-size:11px;color:var(--text2);margin:10px 0 0;">Drag these files from the folder into your email compose window.</p>';
-        h+='<div style="margin-top:12px;display:flex;gap:8px;"><button class="btn btn-outline btn-sm" onclick="invoke(\'open_file_in_default\',{path:\''+dispDir.replace(/\\/g,'\\\\')+'\'})"">Open folder</button><button class="btn btn-outline btn-sm" onclick="showDispatch()">Done</button></div>';
+        h+='<div style="margin-top:12px;display:flex;gap:8px;"><button class="btn btn-outline btn-sm" onclick="openPreparedDispatchFolder()">Open folder</button><button class="btn btn-outline btn-sm" onclick="showDispatch()">Done</button></div>';
         h+='</div>';
         document.getElementById('scr-content').innerHTML=h;
         showToast('Files prepared in '+dispDir,'success');
     }catch(e){showToast('Error: '+e,'error');logError('prepare',e);}
+}
+
+async function openPreparedDispatchFolder(){
+    if(!lastPreparedDispatchDir){showToast('Prepare files first','warn');return;}
+    try{await invoke('open_file_in_default',{path:lastPreparedDispatchDir});}
+    catch(e){showToast('Open folder failed: '+e,'error');logError('openPreparedDispatchFolder',e);}
 }
 
 async function doDispatchUnified(){
@@ -5445,11 +6717,11 @@ async function doDispatchUnified(){
         seen[key]=true;recipients.push(tok);
     });
     if(invalid.length){
-        if(!confirm('Skipping '+invalid.length+' invalid address(es):\n'+invalid.slice(0,5).join('\n')+(invalid.length>5?'\n…':'')+'\n\nContinue?'))return;
+        if(!await uiConfirm('Skipping '+invalid.length+' invalid address(es):\n'+invalid.slice(0,5).join('\n')+(invalid.length>5?'\n…':'')+'\n\nContinue?', {confirmLabel:'Continue'}))return;
     }
     if(!recipients.length){alert('Enter at least one valid recipient');return;}
     if(dupCount>0){
-        if(!confirm('Sending to '+recipients.length+' unique recipient(s); removed '+dupCount+' duplicate(s).\n\nContinue?'))return;
+        if(!await uiConfirm('Sending to '+recipients.length+' unique recipient(s); removed '+dupCount+' duplicate(s).\n\nContinue?', {confirmLabel:'Continue'}))return;
     }
 
     var draft=await buildDispatchDraft(includeDocs?'docs':'cv');
@@ -5645,7 +6917,7 @@ async function exportPkg(id,title){
         showToast('Package saved','success');
     }catch(e){showToast(''+e,'error');logError('exportPkg',e);}
 }
-async function delPkg(id){if(!confirm('Delete?'))return;try{await invoke('delete_package',{packageId:id});await showPackages();}catch(e){showToast(''+e,'error');logError('op',e);}}
+async function delPkg(id){if(!await uiConfirm('Delete this package?', {confirmLabel:'Delete', danger:true}))return;try{await invoke('delete_package',{packageId:id});await showPackages();}catch(e){showToast(''+e,'error');logError('op',e);}}
 
 var settingsTab = 'general';
 
@@ -5716,6 +6988,10 @@ function renderSettingsBody(){
         h += '<div class="setting-control"><button class="btn btn-outline btn-sm" onclick="switchVault()">Open&hellip;</button></div></div>';
         h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Create new vault</div><div class="setting-desc">Close the current vault and start the setup flow for a new one.</div></div>';
         h += '<div class="setting-control"><button class="btn btn-outline btn-sm" onclick="createNewVault()">Create&hellip;</button></div></div>';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Export vault backup</div><div class="setting-desc">Create a ZIP backup with the vault database and all local attachments. Use this before risky changes or device migration.</div></div>';
+        h += '<div class="setting-control"><button class="btn btn-accent btn-sm" onclick="exportVaultBackup()">Export&hellip;</button></div></div>';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Import vault backup</div><div class="setting-desc">Restore a Skipi vault ZIP into a new folder and switch to it after validation.</div></div>';
+        h += '<div class="setting-control"><button class="btn btn-outline btn-sm" onclick="importVaultBackup()">Import&hellip;</button></div></div>';
         h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Forget last vault</div><div class="setting-desc">Stop auto-opening the last vault on startup. The vault files on disk are not touched.</div></div>';
         h += '<div class="setting-control"><button class="btn btn-outline btn-sm" onclick="closeCurrentVault(true)">Forget</button></div></div>';
         h += '</div>';
@@ -5888,7 +7164,7 @@ function renderSettingsBody(){
         h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Anthropic API Key</div><div class="setting-desc">Required for Cloud AI. Get yours at console.anthropic.com.</div></div>';
         h += '<div class="setting-control"><input type="password" id="set-key" placeholder="sk-ant-..." style="width:200px;"></div></div>';
         h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Auto-scan on upload</div><div class="setting-desc">Automatically run AI recognition when a file is attached.</div></div>';
-        h += '<div class="setting-control"><label class="toggle"><input type="checkbox"><span class="slider"></span></label></div></div>';
+        h += '<div class="setting-control"><label class="toggle"><input id="set-ai-autoscan" type="checkbox" onchange="setAiAutoscan(this.checked)"'+(aiAutoscanEnabled()?' checked':'')+'><span class="slider"></span></label></div></div>';
         h += '<div style="margin-top:16px;"><button class="btn btn-accent btn-sm" onclick="saveKey()">Save API Key</button></div>';
         h += '</div>';
     }
@@ -5979,7 +7255,7 @@ async function spLoad(){
             }catch(e){logError('spLoad:vessel_type',e);}
         }
         populateAirportDatalist();
-        populateSelect(document.getElementById('sp-min_salary_currency'),CURRENCIES,localStorage.getItem('skipi-sp-min_salary_currency')||'USD','');
+        populateSelect(document.getElementById('sp-min_salary_currency'),CURRENCIES,data.currency||localStorage.getItem('skipi-sp-min_salary_currency')||'USD','');
         // Nationality + rank are populated above; the loop below handles
         // free-text / date / simple-select fields. Select elements (marital
         // status, english level) accept assignment to `.value` the same way
@@ -5989,9 +7265,8 @@ async function spLoad(){
             var el=document.getElementById('sp-'+k);
             if(el)el.value=data[k]||'';
         });
-        // Minimum salary — stored in localStorage (not yet persisted server-side)
         var ms=document.getElementById('sp-min_salary');
-        if(ms)ms.value=localStorage.getItem('skipi-sp-min_salary')||'';
+        if(ms)ms.value=String(data.min_salary||localStorage.getItem('skipi-sp-min_salary')||'');
         // Messenger + ready toggle
         var msgr=document.getElementById('sp-preferred_messenger');
         if(msgr)msgr.value=data.preferred_messenger||'WhatsApp';
@@ -6013,6 +7288,57 @@ async function spLoad(){
         }
     }catch(e){showToast('Load error: '+e,'error');logError('Load error',e);}
 }
+async function refreshDocsAfterFrameworkChange(){
+    await loadConditionalTemplateIds();
+    await loadActiveTemplateIds();
+    allDocs=await invoke('get_documents');
+    renderTree();
+    updateStatus();
+    if(currentView==='dashboard')await showDashboard();
+}
+
+function requirementChangeRows(items,kind){
+    if(!items||!items.length)return '';
+    var sign=kind==='add'?'+':'-';
+    var cls=kind==='add'?'add':'remove';
+    var h='';
+    items.forEach(function(item){
+        h+='<div class="requirements-change-row '+cls+'"><div class="sign">'+sign+'</div><div style="min-width:0;flex:1;">'
+          +'<div style="font-weight:600;">'+esc(item.title||item.id||'Document')+'</div>'
+          +'<div class="basis">'+esc(item.regulatory_basis||item.category||'')+'</div>'
+          +'</div></div>';
+    });
+    return h;
+}
+
+function closeRequirementChangeNotice(){
+    var el=document.getElementById('requirements-change-overlay');
+    if(el)el.remove();
+}
+
+function showRequirementChangeNotice(result){
+    var fw=result&&result.framework?result.framework:result;
+    if(!fw||!fw.requirements_changed)return;
+    closeRequirementChangeNotice();
+    var added=fw.requirements_added||[];
+    var removed=fw.requirements_removed||[];
+    var target=[fw.rank,fw.vessel_type].filter(Boolean).join(' / ');
+    var h='<div id="requirements-change-overlay" class="modal-overlay open" onclick="if(event.target===this)closeRequirementChangeNotice();">';
+    h+='<div class="modal-panel" style="width:min(620px,92vw);">';
+    h+='<h3 style="margin-top:0;margin-bottom:6px;">Document requirements changed</h3>';
+    h+='<div style="font-size:12px;color:var(--text2);margin-bottom:12px;">'+(target?('Active framework: '+esc(target)):('The active profile framework was updated.'))+'</div>';
+    if(added.length){
+        h+='<div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--green);font-weight:700;">Added requirements</div>';
+        h+='<div class="requirements-change-list">'+requirementChangeRows(added,'add')+'</div>';
+    }
+    if(removed.length){
+        h+='<div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--orange);font-weight:700;margin-top:14px;">No longer required in this framework</div>';
+        h+='<div class="requirements-change-list">'+requirementChangeRows(removed,'remove')+'</div>';
+    }
+    h+='<div style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px;"><button class="btn btn-accent btn-sm" onclick="closeRequirementChangeNotice()">OK</button></div>';
+    h+='</div></div>';
+    document.body.insertAdjacentHTML('beforeend',h);
+}
 async function spSave(){
     var keys=['surname','first_name','middle_name','date_of_birth','place_of_birth','nationality','phones','email','rank','nearest_airport','nearest_intl_airport','available_from','home_address','marital_status','children_count','english_level'];
     var fields={};
@@ -6026,13 +7352,19 @@ async function spSave(){
     if(msgr)fields.preferred_messenger=msgr.value;
     var vt=document.getElementById('sp-preferred_vessel_type');
     if(vt)fields.preferred_vessel_types=vt.value||'';
+    var ms=document.getElementById('sp-min_salary');
+    if(ms)fields.min_salary=ms.value.trim();
+    var cs=document.getElementById('sp-min_salary_currency');
+    if(cs&&cs.value)fields.currency=cs.value;
     try{
-        await invoke('set_seafarer_personal',{fields:fields});
-        var ms=document.getElementById('sp-min_salary');
+        var result=await invoke('set_seafarer_personal',{fields:fields});
         if(ms)localStorage.setItem('skipi-sp-min_salary',ms.value.trim());
-        var cs=document.getElementById('sp-min_salary_currency');
         if(cs&&cs.value)localStorage.setItem('skipi-sp-min_salary_currency',cs.value);
-        showToast('Saved','success');
+        await refreshDocsAfterFrameworkChange();
+        showRequirementChangeNotice(result);
+        var added=result&&result.docs_added?parseInt(result.docs_added,10):0;
+        var changed=result&&result.framework_changed;
+        showToast(changed?'Saved - requirements updated'+(added>0?' (+'+added+' slots)':''):'Saved','success');
     }catch(e){showToast('Save error: '+e,'error');logError('Save error',e);}
 }
 async function spUploadPhoto(){
@@ -6072,7 +7404,7 @@ async function spUploadPhoto(){
     }
 }
 async function spRemovePhoto(){
-    if(!confirm('Remove current photo?'))return;
+    if(!await uiConfirm('Remove current photo?', {confirmLabel:'Remove', danger:true}))return;
     try{
         await invoke('clear_profile_photo');
         await spLoad();
@@ -6184,7 +7516,7 @@ async function smtpTest(){
     }catch(e){smtpStatus('FAILED: '+e,'err');logError('smtpTest',e);}
 }
 async function smtpClear(){
-    if(!confirm('Remove saved email config and password?'))return;
+    if(!await uiConfirm('Remove saved email config and password?', {confirmLabel:'Remove', danger:true}))return;
     try{
         await invoke('clear_smtp_config');
         smtpStatus('Cleared.','warn');
@@ -6256,22 +7588,47 @@ function uiToast(msg, kind){
 window.alert = function(msg){ uiToast(msg, 'error'); };
 
 // ========== Vault management ==========
-// Simple in-DOM confirm (Tauri blocks window.confirm)
-function uiConfirm(msg){
+// Simple in-DOM confirm/prompt (Tauri blocks window.confirm/window.prompt).
+function uiConfirm(msg, opts){
+    opts=opts||{};
     return new Promise(function(resolve){
         var ov=document.createElement('div');
         ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:10000;display:flex;align-items:center;justify-content:center;';
         var box=document.createElement('div');
         box.style.cssText='background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:20px 22px;max-width:420px;box-shadow:0 10px 40px rgba(0,0,0,0.4);';
-        box.innerHTML='<div style="font-size:13px;color:var(--text);margin-bottom:16px;line-height:1.5;">'+msg+'</div>'+
+        var body=opts.allowHtml?String(msg||''):esc(String(msg||'')).replace(/\n/g,'<br>');
+        var okStyle=opts.danger?'background:var(--red);border-color:var(--red);color:#fff;':'';
+        box.innerHTML='<div style="font-size:13px;color:var(--text);margin-bottom:16px;line-height:1.5;">'+body+'</div>'+
             '<div style="display:flex;gap:8px;justify-content:flex-end;">'+
-            '<button class="btn btn-outline btn-sm" id="uic-cancel">Cancel</button>'+
-            '<button class="btn btn-accent btn-sm" id="uic-ok">OK</button></div>';
+            '<button class="btn btn-outline btn-sm" id="uic-cancel">'+esc(opts.cancelLabel||'Cancel')+'</button>'+
+            '<button class="btn btn-accent btn-sm" id="uic-ok" style="'+okStyle+'">'+esc(opts.confirmLabel||'OK')+'</button></div>';
         ov.appendChild(box);document.body.appendChild(ov);
         var done=function(v){document.body.removeChild(ov);resolve(v);};
         box.querySelector('#uic-cancel').onclick=function(){done(false);};
         box.querySelector('#uic-ok').onclick=function(){done(true);};
         ov.onclick=function(e){if(e.target===ov)done(false);};
+    });
+}
+
+function uiPrompt(msg, defaultValue){
+    return new Promise(function(resolve){
+        var ov=document.createElement('div');
+        ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:10000;display:flex;align-items:center;justify-content:center;';
+        var box=document.createElement('div');
+        box.style.cssText='background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:20px 22px;max-width:460px;min-width:320px;box-shadow:0 10px 40px rgba(0,0,0,0.4);';
+        box.innerHTML='<div style="font-size:13px;color:var(--text);margin-bottom:10px;line-height:1.5;">'+esc(String(msg||'')).replace(/\n/g,'<br>')+'</div>'+
+            '<input id="uip-value" style="width:100%;box-sizing:border-box;margin-bottom:14px;" value="'+esc(defaultValue||'')+'">'+
+            '<div style="display:flex;gap:8px;justify-content:flex-end;">'+
+            '<button class="btn btn-outline btn-sm" id="uip-cancel">Cancel</button>'+
+            '<button class="btn btn-accent btn-sm" id="uip-ok">OK</button></div>';
+        ov.appendChild(box);document.body.appendChild(ov);
+        var inp=box.querySelector('#uip-value');
+        var done=function(v){document.body.removeChild(ov);resolve(v);};
+        box.querySelector('#uip-cancel').onclick=function(){done(null);};
+        box.querySelector('#uip-ok').onclick=function(){done(inp.value);};
+        inp.onkeydown=function(e){if(e.key==='Enter')done(inp.value);if(e.key==='Escape')done(null);};
+        ov.onclick=function(e){if(e.target===ov)done(null);};
+        setTimeout(function(){inp.focus();inp.select();},0);
     });
 }
 
@@ -6340,6 +7697,49 @@ async function createNewVault(){
     try{await invoke('close_vault',{forget:false});}catch(e){}
     resetToWelcome();
     showSetup();
+}
+
+function backupTimestamp(){
+    return new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+}
+
+async function exportVaultBackup(){
+    if(!saveDlg){showToast('File dialog not available','error');return;}
+    try{
+        var vaultName='Skipi-vault';
+        try{
+            var p=await invoke('get_current_vault_path');
+            if(p)vaultName=p.replace(/[\\\/]+$/,'').split(/[\\\/]/).pop()||vaultName;
+        }catch(e){}
+        var def=cleanVaultFolderPart(vaultName,'Skipi-vault')+' backup '+backupTimestamp()+'.zip';
+        var dest=await saveDlg({title:'Export Skipi vault backup',defaultPath:def,filters:[{name:'ZIP archive',extensions:['zip']}]});
+        if(!dest)return;
+        var result=await invoke('export_vault_backup',{outputPath:dest});
+        var mb=result&&result.bytes?Math.round(result.bytes/1024/1024*10)/10:null;
+        showToast('Vault backup exported'+(mb!==null?' ('+mb+' MB)':''),'success');
+    }catch(e){showToast('Export failed: '+e,'error');logError('vault_export',e);}
+}
+
+async function importVaultBackup(){
+    if(!open){showToast('File dialog not available','error');return;}
+    try{
+        var zipPath=await open({multiple:false,title:'Select Skipi vault backup',filters:[{name:'ZIP archive',extensions:['zip']}]});
+        if(!zipPath)return;
+        var parent=await open({directory:true,title:'Choose parent folder for restored vault'});
+        if(!parent)return;
+        var base=String(zipPath).replace(/[\\\/]+$/,'').split(/[\\\/]/).pop()||'Skipi restored vault';
+        base=base.replace(/\.zip$/i,'').replace(/\s+backup\s+\d{4}-.*$/i,'');
+        var folder=await uiPrompt('Restored vault folder name',cleanVaultFolderPart(base,'Skipi restored vault'));
+        if(!folder)return;
+        folder=cleanVaultFolderPart(folder,'Skipi restored vault');
+        var target=joinFolderPath(parent,folder);
+        var ok=await uiConfirm('Import this backup into a new vault folder?<br><br><code>'+esc(target)+'</code><br><br>The target folder must be empty or not exist.', {confirmLabel:'Import', allowHtml:true});
+        if(!ok)return;
+        var info=await invoke('import_vault_backup',{zipPath:zipPath,targetPath:target});
+        closeSettings();
+        await loadVault(info);
+        showToast('Vault imported and opened','success');
+    }catch(e){showToast('Import failed: '+e,'error');logError('vault_import',e);}
 }
 
 // Appearance v0.4.47 — user-adjustable theme, accent, and UI font size.
@@ -6511,9 +7911,9 @@ async function saveKey(){try{await invoke('save_api_key',{key:document.getElemen
 
 function updateStatus(){
     var c={expired:0,total:allDocs.length,nofile:0};
-    allDocs.forEach(function(d){if(classify(d)==='expired')c.expired++;if(!d.file_name)c.nofile++;});
+    allDocs.forEach(function(d){if(d.file_name&&classify(d)==='expired')c.expired++;if(!d.file_name&&isActiveRequiredDoc(d))c.nofile++;});
     document.getElementById('st-left').textContent=c.total+' documents'+(c.expired?' · '+c.expired+' expired':'');
-    document.getElementById('st-right').textContent=c.nofile+' missing files';
+    document.getElementById('st-right').textContent=c.nofile+' required missing';
 }
 
 function show(id){document.getElementById(id).style.display='';}

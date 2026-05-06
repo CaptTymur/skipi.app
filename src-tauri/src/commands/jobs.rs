@@ -62,9 +62,43 @@ pub struct PublicVacancy {
     pub crewing_user_id: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PublicMailingRequest {
+    pub id: String,
+    pub crewing_id: String,
+    pub crewing_ref: String,
+    pub title: String,
+    pub rank: String,
+    pub vessel_type: String,
+    pub reply_to: String,
+    #[serde(default)]
+    pub client_name: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub min_experience_years: Option<i64>,
+    #[serde(default)]
+    pub required_certs: Option<Vec<String>>,
+    #[serde(default)]
+    pub languages: Option<Vec<String>>,
+    pub published_at: String,
+    #[serde(default)]
+    pub expires_at: Option<String>,
+    pub status: String,
+    #[serde(default)]
+    pub send_click_count: i64,
+    #[serde(default)]
+    pub hide_count: i64,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct VacancyListResp {
     items: Vec<PublicVacancy>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct MailingRequestListResp {
+    items: Vec<PublicMailingRequest>,
 }
 
 #[tauri::command]
@@ -91,6 +125,47 @@ pub fn fetch_jobs(
     }
     let parsed: VacancyListResp = resp.json().map_err(|e| format!("bad JSON: {e}"))?;
     Ok(parsed.items)
+}
+
+#[tauri::command]
+pub fn fetch_mailing_requests(
+    rank: Option<String>,
+    vessel_type: Option<String>,
+) -> Result<Vec<PublicMailingRequest>, String> {
+    let mut url = format!("{}/api/mailing-requests?limit=100", PROD_API);
+    if let Some(r) = rank.as_deref().filter(|s| !s.is_empty()) {
+        url.push_str(&format!("&rank={}", urlencoding(r)));
+    }
+    if let Some(v) = vessel_type.as_deref().filter(|s| !s.is_empty()) {
+        url.push_str(&format!("&vessel_type={}", urlencoding(v)));
+    }
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client.get(&url).send().map_err(|e| format!("network: {e}"))?;
+    let s = resp.status();
+    if !s.is_success() {
+        let body = resp.text().unwrap_or_default();
+        return Err(format!("server returned {s}: {body}"));
+    }
+    let parsed: MailingRequestListResp = resp.json().map_err(|e| format!("bad JSON: {e}"))?;
+    Ok(parsed.items)
+}
+
+#[tauri::command]
+pub fn mailing_request_send_click(request_id: String) -> Result<(), String> {
+    let url = format!("{}/api/mailing-requests/{}/send-click", PROD_API, request_id);
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client.post(&url).send().map_err(|e| format!("network: {e}"))?;
+    let s = resp.status();
+    if !s.is_success() && s.as_u16() != 204 {
+        return Err(format!("server returned {s}"));
+    }
+    Ok(())
 }
 
 /// Tell the public board that someone hit Apply on this vacancy.

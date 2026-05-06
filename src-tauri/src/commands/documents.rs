@@ -1,13 +1,297 @@
 use crate::db::{self, DocRecord};
 use crate::AppState;
+use crate::{frameworks, profiles};
+use rusqlite::params;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 use tauri::State;
+
+const HIDDEN_TEMPLATE_IDS_KEY: &str = "hidden_template_ids";
+
+fn doc_has_user_payload(doc: &DocRecord) -> bool {
+    doc.file_name.is_some()
+        || doc
+            .doc_number
+            .as_ref()
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false)
+        || doc
+            .valid_from
+            .as_ref()
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false)
+        || doc
+            .valid_to
+            .as_ref()
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false)
+        || doc
+            .issued_by
+            .as_ref()
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false)
+}
+
+fn doc_has_file_or_entered_identity(doc: &DocRecord) -> bool {
+    doc.file_name.is_some()
+        || doc
+            .doc_number
+            .as_ref()
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false)
+        || doc
+            .valid_from
+            .as_ref()
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false)
+        || doc
+            .issued_by
+            .as_ref()
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false)
+}
+
+fn current_active_required_template_ids(conn: &rusqlite::Connection) -> HashSet<String> {
+    let g = |k: &str| db::get_vault_info_value(conn, k);
+    if g("account_type").as_deref() != Some("seafarer") {
+        return HashSet::new();
+    }
+    let Some(level_id) = g("stcw_level").filter(|v| !v.is_empty()) else {
+        return HashSet::new();
+    };
+    let Some(level) = profiles::StcwLevel::from_id(&level_id) else {
+        return HashSet::new();
+    };
+    let vessel_category = g("vessel_category").unwrap_or_default();
+    let position = g("position").unwrap_or_default();
+    profiles::required_docs_for_profile(level, &vessel_category, &position)
+        .into_iter()
+        .map(|t| t.id.to_string())
+        .collect()
+}
+
+fn is_optional_category(category: &str) -> bool {
+    profiles::optional_categories()
+        .into_iter()
+        .any(|c| c == category)
+}
+
+fn is_hard_required_doc(conn: &rusqlite::Connection, doc: &DocRecord) -> bool {
+    let Some(template_id) = doc.template_id.as_deref() else {
+        return false;
+    };
+    current_active_required_template_ids(conn).contains(template_id)
+        && !is_optional_category(&doc.category)
+}
+
+pub(crate) fn hidden_template_ids(conn: &rusqlite::Connection) -> HashSet<String> {
+    db::get_vault_info_value(conn, HIDDEN_TEMPLATE_IDS_KEY)
+        .and_then(|raw| serde_json::from_str::<Vec<String>>(&raw).ok())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|s| !s.trim().is_empty())
+        .collect()
+}
+
+fn set_hidden_template_ids(
+    conn: &rusqlite::Connection,
+    ids: &HashSet<String>,
+) -> Result<(), String> {
+    let ordered: BTreeSet<String> = ids.iter().cloned().collect();
+    let raw = serde_json::to_string(&ordered.into_iter().collect::<Vec<_>>())
+        .map_err(|e| e.to_string())?;
+    db::set_vault_info(conn, HIDDEN_TEMPLATE_IDS_KEY, &raw).map_err(|e| e.to_string())
+}
+
+pub(crate) fn mark_template_hidden(
+    conn: &rusqlite::Connection,
+    template_id: &str,
+) -> Result<(), String> {
+    if template_id.trim().is_empty() {
+        return Ok(());
+    }
+    let mut ids = hidden_template_ids(conn);
+    if ids.insert(template_id.to_string()) {
+        set_hidden_template_ids(conn, &ids)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn mark_template_visible(
+    conn: &rusqlite::Connection,
+    template_id: &str,
+) -> Result<(), String> {
+    let mut ids = hidden_template_ids(conn);
+    if ids.remove(template_id) {
+        set_hidden_template_ids(conn, &ids)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn refresh_known_template_metadata(
+    conn: &rusqlite::Connection,
+) -> Result<usize, String> {
+    let templates: HashMap<&'static str, profiles::DocTemplate> =
+        profiles::all_seafarer_doc_templates()
+            .into_iter()
+            .map(|t| (t.id, t))
+            .collect();
+    let docs = db::get_all_docs(conn).map_err(|e| e.to_string())?;
+    let mut changed = 0usize;
+
+    for doc in docs {
+        let Some(template_id) = doc.template_id.as_deref() else {
+            continue;
+        };
+        let Some(tpl) = templates.get(template_id) else {
+            continue;
+        };
+        if doc.title == tpl.title
+            && doc.has_expiry == tpl.has_expiry
+            && doc.notes.as_deref() == Some(tpl.notes)
+            && doc.regulatory_basis.as_deref() == Some(tpl.regulatory_basis)
+        {
+            continue;
+        }
+        conn.execute(
+            "UPDATE documents
+             SET title = ?1,
+                 has_expiry = ?2,
+                 notes = ?3,
+                 regulatory_basis = ?4
+             WHERE id = ?5",
+            params![
+                tpl.title,
+                tpl.has_expiry as i32,
+                tpl.notes,
+                tpl.regulatory_basis,
+                doc.id
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        changed += 1;
+    }
+
+    Ok(changed)
+}
+
+pub(crate) fn prune_empty_catalog_only_docs(conn: &rusqlite::Connection) -> Result<usize, String> {
+    let catalog_ids: std::collections::HashSet<&'static str> =
+        profiles::catalog_only_seafarer_doc_templates()
+            .into_iter()
+            .map(|t| t.id)
+            .collect();
+    if catalog_ids.is_empty() {
+        return Ok(0);
+    }
+    let docs = db::get_all_docs(conn).map_err(|e| e.to_string())?;
+    let mut removed = 0usize;
+    for doc in docs {
+        let Some(template_id) = doc.template_id.as_deref() else {
+            continue;
+        };
+        if !catalog_ids.contains(template_id) || doc.id.starts_with("custom_") {
+            continue;
+        }
+        if doc_has_file_or_entered_identity(&doc) {
+            continue;
+        }
+        conn.execute("DELETE FROM documents WHERE id = ?1", params![doc.id])
+            .map_err(|e| e.to_string())?;
+        let payload = serde_json::json!({
+            "template_id": template_id,
+            "reason": "empty_catalog_only_template",
+        })
+        .to_string();
+        let _ = db::log_event(
+            conn,
+            "doc_deleted",
+            "document",
+            Some(&doc.id),
+            Some(&payload),
+        );
+        removed += 1;
+    }
+    Ok(removed)
+}
+
+pub(crate) fn normalize_known_custom_docs(conn: &rusqlite::Connection) -> Result<usize, String> {
+    let docs = db::get_all_docs(conn).map_err(|e| e.to_string())?;
+    let existing_template_ids: std::collections::HashSet<String> =
+        docs.iter().filter_map(|d| d.template_id.clone()).collect();
+    let mut changed = 0usize;
+
+    for doc in docs.iter().filter(|d| d.template_id.is_none()) {
+        let Some(tpl) = profiles::doc_template_by_title_or_id(&doc.title) else {
+            continue;
+        };
+        if existing_template_ids.contains(tpl.id) {
+            if !doc_has_user_payload(doc) {
+                conn.execute("DELETE FROM documents WHERE id = ?1", params![doc.id])
+                    .map_err(|e| e.to_string())?;
+                let _ = db::log_event(
+                    conn,
+                    "doc_deleted",
+                    "document",
+                    Some(&doc.id),
+                    Some("{\"reason\":\"duplicate_known_custom\"}"),
+                );
+                changed += 1;
+            }
+            continue;
+        }
+
+        let rec = frameworks::record_from_profile_template(&tpl);
+        conn.execute(
+            "UPDATE documents
+             SET category = ?1,
+                 title = ?2,
+                 has_expiry = ?3,
+                 valid_to = COALESCE(NULLIF(valid_to, ''), ?4),
+                 notes = ?5,
+                 regulatory_basis = ?6,
+                 template_id = ?7
+             WHERE id = ?8",
+            params![
+                rec.category,
+                rec.title,
+                rec.has_expiry as i32,
+                rec.valid_to,
+                rec.notes,
+                rec.regulatory_basis,
+                rec.template_id,
+                doc.id,
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        let payload = serde_json::json!({
+            "from": "custom",
+            "template_id": tpl.id,
+            "regulatory_basis": tpl.regulatory_basis,
+        })
+        .to_string();
+        let _ = db::log_event(
+            conn,
+            "doc_promoted_to_template",
+            "document",
+            Some(&doc.id),
+            Some(&payload),
+        );
+        let _ = mark_template_visible(conn, tpl.id);
+        changed += 1;
+    }
+
+    Ok(changed)
+}
 
 #[tauri::command]
 pub fn get_documents(state: State<AppState>) -> Result<Vec<DocRecord>, String> {
     let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = lock.as_ref().ok_or("No vault open")?;
+    let _ = normalize_known_custom_docs(conn);
+    let _ = refresh_known_template_metadata(conn);
+    let _ = prune_empty_catalog_only_docs(conn);
     db::get_all_docs(conn).map_err(|e| e.to_string())
 }
 
@@ -19,7 +303,12 @@ pub fn update_expiry(state: State<AppState>, id: String, valid_to: String) -> Re
 }
 
 #[tauri::command]
-pub fn update_doc_field(state: State<AppState>, id: String, field: String, value: String) -> Result<(), String> {
+pub fn update_doc_field(
+    state: State<AppState>,
+    id: String,
+    field: String,
+    value: String,
+) -> Result<(), String> {
     let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = lock.as_ref().ok_or("No vault open")?;
     db::update_doc_field(conn, &id, &field, &value).map_err(|e| e.to_string())
@@ -40,7 +329,11 @@ pub fn add_custom_doc(
     let category = category
         .and_then(|c| {
             let t = c.trim().to_string();
-            if t.is_empty() { None } else { Some(t) }
+            if t.is_empty() {
+                None
+            } else {
+                Some(t)
+            }
         })
         .unwrap_or_else(|| "Custom".to_string());
     let has_expiry = has_expiry.unwrap_or(false);
@@ -53,31 +346,53 @@ pub fn add_custom_doc(
     let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = conn_lock.as_ref().ok_or("No vault open")?;
 
+    let known_template = profiles::doc_template_by_title_or_id(&title);
+    if let Some(tpl) = known_template.as_ref() {
+        if let Some(existing) = db::get_all_docs(conn)
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .find(|d| d.template_id.as_deref() == Some(tpl.id))
+        {
+            let _ = mark_template_visible(conn, tpl.id);
+            return Ok(existing);
+        }
+    }
+
     let id = format!("custom_{}", uuid::Uuid::new_v4().simple());
-    let rec = DocRecord {
-        id: id.clone(),
-        category: category.clone(),
-        title: title.clone(),
-        file_name: None,
-        has_expiry,
-        valid_from: None,
-        valid_to: None,
-        issued_by: None,
-        doc_number: None,
-        notes: Some("User-added custom certificate".to_string()),
-        field_statuses: None,
-        regulatory_basis: Some("Custom".to_string()),
-        template_id: None,
-        sha256: None,
-        file_size: None,
-        content_type: None,
-        visibility: "private".to_string(),
-        is_national: false,
+    let rec = if let Some(tpl) = known_template {
+        let mut rec = frameworks::record_from_profile_template(&tpl);
+        rec.id = id.clone();
+        rec
+    } else {
+        DocRecord {
+            id: id.clone(),
+            category: category.clone(),
+            title: title.clone(),
+            file_name: None,
+            has_expiry,
+            valid_from: None,
+            valid_to: None,
+            issued_by: None,
+            doc_number: None,
+            notes: Some("User-added custom certificate".to_string()),
+            field_statuses: None,
+            regulatory_basis: Some("Custom".to_string()),
+            template_id: None,
+            sha256: None,
+            file_size: None,
+            content_type: None,
+            visibility: "private".to_string(),
+            is_national: false,
+        }
     };
+    if let Some(template_id) = rec.template_id.as_deref() {
+        let _ = mark_template_visible(conn, template_id);
+    }
     db::insert_doc(conn, &rec).map_err(|e| e.to_string())?;
     let payload = serde_json::json!({
-        "category": category,
-        "kind": "custom",
+        "category": rec.category.clone(),
+        "kind": if rec.template_id.is_some() { "known_template" } else { "custom" },
+        "template_id": rec.template_id.clone(),
         "has_expiry": has_expiry,
     })
     .to_string();
@@ -109,7 +424,11 @@ pub fn add_catalog_doc(
     let category = category
         .and_then(|c| {
             let t = c.trim().to_string();
-            if t.is_empty() { None } else { Some(t) }
+            if t.is_empty() {
+                None
+            } else {
+                Some(t)
+            }
         })
         .unwrap_or_else(|| "Catalog".to_string());
     let has_expiry = has_expiry.unwrap_or(false);
@@ -126,7 +445,11 @@ pub fn add_catalog_doc(
     let regulatory = regulatory_basis
         .and_then(|s| {
             let t = s.trim().to_string();
-            if t.is_empty() { None } else { Some(t) }
+            if t.is_empty() {
+                None
+            } else {
+                Some(t)
+            }
         })
         .unwrap_or_else(|| "Catalog".to_string());
     let rec = DocRecord {
@@ -149,6 +472,7 @@ pub fn add_catalog_doc(
         visibility: "private".to_string(),
         is_national: false,
     };
+    let _ = mark_template_visible(conn, &template_id);
     db::insert_doc(conn, &rec).map_err(|e| e.to_string())?;
     let payload = serde_json::json!({
         "category": category,
@@ -170,9 +494,20 @@ pub fn delete_doc(state: State<AppState>, id: String) -> Result<(), String> {
     let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = conn_lock.as_ref().ok_or("No vault open")?;
 
-    let doc = db::get_all_docs(conn).map_err(|e| e.to_string())?
-        .into_iter().find(|d| d.id == id);
+    let doc = db::get_all_docs(conn)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .find(|d| d.id == id);
     if let Some(d) = doc {
+        if is_hard_required_doc(conn, &d) {
+            return Err(
+                "This document is required by the active profile framework and cannot be deleted."
+                    .to_string(),
+            );
+        }
+        if let Some(template_id) = d.template_id.as_deref() {
+            let _ = mark_template_hidden(conn, template_id);
+        }
         if let Some(fname) = d.file_name {
             let fp = vault_path.join(&d.category).join(&fname);
             let _ = fs::remove_file(&fp);
@@ -194,14 +529,20 @@ pub fn get_document_file_path(state: State<AppState>, doc_id: String) -> Result<
     let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = conn_lock.as_ref().ok_or("No vault open")?;
     let docs = db::get_all_docs(conn).map_err(|e| e.to_string())?;
-    let doc = docs.iter().find(|d| d.id == doc_id).ok_or("Document not found")?;
+    let doc = docs
+        .iter()
+        .find(|d| d.id == doc_id)
+        .ok_or("Document not found")?;
     let file_name = doc.file_name.as_ref().ok_or("No file attached")?;
     let p = vault_path.join(&doc.category).join(file_name);
     Ok(p.to_string_lossy().to_string())
 }
 
 #[tauri::command]
-pub fn read_file_base64(state: State<AppState>, doc_id: String) -> Result<(String, String), String> {
+pub fn read_file_base64(
+    state: State<AppState>,
+    doc_id: String,
+) -> Result<(String, String), String> {
     let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
     let vault_path = vault_lock.as_ref().ok_or("No vault open")?;
 
@@ -209,10 +550,22 @@ pub fn read_file_base64(state: State<AppState>, doc_id: String) -> Result<(Strin
     let conn = conn_lock.as_ref().ok_or("No vault open")?;
 
     let docs = db::get_all_docs(conn).map_err(|e| e.to_string())?;
-    let doc = docs.iter().find(|d| d.id == doc_id).ok_or("Document not found")?;
+    let doc = docs
+        .iter()
+        .find(|d| d.id == doc_id)
+        .ok_or("Document not found")?;
     let file_name = doc.file_name.as_ref().ok_or("No file attached")?;
 
     let file_path = vault_path.join(&doc.category).join(file_name);
+    let size = fs::metadata(&file_path)
+        .map_err(|e| format!("Cannot read file metadata: {}", e))?
+        .len();
+    if size > 8 * 1024 * 1024 {
+        return Err(format!(
+            "Preview skipped for large file ({} MB)",
+            (size + 1024 * 1024 - 1) / (1024 * 1024)
+        ));
+    }
     let data = fs::read(&file_path).map_err(|e| format!("Cannot read file: {}", e))?;
 
     let b64 = crate::base64_encode(&data);
@@ -232,7 +585,11 @@ pub fn read_file_base64(state: State<AppState>, doc_id: String) -> Result<(Strin
 }
 
 #[tauri::command]
-pub fn attach_file(state: State<AppState>, doc_id: String, source_path: String) -> Result<String, String> {
+pub fn attach_file(
+    state: State<AppState>,
+    doc_id: String,
+    source_path: String,
+) -> Result<String, String> {
     let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
     let vault_path = vault_lock.as_ref().ok_or("No vault open")?;
 
@@ -240,15 +597,35 @@ pub fn attach_file(state: State<AppState>, doc_id: String, source_path: String) 
     let conn = conn_lock.as_ref().ok_or("No vault open")?;
 
     let docs = db::get_all_docs(conn).map_err(|e| e.to_string())?;
-    let doc = docs.iter().find(|d| d.id == doc_id).ok_or("Document not found")?;
+    let doc = docs
+        .iter()
+        .find(|d| d.id == doc_id)
+        .ok_or("Document not found")?;
 
     let src = PathBuf::from(&source_path);
     if !src.exists() {
         return Err(format!("Source file not found: {}", source_path));
     }
-    let ext = src.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
-    let safe_title: String = doc.title.chars().map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' { c } else { '_' }).collect();
-    let dest_name = if ext.is_empty() { safe_title.clone() } else { format!("{}.{}", safe_title, ext) };
+    let ext = src
+        .extension()
+        .map(|e| e.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let safe_title: String = doc
+        .title
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == ' ' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let dest_name = if ext.is_empty() {
+        safe_title.clone()
+    } else {
+        format!("{}.{}", safe_title, ext)
+    };
 
     let cat_dir = vault_path.join(&doc.category);
     fs::create_dir_all(&cat_dir).map_err(|e| e.to_string())?;
@@ -284,10 +661,235 @@ pub fn attach_file(state: State<AppState>, doc_id: String, source_path: String) 
             "content_type": content_type,
         })
         .to_string();
-        let _ = db::log_event(conn, "file_attached", "document", Some(&doc_id), Some(&payload));
+        let _ = db::log_event(
+            conn,
+            "file_attached",
+            "document",
+            Some(&doc_id),
+            Some(&payload),
+        );
     }
 
     Ok(dest_name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_known_custom_sso_promotes_to_template_id() {
+        let vault_path =
+            std::env::temp_dir().join(format!("skipi-doc-normalize-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&vault_path).unwrap();
+        let conn = db::open_db(&vault_path).unwrap();
+
+        let custom = DocRecord {
+            id: "custom_sso".to_string(),
+            category: "STCW Mandatory".to_string(),
+            title: "Ship Security Officer".to_string(),
+            file_name: None,
+            has_expiry: false,
+            valid_from: None,
+            valid_to: None,
+            issued_by: None,
+            doc_number: None,
+            notes: Some("User-added custom certificate".to_string()),
+            field_statuses: None,
+            regulatory_basis: Some("Custom".to_string()),
+            template_id: None,
+            sha256: None,
+            file_size: None,
+            content_type: None,
+            visibility: "private".to_string(),
+            is_national: false,
+        };
+        db::insert_doc(&conn, &custom).unwrap();
+
+        assert_eq!(normalize_known_custom_docs(&conn).unwrap(), 1);
+        let docs = db::get_all_docs(&conn).unwrap();
+        let sso = docs.iter().find(|d| d.id == "custom_sso").unwrap();
+        assert_eq!(sso.template_id.as_deref(), Some("sso"));
+        assert_eq!(sso.regulatory_basis.as_deref(), Some("STCW VI/5"));
+        assert_eq!(sso.notes.as_deref(), Some("ISPS Code"));
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(vault_path);
+    }
+
+    #[test]
+    fn normalize_known_custom_ice_navigation_promotes_to_stcw_specific() {
+        let vault_path =
+            std::env::temp_dir().join(format!("skipi-doc-normalize-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&vault_path).unwrap();
+        let conn = db::open_db(&vault_path).unwrap();
+
+        let custom = DocRecord {
+            id: "custom_ice".to_string(),
+            category: "Custom".to_string(),
+            title: "Ice Navigation Advanced Training".to_string(),
+            file_name: None,
+            has_expiry: true,
+            valid_from: None,
+            valid_to: None,
+            issued_by: None,
+            doc_number: Some("PWA22121502".to_string()),
+            notes: Some("User-added custom certificate".to_string()),
+            field_statuses: None,
+            regulatory_basis: Some("Custom".to_string()),
+            template_id: None,
+            sha256: None,
+            file_size: None,
+            content_type: None,
+            visibility: "private".to_string(),
+            is_national: false,
+        };
+        db::insert_doc(&conn, &custom).unwrap();
+
+        assert_eq!(normalize_known_custom_docs(&conn).unwrap(), 1);
+        let docs = db::get_all_docs(&conn).unwrap();
+        let polar = docs.iter().find(|d| d.id == "custom_ice").unwrap();
+        assert_eq!(polar.template_id.as_deref(), Some("polar_advanced"));
+        assert_eq!(polar.category, "STCW Specific");
+        assert_eq!(polar.doc_number.as_deref(), Some("PWA22121502"));
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(vault_path);
+    }
+
+    #[test]
+    fn normalize_known_custom_flag_docs_promotes_to_fixed_flag_sections() {
+        let vault_path =
+            std::env::temp_dir().join(format!("skipi-doc-normalize-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&vault_path).unwrap();
+        let conn = db::open_db(&vault_path).unwrap();
+
+        for (id, title) in [
+            ("custom_flag_coc", "Flag CoC Endorsement"),
+            ("custom_flag_book", "Flag Seaman's Book"),
+        ] {
+            let custom = DocRecord {
+                id: id.to_string(),
+                category: "Custom".to_string(),
+                title: title.to_string(),
+                file_name: None,
+                has_expiry: true,
+                valid_from: None,
+                valid_to: None,
+                issued_by: None,
+                doc_number: None,
+                notes: Some("User-added custom certificate".to_string()),
+                field_statuses: None,
+                regulatory_basis: Some("Custom".to_string()),
+                template_id: None,
+                sha256: None,
+                file_size: None,
+                content_type: None,
+                visibility: "private".to_string(),
+                is_national: false,
+            };
+            db::insert_doc(&conn, &custom).unwrap();
+        }
+
+        assert_eq!(normalize_known_custom_docs(&conn).unwrap(), 2);
+        let docs = db::get_all_docs(&conn).unwrap();
+        let coc = docs.iter().find(|d| d.id == "custom_flag_coc").unwrap();
+        let book = docs.iter().find(|d| d.id == "custom_flag_book").unwrap();
+        assert_eq!(coc.template_id.as_deref(), Some("flag_coc_endorsement"));
+        assert_eq!(coc.category, "Flag CoC Endorsement");
+        assert_eq!(book.template_id.as_deref(), Some("flag_seamans_book"));
+        assert_eq!(book.category, "Flag Seaman's Book");
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(vault_path);
+    }
+
+    #[test]
+    fn normalize_known_custom_dangerous_bulk_cargo_promotes_to_bulk_specific() {
+        let vault_path =
+            std::env::temp_dir().join(format!("skipi-doc-normalize-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&vault_path).unwrap();
+        let conn = db::open_db(&vault_path).unwrap();
+
+        let custom = DocRecord {
+            id: "custom_bulk_dg".to_string(),
+            category: "Custom".to_string(),
+            title: "Ships carrying dangerous and hazardous substances in solid form in bulk and in packaged form".to_string(),
+            file_name: None,
+            has_expiry: true,
+            valid_from: None,
+            valid_to: Some("2026-07-24".to_string()),
+            issued_by: None,
+            doc_number: Some("41920055".to_string()),
+            notes: Some("User-added custom certificate".to_string()),
+            field_statuses: None,
+            regulatory_basis: Some("Custom".to_string()),
+            template_id: None,
+            sha256: None,
+            file_size: None,
+            content_type: None,
+            visibility: "private".to_string(),
+            is_national: false,
+        };
+        db::insert_doc(&conn, &custom).unwrap();
+
+        assert_eq!(normalize_known_custom_docs(&conn).unwrap(), 1);
+        let docs = db::get_all_docs(&conn).unwrap();
+        let dg = docs.iter().find(|d| d.id == "custom_bulk_dg").unwrap();
+        assert_eq!(
+            dg.template_id.as_deref(),
+            Some("dangerous_hazardous_substances")
+        );
+        assert_eq!(dg.category, "Bulk Carrier Specific");
+        assert_eq!(dg.doc_number.as_deref(), Some("41920055"));
+        assert_eq!(dg.valid_to.as_deref(), Some("2026-07-24"));
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(vault_path);
+    }
+
+    #[test]
+    fn refresh_known_template_metadata_renames_legacy_ecdis_slot() {
+        let vault_path =
+            std::env::temp_dir().join(format!("skipi-doc-refresh-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&vault_path).unwrap();
+        let conn = db::open_db(&vault_path).unwrap();
+
+        let legacy = DocRecord {
+            id: "ecdis_legacy".to_string(),
+            category: "Deck Training".to_string(),
+            title: "ECDIS Training".to_string(),
+            file_name: None,
+            has_expiry: false,
+            valid_from: None,
+            valid_to: None,
+            issued_by: None,
+            doc_number: None,
+            notes: Some("Generic + type-specific".to_string()),
+            field_statuses: None,
+            regulatory_basis: Some("STCW A-II/1, A-II/2".to_string()),
+            template_id: Some("ecdis".to_string()),
+            sha256: None,
+            file_size: None,
+            content_type: None,
+            visibility: "private".to_string(),
+            is_national: false,
+        };
+        db::insert_doc(&conn, &legacy).unwrap();
+
+        assert_eq!(refresh_known_template_metadata(&conn).unwrap(), 1);
+        let docs = db::get_all_docs(&conn).unwrap();
+        let ecdis = docs.iter().find(|d| d.id == "ecdis_legacy").unwrap();
+        assert_eq!(ecdis.title, "ECDIS Generic Training");
+        assert!(ecdis
+            .notes
+            .as_deref()
+            .unwrap_or("")
+            .contains("type-specific ECDIS certificates"));
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(vault_path);
+    }
 }
 
 /// Bundle every vault document with an attached file into a single ZIP +
@@ -343,10 +945,13 @@ pub fn export_documents_bundle(
             }
         };
         let src = vault_path.join(&doc.category).join(&fname);
-        if !src.exists() { continue; }
+        if !src.exists() {
+            continue;
+        }
         let data = fs::read(&src).map_err(|e| format!("read {}: {}", src.display(), e))?;
         let in_zip = format!("{}/{}", doc.category, fname);
-        zip.start_file(&in_zip, options).map_err(|e| e.to_string())?;
+        zip.start_file(&in_zip, options)
+            .map_err(|e| e.to_string())?;
         zip.write_all(&data).map_err(|e| e.to_string())?;
         manifest_docs.push(serde_json::json!({
             "id": doc.id,
@@ -377,10 +982,11 @@ pub fn export_documents_bundle(
         },
         "documents": manifest_docs,
     });
-    let manifest_str = serde_json::to_string_pretty(&manifest)
+    let manifest_str = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
+    zip.start_file("manifest.json", options)
         .map_err(|e| e.to_string())?;
-    zip.start_file("manifest.json", options).map_err(|e| e.to_string())?;
-    zip.write_all(manifest_str.as_bytes()).map_err(|e| e.to_string())?;
+    zip.write_all(manifest_str.as_bytes())
+        .map_err(|e| e.to_string())?;
     zip.finish().map_err(|e| e.to_string())?;
     Ok(out.to_string_lossy().to_string())
 }

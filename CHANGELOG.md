@@ -7,6 +7,53 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.105] — 2026-05-06
+
+### Fixed
+- Prevented drag-and-drop replacement from freezing the UI by bounding inline
+  document preview size and making upload auto-scan opt-in.
+- Moved AI recognition work off the Tauri UI path so long local/cloud OCR calls
+  do not block the application window.
+- Changing seafarer rank or vessel type now updates the active document
+  framework additively, so promotion to Master adds management-level slots such
+  as Ship Security Officer without deleting existing documents.
+- Known certificates typed through Add document (for example Ship Security
+  Officer) are normalized to their regulatory template IDs instead of remaining
+  custom rows; custom-only documents can now be deleted from the document view.
+- Added Radar Navigation / Radar Plotting / ARPA as a separate deck-training
+  requirement for deck officers, and added an explicit requirements-changed
+  notice plus Required/Custom/History visual markers in the document tree.
+- Added the `STCW Specific` document class for known conditional regulatory
+  certificates, including Polar Waters Basic/Advanced (Ice Navigation) training,
+  so they are not treated as custom and are not marked mandatory for every ship.
+- Added fixed conditional flag-state sections for Flag CoC Endorsement and
+  Flag Seaman's Book, with `FLAG` markers and template normalization instead of
+  treating them as custom certificates.
+- Added the bulk/dangerous-cargo training certificate for dangerous and
+  hazardous substances in solid bulk or packaged form as a fixed
+  `Bulk Carrier Specific` catalog-only template: it normalizes real uploaded
+  certificates but no longer appears as an empty slot for every bulker profile.
+- Non-hard-required template rows can now be deleted manually from the document
+  view, including historical `Old` rows and conditional STCW/flag-state slots;
+  deleted conditional slots stay hidden until the user adds them again or they
+  become part of the active required framework.
+- Renamed the deck-officer ECDIS requirement to `ECDIS Generic Training` and
+  added `ECDIS Specific` as a repeatable user-added category for equipment
+  type-specific certificates such as Furuno or JRC.
+- Reworked `Dispatch` into `Рассылки`: seafarers can still send CV/documents
+  to manual email addresses, and can also load recipient addresses from
+  accredited agency CV-mailing requests published on skipi.app.
+- Added the `База судов` module for seafarers: vessel cards are derived only
+  from Sea Service entries with valid IMO numbers, and adding Sea Service or
+  submitting vessel reviews now requires attached files for every document in
+  the active minimum document structure.
+- Removed pictographic icons from the top module navigation for a cleaner,
+  text-only module bar.
+- Added the first Minimum Safety Pack item: vault backup export/import from
+  Settings > Vaults. Export writes a full ZIP backup with a consistent SQLite
+  snapshot and local attachments; import restores into a new folder and opens it
+  only after validating the database.
+
 ## [0.4.104] — 2026-05-04
 
 ### Added
