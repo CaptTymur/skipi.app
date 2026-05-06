@@ -5,14 +5,11 @@
 #   git push origin v0.4.103
 #
 # Slice G1, Rail 1 (2026-05-03):
-#   * Linux release MUST succeed even when Windows signing is broken or
-#     unconfigured. The matrix-style `needs: build` previously coupled
-#     publish-latest-json to a successful Windows build — when Azure
-#     Trusted Signing secrets expired/were missing, the entire release
-#     pipeline collapsed and Linux beta users couldn't auto-update.
-#   * Windows is now an independent best-effort job. Its outcome is
-#     consulted by publish-latest-json so a Windows manifest entry is
-#     included only when it actually built+signed.
+#   * Linux release MUST succeed even when Windows Authenticode signing is
+#     broken or unconfigured. For closed testing we still build an unsigned
+#     Windows installer; only the Tauri updater artifact is minisign-signed.
+#   * Windows/macOS test builds are mandatory from v0.4.106 onward so every
+#     release has the three tester platforms: Linux, macOS, Windows.
 #   * A post-publish validation job (`verify-release`) downloads the
 #     just-published latest.json and asserts version, URLs, sigs.
 
@@ -166,7 +163,8 @@ jobs:
             | Linux (Debian/Ubuntu) | `.deb` | minisign (updater) |
             | Linux (universal) | `.AppImage` | minisign (updater) |
             | Linux (RPM-based) | `.rpm` | minisign (updater) |
-            | Windows | `.msi` / `.exe` | Authenticode — only when build succeeded |
+            | macOS (Intel/test) | `.dmg` / `.app.tar.gz` | unsigned Apple bundle; minisign for updater |
+            | Windows (test) | `.msi` / `.exe` | unsigned Authenticode; minisign for updater |
 
             ### What's new
 
@@ -182,51 +180,59 @@ jobs:
           prerelease: false
 
   # ----------------------------------------------------------------------
-  # Windows build — best-effort. Failure here MUST NOT block the Linux
-  # manifest from being published. Validates Authenticode secrets up
-  # front so a missing/expired secret fails fast with a clear message
-  # instead of bleeding into a 30-minute build.
+  # macOS build — unsigned Apple bundle for testers. This does
+  # NOT perform Apple Developer ID signing or notarization. It still uses
+  # Tauri updater signing so the .app.tar.gz can be referenced from
+  # latest.json when the build succeeds.
   # ----------------------------------------------------------------------
-  build-windows:
-    name: Build (Windows, best-effort)
+  build-macos:
+    name: Build (macOS unsigned)
     needs: [syntax-check, version-check]
-    runs-on: windows-latest
-    # Don't fail the whole workflow if Windows signing is unavailable.
-    continue-on-error: true
+    runs-on: macos-13
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate Windows signing secrets
-        shell: bash
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+
+      - name: Build Skipi (macOS unsigned)
+        uses: tauri-apps/tauri-action@v0
         env:
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          AZURE_ENDPOINT: ${{ secrets.AZURE_ENDPOINT }}
-          AZURE_CODE_SIGNING_NAME: ${{ secrets.AZURE_CODE_SIGNING_NAME }}
-          AZURE_CERT_PROFILE_NAME: ${{ secrets.AZURE_CERT_PROFILE_NAME }}
-        run: |
-          set -eu
-          missing=0
-          for name in \
-            AZURE_TENANT_ID \
-            AZURE_CLIENT_ID \
-            AZURE_CLIENT_SECRET \
-            AZURE_ENDPOINT \
-            AZURE_CODE_SIGNING_NAME \
-            AZURE_CERT_PROFILE_NAME
-          do
-            if [ -z "${!name:-}" ]; then
-              echo "::warning::Missing GitHub Actions secret: ${name}"
-              missing=1
-            fi
-          done
-          if [ "$missing" -ne 0 ]; then
-            echo "::warning::Windows signing secrets missing; skipping Windows build."
-            echo "::warning::Linux release will still be published. Configure SignPath/Authenticode and retag to ship Windows."
-            exit 1
-          fi
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Skipi ${{ github.ref_name }}"
+          args: --target x86_64-apple-darwin
+          releaseDraft: false
+          prerelease: false
+
+  # ----------------------------------------------------------------------
+  # Windows build — unsigned test installer. This intentionally does not use
+  # Azure Trusted Signing / Authenticode while the app is in closed testing.
+  # Tauri updater signatures are still created via TAURI_SIGNING_PRIVATE_KEY.
+  # ----------------------------------------------------------------------
+  build-windows:
+    name: Build (Windows unsigned)
+    needs: [syntax-check, version-check]
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -243,22 +249,12 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-registry-
 
-      - name: Install trusted-signing-cli
-        run: cargo install trusted-signing-cli --locked
-        shell: bash
-
       - name: Build Skipi (Windows)
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          AZURE_ENDPOINT: ${{ secrets.AZURE_ENDPOINT }}
-          AZURE_CODE_SIGNING_NAME: ${{ secrets.AZURE_CODE_SIGNING_NAME }}
-          AZURE_CERT_PROFILE_NAME: ${{ secrets.AZURE_CERT_PROFILE_NAME }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Skipi ${{ github.ref_name }}"
@@ -266,14 +262,12 @@ jobs:
           prerelease: false
 
   # ----------------------------------------------------------------------
-  # Manifest publication — Linux is mandatory; Windows is included only
-  # when the windows job completed successfully.
+  # Manifest publication — Linux, macOS and Windows test builds are mandatory.
   # ----------------------------------------------------------------------
   publish-latest-json:
     name: Publish latest.json
-    needs: [build-linux, build-windows]
-    # Run as long as Linux succeeded — even if Windows skipped/failed.
-    if: always() && needs.build-linux.result == 'success'
+    needs: [build-linux, build-macos, build-windows]
+    if: needs.build-linux.result == 'success' && needs.build-macos.result == 'success' && needs.build-windows.result == 'success'
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
@@ -284,6 +278,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
+          MAC_OUTCOME: ${{ needs.build-macos.result }}
           WIN_OUTCOME: ${{ needs.build-windows.result }}
         run: |
           set -eu
@@ -291,6 +286,7 @@ jobs:
           PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
 
+          echo "macOS job outcome: ${MAC_OUTCOME}"
           echo "Windows job outcome: ${WIN_OUTCOME}"
 
           mkdir -p sigs
@@ -303,17 +299,54 @@ jobs:
             if [ -f "$f" ]; then cat "$f"; else echo ""; fi
           }
 
+          asset_url() {
+            local f="$1"
+            local encoded
+            encoded="$(jq -rn --arg x "$f" '$x|@uri')"
+            echo "${BASE_URL}/${encoded}"
+          }
+
           # Windows entry only when the Windows job actually finished.
           WIN_SIG=""
           WIN_URL=""
           if [ "${WIN_OUTCOME}" = "success" ]; then
             if [ -f "Skipi_${VERSION}_x64-setup.exe.sig" ]; then
               WIN_SIG="$(read_sig "Skipi_${VERSION}_x64-setup.exe.sig")"
-              WIN_URL="${BASE_URL}/Skipi_${VERSION}_x64-setup.exe"
+              WIN_URL="$(asset_url "Skipi_${VERSION}_x64-setup.exe")"
             elif [ -f "Skipi_${VERSION}_x64_en-US.msi.sig" ]; then
               WIN_SIG="$(read_sig "Skipi_${VERSION}_x64_en-US.msi.sig")"
-              WIN_URL="${BASE_URL}/Skipi_${VERSION}_x64_en-US.msi"
+              WIN_URL="$(asset_url "Skipi_${VERSION}_x64_en-US.msi")"
+            else
+              WIN_ASSET="$(find . -maxdepth 1 -type f \( -name '*.exe.sig' -o -name '*.msi.sig' \) | head -n1 || true)"
+              if [ -n "$WIN_ASSET" ]; then
+                WIN_ASSET="${WIN_ASSET#./}"
+                WIN_SIG="$(read_sig "$WIN_ASSET")"
+                WIN_URL="$(asset_url "${WIN_ASSET%.sig}")"
+              fi
             fi
+          fi
+          if [ -z "$WIN_URL" ]; then
+            echo "::error::Windows build succeeded but no .exe.sig or .msi.sig was found; refusing to publish a release without Windows."
+            exit 1
+          fi
+
+          # macOS: updater wants the .app.tar.gz asset, not the .dmg.
+          MAC_SIG=""
+          MAC_URL=""
+          if [ "${MAC_OUTCOME}" = "success" ]; then
+            MAC_APP="$(find . -maxdepth 1 -type f -name '*.app.tar.gz.sig' | head -n1 || true)"
+            if [ -n "$MAC_APP" ]; then
+              MAC_ASSET="${MAC_APP#./}"
+              MAC_SIG="$(read_sig "$MAC_ASSET")"
+              MAC_URL="$(asset_url "${MAC_ASSET%.sig}")"
+            else
+              echo "::error::macOS build succeeded but no .app.tar.gz.sig was found; refusing to publish a release without macOS."
+              exit 1
+            fi
+          fi
+          if [ -z "$MAC_URL" ]; then
+            echo "::error::macOS build did not produce a manifest asset; refusing to publish a release without macOS."
+            exit 1
           fi
 
           # Linux: prefer AppImage (self-contained, portable for updater).
@@ -322,7 +355,7 @@ jobs:
           APPIMG="$(ls Skipi_${VERSION}_amd64*.AppImage.sig 2>/dev/null | head -n1 || true)"
           if [ -n "$APPIMG" ]; then
             LINUX_SIG="$(read_sig "$APPIMG")"
-            LINUX_URL="${BASE_URL}/${APPIMG%.sig}"
+            LINUX_URL="$(asset_url "${APPIMG%.sig}")"
           fi
           if [ -z "$LINUX_URL" ]; then
             echo "::error::Linux .AppImage.sig not found in release; manifest would be empty."
@@ -339,6 +372,8 @@ jobs:
             --arg win_url "$WIN_URL" \
             --arg linux_sig "$LINUX_SIG" \
             --arg linux_url "$LINUX_URL" \
+            --arg mac_sig "$MAC_SIG" \
+            --arg mac_url "$MAC_URL" \
             '
             def plat(sig; url):
               if (sig|length) > 0 and (url|length) > 0
@@ -352,6 +387,7 @@ jobs:
               platforms: (
                 {
                   "windows-x86_64": plat($win_sig; $win_url),
+                  "darwin-x86_64":  plat($mac_sig; $mac_url),
                   "linux-x86_64":   plat($linux_sig; $linux_url)
                 }
                 | with_entries(select(.value != null))

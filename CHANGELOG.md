@@ -7,6 +7,14 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.106] — 2026-05-06
+
+### Changed
+- Release pipeline now builds Linux, unsigned macOS Intel, and unsigned Windows
+  test artifacts for every tester release. All three platform jobs are
+  mandatory; `latest.json` refuses to publish if any platform updater artifact
+  or signature is missing.
+
 ## [0.4.105] — 2026-05-06
 
 ### Fixed
