@@ -188,7 +188,7 @@ jobs:
   build-macos:
     name: Build (macOS unsigned)
     needs: [syntax-check, version-check]
-    runs-on: macos-13
+    runs-on: macos-15-intel
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -249,6 +249,12 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-registry-
 
+      - name: Disable Authenticode config for tester build
+        shell: bash
+        run: |
+          set -eu
+          mv src-tauri/tauri.windows.conf.json src-tauri/tauri.windows.conf.json.disabled
+
       - name: Build Skipi (Windows)
         uses: tauri-apps/tauri-action@v0
         env:
@@ -258,7 +264,6 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Skipi ${{ github.ref_name }}"
-          args: --no-sign
           releaseDraft: false
           prerelease: false
 

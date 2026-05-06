@@ -4,9 +4,10 @@ Skipi can publish unsigned Windows installers for closed tester builds while
 Azure Trusted Signing is not configured. Public Windows distribution should use
 Authenticode signing before wider rollout.
 
-The release workflow currently passes `--no-sign` for Windows tester builds so
-Tauri does not execute `src-tauri/tauri.windows.conf.json`. Tauri updater
-signatures remain mandatory and are generated from `TAURI_SIGNING_PRIVATE_KEY`.
+The release workflow currently moves `src-tauri/tauri.windows.conf.json` out of
+the way for Windows tester builds so Tauri does not execute the Authenticode
+`signCommand`. Tauri updater signatures remain mandatory and are generated from
+`TAURI_SIGNING_PRIVATE_KEY`.
 
 ## Current status
 
@@ -57,7 +58,7 @@ This is the intended production path after Azure Trusted Signing is configured:
 1. A tag such as `v0.4.120` triggers `.github/workflows/release.yml`.
 2. The Windows job checks that all six Azure secrets are present.
 3. The Windows job installs `trusted-signing-cli`.
-4. Remove the tester-only `--no-sign` build argument.
+4. Remove the tester-only step that disables `tauri.windows.conf.json`.
 5. Tauri merges `src-tauri/tauri.windows.conf.json` for the Windows build.
 6. Tauri replaces `%1` in `signCommand` with the file being signed and calls:
 

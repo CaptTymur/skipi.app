@@ -7,6 +7,14 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.108] — 2026-05-06
+
+### Fixed
+- macOS tester release now uses the active Intel GitHub runner label
+  `macos-15-intel`.
+- Windows tester release now disables only the Authenticode config file during
+  CI, preserving Tauri updater `.sig` artifact generation.
+
 ## [0.4.107] — 2026-05-06
 
 ### Fixed
