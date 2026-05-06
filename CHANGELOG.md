@@ -7,6 +7,14 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.107] — 2026-05-06
+
+### Fixed
+- Windows tester builds now pass `--no-sign`, so the legacy
+  `tauri.windows.conf.json` Authenticode hook is not executed while Azure
+  Trusted Signing is not configured. Tauri updater signatures are still
+  required.
+
 ## [0.4.106] — 2026-05-06
 
 ### Changed

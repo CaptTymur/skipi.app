@@ -164,7 +164,7 @@ jobs:
             | Linux (universal) | `.AppImage` | minisign (updater) |
             | Linux (RPM-based) | `.rpm` | minisign (updater) |
             | macOS (Intel/test) | `.dmg` / `.app.tar.gz` | unsigned Apple bundle; minisign for updater |
-            | Windows (test) | `.msi` / `.exe` | unsigned Authenticode; minisign for updater |
+            | Windows (test) | `.msi` / `.exe` | no Authenticode; minisign for updater |
 
             ### What's new
 
@@ -258,6 +258,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Skipi ${{ github.ref_name }}"
+          args: --no-sign
           releaseDraft: false
           prerelease: false
 

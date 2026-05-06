@@ -1,18 +1,19 @@
 # Windows signing setup
 
-Skipi should not publish new unsigned Windows installers. The release workflow
-now validates Azure Trusted Signing secrets before the Windows build and Tauri
-uses `src-tauri/tauri.windows.conf.json` to sign every Windows binary/installer
-with `trusted-signing-cli`.
+Skipi can publish unsigned Windows installers for closed tester builds while
+Azure Trusted Signing is not configured. Public Windows distribution should use
+Authenticode signing before wider rollout.
 
-macOS builds are intentionally paused. This document covers Windows only.
+The release workflow currently passes `--no-sign` for Windows tester builds so
+Tauri does not execute `src-tauri/tauri.windows.conf.json`. Tauri updater
+signatures remain mandatory and are generated from `TAURI_SIGNING_PRIVATE_KEY`.
 
 ## Current status
 
 As of 2026-05-02, the GitHub repositories have the Tauri updater signing key,
 but the Azure Trusted Signing secrets are not configured yet. Until they are
-added, the next tagged release will fail in the Windows job before publishing
-an unsigned installer.
+added, tagged tester releases build unsigned `.exe` / `.msi` artifacts and
+publish updater signatures.
 
 Required repositories:
 
@@ -51,17 +52,20 @@ Existing updater signing secrets still remain required:
 
 ## How CI signs Windows releases
 
-1. A tag such as `v0.4.92` triggers `.github/workflows/release.yml`.
+This is the intended production path after Azure Trusted Signing is configured:
+
+1. A tag such as `v0.4.120` triggers `.github/workflows/release.yml`.
 2. The Windows job checks that all six Azure secrets are present.
 3. The Windows job installs `trusted-signing-cli`.
-4. Tauri merges `src-tauri/tauri.windows.conf.json` for the Windows build.
-5. Tauri replaces `%1` in `signCommand` with the file being signed and calls:
+4. Remove the tester-only `--no-sign` build argument.
+5. Tauri merges `src-tauri/tauri.windows.conf.json` for the Windows build.
+6. Tauri replaces `%1` in `signCommand` with the file being signed and calls:
 
 ```text
 trusted-signing-cli -e %AZURE_ENDPOINT% -a %AZURE_CODE_SIGNING_NAME% -c %AZURE_CERT_PROFILE_NAME% %1
 ```
 
-6. The GitHub Release is created only after the signed Windows build succeeds.
+7. The GitHub Release is created only after the signed Windows build succeeds.
 
 ## Important distinction
 
