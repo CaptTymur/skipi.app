@@ -69,7 +69,10 @@ pub struct MyIdentity {
 
 fn current_vault_path(state: &State<AppState>) -> Result<PathBuf, String> {
     let guard = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
-    guard.as_ref().cloned().ok_or_else(|| "No vault open".to_string())
+    guard
+        .as_ref()
+        .cloned()
+        .ok_or_else(|| "No vault open".to_string())
 }
 
 #[tauri::command]
@@ -95,7 +98,10 @@ pub fn register_my_pubkey(state: State<AppState>) -> Result<MyIdentity, String> 
         .timeout(std::time::Duration::from_secs(15))
         .build()
         .map_err(|e| e.to_string())?;
-    let resp = client.post(&url).json(&body).send()
+    let resp = client
+        .post(&url)
+        .json(&body)
+        .send()
         .map_err(|e| format!("network: {e}"))?;
     if !resp.status().is_success() {
         let s = resp.status();
@@ -116,12 +122,16 @@ fn lookup_pk(user_id: &str) -> Result<PublicKey, String> {
         .timeout(std::time::Duration::from_secs(10))
         .build()
         .map_err(|e| e.to_string())?;
-    let resp = client.get(&url).send().map_err(|e| format!("network: {e}"))?;
+    let resp = client
+        .get(&url)
+        .send()
+        .map_err(|e| format!("network: {e}"))?;
     if !resp.status().is_success() {
         return Err(format!("recipient pubkey not found: {}", resp.status()));
     }
     let parsed: PubkeyResp = resp.json().map_err(|e| format!("bad JSON: {e}"))?;
-    let raw = base64::engine::general_purpose::STANDARD.decode(&parsed.pubkey_b64)
+    let raw = base64::engine::general_purpose::STANDARD
+        .decode(&parsed.pubkey_b64)
         .map_err(|e| format!("bad b64: {e}"))?;
     if raw.len() != 32 {
         return Err(format!("pubkey size {} != 32", raw.len()));
@@ -165,14 +175,18 @@ pub fn send_encrypted_message(
     let recipient_pk = lookup_pk(&to_user_id)?;
     let salsa = SalsaBox::new(&recipient_pk, &sk);
     let nonce = SalsaBox::generate_nonce(&mut OsRng);
-    let ct = salsa.encrypt(&nonce, plaintext.as_bytes())
+    let ct = salsa
+        .encrypt(&nonce, plaintext.as_bytes())
         .map_err(|e| format!("encrypt: {e}"))?;
     let mut payload = Vec::with_capacity(24 + ct.len());
     payload.extend_from_slice(&nonce);
     payload.extend_from_slice(&ct);
     let ciphertext_b64 = base64::engine::general_purpose::STANDARD.encode(&payload);
 
-    let url = format!("{}/api/messaging/threads/{}/messages", PROD_API, application_id);
+    let url = format!(
+        "{}/api/messaging/threads/{}/messages",
+        PROD_API, application_id
+    );
     let body = serde_json::json!({
         "from_user_id": my_user_id,
         "to_user_id": to_user_id,
@@ -182,7 +196,10 @@ pub fn send_encrypted_message(
         .timeout(std::time::Duration::from_secs(20))
         .build()
         .map_err(|e| e.to_string())?;
-    let resp = client.post(&url).json(&body).send()
+    let resp = client
+        .post(&url)
+        .json(&body)
+        .send()
         .map_err(|e| format!("network: {e}"))?;
     if !resp.status().is_success() {
         let s = resp.status();
@@ -214,7 +231,7 @@ pub fn apply_via_e2e(
 ) -> Result<serde_json::Value, String> {
     let vault = current_vault_path(&state)?;
     let (_sk, _pk, my_user_id) = ensure_keypair(&vault)?;
-    let _ = (crewing_user_id, crewing_pubkey_b64);  // not needed at apply-time
+    let _ = (crewing_user_id, crewing_pubkey_b64); // not needed at apply-time
 
     let url = format!("{}/api/apply/{}/e2e", PROD_API, vacancy_id);
     let body = serde_json::json!({
@@ -226,7 +243,10 @@ pub fn apply_via_e2e(
         .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| e.to_string())?;
-    let resp = client.post(&url).json(&body).send()
+    let resp = client
+        .post(&url)
+        .json(&body)
+        .send()
         .map_err(|e| format!("network: {e}"))?;
     if !resp.status().is_success() {
         let s = resp.status();
@@ -252,7 +272,10 @@ pub fn fetch_messages(
         .timeout(std::time::Duration::from_secs(15))
         .build()
         .map_err(|e| e.to_string())?;
-    let resp = client.get(&url).send().map_err(|e| format!("network: {e}"))?;
+    let resp = client
+        .get(&url)
+        .send()
+        .map_err(|e| format!("network: {e}"))?;
     if !resp.status().is_success() {
         return Err(format!("server returned {}", resp.status()));
     }
@@ -273,7 +296,10 @@ pub fn fetch_messages(
             pk.clone()
         } else {
             match lookup_pk(&counterpart_id) {
-                Ok(pk) => { pk_cache.insert(counterpart_id.clone(), pk.clone()); pk }
+                Ok(pk) => {
+                    pk_cache.insert(counterpart_id.clone(), pk.clone());
+                    pk
+                }
                 Err(_) => continue,
             }
         };
@@ -282,7 +308,9 @@ pub fn fetch_messages(
             Ok(r) => r,
             Err(_) => continue,
         };
-        if raw.len() < 24 { continue; }
+        if raw.len() < 24 {
+            continue;
+        }
         let (nonce_bytes, ct) = raw.split_at(24);
         let nonce = crypto_box::Nonce::from_slice(nonce_bytes);
         let plaintext = match salsa.decrypt(nonce, ct) {
@@ -317,7 +345,12 @@ pub struct AttachmentMeta {
 }
 
 fn guess_mime_from_path(path: &Path) -> String {
-    match path.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase()).as_deref() {
+    match path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_lowercase())
+        .as_deref()
+    {
         Some("pdf") => "application/pdf".into(),
         Some("zip") => "application/zip".into(),
         Some("png") => "image/png".into(),
@@ -348,7 +381,8 @@ pub fn upload_encrypted_attachment(
     if bytes.len() > 10 * 1024 * 1024 {
         return Err("file too large (>10 MB)".into());
     }
-    let original_filename = path.file_name()
+    let original_filename = path
+        .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("file.bin")
         .to_string();
@@ -357,14 +391,18 @@ pub fn upload_encrypted_attachment(
 
     let salsa = SalsaBox::new(&recipient_pk, &sk);
     let nonce = SalsaBox::generate_nonce(&mut OsRng);
-    let ct = salsa.encrypt(&nonce, bytes.as_slice())
+    let ct = salsa
+        .encrypt(&nonce, bytes.as_slice())
         .map_err(|e| format!("encrypt: {e}"))?;
     let mut payload = Vec::with_capacity(24 + ct.len());
     payload.extend_from_slice(&nonce);
     payload.extend_from_slice(&ct);
     let ciphertext_b64 = base64::engine::general_purpose::STANDARD.encode(&payload);
 
-    let url = format!("{}/api/messaging/threads/{}/attachments", PROD_API, application_id);
+    let url = format!(
+        "{}/api/messaging/threads/{}/attachments",
+        PROD_API, application_id
+    );
     let body = serde_json::json!({
         "from_user_id": my_user_id,
         "to_user_id": to_user_id,
@@ -377,7 +415,10 @@ pub fn upload_encrypted_attachment(
         .timeout(std::time::Duration::from_secs(60))
         .build()
         .map_err(|e| e.to_string())?;
-    let resp = client.post(&url).json(&body).send()
+    let resp = client
+        .post(&url)
+        .json(&body)
+        .send()
         .map_err(|e| format!("network: {e}"))?;
     if !resp.status().is_success() {
         let s = resp.status();
@@ -409,12 +450,17 @@ pub fn download_encrypted_attachment(
         .timeout(std::time::Duration::from_secs(60))
         .build()
         .map_err(|e| e.to_string())?;
-    let resp = client.get(&url).send().map_err(|e| format!("network: {e}"))?;
+    let resp = client
+        .get(&url)
+        .send()
+        .map_err(|e| format!("network: {e}"))?;
     if !resp.status().is_success() {
         return Err(format!("server returned {}", resp.status()));
     }
     #[derive(Deserialize)]
-    struct Body { ciphertext_b64: String }
+    struct Body {
+        ciphertext_b64: String,
+    }
     let parsed: Body = resp.json().map_err(|e| format!("bad JSON: {e}"))?;
     let raw = base64::engine::general_purpose::STANDARD
         .decode(&parsed.ciphertext_b64)
@@ -425,7 +471,8 @@ pub fn download_encrypted_attachment(
     let (nonce_bytes, ct) = raw.split_at(24);
     let nonce = crypto_box::Nonce::from_slice(nonce_bytes);
     let salsa = SalsaBox::new(&counterpart_pk, &sk);
-    let plaintext = salsa.decrypt(nonce, ct)
+    let plaintext = salsa
+        .decrypt(nonce, ct)
         .map_err(|e| format!("decrypt: {e}"))?;
 
     let home = std::env::var_os("HOME")
@@ -437,8 +484,14 @@ pub fn download_encrypted_attachment(
     let mut target = dir.join(&original_filename);
     let mut idx = 1;
     while target.exists() {
-        let stem = Path::new(&original_filename).file_stem().and_then(|s| s.to_str()).unwrap_or("file");
-        let ext = Path::new(&original_filename).extension().and_then(|s| s.to_str()).unwrap_or("");
+        let stem = Path::new(&original_filename)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("file");
+        let ext = Path::new(&original_filename)
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
         let candidate = if ext.is_empty() {
             format!("{}_{}", stem, idx)
         } else {

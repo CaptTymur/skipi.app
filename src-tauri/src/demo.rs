@@ -19,8 +19,94 @@ use crate::frameworks;
 use crate::profiles;
 use rusqlite::Connection;
 use std::fs;
+use std::io::Cursor;
 use std::path::Path;
 use uuid::Uuid;
+
+static PACKAGED_DEMO_VAULT: &[u8] = include_bytes!("../resources/demo-vault.zip");
+
+fn extract_packaged_demo_vault(vault_path: &Path) -> Result<(), String> {
+    let parent = vault_path
+        .parent()
+        .ok_or_else(|| "Demo vault target must have a parent folder".to_string())?;
+    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+
+    let temp = parent.join(format!(".skipi-demo-{}", Uuid::new_v4()));
+    if temp.exists() {
+        let _ = fs::remove_dir_all(&temp);
+    }
+    fs::create_dir_all(&temp).map_err(|e| e.to_string())?;
+
+    let result = (|| -> Result<(), String> {
+        let reader = Cursor::new(PACKAGED_DEMO_VAULT);
+        let mut archive =
+            zip::ZipArchive::new(reader).map_err(|e| format!("invalid demo vault zip: {}", e))?;
+        let mut saw_db = false;
+
+        for i in 0..archive.len() {
+            let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
+            let enclosed = entry
+                .enclosed_name()
+                .ok_or_else(|| format!("Unsafe path in demo vault: {}", entry.name()))?;
+            if enclosed.as_os_str().is_empty() {
+                continue;
+            }
+
+            if enclosed == Path::new("skipi.db") {
+                saw_db = true;
+            }
+
+            let out_path = temp.join(&enclosed);
+            if entry.is_dir() {
+                fs::create_dir_all(&out_path).map_err(|e| e.to_string())?;
+                continue;
+            }
+
+            if let Some(parent) = out_path.parent() {
+                fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+            let mut out = fs::File::create(&out_path)
+                .map_err(|e| format!("create {}: {}", out_path.display(), e))?;
+            std::io::copy(&mut entry, &mut out)
+                .map_err(|e| format!("extract {}: {}", entry.name(), e))?;
+        }
+
+        if !saw_db {
+            return Err("Packaged demo vault does not contain skipi.db".to_string());
+        }
+
+        {
+            let conn = db::open_db(&temp).map_err(|e| format!("open packaged demo db: {}", e))?;
+            let _ = db::get_vault_info(&conn)
+                .map_err(|e| format!("read packaged demo metadata: {}", e))?;
+            db::set_vault_info(&conn, "is_demo", "1").map_err(|e| e.to_string())?;
+        }
+
+        if vault_path.exists() {
+            fs::remove_dir_all(vault_path).map_err(|e| e.to_string())?;
+        }
+        fs::rename(&temp, vault_path).map_err(|e| format!("finalize demo vault: {}", e))?;
+        Ok(())
+    })();
+
+    if result.is_err() {
+        let _ = fs::remove_dir_all(&temp);
+    }
+    result
+}
+
+pub fn populate_demo_vault(vault_path: &Path) -> Result<Connection, String> {
+    match extract_packaged_demo_vault(vault_path) {
+        Ok(()) => db::open_db(vault_path).map_err(|e| e.to_string()),
+        Err(err) => {
+            eprintln!(
+                "Packaged demo vault unavailable; falling back to synthetic demo: {}",
+                err
+            );
+            populate_synthetic_demo_vault(vault_path)
+        }
+    }
+}
 
 // ---------- PDF generation ---------------------------------------------------
 
@@ -272,7 +358,7 @@ fn demo_work_entries() -> Vec<DemoWork> {
 /// Create or overwrite a demo seafarer vault at `vault_path`.
 /// Returns the newly opened SQLite connection — the caller is responsible for
 /// storing it in AppState.
-pub fn populate_demo_vault(vault_path: &Path) -> Result<Connection, String> {
+fn populate_synthetic_demo_vault(vault_path: &Path) -> Result<Connection, String> {
     fs::create_dir_all(vault_path).map_err(|e| e.to_string())?;
     let conn = db::open_db(vault_path).map_err(|e| e.to_string())?;
 
@@ -300,16 +386,22 @@ pub fn populate_demo_vault(vault_path: &Path) -> Result<Connection, String> {
     db::set_vault_info(&conn, "personal_nationality", "Ukrainian").map_err(|e| e.to_string())?;
     db::set_vault_info(&conn, "personal_nationality_code", "UKR").map_err(|e| e.to_string())?;
     db::set_vault_info(&conn, "personal_phones", "+380 50 123 4567").map_err(|e| e.to_string())?;
-    db::set_vault_info(&conn, "personal_email", "a.seaborne@demo.skipi.app").map_err(|e| e.to_string())?;
-    db::set_vault_info(&conn, "personal_home_address", "Odesa, Ukraine").map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_email", "a.seaborne@demo.skipi.app")
+        .map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_home_address", "Odesa, Ukraine")
+        .map_err(|e| e.to_string())?;
     db::set_vault_info(&conn, "personal_rank", "Second Officer").map_err(|e| e.to_string())?;
-    db::set_vault_info(&conn, "personal_nearest_airport", "Odesa (ODS)").map_err(|e| e.to_string())?;
-    db::set_vault_info(&conn, "personal_nearest_intl_airport", "Istanbul (IST)").map_err(|e| e.to_string())?;
-    db::set_vault_info(&conn, "personal_available_from", "2026-05-15").map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_nearest_airport", "Odesa (ODS)")
+        .map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_nearest_intl_airport", "Istanbul (IST)")
+        .map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_available_from", "2026-05-15")
+        .map_err(|e| e.to_string())?;
     db::set_vault_info(&conn, "personal_min_salary", "4500").map_err(|e| e.to_string())?;
     db::set_vault_info(&conn, "personal_currency", "USD").map_err(|e| e.to_string())?;
     db::set_vault_info(&conn, "personal_ready_for_offers", "false").map_err(|e| e.to_string())?;
-    db::set_vault_info(&conn, "personal_preferred_messenger", "WhatsApp").map_err(|e| e.to_string())?;
+    db::set_vault_info(&conn, "personal_preferred_messenger", "WhatsApp")
+        .map_err(|e| e.to_string())?;
     db::set_vault_info(&conn, "personal_english_level", "Fluent").map_err(|e| e.to_string())?;
     db::set_vault_info(&conn, "personal_marital_status", "Single").map_err(|e| e.to_string())?;
     db::set_vault_info(&conn, "personal_height_cm", "182").map_err(|e| e.to_string())?;
@@ -359,7 +451,13 @@ pub fn populate_demo_vault(vault_path: &Path) -> Result<Connection, String> {
             let safe_title: String = rec
                 .title
                 .chars()
-                .map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' { c } else { '_' })
+                .map(|c| {
+                    if c.is_alphanumeric() || c == ' ' || c == '-' {
+                        c
+                    } else {
+                        '_'
+                    }
+                })
                 .collect();
             let file_name = format!("{}.pdf", safe_title.trim());
             let file_path = vault_path.join(&rec.category).join(&file_name);
@@ -394,4 +492,27 @@ pub fn populate_demo_vault(vault_path: &Path) -> Result<Connection, String> {
     }
 
     Ok(conn)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn packaged_demo_vault_has_db_and_no_runtime_secrets() {
+        let reader = Cursor::new(PACKAGED_DEMO_VAULT);
+        let mut archive = zip::ZipArchive::new(reader).expect("demo zip opens");
+        let mut names = Vec::new();
+        for i in 0..archive.len() {
+            names.push(archive.by_index(i).unwrap().name().to_string());
+        }
+
+        assert!(names.iter().any(|n| n == "skipi.db"));
+        assert!(names.iter().any(|n| n == "_profile/photo.jpg"));
+        assert!(!names.iter().any(|n| n.starts_with("_identity/")));
+        assert!(!names.iter().any(|n| n.starts_with("_packages/")));
+        assert!(!names.iter().any(|n| n.starts_with("_dispatch/")));
+        assert!(!names.iter().any(|n| n == "skipi.db-wal"));
+        assert!(!names.iter().any(|n| n == "skipi.db-shm"));
+    }
 }

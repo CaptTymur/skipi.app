@@ -64,10 +64,7 @@ fn derive_user_id(pubkey: &[u8; 32]) -> String {
 /// Called from create_*_vault paths AFTER reset_vault_content so the
 /// identity survives any content wipe. This function is idempotent —
 /// calling it on an existing vault is a no-op beyond re-stamping vault_info.
-pub fn ensure_vault_identity(
-    conn: &Connection,
-    vault_path: &Path,
-) -> Result<(), String> {
+pub fn ensure_vault_identity(conn: &Connection, vault_path: &Path) -> Result<(), String> {
     let dir = identity_dir(vault_path);
     fs::create_dir_all(&dir).map_err(|e| format!("identity dir: {}", e))?;
 
@@ -101,12 +98,8 @@ pub fn ensure_vault_identity(
 
     db::set_vault_info(conn, "identity_pubkey", &pub_hex).map_err(|e| e.to_string())?;
     db::set_vault_info(conn, "user_id", &user_id).map_err(|e| e.to_string())?;
-    db::set_vault_info(
-        conn,
-        "identity_version",
-        &IDENTITY_VERSION.to_string(),
-    )
-    .map_err(|e| e.to_string())?;
+    db::set_vault_info(conn, "identity_version", &IDENTITY_VERSION.to_string())
+        .map_err(|e| e.to_string())?;
 
     Ok(())
 }

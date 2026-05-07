@@ -1,5 +1,5 @@
-use crate::db;
 use crate::cv;
+use crate::db;
 use crate::AppState;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -66,7 +66,11 @@ fn spawn_thunderbird_compose_win(
         escape(to),
         escape(subject),
         escape(body),
-        if uri_list.is_empty() { String::new() } else { format!(",attachment={}", escape(&uri_list)) },
+        if uri_list.is_empty() {
+            String::new()
+        } else {
+            format!(",attachment={}", escape(&uri_list))
+        },
     );
 
     // Try PATH first, then common install locations. `thunderbird` may be
@@ -96,9 +100,13 @@ fn spawn_thunderbird_compose_win(
 #[cfg(target_os = "windows")]
 fn classify_mail_client_id(name: &str) -> &'static str {
     let lc = name.to_lowercase();
-    if lc.contains("outlook") { "outlook" }
-    else if lc.contains("thunderbird") { "thunderbird" }
-    else { "mailto" }
+    if lc.contains("outlook") {
+        "outlook"
+    } else if lc.contains("thunderbird") {
+        "thunderbird"
+    } else {
+        "mailto"
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -110,7 +118,8 @@ fn list_mail_clients_win() -> Vec<serde_json::Value> {
     // Installers (Outlook, Thunderbird, eM Client, Mailspring, etc.) add
     // themselves here; Windows itself registers "Windows Mail" on older
     // builds.
-    let ps_script = "Get-ChildItem 'HKLM:\\Software\\Clients\\Mail' -ErrorAction SilentlyContinue | \
+    let ps_script =
+        "Get-ChildItem 'HKLM:\\Software\\Clients\\Mail' -ErrorAction SilentlyContinue | \
                      ForEach-Object { $_.PSChildName }";
 
     let output = std::process::Command::new("powershell")
@@ -125,8 +134,12 @@ fn list_mail_clients_win() -> Vec<serde_json::Value> {
             let s = String::from_utf8_lossy(&out.stdout);
             for line in s.lines() {
                 let name = line.trim();
-                if name.is_empty() { continue; }
-                if !seen.insert(name.to_lowercase()) { continue; }
+                if name.is_empty() {
+                    continue;
+                }
+                if !seen.insert(name.to_lowercase()) {
+                    continue;
+                }
                 let id = classify_mail_client_id(name);
                 clients.push(serde_json::json!({
                     "id": id,
@@ -145,9 +158,13 @@ fn list_mail_clients_win() -> Vec<serde_json::Value> {
 #[tauri::command]
 pub fn list_mail_clients() -> Vec<serde_json::Value> {
     #[cfg(target_os = "windows")]
-    { list_mail_clients_win() }
+    {
+        list_mail_clients_win()
+    }
     #[cfg(not(target_os = "windows"))]
-    { Vec::new() }
+    {
+        Vec::new()
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -267,7 +284,8 @@ pub fn create_package(
 
     let file = fs::File::create(&zip_path).map_err(|e| e.to_string())?;
     let mut zip = zip::ZipWriter::new(file);
-    let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
 
     for doc_id in &doc_ids {
         let doc = all_docs.iter().find(|d| &d.id == doc_id);
@@ -276,7 +294,8 @@ pub fn create_package(
                 let src = vault_path.join(&doc.category).join(fname);
                 if src.exists() {
                     let data = fs::read(&src).map_err(|e| e.to_string())?;
-                    zip.start_file(fname.clone(), options).map_err(|e| e.to_string())?;
+                    zip.start_file(fname.clone(), options)
+                        .map_err(|e| e.to_string())?;
                     use std::io::Write;
                     zip.write_all(&data).map_err(|e| e.to_string())?;
 
@@ -300,11 +319,17 @@ pub fn get_packages(state: State<AppState>) -> Result<Vec<db::PackageRecord>, St
 }
 
 #[tauri::command]
-pub fn export_package(state: State<AppState>, package_id: String, dest_path: String) -> Result<(), String> {
+pub fn export_package(
+    state: State<AppState>,
+    package_id: String,
+    dest_path: String,
+) -> Result<(), String> {
     let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
     let vault_path = vault_lock.as_ref().ok_or("No vault open")?;
 
-    let zip_src = vault_path.join("_packages").join(format!("{}.zip", package_id));
+    let zip_src = vault_path
+        .join("_packages")
+        .join(format!("{}.zip", package_id));
     if !zip_src.exists() {
         return Err("Package ZIP not found".to_string());
     }
@@ -320,7 +345,9 @@ pub fn delete_package(state: State<AppState>, package_id: String) -> Result<(), 
     let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = conn_lock.as_ref().ok_or("No vault open")?;
 
-    let zip_path = vault_path.join("_packages").join(format!("{}.zip", package_id));
+    let zip_path = vault_path
+        .join("_packages")
+        .join(format!("{}.zip", package_id));
     if zip_path.exists() {
         let _ = fs::remove_file(zip_path);
     }
@@ -360,11 +387,19 @@ pub fn open_file_in_default(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn open_email_with_attachment(state: State<AppState>, package_id: String, to: String, subject: String, body: Option<String>) -> Result<String, String> {
+pub fn open_email_with_attachment(
+    state: State<AppState>,
+    package_id: String,
+    to: String,
+    subject: String,
+    body: Option<String>,
+) -> Result<String, String> {
     let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
     let vault_path = vault_lock.as_ref().ok_or("No vault open")?;
 
-    let zip_path = vault_path.join("_packages").join(format!("{}.zip", package_id));
+    let zip_path = vault_path
+        .join("_packages")
+        .join(format!("{}.zip", package_id));
     if !zip_path.exists() {
         return Err("Package ZIP not found".to_string());
     }
@@ -375,8 +410,8 @@ pub fn open_email_with_attachment(state: State<AppState>, package_id: String, to
     {
         // See stage_attachment_for_mail — vault paths with spaces break
         // mail client attach parsing, so we stage into ~/Downloads/Skipi.
-        let staged = stage_attachment_for_mail(&zip_path, "documents")
-            .unwrap_or_else(|_| zip_path.clone());
+        let staged =
+            stage_attachment_for_mail(&zip_path, "documents").unwrap_or_else(|_| zip_path.clone());
         let attach = staged.to_string_lossy().to_string();
         let staged_vec = vec![staged.clone()];
 
@@ -385,8 +420,10 @@ pub fn open_email_with_attachment(state: State<AppState>, package_id: String, to
         let tb_ok = spawn_thunderbird_compose(&to, &subject, &body_str, &staged_vec).is_ok();
         if !tb_ok {
             let mut cmd = std::process::Command::new("xdg-email");
-            cmd.arg("--attach").arg(&attach)
-               .arg("--subject").arg(&subject);
+            cmd.arg("--attach")
+                .arg(&attach)
+                .arg("--subject")
+                .arg(&subject);
             if !body_str.is_empty() {
                 cmd.arg("--body").arg(&body_str);
             }
@@ -419,7 +456,10 @@ pub fn open_email_with_attachment(state: State<AppState>, package_id: String, to
             end tell"#,
             subject, to, zip_str
         );
-        let _ = std::process::Command::new("osascript").arg("-e").arg(&script).spawn();
+        let _ = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(&script)
+            .spawn();
     }
     #[cfg(target_os = "windows")]
     {
@@ -492,8 +532,7 @@ pub fn dispatch_package(
     // v0.4.51: frontend passes the user's preferred mail client id so the
     // Windows branch can route straight to the right integration instead of
     // always trying Outlook COM first. `None` keeps the legacy behaviour.
-    #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
-    mail_client: Option<String>,
+    #[cfg_attr(not(target_os = "windows"), allow(unused_variables))] mail_client: Option<String>,
 ) -> Result<serde_json::Value, String> {
     if recipients.is_empty() {
         return Err("At least one recipient is required".to_string());
@@ -501,7 +540,8 @@ pub fn dispatch_package(
     // Default to true so older callers (e.g. /api or any pre-v0.4.21 clients)
     // keep the "CV + package" behaviour they used to see.
     let include_cv = include_cv.unwrap_or(true);
-    let pkg_id_opt: Option<String> = package_id.and_then(|s| if s.is_empty() { None } else { Some(s) });
+    let pkg_id_opt: Option<String> =
+        package_id.and_then(|s| if s.is_empty() { None } else { Some(s) });
 
     if pkg_id_opt.is_none() && !include_cv {
         return Err("Nothing to send — tick CV or pick a package".to_string());
@@ -549,7 +589,10 @@ pub fn dispatch_package(
         cv::render_cv_pdf(&cv_data, &cv_pdf_path, photo_abs.as_deref())?;
     }
 
-    let zip_str = zip_path_opt.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
+    let zip_str = zip_path_opt
+        .as_ref()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
     let cv_str = cv_pdf_path.to_string_lossy().to_string();
     let to_joined = recipients.join(",");
 
@@ -560,8 +603,9 @@ pub fn dispatch_package(
         // spaces / non-ASCII that break attach parsing).
         let mut staged_paths: Vec<std::path::PathBuf> = Vec::new();
         if let Some(zip_path) = &zip_path_opt {
-            let staged_zip = stage_attachment_for_mail(zip_path, &format!("{}_documents", name_safe))
-                .unwrap_or_else(|_| zip_path.clone());
+            let staged_zip =
+                stage_attachment_for_mail(zip_path, &format!("{}_documents", name_safe))
+                    .unwrap_or_else(|_| zip_path.clone());
             staged_paths.push(staged_zip);
         }
         if include_cv {
@@ -581,9 +625,11 @@ pub fn dispatch_package(
             for p in &staged_paths {
                 cmd.arg("--attach").arg(p.to_string_lossy().as_ref());
             }
-            cmd.arg("--subject").arg(&subject)
-               .arg("--body").arg(&body)
-               .arg(&to_joined);
+            cmd.arg("--subject")
+                .arg(&subject)
+                .arg("--body")
+                .arg(&body)
+                .arg(&to_joined);
             cmd.spawn().map_err(|e| e.to_string())?;
         }
 
@@ -636,8 +682,12 @@ pub fn dispatch_package(
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         // Collect attachment paths
         let mut attachments: Vec<String> = Vec::new();
-        if !zip_str.is_empty() { attachments.push(zip_str.clone()); }
-        if include_cv { attachments.push(cv_str.clone()); }
+        if !zip_str.is_empty() {
+            attachments.push(zip_str.clone());
+        }
+        if include_cv {
+            attachments.push(cv_str.clone());
+        }
 
         // v0.4.51: route by user's preferred client.
         // `None` or unknown → fall through to Outlook COM → mailto fallback
@@ -651,11 +701,13 @@ pub fn dispatch_package(
         let mut handled = false;
 
         if try_thunderbird {
-            handled = spawn_thunderbird_compose_win(&to_joined, &subject, &body, &attachments).is_ok();
+            handled =
+                spawn_thunderbird_compose_win(&to_joined, &subject, &body, &attachments).is_ok();
         }
 
         if !handled && try_outlook {
-            let attach_ps: String = attachments.iter()
+            let attach_ps: String = attachments
+                .iter()
                 .map(|a| format!("$m.Attachments.Add('{}')", a.replace('\'', "''")))
                 .collect::<Vec<_>>()
                 .join("; ");
@@ -722,15 +774,8 @@ pub fn dispatch_package(
         // "cv_only" is a sentinel for dispatches that carry no package —
         // history view treats it as a CV-only send.
         let pkg_ref = pkg_id_opt.as_deref().unwrap_or("cv_only");
-        db::add_dispatch(
-            conn,
-            &disp_id,
-            pkg_ref,
-            &to_joined,
-            &subject,
-            &cv_str,
-        )
-        .map_err(|e| e.to_string())?;
+        db::add_dispatch(conn, &disp_id, pkg_ref, &to_joined, &subject, &cv_str)
+            .map_err(|e| e.to_string())?;
     }
 
     Ok(serde_json::json!({

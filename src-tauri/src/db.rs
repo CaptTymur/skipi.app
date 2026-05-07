@@ -1,4 +1,4 @@
-use rusqlite::{Connection, Result, params};
+use rusqlite::{params, Connection, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 #[cfg(unix)]
@@ -66,7 +66,9 @@ pub struct VaultInfo {
 /// Because of `IF NOT EXISTS` it's safe to re-run on fresh vaults.
 fn migrations() -> Vec<(u32, &'static str)> {
     vec![
-        (1, r#"
+        (
+            1,
+            r#"
             CREATE TABLE IF NOT EXISTS vault_info (
                 key TEXT PRIMARY KEY,
                 value TEXT
@@ -130,9 +132,12 @@ fn migrations() -> Vec<(u32, &'static str)> {
                 kind TEXT,
                 FOREIGN KEY(entry_id) REFERENCES work_history(id) ON DELETE CASCADE
             );
-        "#),
+        "#,
+        ),
         // Dispatch history (Рассылка): record of each package + CV send-off
-        (2, r#"
+        (
+            2,
+            r#"
             CREATE TABLE IF NOT EXISTS dispatches (
                 id TEXT PRIMARY KEY,
                 package_id TEXT NOT NULL,
@@ -141,7 +146,8 @@ fn migrations() -> Vec<(u32, &'static str)> {
                 cv_path TEXT,
                 created_at TEXT NOT NULL
             );
-        "#),
+        "#,
+        ),
         // Phase-2 readiness — see docs/ARCHITECTURE_PHASE2.md (I-4..I-6).
         //   * Content-addressable columns on documents so the phase-2 server
         //     and receiving parties can verify integrity and diff versions
@@ -156,7 +162,9 @@ fn migrations() -> Vec<(u32, &'static str)> {
         // already exists so re-running on freshly-created vaults is safe.
         // rusqlite does not support "ALTER TABLE ... ADD COLUMN IF NOT EXISTS"
         // so we rely on the migration version check to run this exactly once.
-        (3, r#"
+        (
+            3,
+            r#"
             ALTER TABLE documents ADD COLUMN sha256 TEXT;
             ALTER TABLE documents ADD COLUMN file_size INTEGER;
             ALTER TABLE documents ADD COLUMN content_type TEXT;
@@ -170,28 +178,38 @@ fn migrations() -> Vec<(u32, &'static str)> {
                 payload_json TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
-        "#),
+        "#,
+        ),
         // Migration 4: is_national flag for Seaman's Books and CoCs.
         // Only one document per category can be marked national.
-        (4, r#"
+        (
+            4,
+            r#"
             ALTER TABLE documents ADD COLUMN is_national INTEGER NOT NULL DEFAULT 0;
-        "#),
+        "#,
+        ),
         // Migration 5: evidence_folder on work-history entries — absolute
         // path to a folder on the user's device that holds contract evidence
         // (photos aboard, crew list, discharge letter, payslips). Skipi only
         // stores the pointer; files live outside the vault and Skipi opens
         // the folder in the OS file manager on request.
-        (5, r#"
+        (
+            5,
+            r#"
             ALTER TABLE work_history ADD COLUMN evidence_folder TEXT;
-        "#),
+        "#,
+        ),
         // Migration 6: promote AI corrections into a local OCR-label stream.
         // Values may contain document identifiers and OCR text, so this stays
         // inside the private vault unless the user explicitly exports labels.
-        (6, r#"
+        (
+            6,
+            r#"
             ALTER TABLE ai_corrections ADD COLUMN doc_id TEXT;
             ALTER TABLE ai_corrections ADD COLUMN file_sha256 TEXT;
             ALTER TABLE ai_corrections ADD COLUMN label_json TEXT;
-        "#),
+        "#,
+        ),
     ]
 }
 
@@ -202,15 +220,21 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
         "CREATE TABLE IF NOT EXISTS schema_migrations (
             version INTEGER PRIMARY KEY,
             applied_at TEXT NOT NULL
-        );"
+        );",
     )?;
 
     let current: u32 = conn
-        .query_row("SELECT COALESCE(MAX(version), 0) FROM schema_migrations", [], |r| r.get(0))
+        .query_row(
+            "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+            [],
+            |r| r.get(0),
+        )
         .unwrap_or(0);
 
     for (v, sql) in migrations() {
-        if v <= current { continue; }
+        if v <= current {
+            continue;
+        }
         let tx = conn.transaction()?;
         tx.execute_batch(sql)?;
         tx.execute(
@@ -238,7 +262,9 @@ fn legacy_backfill(conn: &Connection) -> Result<()> {
             |_| Ok(true),
         )
         .unwrap_or(false);
-    if !has_docs { return Ok(()); }
+    if !has_docs {
+        return Ok(());
+    }
 
     let baseline_applied: bool = conn
         .query_row(
@@ -247,13 +273,18 @@ fn legacy_backfill(conn: &Connection) -> Result<()> {
             |_| Ok(true),
         )
         .unwrap_or(false);
-    if baseline_applied { return Ok(()); }
+    if baseline_applied {
+        return Ok(());
+    }
 
     // Run legacy ALTERs idempotently (errors ignored when column exists).
     let _ = conn.execute("ALTER TABLE documents ADD COLUMN valid_from TEXT", []);
     let _ = conn.execute("ALTER TABLE documents ADD COLUMN issued_by TEXT", []);
     let _ = conn.execute("ALTER TABLE documents ADD COLUMN doc_number TEXT", []);
-    let _ = conn.execute("ALTER TABLE documents ADD COLUMN field_statuses TEXT DEFAULT '{}'", []);
+    let _ = conn.execute(
+        "ALTER TABLE documents ADD COLUMN field_statuses TEXT DEFAULT '{}'",
+        [],
+    );
     let _ = conn.execute("ALTER TABLE documents ADD COLUMN regulatory_basis TEXT", []);
     let _ = conn.execute("ALTER TABLE documents ADD COLUMN template_id TEXT", []);
 
@@ -356,9 +387,17 @@ pub fn get_vault_info(conn: &Connection) -> Result<VaultInfo> {
             "SELECT value FROM vault_info WHERE key = ?1",
             params![key],
             |row| row.get(0),
-        ).unwrap_or_default()
+        )
+        .unwrap_or_default()
     };
-    let opt = |k: &str| { let v = get(k); if v.is_empty() { None } else { Some(v) } };
+    let opt = |k: &str| {
+        let v = get(k);
+        if v.is_empty() {
+            None
+        } else {
+            Some(v)
+        }
+    };
     Ok(VaultInfo {
         account_type: get("account_type"),
         name: get("name"),
@@ -377,10 +416,24 @@ pub fn insert_doc(conn: &Connection, doc: &DocRecord) -> Result<()> {
              template_id, sha256, file_size, content_type, visibility, is_national)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
         params![
-            doc.id, doc.category, doc.title, doc.file_name, doc.has_expiry as i32,
-            doc.valid_from, doc.valid_to, doc.issued_by, doc.doc_number, doc.notes,
-            doc.field_statuses, doc.regulatory_basis, doc.template_id,
-            doc.sha256, doc.file_size, doc.content_type, doc.visibility, doc.is_national as i32,
+            doc.id,
+            doc.category,
+            doc.title,
+            doc.file_name,
+            doc.has_expiry as i32,
+            doc.valid_from,
+            doc.valid_to,
+            doc.issued_by,
+            doc.doc_number,
+            doc.notes,
+            doc.field_statuses,
+            doc.regulatory_basis,
+            doc.template_id,
+            doc.sha256,
+            doc.file_size,
+            doc.content_type,
+            doc.visibility,
+            doc.is_national as i32,
         ],
     )?;
     Ok(())
@@ -391,31 +444,35 @@ pub fn get_all_docs(conn: &Connection) -> Result<Vec<DocRecord>> {
         "SELECT id, category, title, file_name, has_expiry, valid_from, valid_to,
                 issued_by, doc_number, notes, field_statuses, regulatory_basis,
                 template_id, sha256, file_size, content_type, visibility, is_national
-         FROM documents ORDER BY category, is_national DESC, title"
+         FROM documents ORDER BY category, is_national DESC, title",
     )?;
-    let docs = stmt.query_map([], |row| {
-        Ok(DocRecord {
-            id: row.get(0)?,
-            category: row.get(1)?,
-            title: row.get(2)?,
-            file_name: row.get(3)?,
-            has_expiry: row.get::<_, i32>(4)? != 0,
-            valid_from: row.get(5)?,
-            valid_to: row.get(6)?,
-            issued_by: row.get(7)?,
-            doc_number: row.get(8)?,
-            notes: row.get(9)?,
-            field_statuses: row.get(10).unwrap_or(None),
-            regulatory_basis: row.get(11).unwrap_or(None),
-            template_id: row.get(12).unwrap_or(None),
-            sha256: row.get(13).unwrap_or(None),
-            file_size: row.get(14).unwrap_or(None),
-            content_type: row.get(15).unwrap_or(None),
-            visibility: row.get::<_, Option<String>>(16).unwrap_or(None)
-                .unwrap_or_else(default_visibility),
-            is_national: row.get::<_, i32>(17).unwrap_or(0) != 0,
-        })
-    })?.collect::<Result<Vec<_>>>()?;
+    let docs = stmt
+        .query_map([], |row| {
+            Ok(DocRecord {
+                id: row.get(0)?,
+                category: row.get(1)?,
+                title: row.get(2)?,
+                file_name: row.get(3)?,
+                has_expiry: row.get::<_, i32>(4)? != 0,
+                valid_from: row.get(5)?,
+                valid_to: row.get(6)?,
+                issued_by: row.get(7)?,
+                doc_number: row.get(8)?,
+                notes: row.get(9)?,
+                field_statuses: row.get(10).unwrap_or(None),
+                regulatory_basis: row.get(11).unwrap_or(None),
+                template_id: row.get(12).unwrap_or(None),
+                sha256: row.get(13).unwrap_or(None),
+                file_size: row.get(14).unwrap_or(None),
+                content_type: row.get(15).unwrap_or(None),
+                visibility: row
+                    .get::<_, Option<String>>(16)
+                    .unwrap_or(None)
+                    .unwrap_or_else(default_visibility),
+                is_national: row.get::<_, i32>(17).unwrap_or(0) != 0,
+            })
+        })?
+        .collect::<Result<Vec<_>>>()?;
     Ok(docs)
 }
 
@@ -469,7 +526,10 @@ pub fn log_event(
 }
 
 pub fn update_doc_expiry(conn: &Connection, id: &str, valid_to: &str) -> Result<()> {
-    conn.execute("UPDATE documents SET valid_to = ?1 WHERE id = ?2", params![valid_to, id])?;
+    conn.execute(
+        "UPDATE documents SET valid_to = ?1 WHERE id = ?2",
+        params![valid_to, id],
+    )?;
     Ok(())
 }
 
@@ -487,12 +547,18 @@ pub fn update_doc_field(conn: &Connection, id: &str, field: &str, value: &str) -
 }
 
 pub fn update_field_statuses(conn: &Connection, id: &str, statuses_json: &str) -> Result<()> {
-    conn.execute("UPDATE documents SET field_statuses = ?1 WHERE id = ?2", params![statuses_json, id])?;
+    conn.execute(
+        "UPDATE documents SET field_statuses = ?1 WHERE id = ?2",
+        params![statuses_json, id],
+    )?;
     Ok(())
 }
 
 pub fn update_doc_file(conn: &Connection, id: &str, file_name: &str) -> Result<()> {
-    conn.execute("UPDATE documents SET file_name = ?1 WHERE id = ?2", params![file_name, id])?;
+    conn.execute(
+        "UPDATE documents SET file_name = ?1 WHERE id = ?2",
+        params![file_name, id],
+    )?;
     Ok(())
 }
 
@@ -518,7 +584,14 @@ pub struct PackageFileRecord {
     pub file_name: String,
 }
 
-pub fn create_package(conn: &Connection, id: &str, title: &str, expires_on: &str, download_limit: i32, password: Option<&str>) -> Result<()> {
+pub fn create_package(
+    conn: &Connection,
+    id: &str,
+    title: &str,
+    expires_on: &str,
+    download_limit: i32,
+    password: Option<&str>,
+) -> Result<()> {
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
     conn.execute(
         "INSERT INTO packages (id, title, created_on, expires_on, download_limit, password) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -527,7 +600,13 @@ pub fn create_package(conn: &Connection, id: &str, title: &str, expires_on: &str
     Ok(())
 }
 
-pub fn add_package_file(conn: &Connection, id: &str, package_id: &str, doc_id: &str, file_name: &str) -> Result<()> {
+pub fn add_package_file(
+    conn: &Connection,
+    id: &str,
+    package_id: &str,
+    doc_id: &str,
+    file_name: &str,
+) -> Result<()> {
     conn.execute(
         "INSERT INTO package_files (id, package_id, doc_id, file_name) VALUES (?1, ?2, ?3, ?4)",
         params![id, package_id, doc_id, file_name],
@@ -541,39 +620,49 @@ pub fn get_all_packages(conn: &Connection) -> Result<Vec<PackageRecord>> {
                 (SELECT COUNT(*) FROM package_files WHERE package_id = p.id)
          FROM packages p ORDER BY p.created_on DESC"
     )?;
-    let pkgs = stmt.query_map([], |row| {
-        Ok(PackageRecord {
-            id: row.get(0)?,
-            title: row.get(1)?,
-            created_on: row.get(2)?,
-            expires_on: row.get(3)?,
-            download_count: row.get(4)?,
-            download_limit: row.get(5)?,
-            password: row.get(6)?,
-            file_count: row.get(7)?,
-        })
-    })?.collect::<Result<Vec<_>>>()?;
+    let pkgs = stmt
+        .query_map([], |row| {
+            Ok(PackageRecord {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                created_on: row.get(2)?,
+                expires_on: row.get(3)?,
+                download_count: row.get(4)?,
+                download_limit: row.get(5)?,
+                password: row.get(6)?,
+                file_count: row.get(7)?,
+            })
+        })?
+        .collect::<Result<Vec<_>>>()?;
     Ok(pkgs)
 }
 
 pub fn get_package_files(conn: &Connection, package_id: &str) -> Result<Vec<PackageFileRecord>> {
     let mut stmt = conn.prepare(
-        "SELECT id, package_id, doc_id, file_name FROM package_files WHERE package_id = ?1"
+        "SELECT id, package_id, doc_id, file_name FROM package_files WHERE package_id = ?1",
     )?;
-    let files = stmt.query_map(params![package_id], |row| {
-        Ok(PackageFileRecord {
-            id: row.get(0)?,
-            package_id: row.get(1)?,
-            doc_id: row.get(2)?,
-            file_name: row.get(3)?,
-        })
-    })?.collect::<Result<Vec<_>>>()?;
+    let files = stmt
+        .query_map(params![package_id], |row| {
+            Ok(PackageFileRecord {
+                id: row.get(0)?,
+                package_id: row.get(1)?,
+                doc_id: row.get(2)?,
+                file_name: row.get(3)?,
+            })
+        })?
+        .collect::<Result<Vec<_>>>()?;
     Ok(files)
 }
 
 // --- AI Corrections (learning from user edits) ---
 
-pub fn save_correction(conn: &Connection, doc_type: &str, field_name: &str, ai_value: &str, correct_value: &str) -> Result<()> {
+pub fn save_correction(
+    conn: &Connection,
+    doc_type: &str,
+    field_name: &str,
+    ai_value: &str,
+    correct_value: &str,
+) -> Result<()> {
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
     conn.execute(
         "INSERT INTO ai_corrections (doc_type, field_name, ai_value, correct_value, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -602,7 +691,8 @@ pub fn save_ocr_label(
         "human_label": correct_value,
         "file_sha256": file_sha256,
         "created_at": now,
-    }).to_string();
+    })
+    .to_string();
     conn.execute(
         "INSERT INTO ai_corrections
          (doc_type, field_name, ai_value, correct_value, created_at, doc_id, file_sha256, label_json)
@@ -616,14 +706,23 @@ pub fn get_corrections(conn: &Connection, doc_type: &str) -> Result<Vec<(String,
     let mut stmt = conn.prepare(
         "SELECT field_name, ai_value, correct_value FROM ai_corrections WHERE doc_type = ?1 ORDER BY created_at DESC LIMIT 10"
     )?;
-    let rows = stmt.query_map(params![doc_type], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
-    })?.collect::<Result<Vec<_>>>()?;
+    let rows = stmt
+        .query_map(params![doc_type], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>>>()?;
     Ok(rows)
 }
 
 pub fn delete_package(conn: &Connection, id: &str) -> Result<()> {
-    conn.execute("DELETE FROM package_files WHERE package_id = ?1", params![id])?;
+    conn.execute(
+        "DELETE FROM package_files WHERE package_id = ?1",
+        params![id],
+    )?;
     conn.execute("DELETE FROM packages WHERE id = ?1", params![id])?;
     Ok(())
 }
@@ -635,7 +734,9 @@ pub fn get_vault_info_value(conn: &Connection, key: &str) -> Option<String> {
         "SELECT value FROM vault_info WHERE key = ?1",
         params![key],
         |row| row.get::<_, String>(0),
-    ).ok().filter(|s| !s.is_empty())
+    )
+    .ok()
+    .filter(|s| !s.is_empty())
 }
 
 // --- Work history ---
@@ -667,26 +768,32 @@ pub fn get_work_history(conn: &Connection) -> Result<Vec<serde_json::Value>> {
         "SELECT id, vessel_name, vessel_type, imo, flag, company, position, sign_on, sign_off, notes, created_at, evidence_folder
          FROM work_history ORDER BY COALESCE(sign_on, created_at) DESC"
     )?;
-    let rows = stmt.query_map([], |row| {
-        Ok(serde_json::json!({
-            "id": row.get::<_, String>(0)?,
-            "vessel_name": row.get::<_, String>(1)?,
-            "vessel_type": row.get::<_, Option<String>>(2)?,
-            "imo": row.get::<_, Option<String>>(3)?,
-            "flag": row.get::<_, Option<String>>(4)?,
-            "company": row.get::<_, Option<String>>(5)?,
-            "position": row.get::<_, String>(6)?,
-            "sign_on": row.get::<_, Option<String>>(7)?,
-            "sign_off": row.get::<_, Option<String>>(8)?,
-            "notes": row.get::<_, Option<String>>(9)?,
-            "created_at": row.get::<_, String>(10)?,
-            "evidence_folder": row.get::<_, Option<String>>(11)?,
-        }))
-    })?.collect::<Result<Vec<_>>>()?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(serde_json::json!({
+                "id": row.get::<_, String>(0)?,
+                "vessel_name": row.get::<_, String>(1)?,
+                "vessel_type": row.get::<_, Option<String>>(2)?,
+                "imo": row.get::<_, Option<String>>(3)?,
+                "flag": row.get::<_, Option<String>>(4)?,
+                "company": row.get::<_, Option<String>>(5)?,
+                "position": row.get::<_, String>(6)?,
+                "sign_on": row.get::<_, Option<String>>(7)?,
+                "sign_off": row.get::<_, Option<String>>(8)?,
+                "notes": row.get::<_, Option<String>>(9)?,
+                "created_at": row.get::<_, String>(10)?,
+                "evidence_folder": row.get::<_, Option<String>>(11)?,
+            }))
+        })?
+        .collect::<Result<Vec<_>>>()?;
     Ok(rows)
 }
 
-pub fn set_work_evidence_folder(conn: &Connection, entry_id: &str, folder: Option<&str>) -> Result<()> {
+pub fn set_work_evidence_folder(
+    conn: &Connection,
+    entry_id: &str,
+    folder: Option<&str>,
+) -> Result<()> {
     conn.execute(
         "UPDATE work_history SET evidence_folder = ?1 WHERE id = ?2",
         params![folder, entry_id],
@@ -699,11 +806,15 @@ pub fn get_work_evidence_folder(conn: &Connection, entry_id: &str) -> Result<Opt
         "SELECT evidence_folder FROM work_history WHERE id = ?1",
         params![entry_id],
         |row| row.get::<_, Option<String>>(0),
-    ).map_err(|e| e.into())
+    )
+    .map_err(|e| e.into())
 }
 
 pub fn delete_work_entry(conn: &Connection, id: &str) -> Result<()> {
-    conn.execute("DELETE FROM work_history_files WHERE entry_id = ?1", params![id])?;
+    conn.execute(
+        "DELETE FROM work_history_files WHERE entry_id = ?1",
+        params![id],
+    )?;
     conn.execute("DELETE FROM work_history WHERE id = ?1", params![id])?;
     Ok(())
 }
@@ -726,23 +837,24 @@ pub fn add_work_file(
 
 pub fn get_work_files(conn: &Connection, entry_id: &str) -> Result<Vec<serde_json::Value>> {
     let mut stmt = conn.prepare(
-        "SELECT id, file_name, kind FROM work_history_files WHERE entry_id = ?1 ORDER BY file_name"
+        "SELECT id, file_name, kind FROM work_history_files WHERE entry_id = ?1 ORDER BY file_name",
     )?;
-    let rows = stmt.query_map(params![entry_id], |row| {
-        Ok(serde_json::json!({
-            "id": row.get::<_, String>(0)?,
-            "file_name": row.get::<_, String>(1)?,
-            "kind": row.get::<_, Option<String>>(2)?,
-        }))
-    })?.collect::<Result<Vec<_>>>()?;
+    let rows = stmt
+        .query_map(params![entry_id], |row| {
+            Ok(serde_json::json!({
+                "id": row.get::<_, String>(0)?,
+                "file_name": row.get::<_, String>(1)?,
+                "kind": row.get::<_, Option<String>>(2)?,
+            }))
+        })?
+        .collect::<Result<Vec<_>>>()?;
     Ok(rows)
 }
 
 pub fn get_work_file(conn: &Connection, id: &str) -> Result<Option<(String, String)>> {
     // Returns (entry_id, file_name) so the caller can locate the file on disk
-    let mut stmt = conn.prepare(
-        "SELECT entry_id, file_name FROM work_history_files WHERE id = ?1"
-    )?;
+    let mut stmt =
+        conn.prepare("SELECT entry_id, file_name FROM work_history_files WHERE id = ?1")?;
     let mut rows = stmt.query(params![id])?;
     if let Some(row) = rows.next()? {
         Ok(Some((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
@@ -781,18 +893,20 @@ pub fn get_dispatches(conn: &Connection) -> Result<Vec<serde_json::Value>> {
                 p.title
          FROM dispatches d
          LEFT JOIN packages p ON p.id = d.package_id
-         ORDER BY d.created_at DESC"
+         ORDER BY d.created_at DESC",
     )?;
-    let rows = stmt.query_map([], |row| {
-        Ok(serde_json::json!({
-            "id": row.get::<_, String>(0)?,
-            "package_id": row.get::<_, String>(1)?,
-            "recipients": row.get::<_, String>(2)?,
-            "subject": row.get::<_, Option<String>>(3)?,
-            "cv_path": row.get::<_, Option<String>>(4)?,
-            "created_at": row.get::<_, String>(5)?,
-            "package_title": row.get::<_, Option<String>>(6)?,
-        }))
-    })?.collect::<Result<Vec<_>>>()?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(serde_json::json!({
+                "id": row.get::<_, String>(0)?,
+                "package_id": row.get::<_, String>(1)?,
+                "recipients": row.get::<_, String>(2)?,
+                "subject": row.get::<_, Option<String>>(3)?,
+                "cv_path": row.get::<_, Option<String>>(4)?,
+                "created_at": row.get::<_, String>(5)?,
+                "package_title": row.get::<_, Option<String>>(6)?,
+            }))
+        })?
+        .collect::<Result<Vec<_>>>()?;
     Ok(rows)
 }

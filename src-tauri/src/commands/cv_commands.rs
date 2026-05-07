@@ -46,7 +46,10 @@ pub fn export_cv_pdf(state: State<AppState>, output_path: String) -> Result<Stri
 /// cert statuses, career pattern) — no names, contacts, cert numbers,
 /// vessel/company names.
 #[tauri::command]
-pub fn export_redacted_cv_pdf(state: State<AppState>, output_path: String) -> Result<String, String> {
+pub fn export_redacted_cv_pdf(
+    state: State<AppState>,
+    output_path: String,
+) -> Result<String, String> {
     let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = conn_lock.as_ref().ok_or("No vault open")?;
     let data = cv::build_cv_data(conn)?;

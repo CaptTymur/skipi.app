@@ -112,7 +112,11 @@ pub fn build_cv_data(conn: &Connection) -> Result<CvData, String> {
 
     let p = |k: &str| db::get_vault_info_value(conn, k);
     let personal = CvPersonal {
-        name: if info.name.is_empty() { "Seafarer".to_string() } else { info.name },
+        name: if info.name.is_empty() {
+            "Seafarer".to_string()
+        } else {
+            info.name
+        },
         rank: p("personal_rank").or(info.rank),
         stcw_level: p("stcw_level").map(|s| match s.as_str() {
             "support" => "Support".to_string(),
@@ -142,7 +146,10 @@ pub fn build_cv_data(conn: &Connection) -> Result<CvData, String> {
         // Skip truly empty slots (no file AND no metadata at all).
         .filter(|d| {
             d.file_name.is_some()
-                || d.doc_number.as_ref().map(|s| !s.is_empty()).unwrap_or(false)
+                || d.doc_number
+                    .as_ref()
+                    .map(|s| !s.is_empty())
+                    .unwrap_or(false)
                 || d.valid_to.as_ref().map(|s| !s.is_empty()).unwrap_or(false)
         })
         .map(|d| CvCertificate {
@@ -183,8 +190,14 @@ pub fn build_cv_data(conn: &Connection) -> Result<CvData, String> {
         work_history
             .iter()
             .map(|w| {
-                let on = w.sign_on.as_deref().and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
-                let off = w.sign_off.as_deref().and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
+                let on = w
+                    .sign_on
+                    .as_deref()
+                    .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
+                let off = w
+                    .sign_off
+                    .as_deref()
+                    .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
                 match (on, off) {
                     (Some(a), Some(b)) if b > a => (b - a).num_days(),
                     _ => 0,
@@ -218,7 +231,10 @@ fn para(text: &str, bold: bool, size_half_pt: u32) -> String {
         "<w:rPr>{}{}</w:rPr>",
         if bold { "<w:b/>" } else { "" },
         if size_half_pt > 0 {
-            format!("<w:sz w:val=\"{}\"/><w:szCs w:val=\"{}\"/>", size_half_pt, size_half_pt)
+            format!(
+                "<w:sz w:val=\"{}\"/><w:szCs w:val=\"{}\"/>",
+                size_half_pt, size_half_pt
+            )
         } else {
             String::new()
         },
@@ -599,8 +615,12 @@ pub fn render_cv_pdf(
     // in `f64` so the helper call sites don't need per-argument casts.
     let page_w: f64 = 210.0;
     let page_h: f64 = 297.0;
-    let (doc, page1, layer1) =
-        PdfDocument::new("Seafarer CV", Mm(page_w as f32), Mm(page_h as f32), "Page 1");
+    let (doc, page1, layer1) = PdfDocument::new(
+        "Seafarer CV",
+        Mm(page_w as f32),
+        Mm(page_h as f32),
+        "Page 1",
+    );
     let reg = doc
         .add_builtin_font(BuiltinFont::Helvetica)
         .map_err(|e| e.to_string())?;
@@ -674,7 +694,14 @@ pub fn render_cv_pdf(
     // -------- Section heading: Personal details --------
     let section_h = 7.0;
     cursor_y -= section_h;
-    pdf_fill_rect(&layer, margin, cursor_y, content_w, section_h, grey_bg.clone());
+    pdf_fill_rect(
+        &layer,
+        margin,
+        cursor_y,
+        content_w,
+        section_h,
+        grey_bg.clone(),
+    );
     pdf_text(
         &layer,
         "PERSONAL DETAILS",
@@ -750,8 +777,12 @@ pub fn render_cv_pdf(
     ];
     let mut row_y = cursor_y - field_h;
     for (la, va, lb, vb) in rows {
-        pdf_field(&layer, la, va, col_a_x, row_y, col_a_w, field_h, &bold, &reg);
-        pdf_field(&layer, lb, vb, col_b_x, row_y, col_b_w, field_h, &bold, &reg);
+        pdf_field(
+            &layer, la, va, col_a_x, row_y, col_a_w, field_h, &bold, &reg,
+        );
+        pdf_field(
+            &layer, lb, vb, col_b_x, row_y, col_b_w, field_h, &bold, &reg,
+        );
         row_y -= field_h;
     }
     // Address row — single column spanning the full info width
@@ -787,7 +818,14 @@ pub fn render_cv_pdf(
 
     // -------- Section heading: Certificates --------
     cursor_y -= section_h;
-    pdf_fill_rect(&layer, margin, cursor_y, content_w, section_h, grey_bg.clone());
+    pdf_fill_rect(
+        &layer,
+        margin,
+        cursor_y,
+        content_w,
+        section_h,
+        grey_bg.clone(),
+    );
     pdf_text(
         &layer,
         "CERTIFICATES",
@@ -808,9 +846,32 @@ pub fn render_cv_pdf(
     let _col_expiry = content_w - col_title - col_no - col_issued;
     // Header row
     cursor_y -= cert_row_h;
-    pdf_fill_rect(&layer, margin, cursor_y, content_w, cert_row_h, Color::Rgb(Rgb::new(0.85, 0.88, 0.94, None)));
-    pdf_text(&layer, "TITLE", margin + 2.0, cursor_y + 2.0, 7.5, &bold, dark.clone());
-    pdf_text(&layer, "DOC NO", margin + col_title + 2.0, cursor_y + 2.0, 7.5, &bold, dark.clone());
+    pdf_fill_rect(
+        &layer,
+        margin,
+        cursor_y,
+        content_w,
+        cert_row_h,
+        Color::Rgb(Rgb::new(0.85, 0.88, 0.94, None)),
+    );
+    pdf_text(
+        &layer,
+        "TITLE",
+        margin + 2.0,
+        cursor_y + 2.0,
+        7.5,
+        &bold,
+        dark.clone(),
+    );
+    pdf_text(
+        &layer,
+        "DOC NO",
+        margin + col_title + 2.0,
+        cursor_y + 2.0,
+        7.5,
+        &bold,
+        dark.clone(),
+    );
     pdf_text(
         &layer,
         "ISSUED",
@@ -885,7 +946,14 @@ pub fn render_cv_pdf(
     // -------- Section heading: Sea Service --------
     if cursor_y > margin + 40.0 {
         cursor_y -= section_h;
-        pdf_fill_rect(&layer, margin, cursor_y, content_w, section_h, grey_bg.clone());
+        pdf_fill_rect(
+            &layer,
+            margin,
+            cursor_y,
+            content_w,
+            section_h,
+            grey_bg.clone(),
+        );
         pdf_text(
             &layer,
             "SEA SERVICE RECORD",
@@ -913,7 +981,15 @@ pub fn render_cv_pdf(
             cert_row_h,
             Color::Rgb(Rgb::new(0.85, 0.88, 0.94, None)),
         );
-        pdf_text(&layer, "VESSEL", margin + 2.0, cursor_y + 2.0, 7.5, &bold, dark.clone());
+        pdf_text(
+            &layer,
+            "VESSEL",
+            margin + 2.0,
+            cursor_y + 2.0,
+            7.5,
+            &bold,
+            dark.clone(),
+        );
         pdf_text(
             &layer,
             "IMO",
@@ -1008,10 +1084,7 @@ pub fn render_cv_pdf(
     // -------- Footer --------
     pdf_text(
         &layer,
-        &format!(
-            "Total sea time (tracked): {} days",
-            data.total_sea_days
-        ),
+        &format!("Total sea time (tracked): {} days", data.total_sea_days),
         margin,
         margin + 5.0,
         8.0,
@@ -1036,7 +1109,10 @@ pub fn render_cv_pdf(
 }
 
 /// Persist the document. printpdf wants a BufWriter<File>, not a generic Write.
-fn save_pdf(doc: PdfDocumentReference, writer: &mut std::io::BufWriter<File>) -> Result<(), String> {
+fn save_pdf(
+    doc: PdfDocumentReference,
+    writer: &mut std::io::BufWriter<File>,
+) -> Result<(), String> {
     doc.save(writer).map_err(|e| e.to_string())
 }
 
@@ -1055,7 +1131,7 @@ pub struct RedactedExtras {
     pub salary_currency: Option<String>,
     pub contract_count: usize,
     pub last_contract_end: Option<String>,
-    pub career_pattern: Option<String>,  // e.g. "4 contracts as 2/O, previously 3/O"
+    pub career_pattern: Option<String>, // e.g. "4 contracts as 2/O, previously 3/O"
 }
 
 /// Read extra vault_info fields needed for the redacted CV summary.
@@ -1066,27 +1142,47 @@ pub fn build_redacted_extras(conn: &Connection) -> RedactedExtras {
     let contract_count = work.len();
     let last_contract_end = work
         .iter()
-        .filter_map(|w| w.get("sign_off").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        .filter_map(|w| {
+            w.get("sign_off")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
         .max();
 
     // Career pattern: infer rank progression from work history
     let career_pattern = {
         let mut positions: Vec<(String, usize)> = Vec::new();
         for w in &work {
-            let pos = w.get("position").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            if pos.is_empty() { continue; }
+            let pos = w
+                .get("position")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            if pos.is_empty() {
+                continue;
+            }
             match positions.last_mut() {
                 Some((p, count)) if *p == pos => *count += 1,
                 _ => positions.push((pos, 1)),
             }
         }
         if positions.len() >= 2 {
-            let parts: Vec<String> = positions.iter().rev().take(3)
-                .map(|(pos, n)| format!("{} contract{} as {}", n, if *n > 1 { "s" } else { "" }, pos))
+            let parts: Vec<String> = positions
+                .iter()
+                .rev()
+                .take(3)
+                .map(|(pos, n)| {
+                    format!("{} contract{} as {}", n, if *n > 1 { "s" } else { "" }, pos)
+                })
                 .collect();
             Some(parts.join(", "))
         } else if positions.len() == 1 {
-            Some(format!("{} contract{} as {}", positions[0].1, if positions[0].1 > 1 { "s" } else { "" }, positions[0].0))
+            Some(format!(
+                "{} contract{} as {}",
+                positions[0].1,
+                if positions[0].1 > 1 { "s" } else { "" },
+                positions[0].0
+            ))
         } else {
             None
         }
@@ -1106,19 +1202,28 @@ pub fn build_redacted_extras(conn: &Connection) -> RedactedExtras {
 /// Only safe professional signals remain.
 fn redact_cv_data(data: &CvData) -> CvData {
     let initials = {
-        let first = data.personal.first_name.as_deref()
+        let first = data
+            .personal
+            .first_name
+            .as_deref()
             .or(Some(&data.personal.name))
             .and_then(|n| n.chars().next())
             .map(|c| format!("{}.", c.to_uppercase()))
             .unwrap_or_default();
-        let last = data.personal.surname.as_deref()
+        let last = data
+            .personal
+            .surname
+            .as_deref()
             .and_then(|n| n.chars().next())
             .map(|c| format!("{}.", c.to_uppercase()))
             .unwrap_or_default();
         format!("{}{}", first, last).trim().to_string()
     };
 
-    let year_only = data.personal.date_of_birth.as_deref()
+    let year_only = data
+        .personal
+        .date_of_birth
+        .as_deref()
         .and_then(|d| d.split('-').next())
         .map(|y| y.to_string());
 
@@ -1141,44 +1246,56 @@ fn redact_cv_data(data: &CvData) -> CvData {
         photo_path: None, // no photo in redacted mode
     };
 
-    let certificates: Vec<CvCertificate> = data.certificates.iter().map(|c| {
-        // Show cert name + expiry month/year, hide number and issuer
-        let valid_to_my = c.valid_to.as_deref()
-            .and_then(|d| {
+    let certificates: Vec<CvCertificate> = data
+        .certificates
+        .iter()
+        .map(|c| {
+            // Show cert name + expiry month/year, hide number and issuer
+            let valid_to_my = c.valid_to.as_deref().and_then(|d| {
                 let parts: Vec<&str> = d.split('-').collect();
-                if parts.len() >= 2 { Some(format!("{}-{}", parts[0], parts[1])) }
-                else { Some(d.to_string()) }
+                if parts.len() >= 2 {
+                    Some(format!("{}-{}", parts[0], parts[1]))
+                } else {
+                    Some(d.to_string())
+                }
             });
-        let valid_from_my = c.valid_from.as_deref()
-            .and_then(|d| {
+            let valid_from_my = c.valid_from.as_deref().and_then(|d| {
                 let parts: Vec<&str> = d.split('-').collect();
-                if parts.len() >= 2 { Some(format!("{}-{}", parts[0], parts[1])) }
-                else { Some(d.to_string()) }
+                if parts.len() >= 2 {
+                    Some(format!("{}-{}", parts[0], parts[1]))
+                } else {
+                    Some(d.to_string())
+                }
             });
-        CvCertificate {
-            title: c.title.clone(),
-            category: c.category.clone(),
-            doc_number: None,    // REDACTED
-            issued_by: None,     // REDACTED
-            valid_from: valid_from_my,
-            valid_to: valid_to_my,
-            regulatory_basis: c.regulatory_basis.clone(),
-            status: c.status.clone(),
-        }
-    }).collect();
+            CvCertificate {
+                title: c.title.clone(),
+                category: c.category.clone(),
+                doc_number: None, // REDACTED
+                issued_by: None,  // REDACTED
+                valid_from: valid_from_my,
+                valid_to: valid_to_my,
+                regulatory_basis: c.regulatory_basis.clone(),
+                status: c.status.clone(),
+            }
+        })
+        .collect();
 
-    let work_history: Vec<CvWorkEntry> = data.work_history.iter().map(|w| {
-        CvWorkEntry {
-            vessel_name: "—".to_string(),   // REDACTED
-            vessel_type: w.vessel_type.clone(),  // visible
-            imo: None,                          // REDACTED
-            flag: w.flag.clone(),               // visible
-            company: None,                      // REDACTED
-            position: w.position.clone(),       // visible
-            sign_on: w.sign_on.clone(),         // visible
-            sign_off: w.sign_off.clone(),       // visible
-        }
-    }).collect();
+    let work_history: Vec<CvWorkEntry> = data
+        .work_history
+        .iter()
+        .map(|w| {
+            CvWorkEntry {
+                vessel_name: "—".to_string(),       // REDACTED
+                vessel_type: w.vessel_type.clone(), // visible
+                imo: None,                          // REDACTED
+                flag: w.flag.clone(),               // visible
+                company: None,                      // REDACTED
+                position: w.position.clone(),       // visible
+                sign_on: w.sign_on.clone(),         // visible
+                sign_off: w.sign_off.clone(),       // visible
+            }
+        })
+        .collect();
 
     CvData {
         personal,
@@ -1203,14 +1320,22 @@ pub fn render_redacted_cv_pdf(
 
     let page_w: f64 = 210.0;
     let page_h: f64 = 297.0;
-    let (doc, page1, layer1) =
-        PdfDocument::new("Skipi Application", Mm(page_w as f32), Mm(page_h as f32), "Page 1");
+    let (doc, page1, layer1) = PdfDocument::new(
+        "Skipi Application",
+        Mm(page_w as f32),
+        Mm(page_h as f32),
+        "Page 1",
+    );
     // PDF metadata: no PII
     // printpdf 0.7 sets Title from the first arg of PdfDocument::new — we use
     // a generic "Skipi Application". Author is not set by default.
 
-    let reg = doc.add_builtin_font(BuiltinFont::Helvetica).map_err(|e| e.to_string())?;
-    let bold = doc.add_builtin_font(BuiltinFont::HelveticaBold).map_err(|e| e.to_string())?;
+    let reg = doc
+        .add_builtin_font(BuiltinFont::Helvetica)
+        .map_err(|e| e.to_string())?;
+    let bold = doc
+        .add_builtin_font(BuiltinFont::HelveticaBold)
+        .map_err(|e| e.to_string())?;
     let layer = doc.get_page(page1).get_layer(layer1);
 
     let accent = Color::Rgb(Rgb::new(0.12, 0.25, 0.55, None));
@@ -1226,27 +1351,88 @@ pub fn render_redacted_cv_pdf(
     // -------- Header strip --------
     let mut cursor_y = page_h - margin - 12.0;
     pdf_fill_rect(&layer, margin, cursor_y, content_w, 12.0, accent.clone());
-    pdf_text(&layer, "PRIVACY-PROTECTED CV", margin + 4.0, cursor_y + 4.0, 12.0, &bold, white.clone());
+    pdf_text(
+        &layer,
+        "PRIVACY-PROTECTED CV",
+        margin + 4.0,
+        cursor_y + 4.0,
+        12.0,
+        &bold,
+        white.clone(),
+    );
 
     // Small note below header
     cursor_y -= 5.0;
-    pdf_text(&layer, "Personal details masked. Request full profile via links below.", margin + 4.0, cursor_y + 1.5, 7.5, &reg, subtle.clone());
+    pdf_text(
+        &layer,
+        "Personal details masked. Request full profile via links below.",
+        margin + 4.0,
+        cursor_y + 1.5,
+        7.5,
+        &reg,
+        subtle.clone(),
+    );
     cursor_y -= 3.0;
 
     // -------- Rank / Available / Vessel row --------
     let row_h = 10.0;
     cursor_y -= row_h;
     let col_w = content_w / 3.0;
-    pdf_field(&layer, "RANK", blank(&rd.personal.rank), margin, cursor_y, col_w, row_h, &bold, &reg);
-    pdf_field(&layer, "DATE AVAILABLE", blank(&rd.personal.available_from), margin + col_w, cursor_y, col_w, row_h, &bold, &reg);
-    pdf_field(&layer, "VESSEL TYPE", blank(&rd.personal.vessel_type), margin + col_w * 2.0, cursor_y, col_w, row_h, &bold, &reg);
+    pdf_field(
+        &layer,
+        "RANK",
+        blank(&rd.personal.rank),
+        margin,
+        cursor_y,
+        col_w,
+        row_h,
+        &bold,
+        &reg,
+    );
+    pdf_field(
+        &layer,
+        "DATE AVAILABLE",
+        blank(&rd.personal.available_from),
+        margin + col_w,
+        cursor_y,
+        col_w,
+        row_h,
+        &bold,
+        &reg,
+    );
+    pdf_field(
+        &layer,
+        "VESSEL TYPE",
+        blank(&rd.personal.vessel_type),
+        margin + col_w * 2.0,
+        cursor_y,
+        col_w,
+        row_h,
+        &bold,
+        &reg,
+    );
     cursor_y -= 3.0;
 
     // -------- Professional summary (redacted-only section) --------
     let section_h = 7.0;
     cursor_y -= section_h;
-    pdf_fill_rect(&layer, margin, cursor_y, content_w, section_h, grey_bg.clone());
-    pdf_text(&layer, "PROFESSIONAL SUMMARY", margin + 3.0, cursor_y + 2.0, 9.0, &bold, accent.clone());
+    pdf_fill_rect(
+        &layer,
+        margin,
+        cursor_y,
+        content_w,
+        section_h,
+        grey_bg.clone(),
+    );
+    pdf_text(
+        &layer,
+        "PROFESSIONAL SUMMARY",
+        margin + 3.0,
+        cursor_y + 2.0,
+        9.0,
+        &bold,
+        accent.clone(),
+    );
     cursor_y -= 1.0;
 
     let summary_field_h = 8.0;
@@ -1254,8 +1440,28 @@ pub fn render_redacted_cv_pdf(
 
     // Row 1: Nationality + Year of birth
     cursor_y -= summary_field_h;
-    pdf_field(&layer, "NATIONALITY", blank(&rd.personal.nationality), margin, cursor_y, half_w, summary_field_h, &bold, &reg);
-    pdf_field(&layer, "YEAR OF BIRTH", blank(&rd.personal.date_of_birth), margin + half_w, cursor_y, half_w, summary_field_h, &bold, &reg);
+    pdf_field(
+        &layer,
+        "NATIONALITY",
+        blank(&rd.personal.nationality),
+        margin,
+        cursor_y,
+        half_w,
+        summary_field_h,
+        &bold,
+        &reg,
+    );
+    pdf_field(
+        &layer,
+        "YEAR OF BIRTH",
+        blank(&rd.personal.date_of_birth),
+        margin + half_w,
+        cursor_y,
+        half_w,
+        summary_field_h,
+        &bold,
+        &reg,
+    );
 
     // Row 2: Total sea time + Contract count
     cursor_y -= summary_field_h;
@@ -1266,13 +1472,53 @@ pub fn render_redacted_cv_pdf(
     } else {
         "—".to_string()
     };
-    pdf_field(&layer, "TOTAL SEA TIME", &sea_time_str, margin, cursor_y, half_w, summary_field_h, &bold, &reg);
-    pdf_field(&layer, "CONTRACTS", &format!("{}", extras.contract_count), margin + half_w, cursor_y, half_w, summary_field_h, &bold, &reg);
+    pdf_field(
+        &layer,
+        "TOTAL SEA TIME",
+        &sea_time_str,
+        margin,
+        cursor_y,
+        half_w,
+        summary_field_h,
+        &bold,
+        &reg,
+    );
+    pdf_field(
+        &layer,
+        "CONTRACTS",
+        &format!("{}", extras.contract_count),
+        margin + half_w,
+        cursor_y,
+        half_w,
+        summary_field_h,
+        &bold,
+        &reg,
+    );
 
     // Row 3: English level + Last contract
     cursor_y -= summary_field_h;
-    pdf_field(&layer, "ENGLISH LEVEL", extras.english_level.as_deref().unwrap_or("—"), margin, cursor_y, half_w, summary_field_h, &bold, &reg);
-    pdf_field(&layer, "LAST CONTRACT ENDED", extras.last_contract_end.as_deref().unwrap_or("—"), margin + half_w, cursor_y, half_w, summary_field_h, &bold, &reg);
+    pdf_field(
+        &layer,
+        "ENGLISH LEVEL",
+        extras.english_level.as_deref().unwrap_or("—"),
+        margin,
+        cursor_y,
+        half_w,
+        summary_field_h,
+        &bold,
+        &reg,
+    );
+    pdf_field(
+        &layer,
+        "LAST CONTRACT ENDED",
+        extras.last_contract_end.as_deref().unwrap_or("—"),
+        margin + half_w,
+        cursor_y,
+        half_w,
+        summary_field_h,
+        &bold,
+        &reg,
+    );
 
     // Row 4: Salary range + Contact
     cursor_y -= summary_field_h;
@@ -1280,18 +1526,63 @@ pub fn render_redacted_cv_pdf(
         (Some(s), Some(c)) if !s.is_empty() => format!("{} {}/mo", s, c),
         _ => "—".to_string(),
     };
-    pdf_field(&layer, "MIN SALARY", &salary_str, margin, cursor_y, half_w, summary_field_h, &bold, &reg);
-    pdf_field(&layer, "CONTACT", "via Skipi", margin + half_w, cursor_y, half_w, summary_field_h, &bold, &reg);
+    pdf_field(
+        &layer,
+        "MIN SALARY",
+        &salary_str,
+        margin,
+        cursor_y,
+        half_w,
+        summary_field_h,
+        &bold,
+        &reg,
+    );
+    pdf_field(
+        &layer,
+        "CONTACT",
+        "via Skipi",
+        margin + half_w,
+        cursor_y,
+        half_w,
+        summary_field_h,
+        &bold,
+        &reg,
+    );
 
     // Row 5: Career pattern — full width so long text isn't truncated
     cursor_y -= summary_field_h;
-    pdf_field(&layer, "CAREER PATTERN", extras.career_pattern.as_deref().unwrap_or("—"), margin, cursor_y, content_w, summary_field_h, &bold, &reg);
+    pdf_field(
+        &layer,
+        "CAREER PATTERN",
+        extras.career_pattern.as_deref().unwrap_or("—"),
+        margin,
+        cursor_y,
+        content_w,
+        summary_field_h,
+        &bold,
+        &reg,
+    );
     cursor_y -= 4.0;
 
     // -------- Certificates section --------
     cursor_y -= section_h;
-    pdf_fill_rect(&layer, margin, cursor_y, content_w, section_h, grey_bg.clone());
-    pdf_text(&layer, "CERTIFICATES", margin + 3.0, cursor_y + 2.0, 9.0, &bold, accent.clone());
+    pdf_fill_rect(
+        &layer,
+        margin,
+        cursor_y,
+        content_w,
+        section_h,
+        grey_bg.clone(),
+    );
+    pdf_text(
+        &layer,
+        "CERTIFICATES",
+        margin + 3.0,
+        cursor_y + 2.0,
+        9.0,
+        &bold,
+        accent.clone(),
+    );
     cursor_y -= 1.0;
 
     // Columns: Title (wider) | Status | Expiry (month/year)
@@ -1301,16 +1592,57 @@ pub fn render_redacted_cv_pdf(
     let _col_expiry = content_w - col_title - col_status;
 
     cursor_y -= cert_row_h;
-    pdf_fill_rect(&layer, margin, cursor_y, content_w, cert_row_h, Color::Rgb(Rgb::new(0.85, 0.88, 0.94, None)));
-    pdf_text(&layer, "TITLE", margin + 2.0, cursor_y + 2.0, 7.5, &bold, dark.clone());
-    pdf_text(&layer, "STATUS", margin + col_title + 2.0, cursor_y + 2.0, 7.5, &bold, dark.clone());
-    pdf_text(&layer, "EXPIRY", margin + col_title + col_status + 2.0, cursor_y + 2.0, 7.5, &bold, dark.clone());
+    pdf_fill_rect(
+        &layer,
+        margin,
+        cursor_y,
+        content_w,
+        cert_row_h,
+        Color::Rgb(Rgb::new(0.85, 0.88, 0.94, None)),
+    );
+    pdf_text(
+        &layer,
+        "TITLE",
+        margin + 2.0,
+        cursor_y + 2.0,
+        7.5,
+        &bold,
+        dark.clone(),
+    );
+    pdf_text(
+        &layer,
+        "STATUS",
+        margin + col_title + 2.0,
+        cursor_y + 2.0,
+        7.5,
+        &bold,
+        dark.clone(),
+    );
+    pdf_text(
+        &layer,
+        "EXPIRY",
+        margin + col_title + col_status + 2.0,
+        cursor_y + 2.0,
+        7.5,
+        &bold,
+        dark.clone(),
+    );
 
     for cert in &rd.certificates {
-        if cursor_y < margin + 40.0 { break; }
+        if cursor_y < margin + 40.0 {
+            break;
+        }
         cursor_y -= cert_row_h;
         pdf_stroke_rect(&layer, margin, cursor_y, content_w, cert_row_h);
-        pdf_text(&layer, &truncate(&cert.title, 55), margin + 2.0, cursor_y + 2.0, 8.0, &reg, dark.clone());
+        pdf_text(
+            &layer,
+            &truncate(&cert.title, 55),
+            margin + 2.0,
+            cursor_y + 2.0,
+            8.0,
+            &reg,
+            dark.clone(),
+        );
 
         let (status_text, status_color) = match cert.status.as_str() {
             "valid" => ("Valid", green.clone()),
@@ -1318,16 +1650,47 @@ pub fn render_redacted_cv_pdf(
             "expired" => ("Expired", Color::Rgb(Rgb::new(0.80, 0.20, 0.20, None))),
             _ => ("—", subtle.clone()),
         };
-        pdf_text(&layer, status_text, margin + col_title + 2.0, cursor_y + 2.0, 8.0, &bold, status_color);
-        pdf_text(&layer, cert.valid_to.as_deref().unwrap_or("—"), margin + col_title + col_status + 2.0, cursor_y + 2.0, 8.0, &reg, dark.clone());
+        pdf_text(
+            &layer,
+            status_text,
+            margin + col_title + 2.0,
+            cursor_y + 2.0,
+            8.0,
+            &bold,
+            status_color,
+        );
+        pdf_text(
+            &layer,
+            cert.valid_to.as_deref().unwrap_or("—"),
+            margin + col_title + col_status + 2.0,
+            cursor_y + 2.0,
+            8.0,
+            &reg,
+            dark.clone(),
+        );
     }
     cursor_y -= 4.0;
 
     // -------- Sea service section --------
     if cursor_y > margin + 40.0 {
         cursor_y -= section_h;
-        pdf_fill_rect(&layer, margin, cursor_y, content_w, section_h, grey_bg.clone());
-        pdf_text(&layer, "SEA SERVICE RECORD", margin + 3.0, cursor_y + 2.0, 9.0, &bold, accent.clone());
+        pdf_fill_rect(
+            &layer,
+            margin,
+            cursor_y,
+            content_w,
+            section_h,
+            grey_bg.clone(),
+        );
+        pdf_text(
+            &layer,
+            "SEA SERVICE RECORD",
+            margin + 3.0,
+            cursor_y + 2.0,
+            9.0,
+            &bold,
+            accent.clone(),
+        );
         cursor_y -= 1.0;
 
         // Columns: Vessel Type | Flag | Position | From | To
@@ -1338,29 +1701,145 @@ pub fn render_redacted_cv_pdf(
         let _col_to = content_w - col_vt - col_flag - col_pos - col_from;
 
         cursor_y -= cert_row_h;
-        pdf_fill_rect(&layer, margin, cursor_y, content_w, cert_row_h, Color::Rgb(Rgb::new(0.85, 0.88, 0.94, None)));
-        pdf_text(&layer, "VESSEL TYPE", margin + 2.0, cursor_y + 2.0, 7.5, &bold, dark.clone());
-        pdf_text(&layer, "FLAG", margin + col_vt + 2.0, cursor_y + 2.0, 7.5, &bold, dark.clone());
-        pdf_text(&layer, "POSITION", margin + col_vt + col_flag + 2.0, cursor_y + 2.0, 7.5, &bold, dark.clone());
-        pdf_text(&layer, "SIGN ON", margin + col_vt + col_flag + col_pos + 2.0, cursor_y + 2.0, 7.5, &bold, dark.clone());
-        pdf_text(&layer, "SIGN OFF", margin + col_vt + col_flag + col_pos + col_from + 2.0, cursor_y + 2.0, 7.5, &bold, dark.clone());
+        pdf_fill_rect(
+            &layer,
+            margin,
+            cursor_y,
+            content_w,
+            cert_row_h,
+            Color::Rgb(Rgb::new(0.85, 0.88, 0.94, None)),
+        );
+        pdf_text(
+            &layer,
+            "VESSEL TYPE",
+            margin + 2.0,
+            cursor_y + 2.0,
+            7.5,
+            &bold,
+            dark.clone(),
+        );
+        pdf_text(
+            &layer,
+            "FLAG",
+            margin + col_vt + 2.0,
+            cursor_y + 2.0,
+            7.5,
+            &bold,
+            dark.clone(),
+        );
+        pdf_text(
+            &layer,
+            "POSITION",
+            margin + col_vt + col_flag + 2.0,
+            cursor_y + 2.0,
+            7.5,
+            &bold,
+            dark.clone(),
+        );
+        pdf_text(
+            &layer,
+            "SIGN ON",
+            margin + col_vt + col_flag + col_pos + 2.0,
+            cursor_y + 2.0,
+            7.5,
+            &bold,
+            dark.clone(),
+        );
+        pdf_text(
+            &layer,
+            "SIGN OFF",
+            margin + col_vt + col_flag + col_pos + col_from + 2.0,
+            cursor_y + 2.0,
+            7.5,
+            &bold,
+            dark.clone(),
+        );
 
         for w in &rd.work_history {
-            if cursor_y < margin + 15.0 { break; }
+            if cursor_y < margin + 15.0 {
+                break;
+            }
             cursor_y -= cert_row_h;
             pdf_stroke_rect(&layer, margin, cursor_y, content_w, cert_row_h);
-            pdf_text(&layer, w.vessel_type.as_deref().unwrap_or("—"), margin + 2.0, cursor_y + 2.0, 8.0, &reg, dark.clone());
-            pdf_text(&layer, w.flag.as_deref().unwrap_or("—"), margin + col_vt + 2.0, cursor_y + 2.0, 8.0, &reg, dark.clone());
-            pdf_text(&layer, &truncate(&w.position, 22), margin + col_vt + col_flag + 2.0, cursor_y + 2.0, 8.0, &reg, dark.clone());
-            pdf_text(&layer, w.sign_on.as_deref().unwrap_or("—"), margin + col_vt + col_flag + col_pos + 2.0, cursor_y + 2.0, 8.0, &reg, dark.clone());
-            pdf_text(&layer, w.sign_off.as_deref().unwrap_or("present"), margin + col_vt + col_flag + col_pos + col_from + 2.0, cursor_y + 2.0, 8.0, &reg, dark.clone());
+            pdf_text(
+                &layer,
+                w.vessel_type.as_deref().unwrap_or("—"),
+                margin + 2.0,
+                cursor_y + 2.0,
+                8.0,
+                &reg,
+                dark.clone(),
+            );
+            pdf_text(
+                &layer,
+                w.flag.as_deref().unwrap_or("—"),
+                margin + col_vt + 2.0,
+                cursor_y + 2.0,
+                8.0,
+                &reg,
+                dark.clone(),
+            );
+            pdf_text(
+                &layer,
+                &truncate(&w.position, 22),
+                margin + col_vt + col_flag + 2.0,
+                cursor_y + 2.0,
+                8.0,
+                &reg,
+                dark.clone(),
+            );
+            pdf_text(
+                &layer,
+                w.sign_on.as_deref().unwrap_or("—"),
+                margin + col_vt + col_flag + col_pos + 2.0,
+                cursor_y + 2.0,
+                8.0,
+                &reg,
+                dark.clone(),
+            );
+            pdf_text(
+                &layer,
+                w.sign_off.as_deref().unwrap_or("present"),
+                margin + col_vt + col_flag + col_pos + col_from + 2.0,
+                cursor_y + 2.0,
+                8.0,
+                &reg,
+                dark.clone(),
+            );
         }
     }
 
     // -------- Footer --------
-    pdf_text(&layer, &format!("Total sea time: {} days | {} contracts", rd.total_sea_days, extras.contract_count), margin, margin + 9.0, 8.0, &reg, subtle.clone());
-    pdf_text(&layer, "Interested? Request full profile at skipi.app", margin, margin + 5.0, 8.0, &bold, accent.clone());
-    pdf_text(&layer, "Skipi — Privacy-first maritime document management", margin, margin + 1.5, 7.0, &reg, subtle.clone());
+    pdf_text(
+        &layer,
+        &format!(
+            "Total sea time: {} days | {} contracts",
+            rd.total_sea_days, extras.contract_count
+        ),
+        margin,
+        margin + 9.0,
+        8.0,
+        &reg,
+        subtle.clone(),
+    );
+    pdf_text(
+        &layer,
+        "Interested? Request full profile at skipi.app",
+        margin,
+        margin + 5.0,
+        8.0,
+        &bold,
+        accent.clone(),
+    );
+    pdf_text(
+        &layer,
+        "Skipi — Privacy-first maritime document management",
+        margin,
+        margin + 1.5,
+        7.0,
+        &reg,
+        subtle.clone(),
+    );
 
     // -------- Save --------
     let file = File::create(path).map_err(|e| e.to_string())?;

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.108';
+var APP_VERSION='0.4.109';
 // Window title is set via `set_window_title` Rust command inside
 // updateTitlebar() — direct JS setTitle() is blocked by Tauri 2 ACL.
 // Human-readable labels for account types that go into the OS window title.
@@ -76,6 +76,9 @@ document.addEventListener('DOMContentLoaded',function(){updateTitlebar();});
     --red: #e55561;
     --yellow: #e2b93d;
     --orange: #d89b65;
+    --ok: var(--green);
+    --err: var(--red);
+    --warn: var(--orange);
     --statusbar: #1a1a1a;
     --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
     --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
@@ -103,6 +106,9 @@ document.addEventListener('DOMContentLoaded',function(){updateTitlebar();});
     --red: #e74c3c;
     --yellow: #f39c12;
     --orange: #e67e22;
+    --ok: var(--green);
+    --err: var(--red);
+    --warn: var(--orange);
     --statusbar: #f0f0f0;
 }
 body { background:var(--bg); color:var(--text); font-family:var(--font-ui); font-size:var(--font-size-ui); height:100vh; display:flex; flex-direction:column; overflow:hidden; }
@@ -265,6 +271,11 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .vdb-score { border:1px solid var(--border); border-radius:5px; padding:8px 10px; background:var(--surface); }
 .vdb-score span { display:block; color:var(--text2); font-size:11px; margin-bottom:4px; }
 .vdb-score strong { font-size:16px; }
+.job-vessel-rating { display:flex; align-items:center; gap:7px; margin-top:6px; flex-wrap:wrap; }
+.job-vessel-rating .stars { color:var(--yellow); font-size:15px; line-height:1; letter-spacing:1px; }
+.job-vessel-rating.empty .stars { color:var(--text2); opacity:.55; }
+.job-vessel-rating .meta { color:var(--text2); font-size:11px; }
+.job-crewing-desc { font-size:12px; color:var(--text); margin-top:6px; line-height:1.35; white-space:pre-wrap; max-height:54px; overflow:hidden; border-left:2px solid var(--border); padding-left:8px; }
 @media (max-width:700px){ .vdb-lookup-row { flex-direction:column; align-items:stretch; } }
 .sea-lock { border:1px solid var(--border); border-radius:6px; padding:14px 16px; background:var(--surface); margin-bottom:14px; }
 .sea-lock h3 { font-size:15px; margin:0 0 6px; }
@@ -611,7 +622,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.108</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.109</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -4887,6 +4898,36 @@ function jobsSaveHidden(h){
     try { localStorage.setItem('skipi-jobs-hidden', JSON.stringify(h)); } catch(e){}
 }
 
+function jobsStarLine(value){
+    var n = Number(value);
+    if(!isFinite(n)) return '☆☆☆☆☆';
+    var rounded = Math.max(0, Math.min(5, Math.round(n)));
+    var out = '';
+    for(var i=1;i<=5;i++) out += i<=rounded ? '★' : '☆';
+    return out;
+}
+
+function jobsVesselRatingHtml(v, esc){
+    var r = v && v.vessel_rating;
+    if(r && r.signals_available && r.average_overall !== null && r.average_overall !== undefined){
+        var n = Number(r.average_overall);
+        return '<div class="job-vessel-rating">'
+            + '<span class="stars">'+jobsStarLine(n)+'</span>'
+            + '<span class="meta">'+esc(n.toFixed(1))+'/5'
+            + (r.review_count ? ' · '+esc(r.review_count)+' reviews' : '')
+            + '</span></div>';
+    }
+    if(v && v.vessel_imo){
+        var min = r && r.min_reviews ? r.min_reviews : 3;
+        return '<div class="job-vessel-rating empty">'
+            + '<span class="stars">☆☆☆☆☆</span>'
+            + '<span class="meta">No vessel rating yet'
+            + (min ? ' · needs '+esc(min)+' approved reviews' : '')
+            + '</span></div>';
+    }
+    return '';
+}
+
 function renderJobsFeed(items){
     var host = document.getElementById('jobs-feed');
     if(!host) return;
@@ -4931,8 +4972,18 @@ function renderJobsFeed(items){
             +(v.contract_months?' · '+v.contract_months+' months':'')
             +(salary?' · '+esc(salary):'')
             +'</div>';
+        if(v.vessel_name || v.vessel_imo){
+            html += '<div style="font-size:11px;color:var(--text2);margin-top:3px;">Vessel: '
+                + esc(v.vessel_name || 'IMO '+v.vessel_imo)
+                + (v.vessel_name && v.vessel_imo ? ' · IMO '+esc(v.vessel_imo) : '')
+                + '</div>';
+        }
+        html += jobsVesselRatingHtml(v, esc);
         if(v.crewing_ref){
             html += '<div style="font-size:11px;color:var(--text2);margin-top:3px;">via '+esc(v.crewing_ref)+'</div>';
+        }
+        if(v.crewing_description){
+            html += '<div class="job-crewing-desc"><strong>Crewing:</strong> '+esc(v.crewing_description)+'</div>';
         }
         if(hasThread){
             // WhatsApp-style snippet: last message preview if we have it cached.
@@ -5311,6 +5362,7 @@ async function openSendDocsDialog(vacancyId) {
         var status = card.querySelector('#send-docs-status');
         status.textContent = 'Encrypting and uploading…';
         var sent = 0, failed = 0;
+        try { await invoke('register_my_pubkey'); } catch(e){}
         var sendOne = async function(filePath, niceName) {
             try {
                 var meta = await invoke('upload_encrypted_attachment', {
@@ -5393,7 +5445,18 @@ async function openSendDocsDialog(vacancyId) {
             } catch(e){ status.textContent = 'Package export failed: '+e; }
         }
 
-        if (sent) showToast(sent+' file'+(sent>1?'s':'')+' sent — encrypted 🔒'+(failed?' ('+failed+' failed)':''), 'success');
+        if (sent) {
+            try {
+                await invoke('send_encrypted_message', {
+                    applicationId: applicationId,
+                    toUserId: counterpart,
+                    plaintext: '[skipi:docs_response] Sent '+sent+' encrypted attachment'+(sent>1?'s':'')+'.',
+                });
+            } catch(e) {
+                console.log('docs response marker failed:', e);
+            }
+            showToast(sent+' file'+(sent>1?'s':'')+' sent — encrypted 🔒'+(failed?' ('+failed+' failed)':''), 'success');
+        }
         else showToast('Nothing sent — '+failed+' upload(s) failed', 'error');
         close();
         setTimeout(function(){ refreshVacancyThread(vacancyId, true); }, 0);
@@ -5566,6 +5629,7 @@ async function sendVacancyReply(vacancyId){
     await new Promise(function(r){ requestAnimationFrame(function(){ requestAnimationFrame(r); }); });
 
     try {
+        try { await invoke('register_my_pubkey'); } catch(e){}
         await invoke('send_encrypted_message', {
             applicationId: applicationId,
             toUserId: counterpart,
@@ -5806,7 +5870,7 @@ function _slfShowRecheckBanner(p) {
         ? '<button id="slf-recheck-secondary" style="padding:5px 10px;background:transparent;color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:12px;cursor:pointer;">'+esc(secondary.label)+'</button>'
         : '';
 
-    var html = '<div id="slf-recheck-banner" role="status" style="position:fixed;right:20px;bottom:20px;z-index:9998;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:14px 16px;max-width:380px;box-shadow:0 8px 24px rgba(0,0,0,0.35);">'
+    var html = '<div id="slf-recheck-banner" role="status" style="position:fixed;right:20px;bottom:20px;z-index:9998;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 16px;max-width:380px;box-shadow:0 8px 24px rgba(0,0,0,0.35);">'
              +   '<div style="font-size:13px;margin-bottom:10px;">'+msg+'</div>'
              +   '<div style="display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;">'
              +     '<button id="slf-recheck-dismiss" style="padding:5px 10px;background:transparent;color:var(--text2);border:1px solid var(--border);border-radius:4px;font-size:12px;cursor:pointer;">Dismiss</button>'
@@ -6069,13 +6133,13 @@ function showApplyGapModal(vacancyId, replyTo, title, gaps, onClose) {
         + sectionHtml('Without uploaded file', gaps.no_file.length, 'var(--red)', gaps.no_file, 'no_file');
 
     var html = '<div id="apply-gap-modal" style="position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;padding:20px;">'
-             +   '<div role="dialog" aria-labelledby="agm-title" style="background:var(--panel);border:1px solid var(--border);border-radius:8px;max-width:560px;width:100%;max-height:70vh;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,0.4);">'
+             +   '<div role="dialog" aria-labelledby="agm-title" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;max-width:560px;width:100%;max-height:70vh;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,0.4);">'
              +     '<div style="padding:22px 24px 14px;">'
              +       '<div id="agm-title" style="font-size:18px;font-weight:600;margin-bottom:6px;">Before you apply</div>'
              +       '<div style="font-size:13px;color:var(--text2);">'+esc(title || 'This vacancy')+' lists requirements your documents do not currently meet. Fix what you can — or apply now if you prefer.</div>'
              +     '</div>'
              +     '<div style="flex:1;min-height:0;overflow-y:auto;padding:0 24px 8px;">'+sections+'</div>'
-             +     '<div style="display:flex;flex-wrap:wrap;justify-content:flex-end;gap:10px;padding:14px 24px;border-top:1px solid var(--border);background:var(--panel);">'
+             +     '<div style="display:flex;flex-wrap:wrap;justify-content:flex-end;gap:10px;padding:14px 24px;border-top:1px solid var(--border);background:var(--surface);">'
              +       '<button id="agm-review" style="padding:8px 16px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:13px;cursor:pointer;font-weight:600;">Review all documents</button>'
              +       '<button id="agm-apply" style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;font-size:13px;cursor:pointer;font-weight:600;">Apply anyway</button>'
              +     '</div>'

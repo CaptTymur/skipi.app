@@ -9,6 +9,18 @@ use serde::{Deserialize, Serialize};
 const PROD_API: &str = "https://api.skipi.app";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VesselRatingSummary {
+    #[serde(default)]
+    pub average_overall: Option<f64>,
+    #[serde(default)]
+    pub review_count: i64,
+    #[serde(default)]
+    pub signals_available: bool,
+    #[serde(default)]
+    pub min_reviews: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublicVacancy {
     pub id: String,
     pub crewing_ref: String,
@@ -60,6 +72,10 @@ pub struct PublicVacancy {
     /// Crewing's E2E user_id (16-char base32). Paired with crewing_pubkey.
     #[serde(default)]
     pub crewing_user_id: Option<String>,
+    #[serde(default)]
+    pub crewing_description: Option<String>,
+    #[serde(default)]
+    pub vessel_rating: Option<VesselRatingSummary>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -117,7 +133,10 @@ pub fn fetch_jobs(
         .timeout(std::time::Duration::from_secs(15))
         .build()
         .map_err(|e| e.to_string())?;
-    let resp = client.get(&url).send().map_err(|e| format!("network: {e}"))?;
+    let resp = client
+        .get(&url)
+        .send()
+        .map_err(|e| format!("network: {e}"))?;
     let s = resp.status();
     if !s.is_success() {
         let body = resp.text().unwrap_or_default();
@@ -143,7 +162,10 @@ pub fn fetch_mailing_requests(
         .timeout(std::time::Duration::from_secs(15))
         .build()
         .map_err(|e| e.to_string())?;
-    let resp = client.get(&url).send().map_err(|e| format!("network: {e}"))?;
+    let resp = client
+        .get(&url)
+        .send()
+        .map_err(|e| format!("network: {e}"))?;
     let s = resp.status();
     if !s.is_success() {
         let body = resp.text().unwrap_or_default();
@@ -155,12 +177,18 @@ pub fn fetch_mailing_requests(
 
 #[tauri::command]
 pub fn mailing_request_send_click(request_id: String) -> Result<(), String> {
-    let url = format!("{}/api/mailing-requests/{}/send-click", PROD_API, request_id);
+    let url = format!(
+        "{}/api/mailing-requests/{}/send-click",
+        PROD_API, request_id
+    );
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(8))
         .build()
         .map_err(|e| e.to_string())?;
-    let resp = client.post(&url).send().map_err(|e| format!("network: {e}"))?;
+    let resp = client
+        .post(&url)
+        .send()
+        .map_err(|e| format!("network: {e}"))?;
     let s = resp.status();
     if !s.is_success() && s.as_u16() != 204 {
         return Err(format!("server returned {s}"));
@@ -230,8 +258,10 @@ pub fn open_mail_with_attachment(
         // Fallback: xdg-email
         let mut cmd = std::process::Command::new("xdg-email");
         cmd.arg("--utf8")
-            .arg("--subject").arg(&subject)
-            .arg("--body").arg(&body);
+            .arg("--subject")
+            .arg(&subject)
+            .arg("--body")
+            .arg(&body);
         if let Some(p) = attachment_path.as_deref().filter(|s| !s.is_empty()) {
             if std::path::Path::new(p).exists() {
                 cmd.arg("--attach").arg(p);
@@ -245,9 +275,13 @@ pub fn open_mail_with_attachment(
     {
         let url = format!(
             "mailto:{}?subject={}&body={}",
-            urlencoding(&to), urlencoding(&subject), urlencoding(&body)
+            urlencoding(&to),
+            urlencoding(&subject),
+            urlencoding(&body)
         );
-        std::process::Command::new("open").arg(&url).spawn()
+        std::process::Command::new("open")
+            .arg(&url)
+            .spawn()
             .map_err(|e| e.to_string())?;
         return Ok(());
     }
@@ -257,12 +291,15 @@ pub fn open_mail_with_attachment(
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         let url = format!(
             "mailto:{}?subject={}&body={}",
-            urlencoding(&to), urlencoding(&subject), urlencoding(&body)
+            urlencoding(&to),
+            urlencoding(&subject),
+            urlencoding(&body)
         );
         std::process::Command::new("cmd")
             .creation_flags(CREATE_NO_WINDOW)
             .args(&["/C", "start", "", &url])
-            .spawn().map_err(|e| e.to_string())?;
+            .spawn()
+            .map_err(|e| e.to_string())?;
         return Ok(());
     }
     #[allow(unreachable_code)]
@@ -292,7 +329,10 @@ fn bump_counter(vacancy_id: &str, action: &str) -> Result<(), String> {
         .timeout(std::time::Duration::from_secs(8))
         .build()
         .map_err(|e| e.to_string())?;
-    let resp = client.post(&url).send().map_err(|e| format!("network: {e}"))?;
+    let resp = client
+        .post(&url)
+        .send()
+        .map_err(|e| format!("network: {e}"))?;
     let s = resp.status();
     if !s.is_success() && s.as_u16() != 204 {
         return Err(format!("server returned {s}"));

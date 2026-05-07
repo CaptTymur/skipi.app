@@ -20,8 +20,20 @@ pub fn add_work_history(
     let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = lock.as_ref().ok_or("No vault open")?;
     let id = uuid::Uuid::new_v4().to_string();
-    db::add_work_entry(conn, &id, &vessel_name, vessel_type.as_deref(), imo.as_deref(), flag.as_deref(), company.as_deref(), &position, sign_on.as_deref(), sign_off.as_deref(), notes.as_deref())
-        .map_err(|e| e.to_string())?;
+    db::add_work_entry(
+        conn,
+        &id,
+        &vessel_name,
+        vessel_type.as_deref(),
+        imo.as_deref(),
+        flag.as_deref(),
+        company.as_deref(),
+        &position,
+        sign_on.as_deref(),
+        sign_off.as_deref(),
+        notes.as_deref(),
+    )
+    .map_err(|e| e.to_string())?;
     Ok(id)
 }
 
@@ -58,13 +70,20 @@ pub fn attach_work_file(
     if !src.exists() {
         return Err("Source file does not exist".to_string());
     }
-    let file_name = src.file_name()
+    let file_name = src
+        .file_name()
         .and_then(|s| s.to_str())
         .ok_or("Invalid source file name")?
         .to_string();
     let safe_name: String = file_name
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '.' || c == '-' || c == '_' || c == ' ' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '.' || c == '-' || c == '_' || c == ' ' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
 
     let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
@@ -74,11 +93,13 @@ pub fn attach_work_file(
     {
         let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
         let conn = conn_lock.as_ref().ok_or("No vault open")?;
-        let exists: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM work_history WHERE id = ?1",
-            rusqlite::params![entry_id],
-            |row| row.get(0),
-        ).map_err(|e| e.to_string())?;
+        let exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM work_history WHERE id = ?1",
+                rusqlite::params![entry_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
         if exists == 0 {
             return Err("Work history entry not found".to_string());
         }
@@ -96,7 +117,9 @@ pub fn attach_work_file(
         };
         final_name = format!("{}_{}{}", stem, counter, ext);
         counter += 1;
-        if counter > 1000 { return Err("Too many files with the same name".to_string()); }
+        if counter > 1000 {
+            return Err("Too many files with the same name".to_string());
+        }
     }
     let dest = entry_dir.join(&final_name);
     fs::copy(&src, &dest).map_err(|e| e.to_string())?;
@@ -117,7 +140,10 @@ pub fn attach_work_file(
 }
 
 #[tauri::command]
-pub fn get_work_files(state: State<AppState>, entry_id: String) -> Result<Vec<serde_json::Value>, String> {
+pub fn get_work_files(
+    state: State<AppState>,
+    entry_id: String,
+) -> Result<Vec<serde_json::Value>, String> {
     let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = lock.as_ref().ok_or("No vault open")?;
     db::get_work_files(conn, &entry_id).map_err(|e| e.to_string())
@@ -131,7 +157,10 @@ pub fn delete_work_file(state: State<AppState>, id: String) -> Result<(), String
     let conn = conn_lock.as_ref().ok_or("No vault open")?;
 
     if let Some((entry_id, file_name)) = db::get_work_file(conn, &id).map_err(|e| e.to_string())? {
-        let fp = vault_path.join("_work_history").join(&entry_id).join(&file_name);
+        let fp = vault_path
+            .join("_work_history")
+            .join(&entry_id)
+            .join(&file_name);
         let _ = fs::remove_file(&fp);
     }
     db::delete_work_file(conn, &id).map_err(|e| e.to_string())
@@ -171,11 +200,19 @@ pub fn set_work_evidence_folder(
 fn sanitise_folder_segment(s: &str) -> String {
     let mut out: String = s
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     // Collapse runs of underscores so `M/V Spring Breeze` does not become
     // `M_V_Spring_Breeze_` with ugly doubles from the leading slash/space.
-    while out.contains("__") { out = out.replace("__", "_"); }
+    while out.contains("__") {
+        out = out.replace("__", "_");
+    }
     let trimmed = out.trim_matches(|c| c == '_' || c == '.').to_string();
     let final_len = trimmed.chars().count().min(60);
     trimmed.chars().take(final_len).collect()
@@ -198,13 +235,16 @@ pub fn auto_create_work_evidence_folder(
         conn.query_row(
             "SELECT vessel_name, imo, sign_on, created_at FROM work_history WHERE id = ?1",
             rusqlite::params![entry_id],
-            |row| Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, Option<String>>(1)?,
-                row.get::<_, Option<String>>(2)?,
-                row.get::<_, String>(3)?,
-            )),
-        ).map_err(|_| "Work history entry not found".to_string())?
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            },
+        )
+        .map_err(|_| "Work history entry not found".to_string())?
     };
 
     // Prefer IMO as the stable identifier (vessel names legitimately change
@@ -220,7 +260,10 @@ pub fn auto_create_work_evidence_folder(
     // Date bucket: sign_on when present, otherwise the entry's created_at.
     // Both are stored as `YYYY-MM-DD` / `YYYY-MM-DDTHH:MM:SS` — we just want
     // the first 7 chars and to strip the dash for a compact `YYYYMM`.
-    let date_src = sign_on.as_deref().filter(|s| s.len() >= 7).unwrap_or(&created_at);
+    let date_src = sign_on
+        .as_deref()
+        .filter(|s| s.len() >= 7)
+        .unwrap_or(&created_at);
     let yyyymm: String = date_src.chars().take(7).filter(|c| *c != '-').collect();
 
     let folder_name = format!("{}_{}", ident, yyyymm);
@@ -294,7 +337,10 @@ pub fn open_work_file(state: State<AppState>, id: String) -> Result<(), String> 
     let (entry_id, file_name) = db::get_work_file(conn, &id)
         .map_err(|e| e.to_string())?
         .ok_or("File not found")?;
-    let fp = vault_path.join("_work_history").join(&entry_id).join(&file_name);
+    let fp = vault_path
+        .join("_work_history")
+        .join(&entry_id)
+        .join(&file_name);
     if !fp.exists() {
         return Err("File missing on disk".to_string());
     }

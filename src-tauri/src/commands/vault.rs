@@ -64,9 +64,7 @@ pub fn get_linux_install_type() -> String {
     }
     if let Ok(exe) = std::env::current_exe() {
         let p = exe.to_string_lossy().to_string();
-        if p.starts_with("/usr/bin/")
-            || p.starts_with("/usr/local/bin/")
-            || p.starts_with("/opt/")
+        if p.starts_with("/usr/bin/") || p.starts_with("/usr/local/bin/") || p.starts_with("/opt/")
         {
             return "deb".to_string();
         }
@@ -129,11 +127,16 @@ pub async fn install_deb_update(version: String) -> Result<String, String> {
     let dest = std::path::PathBuf::from("/tmp").join(&filename);
 
     // Download
-    let resp = reqwest::get(&url).await.map_err(|e| format!("Download failed: {}", e))?;
+    let resp = reqwest::get(&url)
+        .await
+        .map_err(|e| format!("Download failed: {}", e))?;
     if !resp.status().is_success() {
         return Err(format!("Download failed: HTTP {}", resp.status()));
     }
-    let bytes = resp.bytes().await.map_err(|e| format!("Download failed: {}", e))?;
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("Download failed: {}", e))?;
     std::fs::write(&dest, &bytes).map_err(|e| format!("Cannot save .deb: {}", e))?;
 
     // Install via pkexec (shows native password dialog)
@@ -206,7 +209,13 @@ pub fn create_vault(
             "account_type": account_type.clone(),
         })
         .to_string();
-        let _ = db::log_event(&conn, "doc_added", "document", Some(&doc.id), Some(&payload));
+        let _ = db::log_event(
+            &conn,
+            "doc_added",
+            "document",
+            Some(&doc.id),
+            Some(&payload),
+        );
     }
 
     let info = db::get_vault_info(&conn).map_err(|e| e.to_string())?;
@@ -287,7 +296,9 @@ fn add_file_to_zip(
         .map_err(|e| format!("zip {}: {}", in_zip, e))?;
     let mut buf = [0_u8; 64 * 1024];
     loop {
-        let n = f.read(&mut buf).map_err(|e| format!("read {}: {}", src.display(), e))?;
+        let n = f
+            .read(&mut buf)
+            .map_err(|e| format!("read {}: {}", src.display(), e))?;
         if n == 0 {
             break;
         }
@@ -308,7 +319,8 @@ fn add_vault_tree_to_zip(
     for entry in fs::read_dir(dir).map_err(|e| format!("read {}: {}", dir.display(), e))? {
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
-        let meta = fs::symlink_metadata(&path).map_err(|e| format!("metadata {}: {}", path.display(), e))?;
+        let meta = fs::symlink_metadata(&path)
+            .map_err(|e| format!("metadata {}: {}", path.display(), e))?;
         if meta.file_type().is_symlink() {
             continue;
         }
@@ -348,7 +360,10 @@ fn add_vault_tree_to_zip(
 }
 
 #[tauri::command]
-pub fn export_vault_backup(state: State<AppState>, output_path: String) -> Result<serde_json::Value, String> {
+pub fn export_vault_backup(
+    state: State<AppState>,
+    output_path: String,
+) -> Result<serde_json::Value, String> {
     let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
     let vault_path = vault_lock.as_ref().ok_or("No vault open")?.clone();
     let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
@@ -364,14 +379,16 @@ pub fn export_vault_backup(state: State<AppState>, output_path: String) -> Resul
         let _ = fs::remove_file(&tmp_out);
     }
 
-    let db_snapshot = std::env::temp_dir().join(format!("skipi-db-snapshot-{}.db", uuid::Uuid::new_v4()));
+    let db_snapshot =
+        std::env::temp_dir().join(format!("skipi-db-snapshot-{}.db", uuid::Uuid::new_v4()));
     if db_snapshot.exists() {
         let _ = fs::remove_file(&db_snapshot);
     }
     conn.backup(DatabaseName::Main, &db_snapshot, None)
         .map_err(|e| format!("database backup failed: {}", e))?;
 
-    let file = fs::File::create(&tmp_out).map_err(|e| format!("create {}: {}", tmp_out.display(), e))?;
+    let file =
+        fs::File::create(&tmp_out).map_err(|e| format!("create {}: {}", tmp_out.display(), e))?;
     let mut zip = zip::ZipWriter::new(file);
     let options = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated)
@@ -379,7 +396,8 @@ pub fn export_vault_backup(state: State<AppState>, output_path: String) -> Resul
 
     add_file_to_zip(&mut zip, &db_snapshot, "skipi.db", options)?;
     let skip_paths = vec![out.clone(), tmp_out.clone()];
-    let mut file_count = 1 + add_vault_tree_to_zip(&mut zip, &vault_path, &vault_path, &skip_paths, options)?;
+    let mut file_count =
+        1 + add_vault_tree_to_zip(&mut zip, &vault_path, &vault_path, &skip_paths, options)?;
 
     let manifest = serde_json::json!({
         "schema_version": 1,
@@ -435,7 +453,8 @@ fn target_dir_is_empty_or_missing(path: &Path) -> Result<(), String> {
 
 fn extract_backup_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
     let file = fs::File::open(zip_path).map_err(|e| format!("open backup: {}", e))?;
-    let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("invalid backup zip: {}", e))?;
+    let mut archive =
+        zip::ZipArchive::new(file).map_err(|e| format!("invalid backup zip: {}", e))?;
     let mut saw_db = false;
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
@@ -483,10 +502,7 @@ pub fn import_vault_backup(
         .parent()
         .ok_or_else(|| "Target folder must have a parent".to_string())?;
     fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    let temp = parent.join(format!(
-        ".skipi-import-{}",
-        uuid::Uuid::new_v4()
-    ));
+    let temp = parent.join(format!(".skipi-import-{}", uuid::Uuid::new_v4()));
     if temp.exists() {
         let _ = fs::remove_dir_all(&temp);
     }
@@ -499,8 +515,10 @@ pub fn import_vault_backup(
             return Err("Imported backup has no skipi.db".to_string());
         }
         {
-            let conn = db::open_db(&temp).map_err(|e| format!("Imported database is invalid: {}", e))?;
-            let _ = db::get_vault_info(&conn).map_err(|e| format!("Imported vault metadata is invalid: {}", e))?;
+            let conn =
+                db::open_db(&temp).map_err(|e| format!("Imported database is invalid: {}", e))?;
+            let _ = db::get_vault_info(&conn)
+                .map_err(|e| format!("Imported vault metadata is invalid: {}", e))?;
         }
         if target.exists() {
             fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
@@ -535,14 +553,19 @@ pub fn get_recent_vaults() -> Vec<String> {
 pub fn forget_recent_vault(path: String) -> Result<(), String> {
     use std::fs;
     let cfg = crate::config_path();
-    let mut data: serde_json::Value = match fs::read_to_string(&cfg).ok().and_then(|t| serde_json::from_str(&t).ok()) {
+    let mut data: serde_json::Value = match fs::read_to_string(&cfg)
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+    {
         Some(v) => v,
         None => serde_json::json!({}),
     };
     let recent = crate::load_recent_vaults();
     let kept: Vec<String> = recent.into_iter().filter(|p| p != &path).collect();
     data["recent_vaults"] = serde_json::Value::Array(
-        kept.iter().map(|s| serde_json::Value::String(s.clone())).collect()
+        kept.iter()
+            .map(|s| serde_json::Value::String(s.clone()))
+            .collect(),
     );
     fs::write(&cfg, data.to_string()).map_err(|e| e.to_string())
 }
@@ -553,7 +576,11 @@ mod tests {
     use std::collections::BTreeSet;
 
     fn test_dir(name: &str) -> PathBuf {
-        let p = std::env::temp_dir().join(format!("skipi-vault-test-{}-{}", name, uuid::Uuid::new_v4()));
+        let p = std::env::temp_dir().join(format!(
+            "skipi-vault-test-{}-{}",
+            name,
+            uuid::Uuid::new_v4()
+        ));
         fs::create_dir_all(&p).unwrap();
         p
     }
@@ -573,7 +600,11 @@ mod tests {
         let mut zip = zip::ZipWriter::new(file);
         let options = zip::write::SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Deflated);
-        let skipped = vec![zip_path.clone(), root.join("backup.zip"), root.join("backup.zip.part")];
+        let skipped = vec![
+            zip_path.clone(),
+            root.join("backup.zip"),
+            root.join("backup.zip.part"),
+        ];
         let count = add_vault_tree_to_zip(&mut zip, &root, &root, &skipped, options).unwrap();
         zip.finish().unwrap();
 

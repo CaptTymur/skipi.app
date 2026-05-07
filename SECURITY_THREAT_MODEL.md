@@ -192,14 +192,21 @@ Design rule:
 - The raw identity tuple must not be stored in the dedup table.
 - A matching fingerprint from another vault must create a recovery/manual-merge
   flow, not a second public identity.
+- Identity recovery is not encrypted backup. Public `SKP-SF-...` id + recovery
+  key + matching name/DOB fingerprint may restore the right to the identity on a
+  new computer, but must not restore documents or local vault data.
 - Review identity remains separate from crewing/job identity.
 
 Current phase:
 
 - `POST /api/seafarer-identity/claim` creates `SKP-SF-...` public ids and
-  stores only a server-secret HMAC fingerprint.
+  stores only server-secret HMAC fingerprints for identity and recovery key.
+- `POST /api/seafarer-identity/recover` can attach a new vault to an existing
+  identity when the recovery proof matches. Wrong proof returns manual review,
+  not a second identity.
 - This is `identity_claimed`, not document verification. Later phases need
-  vault signatures, document/manual verification, recovery, and rate limiting.
+  vault signatures, document/manual verification, recovery UI, encrypted backup,
+  and rate limiting.
 
 ### 7. Vessel DB anti-scraping and dataset extraction
 
