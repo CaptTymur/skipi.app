@@ -4,7 +4,7 @@ use crate::{frameworks, profiles};
 use rusqlite::params;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::State;
 
 const HIDDEN_TEMPLATE_IDS_KEY: &str = "hidden_template_ids";
@@ -494,12 +494,10 @@ pub fn delete_doc(state: State<AppState>, id: String) -> Result<(), String> {
     let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = conn_lock.as_ref().ok_or("No vault open")?;
 
-    let doc = db::get_all_docs(conn)
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .find(|d| d.id == id);
+    let docs = db::get_all_docs(conn).map_err(|e| e.to_string())?;
+    let doc = docs.iter().find(|d| d.id == id);
     if let Some(d) = doc {
-        if is_hard_required_doc(conn, &d) {
+        if is_hard_required_doc(conn, d) {
             return Err(
                 "This document is required by the active profile framework and cannot be deleted."
                     .to_string(),
@@ -508,9 +506,16 @@ pub fn delete_doc(state: State<AppState>, id: String) -> Result<(), String> {
         if let Some(template_id) = d.template_id.as_deref() {
             let _ = mark_template_hidden(conn, template_id);
         }
-        if let Some(fname) = d.file_name {
-            let fp = vault_path.join(&d.category).join(&fname);
-            let _ = fs::remove_file(&fp);
+        if let Some(fname) = d.file_name.as_deref() {
+            let still_referenced = docs.iter().any(|other| {
+                other.id != d.id
+                    && other.category == d.category
+                    && other.file_name.as_deref() == Some(fname)
+            });
+            if !still_referenced {
+                let fp = vault_path.join(&d.category).join(fname);
+                let _ = fs::remove_file(&fp);
+            }
         }
     }
     conn.execute("DELETE FROM documents WHERE id = ?1", rusqlite::params![id])
@@ -584,6 +589,162 @@ pub fn read_file_base64(
     Ok((b64, mime.to_string()))
 }
 
+fn sanitize_file_component(value: &str, fallback: &str, max_chars: usize) -> String {
+    let raw: String = value
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let collapsed = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    let trimmed = collapsed.trim_matches(|c| c == ' ' || c == '.' || c == '-' || c == '_');
+    let cleaned = if trimmed.is_empty() {
+        fallback
+    } else {
+        trimmed
+    };
+    cleaned.chars().take(max_chars).collect()
+}
+
+fn doc_file_suffix(doc_id: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(doc_id.as_bytes());
+    hex::encode(hasher.finalize())
+        .chars()
+        .take(10)
+        .collect::<String>()
+}
+
+fn sanitize_extension(ext: &str) -> String {
+    ext.chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect::<String>()
+        .to_lowercase()
+}
+
+fn attachment_file_name(doc: &DocRecord, ext: &str) -> String {
+    let title = sanitize_file_component(&doc.title, "Document", 96);
+    let suffix = doc_file_suffix(&doc.id);
+    let stem = format!("{} - {}", title, suffix);
+    let ext = sanitize_extension(ext);
+    if ext.is_empty() {
+        stem
+    } else {
+        format!("{}.{}", stem, ext)
+    }
+}
+
+fn content_type_for_ext(ext: &str) -> &'static str {
+    match ext.to_lowercase().as_str() {
+        "pdf" => "application/pdf",
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "doc" => "application/msword",
+        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "txt" => "text/plain",
+        _ => "application/octet-stream",
+    }
+}
+
+fn remove_unreferenced_old_attachment(
+    vault_path: &Path,
+    docs: &[DocRecord],
+    doc: &DocRecord,
+    old_file_name: Option<&str>,
+    new_file_name: &str,
+) {
+    let Some(old_file_name) = old_file_name else {
+        return;
+    };
+    if old_file_name == new_file_name {
+        return;
+    }
+    let still_referenced = docs.iter().any(|other| {
+        other.id != doc.id
+            && other.category == doc.category
+            && other.file_name.as_deref() == Some(old_file_name)
+    });
+    if !still_referenced {
+        let old_path = vault_path.join(&doc.category).join(old_file_name);
+        let _ = fs::remove_file(old_path);
+    }
+}
+
+fn attach_file_to_vault(
+    conn: &rusqlite::Connection,
+    vault_path: &Path,
+    doc_id: &str,
+    source_path: &Path,
+) -> Result<String, String> {
+    let docs = db::get_all_docs(conn).map_err(|e| e.to_string())?;
+    let doc = docs
+        .iter()
+        .find(|d| d.id == doc_id)
+        .ok_or("Document not found")?;
+
+    if !source_path.exists() {
+        return Err(format!(
+            "Source file not found: {}",
+            source_path.to_string_lossy()
+        ));
+    }
+    let ext = source_path
+        .extension()
+        .map(|e| e.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let dest_name = attachment_file_name(doc, &ext);
+
+    let cat_dir = vault_path.join(&doc.category);
+    fs::create_dir_all(&cat_dir).map_err(|e| e.to_string())?;
+
+    let dest = cat_dir.join(&dest_name);
+    let same_file = match (source_path.canonicalize(), dest.canonicalize()) {
+        (Ok(src_abs), Ok(dest_abs)) => src_abs == dest_abs,
+        _ => false,
+    };
+    if !same_file {
+        fs::copy(source_path, &dest).map_err(|e| e.to_string())?;
+    }
+
+    let old_file_name = doc.file_name.as_deref();
+    db::update_doc_file(conn, doc_id, &dest_name).map_err(|e| e.to_string())?;
+    remove_unreferenced_old_attachment(vault_path, &docs, doc, old_file_name, &dest_name);
+
+    // Phase-2 readiness (I-4): content hash
+    if let Ok(bytes) = fs::read(&dest) {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(&bytes);
+        let hash = hex::encode(hasher.finalize());
+        let size = bytes.len() as i64;
+        let content_type = content_type_for_ext(&ext);
+        let _ = db::update_doc_content_hash(conn, doc_id, &hash, size, content_type);
+        let payload = serde_json::json!({
+            "sha256": hash,
+            "file_size": size,
+            "content_type": content_type,
+        })
+        .to_string();
+        let _ = db::log_event(
+            conn,
+            "file_attached",
+            "document",
+            Some(doc_id),
+            Some(&payload),
+        );
+    }
+
+    Ok(dest_name)
+}
+
 #[tauri::command]
 pub fn attach_file(
     state: State<AppState>,
@@ -596,86 +757,192 @@ pub fn attach_file(
     let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = conn_lock.as_ref().ok_or("No vault open")?;
 
-    let docs = db::get_all_docs(conn).map_err(|e| e.to_string())?;
-    let doc = docs
-        .iter()
-        .find(|d| d.id == doc_id)
-        .ok_or("Document not found")?;
-
-    let src = PathBuf::from(&source_path);
-    if !src.exists() {
-        return Err(format!("Source file not found: {}", source_path));
-    }
-    let ext = src
-        .extension()
-        .map(|e| e.to_string_lossy().to_string())
-        .unwrap_or_default();
-    let safe_title: String = doc
-        .title
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == ' ' || c == '-' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    let dest_name = if ext.is_empty() {
-        safe_title.clone()
-    } else {
-        format!("{}.{}", safe_title, ext)
-    };
-
-    let cat_dir = vault_path.join(&doc.category);
-    fs::create_dir_all(&cat_dir).map_err(|e| e.to_string())?;
-
-    let dest = cat_dir.join(&dest_name);
-    fs::copy(&src, &dest).map_err(|e| e.to_string())?;
-
-    db::update_doc_file(conn, &doc_id, &dest_name).map_err(|e| e.to_string())?;
-
-    // Phase-2 readiness (I-4): content hash
-    if let Ok(bytes) = fs::read(&dest) {
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
-        hasher.update(&bytes);
-        let hash = hex::encode(hasher.finalize());
-        let size = bytes.len() as i64;
-        let content_type = match ext.to_lowercase().as_str() {
-            "pdf" => "application/pdf",
-            "jpg" | "jpeg" => "image/jpeg",
-            "png" => "image/png",
-            "gif" => "image/gif",
-            "webp" => "image/webp",
-            "bmp" => "image/bmp",
-            "doc" => "application/msword",
-            "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "txt" => "text/plain",
-            _ => "application/octet-stream",
-        };
-        let _ = db::update_doc_content_hash(conn, &doc_id, &hash, size, content_type);
-        let payload = serde_json::json!({
-            "sha256": hash,
-            "file_size": size,
-            "content_type": content_type,
-        })
-        .to_string();
-        let _ = db::log_event(
-            conn,
-            "file_attached",
-            "document",
-            Some(&doc_id),
-            Some(&payload),
-        );
-    }
-
-    Ok(dest_name)
+    let src = PathBuf::from(source_path);
+    attach_file_to_vault(conn, vault_path, &doc_id, &src)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_doc(id: &str, category: &str, title: &str) -> DocRecord {
+        DocRecord {
+            id: id.to_string(),
+            category: category.to_string(),
+            title: title.to_string(),
+            file_name: None,
+            has_expiry: true,
+            valid_from: None,
+            valid_to: None,
+            issued_by: None,
+            doc_number: None,
+            notes: None,
+            field_statuses: None,
+            regulatory_basis: None,
+            template_id: Some(id.to_string()),
+            sha256: None,
+            file_size: None,
+            content_type: None,
+            visibility: "private".to_string(),
+            is_national: false,
+        }
+    }
+
+    fn create_temp_vault(prefix: &str) -> (PathBuf, rusqlite::Connection) {
+        let vault_path = std::env::temp_dir().join(format!("{}-{}", prefix, uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&vault_path).unwrap();
+        let conn = db::open_db(&vault_path).unwrap();
+        (vault_path, conn)
+    }
+
+    fn write_synthetic_source(vault_path: &Path, id: &str, ext: &str) -> PathBuf {
+        let p = vault_path.join(format!("source-{}.{}", id, ext));
+        std::fs::write(
+            &p,
+            format!(
+                "SYNTHETIC_CERTIFICATE\nDOC_ID={}\nUNIQUE_MARKER=marker-for-{}\n",
+                id, id
+            ),
+        )
+        .unwrap();
+        p
+    }
+
+    fn attached_text(vault_path: &Path, doc: &DocRecord) -> String {
+        let file_name = doc.file_name.as_ref().unwrap();
+        std::fs::read_to_string(vault_path.join(&doc.category).join(file_name)).unwrap()
+    }
+
+    #[test]
+    fn attach_file_uses_unique_paths_for_duplicate_titles() {
+        let (vault_path, conn) = create_temp_vault("skipi-attach-collision");
+        let category = "Certificate of Competency";
+        let title = "Certificate of Competency - Master";
+        let current = test_doc("coc-master-current", category, title);
+        let historical = test_doc("coc-master-historical", category, title);
+        db::insert_doc(&conn, &current).unwrap();
+        db::insert_doc(&conn, &historical).unwrap();
+
+        let current_source = write_synthetic_source(&vault_path, &current.id, "pdf");
+        let historical_source = write_synthetic_source(&vault_path, &historical.id, "pdf");
+        let current_name =
+            attach_file_to_vault(&conn, &vault_path, &current.id, &current_source).unwrap();
+        let historical_name =
+            attach_file_to_vault(&conn, &vault_path, &historical.id, &historical_source).unwrap();
+
+        assert_ne!(current_name, historical_name);
+        let docs = db::get_all_docs(&conn).unwrap();
+        let current = docs.iter().find(|d| d.id == "coc-master-current").unwrap();
+        let historical = docs
+            .iter()
+            .find(|d| d.id == "coc-master-historical")
+            .unwrap();
+        assert_ne!(current.file_name, historical.file_name);
+        assert!(attached_text(&vault_path, current).contains("DOC_ID=coc-master-current"));
+        assert!(attached_text(&vault_path, historical).contains("DOC_ID=coc-master-historical"));
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(vault_path);
+    }
+
+    #[test]
+    fn synthetic_profile_upload_smoke_keeps_each_certificate_in_place() {
+        let (vault_path, conn) = create_temp_vault("skipi-synthetic-profile-smoke");
+        let docs = vec![
+            test_doc(
+                "coc-master-current",
+                "Certificate of Competency",
+                "Certificate of Competency - Master",
+            ),
+            test_doc(
+                "coc-master-old",
+                "Certificate of Competency",
+                "Certificate of Competency - Master",
+            ),
+            test_doc(
+                "gmdss-goc",
+                "Certificate of Competency",
+                "GMDSS General Operator's Certificate",
+            ),
+            test_doc("bst", "STCW Mandatory", "Basic Safety Training (BST)"),
+            test_doc("sso", "STCW Mandatory", "Ship Security Officer (SSO)"),
+            test_doc(
+                "ecdis-generic",
+                "Deck Training",
+                "ECDIS Generic Training",
+            ),
+            test_doc(
+                "ecdis-furuno",
+                "ECDIS Type Specific",
+                "ECDIS Type-Specific - Furuno",
+            ),
+            test_doc(
+                "ecdis-jrc",
+                "ECDIS Type Specific",
+                "ECDIS Type-Specific - JRC",
+            ),
+            test_doc(
+                "radar-arpa",
+                "Deck Training",
+                "Radar Navigation, Radar Plotting and ARPA",
+            ),
+            test_doc("passport", "Passport", "Passport (Travel)"),
+            test_doc(
+                "seamans-book",
+                "Seaman's Book",
+                "Seaman's Book (Discharge Book)",
+            ),
+            test_doc(
+                "flag-coc-endorsement",
+                "Flag CoC Endorsement",
+                "Flag CoC Endorsement",
+            ),
+            test_doc(
+                "flag-seamans-book",
+                "Flag Seaman's Book",
+                "Flag Seaman's Book",
+            ),
+            test_doc(
+                "bulk-dangerous-goods",
+                "Bulk Carrier Specific",
+                "Ships carrying dangerous and hazardous substances in solid form in bulk and in packaged form",
+            ),
+            test_doc(
+                "polar-advanced",
+                "STCW Specific",
+                "Ice Navigation Advanced Training",
+            ),
+        ];
+        for doc in &docs {
+            db::insert_doc(&conn, doc).unwrap();
+        }
+
+        for doc in &docs {
+            let src = write_synthetic_source(&vault_path, &doc.id, "pdf");
+            attach_file_to_vault(&conn, &vault_path, &doc.id, &src).unwrap();
+        }
+
+        let attached = db::get_all_docs(&conn).unwrap();
+        let mut seen_paths = HashSet::new();
+        for expected in &docs {
+            let actual = attached.iter().find(|d| d.id == expected.id).unwrap();
+            let file_name = actual.file_name.as_ref().unwrap();
+            assert!(
+                seen_paths.insert((actual.category.clone(), file_name.clone())),
+                "duplicate stored path for {}",
+                actual.id
+            );
+            let content = attached_text(&vault_path, actual);
+            assert!(
+                content.contains(&format!("DOC_ID={}", expected.id)),
+                "wrong synthetic marker in {}",
+                expected.id
+            );
+        }
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(vault_path);
+    }
 
     #[test]
     fn normalize_known_custom_sso_promotes_to_template_id() {

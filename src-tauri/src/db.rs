@@ -371,6 +371,26 @@ mod tests {
         drop(conn);
         let _ = fs::remove_dir_all(&vault_path);
     }
+
+    #[test]
+    fn open_db_handles_cyrillic_and_spaces_path() {
+        let vault_path = env::temp_dir().join(format!(
+            "Skipi Vault {} {}",
+            "\u{0422}\u{0435}\u{0441}\u{0442}",
+            Uuid::new_v4()
+        ));
+        fs::create_dir_all(&vault_path).unwrap();
+
+        let conn = open_db(&vault_path).unwrap();
+        assert!(vault_path.join("skipi.db").exists());
+        conn.query_row("SELECT 1 FROM schema_migrations LIMIT 1", [], |row| {
+            row.get::<_, i32>(0)
+        })
+        .unwrap();
+
+        drop(conn);
+        let _ = fs::remove_dir_all(&vault_path);
+    }
 }
 
 pub fn set_vault_info(conn: &Connection, key: &str, value: &str) -> Result<()> {

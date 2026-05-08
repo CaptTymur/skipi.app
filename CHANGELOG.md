@@ -7,6 +7,27 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.112] — 2026-05-08
+
+### Fixed
+- Document attachments now use a stable per-document filename suffix instead of
+  title-only filenames, preventing two same-titled certificate slots from
+  overwriting or displaying the same physical file.
+- Deleting a non-required document no longer removes the underlying file if
+  another document row still references it.
+- The document view now warns when the same attached file hash appears under
+  another certificate, helping testers catch misfiled uploads immediately.
+- Synchronized visible app version fields for the release artifact gate.
+
+### Added
+- Added a synthetic certificate upload smoke test that creates a test vault,
+  attaches generated files to multiple certificate slots, and verifies every
+  slot keeps its own file marker.
+- Added `scripts/pre_release_smoke.py`, an automated pre-release smoke runner
+  covering version consistency, local-first privacy gates, backup/export
+  safeguards, demo vault sanity, config/log secret scans, and vault attachment
+  integrity warnings.
+
 ## [0.4.108] — 2026-05-06
 
 ### Fixed
