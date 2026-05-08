@@ -7,6 +7,14 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.113] — 2026-05-08
+
+### Added
+- Sea Service entries now support optional DWT and TEU capacity fields.
+- Dispatch/package/job-apply messages now include a short last-vessel summary
+  in the email/chat body so crewing teams can screen rank, vessel type, IMO,
+  capacity, dates, and company before opening attachments.
+
 ## [0.4.112] — 2026-05-08
 
 ### Fixed

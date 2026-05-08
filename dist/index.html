@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.112';
+var APP_VERSION='0.4.113';
 // Window title is set via `set_window_title` Rust command inside
 // updateTitlebar() — direct JS setTitle() is blocked by Tauri 2 ACL.
 // Human-readable labels for account types that go into the OS window title.
@@ -622,7 +622,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.112</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.113</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -823,6 +823,90 @@ var SKIPI_REPO_URL='https://github.com/CaptTymur/skipi.app';
 // mail clients that respect RFC 3676 strip everything below it as a signature
 // block, keeping replies clean.
 var SKIPI_EMAIL_FOOTER='\n\n-- \nCreated in Skipi application. Download: https://skipi.app';
+
+function emailNumber(v){
+    var raw=String(v||'').trim();
+    if(!raw)return '';
+    var clean=raw.replace(/[^\d.]/g,'');
+    var n=Number(clean);
+    if(clean&&isFinite(n))return Math.round(n).toLocaleString('en-US');
+    return raw;
+}
+
+function workDateValue(w,key){
+    return (w&&(w[key]||w[key+'_date']))||'';
+}
+
+function workEntryMonths(w){
+    var onStr=workDateValue(w,'sign_on');
+    if(!onStr)return 0;
+    var on=new Date(onStr);
+    if(isNaN(on))return 0;
+    var offStr=workDateValue(w,'sign_off');
+    var off=offStr?new Date(offStr):new Date();
+    if(isNaN(off))off=new Date();
+    return Math.max(0,Math.round((off-on)/(30.5*864e5)));
+}
+
+function formatSeaServiceCapacity(w){
+    var parts=[];
+    if(w&&w.dwt)parts.push(emailNumber(w.dwt)+' DWT');
+    if(w&&w.teu)parts.push(emailNumber(w.teu)+' TEU');
+    return parts.join(' / ');
+}
+
+function seaServiceSortKey(w){
+    var d=workDateValue(w,'sign_off')||workDateValue(w,'sign_on')||(w&&w.created_at)||'';
+    var t=d?new Date(d).getTime():0;
+    return isFinite(t)?t:0;
+}
+
+function latestSeaService(entries){
+    var arr=(entries||[]).slice().filter(function(w){return w&&w.vessel_name;});
+    arr.sort(function(a,b){return seaServiceSortKey(b)-seaServiceSortKey(a);});
+    return arr[0]||null;
+}
+
+function formatLastSeaServiceLine(w){
+    if(!w)return '';
+    var vessel=(w.vessel_name||'Last vessel')+(w.imo?' (IMO '+w.imo+')':'');
+    var bits=[vessel];
+    if(w.vessel_type)bits.push(w.vessel_type);
+    var cap=formatSeaServiceCapacity(w);
+    if(cap)bits.push(cap);
+    if(w.position)bits.push(w.position);
+    var from=workDateValue(w,'sign_on'),to=workDateValue(w,'sign_off');
+    if(from||to)bits.push((from||'?')+' to '+(to||'present'));
+    if(w.company)bits.push(w.company);
+    return bits.filter(Boolean).join(' / ');
+}
+
+function formatLastSeaServiceBullet(w){
+    var line=formatLastSeaServiceLine(w);
+    return line?'- Last vessel: '+line:null;
+}
+
+function formatLastSeaServiceEmailBlock(w){
+    var line=formatLastSeaServiceLine(w);
+    return line?'Last sea service:\n- '+line:'';
+}
+
+function seaServiceStats(entries,rank){
+    var totalMo=0,rankMo=0;
+    var rankNorm=String(rank||'').toLowerCase();
+    (entries||[]).forEach(function(w){
+        var mo=workEntryMonths(w);
+        totalMo+=mo;
+        if(rankNorm&&String(w.position||'').toLowerCase()===rankNorm)rankMo+=mo;
+    });
+    return {totalMo:totalMo,rankMo:rankMo,last:latestSeaService(entries||[])};
+}
+
+async function loadSeaServiceStats(rank){
+    var entries=[];
+    try{entries=await invoke('get_work_history')||[];}catch(e){entries=[];}
+    return seaServiceStats(entries,rank);
+}
 
 function _resetCheckUpdateBtn(){
     var b=document.getElementById('btn-check-update');
@@ -3843,6 +3927,8 @@ async function showWorkHistory(){
             h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">';
             h+='<div style="flex:1;min-width:0;"><div style="font-weight:600;">'+e.vessel_name+(e.imo?' <span style="color:var(--text2);font-size:11px;">IMO '+e.imo+'</span>':'')+'</div>';
             h+='<div style="font-size:12px;color:var(--text2);">'+e.position+(e.vessel_type?' &middot; '+e.vessel_type:'')+(e.flag?' &middot; '+e.flag:'')+'</div>';
+            var cap=formatSeaServiceCapacity(e);
+            if(cap)h+='<div style="font-size:11px;color:var(--text2);">'+cap+'</div>';
             if(e.company)h+='<div style="font-size:11px;color:var(--text2);">'+e.company+'</div>';
             h+='<div style="font-size:11px;color:var(--text2);margin-top:2px;">'+period+'</div>';
             if(e.notes)h+='<div style="font-size:11px;margin-top:4px;">'+e.notes+'</div>';
@@ -3931,6 +4017,8 @@ async function showAddWork(){
     h+='<div class="field"><label>Vessel Name *</label><input id="wh-vessel" list="wh-prev-vessels" placeholder="M/V Example" autocomplete="off"></div>';
     h+='<div class="field"><label>IMO Number</label><input id="wh-imo" placeholder="1234567"></div>';
     h+='<div class="field"><label>Vessel Type</label><select id="wh-type"></select></div>';
+    h+='<div class="field"><label>DWT</label><input id="wh-dwt" type="text" inputmode="numeric" placeholder="e.g. 82000"></div>';
+    h+='<div class="field"><label>TEU</label><input id="wh-teu" type="text" inputmode="numeric" placeholder="container ships"></div>';
     h+='<div class="field"><label>Flag</label><input id="wh-flag" list="maritime-flags" placeholder="Start typing… (Panama, Liberia, Marshall Islands, …)"></div>';
     h+='<div class="field"><label>Company</label><input id="wh-company" placeholder="Shipping Co."></div>';
     h+='<div class="field"><label>Position *</label><select id="wh-position"></select></div>';
@@ -3996,6 +4084,8 @@ async function saveWork(){
             position:pos,
             signOn:v('wh-on'),
             signOff:v('wh-off'),
+            dwt:v('wh-dwt'),
+            teu:v('wh-teu'),
             notes:v('wh-notes')
         });
         await showWorkHistory();
@@ -6273,20 +6363,8 @@ async function _jobsApplyProceed(vacancyId, replyTo, title){
     }
 
     // Aggregate for both E2E summary and email body.
-    var totalMo_ = 0, rankMo_ = 0;
-    try {
-        var wh_ = await invoke('get_work_history') || [];
-        var rank_ = sp.rank || '';
-        wh_.forEach(function(w){
-            var on = w.sign_on_date && new Date(w.sign_on_date);
-            var off = w.sign_off_date && new Date(w.sign_off_date);
-            if (!on) return;
-            var end = off || new Date();
-            var mo = Math.max(0, Math.round((end - on) / (30.5 * 864e5)));
-            totalMo_ += mo;
-            if (rank_ && (w.position||'').toLowerCase() === rank_.toLowerCase()) rankMo_ += mo;
-        });
-    } catch(e){}
+    var sea_=await loadSeaServiceStats(sp.rank||'');
+    var totalMo_=sea_.totalMo,rankMo_=sea_.rankMo,lastSea_=sea_.last;
 
     // E2E path — when crewing has registered an X25519 pubkey, encrypt
     // and post the cover message directly. No email leaks.
@@ -6326,6 +6404,16 @@ async function _jobsApplyProceed(vacancyId, replyTo, title){
                 available_from: sp.available_from,
                 min_salary: sp.min_salary,
                 min_salary_currency: sp.min_salary_currency,
+                last_sea_service: lastSea_ ? {
+                    vessel_name: lastSea_.vessel_name || null,
+                    vessel_type: lastSea_.vessel_type || null,
+                    imo: lastSea_.imo || null,
+                    dwt: lastSea_.dwt || null,
+                    teu: lastSea_.teu || null,
+                    position: lastSea_.position || null,
+                    sign_on: workDateValue(lastSea_,'sign_on') || null,
+                    sign_off: workDateValue(lastSea_,'sign_off') || null,
+                } : null,
                 certs_summary: certsSummary.length ? certsSummary : null,
             };
             var coverLines = [
@@ -6337,6 +6425,7 @@ async function _jobsApplyProceed(vacancyId, replyTo, title){
                 '',
                 'About me:',
                 sp.rank ? '- Rank: '+sp.rank : null,
+                formatLastSeaServiceBullet(lastSea_),
                 totalMo_ ? '- Total sea time: '+totalMo_+' months' : null,
                 rankMo_ ? '- Experience as '+sp.rank+': '+rankMo_+' months' : null,
                 sp.available_from ? '- Available from: '+sp.available_from : null,
@@ -6400,20 +6489,8 @@ async function _jobsApplyProceed(vacancyId, replyTo, title){
         }
     }
 
-    var totalMo = 0, rankMo = 0;
-    try {
-        var wh = await invoke('get_work_history') || [];
-        var rank = sp.rank || '';
-        wh.forEach(function(w){
-            var on = w.sign_on_date && new Date(w.sign_on_date);
-            var off = w.sign_off_date && new Date(w.sign_off_date);
-            if (!on) return;
-            var end = off || new Date();
-            var mo = Math.max(0, Math.round((end - on) / (30.5 * 864e5)));
-            totalMo += mo;
-            if (rank && (w.position||'').toLowerCase() === rank.toLowerCase()) rankMo += mo;
-        });
-    } catch(e){}
+    var sea=await loadSeaServiceStats(sp.rank||'');
+    var totalMo=sea.totalMo,rankMo=sea.rankMo,lastSea=sea.last;
 
     var initials = ((sp.first_name||'').charAt(0)+'. '+(sp.surname||'')).trim() || 'Skipi user';
     var subjBits = [];
@@ -6434,6 +6511,8 @@ async function _jobsApplyProceed(vacancyId, replyTo, title){
     bodyLines.push('');
     bodyLines.push('About me:');
     if (sp.rank) bodyLines.push('- Rank: '+sp.rank);
+    var lastBullet=formatLastSeaServiceBullet(lastSea);
+    if (lastBullet) bodyLines.push(lastBullet);
     if (totalMo) bodyLines.push('- Total sea time: '+totalMo+' months');
     if (rankMo) bodyLines.push('- Experience as '+sp.rank+': '+rankMo+' months');
     if (sp.available_from) bodyLines.push('- Available from: '+sp.available_from);
@@ -6880,6 +6959,8 @@ async function buildDispatchDraft(kind){
     var avail=sp.available_from||'';
     var phone=sp.phones||'';
     var email=sp.email||'';
+    var sea=await loadSeaServiceStats(rank);
+    var lastSeaBlock=formatLastSeaServiceEmailBlock(sea.last);
     // Subject reflects what the recipient will actually see first — rank +
     // readiness date + name, so it doesn't get lost in a crewing inbox.
     var subject='CV'+(rank?' - '+rank:'')+(avail?' - readiness '+avail:'')+' - '+name;
@@ -6887,6 +6968,7 @@ async function buildDispatchDraft(kind){
         ? 'Please find attached my CV'+(rank?' for the position of '+rank:'')+' for your consideration.'
         : 'Please find attached my documents package'+(rank?' for the position of '+rank:'')+'.';
     var body='Dear Sirs,\n\n'+intro+
+        (lastSeaBlock?'\n\n'+lastSeaBlock:'')+
         (avail?'\n\nI am available for joining from '+avail+'.':'')+
         '\n\nI would appreciate the opportunity to discuss any suitable vacancies.\n\n'+
         'Kind regards,\n'+name+
@@ -6979,8 +7061,11 @@ async function doEmail(id,title){
     var avail=sp.available_from||'';
     var phone=sp.phones||'';
     var email=sp.email||'';
+    var sea=await loadSeaServiceStats(rank);
+    var lastSeaBlock=formatLastSeaServiceEmailBlock(sea.last);
     var subj='CV'+(rank?' - '+rank:'')+(avail?' - readiness '+avail:'')+' - '+name;
     var body='Dear Sirs,\n\nPlease find attached my documents package'+(rank?' for the position of '+rank:'')+'.'+
+        (lastSeaBlock?'\n\n'+lastSeaBlock:'')+
         (avail?'\n\nI am available for joining from '+avail+'.':'')+
         '\n\nI would appreciate the opportunity to discuss any suitable vacancies.\n\n'+
         'Kind regards,\n'+name+

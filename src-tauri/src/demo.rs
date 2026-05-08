@@ -316,6 +316,8 @@ struct DemoWork {
     position: &'static str,
     sign_on: &'static str,
     sign_off: &'static str,
+    dwt: &'static str,
+    teu: &'static str,
 }
 
 fn demo_work_entries() -> Vec<DemoWork> {
@@ -329,6 +331,8 @@ fn demo_work_entries() -> Vec<DemoWork> {
             position: "Second Officer",
             sign_on: "2024-02-12",
             sign_off: "2024-09-30",
+            dwt: "82000",
+            teu: "",
         },
         DemoWork {
             vessel_name: "MV Demo Pioneer",
@@ -339,6 +343,8 @@ fn demo_work_entries() -> Vec<DemoWork> {
             position: "Third Officer",
             sign_on: "2023-05-01",
             sign_off: "2023-12-15",
+            dwt: "76500",
+            teu: "",
         },
         DemoWork {
             vessel_name: "MV Demo Breeze",
@@ -349,6 +355,8 @@ fn demo_work_entries() -> Vec<DemoWork> {
             position: "Deck Cadet",
             sign_on: "2022-03-10",
             sign_off: "2022-10-20",
+            dwt: "12500",
+            teu: "",
         },
     ]
 }
@@ -473,8 +481,8 @@ fn populate_synthetic_demo_vault(vault_path: &Path) -> Result<Connection, String
     for w in demo_work_entries() {
         let id = Uuid::new_v4().to_string();
         conn.execute(
-            "INSERT INTO work_history (id, vessel_name, vessel_type, imo, flag, company, position, sign_on, sign_off, notes, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, datetime('now'))",
+            "INSERT INTO work_history (id, vessel_name, vessel_type, imo, flag, company, position, sign_on, sign_off, dwt, teu, notes, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, datetime('now'))",
             rusqlite::params![
                 id,
                 w.vessel_name,
@@ -485,6 +493,8 @@ fn populate_synthetic_demo_vault(vault_path: &Path) -> Result<Connection, String
                 w.position,
                 w.sign_on,
                 w.sign_off,
+                w.dwt,
+                w.teu,
                 "Demo entry",
             ],
         )

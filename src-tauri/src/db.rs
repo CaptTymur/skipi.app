@@ -210,6 +210,16 @@ fn migrations() -> Vec<(u32, &'static str)> {
             ALTER TABLE ai_corrections ADD COLUMN label_json TEXT;
         "#,
         ),
+        // Migration 7: optional vessel capacity on Sea Service entries.
+        // HR teams often screen CV emails from preview text; DWT / TEU lets
+        // Skipi summarize the last vessel without forcing them to open a CV.
+        (
+            7,
+            r#"
+            ALTER TABLE work_history ADD COLUMN dwt TEXT;
+            ALTER TABLE work_history ADD COLUMN teu TEXT;
+        "#,
+        ),
     ]
 }
 
@@ -387,6 +397,38 @@ mod tests {
             row.get::<_, i32>(0)
         })
         .unwrap();
+
+        drop(conn);
+        let _ = fs::remove_dir_all(&vault_path);
+    }
+
+    #[test]
+    fn work_history_roundtrips_vessel_capacity() {
+        let vault_path = env::temp_dir().join(format!("skipi-work-capacity-{}", Uuid::new_v4()));
+        fs::create_dir_all(&vault_path).unwrap();
+        let conn = open_db(&vault_path).unwrap();
+
+        add_work_entry(
+            &conn,
+            "entry-1",
+            "MV Capacity Test",
+            Some("Container Ship"),
+            Some("9123456"),
+            Some("Liberia"),
+            Some("Test Manager"),
+            "Chief Officer",
+            Some("2025-01-10"),
+            Some("2025-07-20"),
+            Some(""),
+            Some("5100"),
+            Some("Synthetic test entry"),
+        )
+        .unwrap();
+
+        let entries = get_work_history(&conn).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["dwt"], "");
+        assert_eq!(entries[0]["teu"], "5100");
 
         drop(conn);
         let _ = fs::remove_dir_all(&vault_path);
@@ -772,20 +814,22 @@ pub fn add_work_entry(
     position: &str,
     sign_on: Option<&str>,
     sign_off: Option<&str>,
+    dwt: Option<&str>,
+    teu: Option<&str>,
     notes: Option<&str>,
 ) -> Result<()> {
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
     conn.execute(
-        "INSERT INTO work_history (id, vessel_name, vessel_type, imo, flag, company, position, sign_on, sign_off, notes, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-        params![id, vessel_name, vessel_type, imo, flag, company, position, sign_on, sign_off, notes, now],
+        "INSERT INTO work_history (id, vessel_name, vessel_type, imo, flag, company, position, sign_on, sign_off, dwt, teu, notes, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+        params![id, vessel_name, vessel_type, imo, flag, company, position, sign_on, sign_off, dwt, teu, notes, now],
     )?;
     Ok(())
 }
 
 pub fn get_work_history(conn: &Connection) -> Result<Vec<serde_json::Value>> {
     let mut stmt = conn.prepare(
-        "SELECT id, vessel_name, vessel_type, imo, flag, company, position, sign_on, sign_off, notes, created_at, evidence_folder
+        "SELECT id, vessel_name, vessel_type, imo, flag, company, position, sign_on, sign_off, notes, created_at, evidence_folder, dwt, teu
          FROM work_history ORDER BY COALESCE(sign_on, created_at) DESC"
     )?;
     let rows = stmt
@@ -803,6 +847,8 @@ pub fn get_work_history(conn: &Connection) -> Result<Vec<serde_json::Value>> {
                 "notes": row.get::<_, Option<String>>(9)?,
                 "created_at": row.get::<_, String>(10)?,
                 "evidence_folder": row.get::<_, Option<String>>(11)?,
+                "dwt": row.get::<_, Option<String>>(12)?,
+                "teu": row.get::<_, Option<String>>(13)?,
             }))
         })?
         .collect::<Result<Vec<_>>>()?;

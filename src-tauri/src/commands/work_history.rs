@@ -15,6 +15,8 @@ pub fn add_work_history(
     position: String,
     sign_on: Option<String>,
     sign_off: Option<String>,
+    dwt: Option<String>,
+    teu: Option<String>,
     notes: Option<String>,
 ) -> Result<String, String> {
     let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
@@ -31,6 +33,8 @@ pub fn add_work_history(
         &position,
         sign_on.as_deref(),
         sign_off.as_deref(),
+        dwt.as_deref(),
+        teu.as_deref(),
         notes.as_deref(),
     )
     .map_err(|e| e.to_string())?;
