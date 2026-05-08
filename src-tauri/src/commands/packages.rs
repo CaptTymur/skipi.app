@@ -6,6 +6,49 @@ use std::path::{Path, PathBuf};
 
 use tauri::State;
 
+fn normalize_mail_body(body: &str) -> String {
+    // Some mail-client bridges treat `\n` as literal text if the body has
+    // passed through an escaping layer. Repair only obvious escaped multiline
+    // drafts; otherwise preserve user text verbatim.
+    let escaped_lines = body.matches("\\n").count() + body.matches("\\r\\n").count();
+    let repaired = if !body.contains('\n') && escaped_lines >= 2 {
+        body.replace("\\r\\n", "\n").replace("\\n", "\n")
+    } else {
+        body.to_string()
+    };
+    repaired.replace("\r\n", "\n").replace('\r', "\n")
+}
+
+#[cfg(target_os = "windows")]
+fn ps_utf8_string_expr(s: &str) -> String {
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(s.as_bytes());
+    format!(
+        "[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{}'))",
+        b64
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn applescript_string_expr(s: &str) -> String {
+    let normalized = normalize_mail_body(s);
+    let mut parts: Vec<String> = Vec::new();
+    for (idx, line) in normalized.split('\n').enumerate() {
+        if idx > 0 {
+            parts.push("linefeed".to_string());
+        }
+        parts.push(format!(
+            "\"{}\"",
+            line.replace('\\', "\\\\").replace('"', "\\\"")
+        ));
+    }
+    if parts.is_empty() {
+        "\"\"".to_string()
+    } else {
+        parts.join(" & ")
+    }
+}
+
 /// Copies a source file into `~/Downloads/Skipi/` under a sanitised,
 /// timestamp-prefixed name. We do this before invoking `xdg-email` on Linux
 /// because:
@@ -404,7 +447,7 @@ pub fn open_email_with_attachment(
         return Err("Package ZIP not found".to_string());
     }
 
-    let body_str = body.unwrap_or_default();
+    let body_str = normalize_mail_body(&body.unwrap_or_default());
 
     #[cfg(target_os = "linux")]
     {
@@ -447,14 +490,17 @@ pub fn open_email_with_attachment(
     {
         let script = format!(
             r#"tell application "Mail"
-                set newMsg to make new outgoing message with properties {{subject:"{}", visible:true}}
+                set newMsg to make new outgoing message with properties {{subject:{subject}, content:{body}, visible:true}}
                 tell newMsg
-                    make new to recipient with properties {{address:"{}"}}
-                    make new attachment with properties {{file name:POSIX file "{}"}}
+                    make new to recipient with properties {{address:{to}}}
+                    make new attachment with properties {{file name:POSIX file {zip}}}
                 end tell
                 activate
             end tell"#,
-            subject, to, zip_str
+            subject = applescript_string_expr(&subject),
+            body = applescript_string_expr(&body_str),
+            to = applescript_string_expr(&to),
+            zip = applescript_string_expr(&zip_str),
         );
         let _ = std::process::Command::new("osascript")
             .arg("-e")
@@ -469,15 +515,15 @@ pub fn open_email_with_attachment(
         let ps_script = format!(
             "$o = New-Object -ComObject Outlook.Application; \
              $m = $o.CreateItem(0); \
-             $m.To = '{}'; \
-             $m.Subject = '{}'; \
-             $m.Body = '{}'; \
-             $m.Attachments.Add('{}'); \
+             $m.To = {}; \
+             $m.Subject = {}; \
+             $m.Body = {}; \
+             $m.Attachments.Add({}); \
              $m.Display()",
-            to.replace('\'', "''"),
-            subject.replace('\'', "''"),
-            body_str.replace('\'', "''").replace('\n', "`n"),
-            zip_str.replace('\'', "''"),
+            ps_utf8_string_expr(&to),
+            ps_utf8_string_expr(&subject),
+            ps_utf8_string_expr(&body_str),
+            ps_utf8_string_expr(&zip_str),
         );
         let outlook_ok = std::process::Command::new("powershell")
             .creation_flags(CREATE_NO_WINDOW)
@@ -537,6 +583,7 @@ pub fn dispatch_package(
     if recipients.is_empty() {
         return Err("At least one recipient is required".to_string());
     }
+    let body = normalize_mail_body(&body);
     // Default to true so older callers (e.g. /api or any pre-v0.4.21 clients)
     // keep the "CV + package" behaviour they used to see.
     let include_cv = include_cv.unwrap_or(true);
@@ -659,13 +706,13 @@ pub fn dispatch_package(
         };
         let script = format!(
             r#"tell application "Mail"
-                set newMsg to make new outgoing message with properties {{subject:"{subject}", content:"{body}", visible:true}}
+                set newMsg to make new outgoing message with properties {{subject:{subject}, content:{body}, visible:true}}
                 tell newMsg
 {rec_script}{zip_attach}{cv_attach}                end tell
                 activate
             end tell"#,
-            subject = subject.replace('"', "\\\""),
-            body = body.replace('"', "\\\"").replace('\n', "\\n"),
+            subject = applescript_string_expr(&subject),
+            body = applescript_string_expr(&body),
             rec_script = rec_script,
             zip_attach = zip_attach,
             cv_attach = cv_attach,
@@ -708,20 +755,20 @@ pub fn dispatch_package(
         if !handled && try_outlook {
             let attach_ps: String = attachments
                 .iter()
-                .map(|a| format!("$m.Attachments.Add('{}')", a.replace('\'', "''")))
+                .map(|a| format!("$m.Attachments.Add({})", ps_utf8_string_expr(a)))
                 .collect::<Vec<_>>()
                 .join("; ");
             let ps_script = format!(
                 "$o = New-Object -ComObject Outlook.Application; \
                  $m = $o.CreateItem(0); \
-                 $m.To = '{}'; \
-                 $m.Subject = '{}'; \
-                 $m.Body = '{}'; \
+                 $m.To = {}; \
+                 $m.Subject = {}; \
+                 $m.Body = {}; \
                  {}; \
                  $m.Display()",
-                to_joined.replace('\'', "''"),
-                subject.replace('\'', "''"),
-                body.replace('\'', "''").replace('\n', "`n"),
+                ps_utf8_string_expr(&to_joined),
+                ps_utf8_string_expr(&subject),
+                ps_utf8_string_expr(&body),
                 attach_ps,
             );
             handled = std::process::Command::new("powershell")
@@ -888,4 +935,30 @@ pub fn record_dispatch_history(
     db::add_dispatch(conn, &disp_id, pkg_ref, &to_joined, &subject, &cv)
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_mail_body;
+
+    #[test]
+    fn normalize_mail_body_preserves_real_newlines() {
+        let body = "Dear Sirs,\n\nPlease find attached my CV.\n\nKind regards";
+        assert_eq!(normalize_mail_body(body), body);
+    }
+
+    #[test]
+    fn normalize_mail_body_repairs_escaped_multiline_draft() {
+        let body = "Dear Sirs,\\n\\nPlease find attached my CV.\\n\\nKind regards";
+        assert_eq!(
+            normalize_mail_body(body),
+            "Dear Sirs,\n\nPlease find attached my CV.\n\nKind regards"
+        );
+    }
+
+    #[test]
+    fn normalize_mail_body_does_not_rewrite_single_backslash_n() {
+        let body = "Use the literal token \\n in documentation";
+        assert_eq!(normalize_mail_body(body), body);
+    }
 }
