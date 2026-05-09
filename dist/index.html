@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.116';
+var APP_VERSION='0.4.117';
 var UI_LANG_KEY='skipi-ui-language';
 var UI_LANG_OPTIONS=[
     ['en','English'],
@@ -314,6 +314,14 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .vrev-muted { color:var(--text2); }
 .vrev-cta { margin-top:8px; }
 .vrev-cta a { color:var(--accent); cursor:pointer; text-decoration:underline; font-weight:600; }
+.exp-vessel-title { border:0; background:transparent; padding:0; margin:0; color:var(--text); font:inherit; font-weight:600; text-align:left; cursor:pointer; }
+.exp-vessel-title:hover { color:var(--accent); text-decoration:underline; }
+.exp-vessel-db-strip { margin-top:7px; }
+.exp-vessel-rating-link { border:0; background:transparent; padding:0; margin:0; display:flex; align-items:center; gap:7px; flex-wrap:wrap; color:var(--text2); font:inherit; text-align:left; cursor:pointer; }
+.exp-vessel-rating-link .stars { color:var(--yellow); font-size:15px; line-height:1; letter-spacing:1px; }
+.exp-vessel-rating-link.empty .stars { color:var(--text2); opacity:.55; }
+.exp-vessel-rating-link .meta { color:var(--text2); font-size:11px; }
+.exp-vessel-rating-link:hover .meta { color:var(--accent); text-decoration:underline; }
 .vdb-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:10px; }
 .vdb-card { border:1px solid var(--border); border-radius:6px; padding:12px 14px; background:var(--bg); min-width:0; }
 .vdb-card-title { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
@@ -710,7 +718,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p id="welcome-subtitle">Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.116</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.117</span></p>
                 <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -2522,7 +2530,7 @@ function docStatusRank(d){
 }
 function showView(v, opts){
     opts=opts||{};
-    if(v==='vessels'&&!opts.fromJob){
+    if(v==='vessels'&&!opts.fromJob&&!opts.fromExperience){
         vesselDbJobContext=null;
         vesselDbPendingImo=null;
     }
@@ -3386,6 +3394,53 @@ function renderVesselReviewProjection(entry,imo){
 function renderVesselReviewLoading(){
     return '<div class="vrev-head"><span class="vrev-title">Vessel reviews</span><span class="badge badge-none">Checking</span></div>';
 }
+function vesselProjectionRatingSummary(data){
+    data=data||{};
+    var n=Number(data.average_overall);
+    if(isFinite(n)){
+        return {value:n,count:data.review_count||0,source:'public'};
+    }
+    var reviews=data.reviews||{};
+    var byEpoch=reviews.by_epoch||[];
+    if(byEpoch.length){
+        var currentEpochIds={};
+        (data.manager_epochs||[]).forEach(function(ep){if(ep&&ep.is_current)currentEpochIds[ep.id]=true;});
+        var epoch=byEpoch.find(function(x){return x&&x.manager_epoch_id&&currentEpochIds[x.manager_epoch_id];})||byEpoch[0];
+        var overall=epoch&&epoch.indices?Number(epoch.indices.overall):NaN;
+        if(isFinite(overall)){
+            return {value:overall,count:epoch.n||0,source:'review_projection'};
+        }
+    }
+    return null;
+}
+function renderExperienceVesselRating(entry,imo,entryId,vesselName){
+    entryId=entryId||'';
+    vesselName=vesselName||'';
+    if(!entry){
+        return '<button type="button" class="exp-vessel-rating-link empty" onclick="openVesselFromExperience(\''+escAttr(entryId)+'\',\''+escAttr(imo)+'\',\''+escAttr(vesselName)+'\')" title="Open vessel database">'
+            + '<span class="stars">☆☆☆☆☆</span><span class="meta">Checking vessel rating...</span></button>';
+    }
+    var data=entry.payload||{};
+    var rating=(entry.status==='ok'&&data)?vesselProjectionRatingSummary(data):null;
+    var cls=rating?'exp-vessel-rating-link':'exp-vessel-rating-link empty';
+    var label=data.name_current||vesselName||'';
+    var meta='';
+    if(rating){
+        meta=rating.value.toFixed(1)+'/5'+(rating.count?' · '+rating.count+' reviews':'')+' · open vessel database';
+        return '<button type="button" class="'+cls+'" onclick="openVesselFromExperience(\''+escAttr(entryId)+'\',\''+escAttr(imo)+'\',\''+escAttr(label)+'\')" title="Open vessel database">'
+            + '<span class="stars">'+vdbStarLine(rating.value)+'</span><span class="meta">'+esc(meta)+'</span></button>';
+    }
+    if(entry.status==='not_found'){
+        meta='No vessel rating yet · open vessel database';
+    }else if(entry.status==='error'){
+        meta='Vessel database unavailable · open cached/lookup view';
+    }else{
+        var access=data.rating_access||{};
+        meta=access.signals_available?'Rating signals exist · open vessel database':'No vessel rating yet · open vessel database';
+    }
+    return '<button type="button" class="'+cls+'" onclick="openVesselFromExperience(\''+escAttr(entryId)+'\',\''+escAttr(imo)+'\',\''+escAttr(label)+'\')" title="Open vessel database">'
+        + '<span class="stars">☆☆☆☆☆</span><span class="meta">'+esc(meta)+'</span></button>';
+}
 
 async function getSeaServiceUnlockState(){
     var profile=null, error=null;
@@ -3632,7 +3687,17 @@ function findJobById(vacancyId){
 
 function renderVesselDbJobContext(){
     var ctx=vesselDbJobContext;
-    if(!ctx||ctx.source!=='jobs')return '';
+    if(!ctx)return '';
+    if(ctx.source==='experience'){
+        var evessel=ctx.vessel_name||('IMO '+ctx.imo);
+        return '<div class="vdb-context">'
+            + '<div><div class="vdb-context-title">Opened from Sea Service</div>'
+            + '<div class="vdb-context-meta">'+esc(evessel)+' · review the vessel database record, then return to your contract.</div></div>'
+            + '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+            + '<button class="btn btn-accent btn-sm" onclick="returnToExperienceFromVessel()">Back to sea service</button>'
+            + '</div></div>';
+    }
+    if(ctx.source!=='jobs')return '';
     var title=ctx.title||'Job vacancy';
     var vessel=ctx.vessel_name||('IMO '+ctx.imo);
     return '<div class="vdb-context">'
@@ -3649,6 +3714,22 @@ function returnToJobFromVessel(){
     if(vacancyId){
         setTimeout(function(){focusJobCard(vacancyId);},350);
     }
+}
+
+function returnToExperienceFromVessel(){
+    var entryId=vesselDbJobContext&&vesselDbJobContext.entryId;
+    showView('experience');
+    if(entryId){
+        setTimeout(function(){focusWorkEntry(entryId);},350);
+    }
+}
+
+function focusWorkEntry(entryId){
+    var el=document.getElementById('work-card-'+entryId);
+    if(!el)return;
+    el.scrollIntoView({block:'center',behavior:'smooth'});
+    el.style.boxShadow='0 0 0 3px var(--accent-bg2)';
+    setTimeout(function(){el.style.boxShadow='';},1800);
 }
 
 function focusJobCard(vacancyId){
@@ -4050,11 +4131,16 @@ async function hydrateVesselReviews(entries){
         imos[imo]=true;
         var host=document.getElementById('vrev-'+row.id);
         if(host)host.innerHTML=renderVesselReviewLoading();
+        var ratingHost=document.getElementById('exp-vdb-'+row.id);
+        if(ratingHost)ratingHost.innerHTML=renderExperienceVesselRating(null,imo,row.id,row.vessel_name||'');
     });
     Object.keys(imos).forEach(function(imo){
         fetchVesselReviewProjection(imo,false).then(function(entry){
             document.querySelectorAll('[data-vrev-imo="'+imo+'"]').forEach(function(host){
                 host.innerHTML=renderVesselReviewProjection(entry,imo);
+            });
+            document.querySelectorAll('[data-exp-vdb-imo="'+imo+'"]').forEach(function(host){
+                host.innerHTML=renderExperienceVesselRating(entry,imo,host.dataset.expVdbEntry||'',host.dataset.expVdbVessel||'');
             });
         }).catch(function(e){logError('vessel_reviews:'+imo,e);});
     });
@@ -4078,15 +4164,23 @@ async function showWorkHistory(){
             var period=(e.sign_on||'?')+' → '+(e.sign_off||'present');
             var files=[];
             try{files=await invoke('get_work_files',{entryId:e.id});}catch(err){files=[];}
-            h+='<div style="border:1px solid var(--border);border-radius:6px;padding:12px 14px;margin-bottom:10px;">';
+            h+='<div id="work-card-'+escAttr(e.id)+'" style="border:1px solid var(--border);border-radius:6px;padding:12px 14px;margin-bottom:10px;">';
             h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">';
-            h+='<div style="flex:1;min-width:0;"><div style="font-weight:600;">'+e.vessel_name+(e.imo?' <span style="color:var(--text2);font-size:11px;">IMO '+e.imo+'</span>':'')+'</div>';
+            var normImo=normalizeImo(e.imo);
+            var vesselTitle=esc(e.vessel_name);
+            if(normImo){
+                vesselTitle='<button type="button" class="exp-vessel-title" onclick="openVesselFromExperience(\''+escAttr(e.id)+'\',\''+escAttr(normImo)+'\',\''+escAttr(e.vessel_name||'')+'\')" title="Open vessel database">'+esc(e.vessel_name)+'</button>';
+            }
+            h+='<div style="flex:1;min-width:0;"><div style="font-weight:600;">'+vesselTitle+(e.imo?' <span style="color:var(--text2);font-size:11px;">IMO '+esc(e.imo)+'</span>':'')+'</div>';
             h+='<div style="font-size:12px;color:var(--text2);">'+e.position+(e.vessel_type?' &middot; '+e.vessel_type:'')+(e.flag?' &middot; '+e.flag:'')+'</div>';
             var cap=formatSeaServiceCapacity(e);
             if(cap)h+='<div style="font-size:11px;color:var(--text2);">'+cap+'</div>';
             if(e.company)h+='<div style="font-size:11px;color:var(--text2);">'+e.company+'</div>';
             h+='<div style="font-size:11px;color:var(--text2);margin-top:2px;">'+period+'</div>';
             if(e.notes)h+='<div style="font-size:11px;margin-top:4px;">'+e.notes+'</div>';
+            if(normImo){
+                h+='<div class="exp-vessel-db-strip" id="exp-vdb-'+escAttr(e.id)+'" data-exp-vdb-imo="'+normImo+'" data-exp-vdb-entry="'+escAttr(e.id)+'" data-exp-vdb-vessel="'+escAttr(e.vessel_name||'')+'"></div>';
+            }
             h+='</div>';
             h+='<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;">';
             h+='<button class="btn btn-sm btn-outline" onclick="attachWorkFile(\''+e.id+'\')">+ Attach</button>';
@@ -4096,26 +4190,9 @@ async function showWorkHistory(){
             h+='<button class="btn btn-sm btn-outline btn-red" onclick="delWork(\''+e.id+'\')">Delete</button>';
             h+='</div>';
             h+='</div>';
-            var normImo=normalizeImo(e.imo);
             if(normImo){
                 h+='<div class="vrev-strip" id="vrev-'+escAttr(e.id)+'" data-vrev-imo="'+normImo+'"></div>';
             }
-            // Evidence folder — a pointer to a folder on the user's own disk
-            // where they keep contract evidence (photos aboard, crew list,
-            // discharge letter, payslips). Files stay outside the vault;
-            // Skipi only holds the path and opens the folder on request.
-            h+='<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;">';
-            if(e.evidence_folder){
-                h+='<span style="color:var(--text2);">Evidence folder:</span>';
-                h+='<code style="flex:1;min-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-mono);font-size:10px;color:var(--text);" title="'+escAttr(e.evidence_folder)+'">'+escAttr(e.evidence_folder)+'</code>';
-                h+='<button class="btn btn-sm btn-outline" onclick="openEvidenceFolder(\''+e.id+'\')" title="Open folder in your file manager">&#128194; Open</button>';
-                h+='<button class="btn btn-sm btn-outline btn-red" onclick="unlinkEvidenceFolder(\''+e.id+'\')" title="Remove the link (folder and files stay on disk)">Unlink</button>';
-            } else {
-                h+='<span style="color:var(--text2);flex:1;">No evidence folder. Create a default one or pick your own.</span>';
-                h+='<button class="btn btn-sm btn-accent" onclick="autoCreateEvidenceFolder(\''+e.id+'\')" title="Create a default folder under ~/Skipi/Contracts/ and link it automatically">&#10023; Auto-create</button>';
-                h+='<button class="btn btn-sm btn-outline" onclick="linkEvidenceFolder(\''+e.id+'\')" title="Link an existing folder on your device">&#128194; Link existing</button>';
-            }
-            h+='</div>';
             // Attached files list
             if(files.length){
                 h+='<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);">';
@@ -4131,6 +4208,8 @@ async function showWorkHistory(){
                     h+='</div>';
                 });
                 h+='</div>';
+            }else{
+                h+='<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);font-size:11px;color:var(--text2);">No voyage documents attached yet. Use + Attach to copy contract evidence into the vault.</div>';
             }
             h+='</div>';
         }
@@ -5239,6 +5318,31 @@ function openVesselFromJob(vacancyId){
         reply_to:v.reply_to||''
     };
     showView('vessels',{fromJob:true});
+}
+
+async function openVesselFromExperience(entryId, imo, vesselName){
+    var target=normalizeImo(imo);
+    if(!target){
+        showToast('This Sea Service entry needs a valid IMO number to open the vessel database.','warn');
+        return;
+    }
+    var label=String(vesselName||'').trim();
+    if(!label){
+        try{
+            var entries=await invoke('get_work_history')||[];
+            var row=entries.find(function(e){return e&&e.id===entryId;});
+            label=row&&row.vessel_name?row.vessel_name:('IMO '+target);
+        }catch(_){label='IMO '+target;}
+    }
+    vesselDbPendingImo=target;
+    vesselDbJobContext={
+        source:'experience',
+        entryId:entryId||'',
+        imo:target,
+        title:'Sea Service',
+        vessel_name:label
+    };
+    showView('vessels',{fromExperience:true});
 }
 
 function jobsVesselHtml(v, esc){

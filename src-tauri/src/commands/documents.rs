@@ -1,3 +1,4 @@
+use super::work_history;
 use crate::db::{self, DocRecord};
 use crate::AppState;
 use crate::{frameworks, profiles};
@@ -1301,6 +1302,78 @@ pub fn export_documents_bundle(
             "file_name": fname,
             "file_path": in_zip,
         }));
+    }
+
+    for entry in db::get_work_history(conn).map_err(|e| e.to_string())? {
+        let entry_id = match entry.get("id").and_then(|v| v.as_str()) {
+            Some(v) if !v.is_empty() => v,
+            _ => continue,
+        };
+        let vessel_name = entry
+            .get("vessel_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Sea service");
+        let imo = entry.get("imo").and_then(|v| v.as_str());
+        let company = entry.get("company").and_then(|v| v.as_str());
+        let position = entry.get("position").and_then(|v| v.as_str());
+        let sign_on = entry.get("sign_on").and_then(|v| v.as_str());
+        let sign_off = entry.get("sign_off").and_then(|v| v.as_str());
+        let folder_name = work_history::work_entry_storage_dir(vault_path, conn, entry_id)
+            .ok()
+            .and_then(|p| p.file_name().and_then(|s| s.to_str()).map(|s| s.to_string()))
+            .unwrap_or_else(|| entry_id.to_string());
+        for file in db::get_work_files(conn, entry_id).map_err(|e| e.to_string())? {
+            let file_id = match file.get("id").and_then(|v| v.as_str()) {
+                Some(v) if !v.is_empty() => v,
+                _ => continue,
+            };
+            let fname = match file.get("file_name").and_then(|v| v.as_str()) {
+                Some(v) if !v.is_empty() => v,
+                _ => continue,
+            };
+            let kind = file.get("kind").and_then(|v| v.as_str());
+            let src = work_history::resolve_work_file_path(vault_path, conn, entry_id, fname);
+            if !src.exists() {
+                continue;
+            }
+            let data = fs::read(&src).map_err(|e| format!("read {}: {}", src.display(), e))?;
+            let in_zip = format!("Sea Service/{}/{}", folder_name, fname);
+            zip.start_file(&in_zip, options).map_err(|e| e.to_string())?;
+            zip.write_all(&data).map_err(|e| e.to_string())?;
+            let period = [sign_on, sign_off].into_iter().flatten().collect::<Vec<_>>().join(" - ");
+            let title = [
+                Some(vessel_name),
+                position,
+                kind,
+                if period.is_empty() { None } else { Some(period.as_str()) },
+            ]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(" · ");
+            manifest_docs.push(serde_json::json!({
+                "id": format!("sea_service_{}", file_id),
+                "title": title,
+                "category": "Sea Service",
+                "template_id": serde_json::Value::Null,
+                "is_template": false,
+                "doc_number": imo,
+                "issued_by": company,
+                "valid_from": serde_json::Value::Null,
+                "valid_to": serde_json::Value::Null,
+                "file_name": fname,
+                "file_path": in_zip,
+                "sea_service": {
+                    "entry_id": entry_id,
+                    "vessel_name": vessel_name,
+                    "imo": imo,
+                    "position": position,
+                    "sign_on": sign_on,
+                    "sign_off": sign_off,
+                    "kind": kind,
+                },
+            }));
+        }
     }
 
     // Optional seafarer metadata so the crewing card has labels.
