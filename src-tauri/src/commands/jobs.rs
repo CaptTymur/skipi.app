@@ -24,6 +24,8 @@ pub struct VesselRatingSummary {
 pub struct PublicVacancy {
     pub id: String,
     pub crewing_ref: String,
+    #[serde(default)]
+    pub crewing_jurisdiction: Option<String>,
     pub rank: String,
     pub vessel_type: String,
     #[serde(default)]
@@ -74,6 +76,10 @@ pub struct PublicVacancy {
     pub crewing_user_id: Option<String>,
     #[serde(default)]
     pub crewing_description: Option<String>,
+    #[serde(default)]
+    pub crewing_trust_status: Option<String>,
+    #[serde(default)]
+    pub crewing_trust_label: Option<String>,
     #[serde(default)]
     pub vessel_rating: Option<VesselRatingSummary>,
 }

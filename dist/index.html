@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.113';
+var APP_VERSION='0.4.114';
 // Window title is set via `set_window_title` Rust command inside
 // updateTitlebar() — direct JS setTitle() is blocked by Tauri 2 ACL.
 // Human-readable labels for account types that go into the OS window title.
@@ -275,7 +275,21 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .job-vessel-rating .stars { color:var(--yellow); font-size:15px; line-height:1; letter-spacing:1px; }
 .job-vessel-rating.empty .stars { color:var(--text2); opacity:.55; }
 .job-vessel-rating .meta { color:var(--text2); font-size:11px; }
+.job-vessel-rating-link,
+.job-vessel-link { border:0; background:transparent; padding:0; margin:0; color:var(--text2); font:inherit; text-align:left; cursor:pointer; }
+.job-vessel-link { display:inline-flex; flex-wrap:wrap; align-items:baseline; gap:4px; margin-top:3px; font-size:11px; }
+.job-vessel-link strong { color:var(--text); font-weight:600; }
+.job-vessel-link:hover strong,
+.job-vessel-rating-link:hover .meta { color:var(--accent); text-decoration:underline; }
+.job-vessel-missing { font-size:11px; color:var(--orange); margin-top:3px; }
+.job-trust-badge { display:inline-flex; align-items:center; gap:4px; margin-left:6px; padding:1px 6px; border-radius:999px; border:1px solid rgba(35,185,122,.35); background:rgba(35,185,122,.10); color:var(--green); font-size:10px; font-weight:700; vertical-align:baseline; }
+.job-trust-badge.legacy { border-color:rgba(101,83,235,.35); background:var(--accent-bg); color:var(--accent); }
+.job-trust-badge.warn { border-color:rgba(242,184,64,.40); background:rgba(242,184,64,.12); color:var(--yellow); }
+.job-trust-badge.blocked { border-color:rgba(230,82,82,.42); background:rgba(230,82,82,.10); color:var(--red); }
 .job-crewing-desc { font-size:12px; color:var(--text); margin-top:6px; line-height:1.35; white-space:pre-wrap; max-height:54px; overflow:hidden; border-left:2px solid var(--border); padding-left:8px; }
+.vdb-context { border:1px solid var(--accent); background:var(--accent-bg); border-radius:6px; padding:10px 12px; margin-bottom:12px; display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap; }
+.vdb-context-title { font-weight:700; font-size:13px; }
+.vdb-context-meta { color:var(--text2); font-size:11px; margin-top:2px; }
 @media (max-width:700px){ .vdb-lookup-row { flex-direction:column; align-items:stretch; } }
 .sea-lock { border:1px solid var(--border); border-radius:6px; padding:14px 16px; background:var(--surface); margin-bottom:14px; }
 .sea-lock h3 { font-size:15px; margin:0 0 6px; }
@@ -622,7 +636,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.113</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.114</span></p>
                 <button class="btn btn-accent" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -2432,7 +2446,12 @@ function docStatusRank(d){
     if(dl<365) return 2;
     return 1;
 }
-function showView(v){
+function showView(v, opts){
+    opts=opts||{};
+    if(v==='vessels'&&!opts.fromJob){
+        vesselDbJobContext=null;
+        vesselDbPendingImo=null;
+    }
     currentView=v;
     document.querySelectorAll('.ribbon-icon').forEach(function(el){el.classList.remove('active');});
     document.querySelectorAll('.modules-bar .mod-tab').forEach(function(el){el.classList.remove('active');});
@@ -3126,6 +3145,8 @@ var VESSEL_REVIEWS_FALLBACK_API = 'http://127.0.0.1:8000/api/vessels/';
 var VESSEL_REVIEW_CACHE_KEY = 'skipi-vessel-reviews-cache-v2';
 var VESSEL_REVIEW_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 var vesselReviewCache = null;
+var vesselDbPendingImo = null;
+var vesselDbJobContext = null;
 
 function normalizeImo(imo){
     var s=String(imo||'').replace(/\D/g,'');
@@ -3526,6 +3547,40 @@ function renderVesselDbSummary(data){
     h+='<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-outline btn-sm" onclick="openReviewFromImo(\''+escAttr(data.imo)+'\')">Write review</button><button class="btn btn-outline btn-sm" onclick="lookupVesselByImo(true)">Refresh</button></div>';
     return h;
 }
+
+function findJobById(vacancyId){
+    return (lastJobsItems||[]).find(function(x){return x.id===vacancyId;})||null;
+}
+
+function renderVesselDbJobContext(){
+    var ctx=vesselDbJobContext;
+    if(!ctx||ctx.source!=='jobs')return '';
+    var title=ctx.title||'Job vacancy';
+    var vessel=ctx.vessel_name||('IMO '+ctx.imo);
+    return '<div class="vdb-context">'
+        + '<div><div class="vdb-context-title">Opened from Jobs: '+esc(title)+'</div>'
+        + '<div class="vdb-context-meta">'+esc(vessel)+' · review the vessel, then return to the vacancy to apply or continue the conversation.</div></div>'
+        + '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+        + '<button class="btn btn-accent btn-sm" onclick="returnToJobFromVessel()">Back to vacancy</button>'
+        + '</div></div>';
+}
+
+function returnToJobFromVessel(){
+    var vacancyId=vesselDbJobContext&&vesselDbJobContext.vacancyId;
+    showView('jobs');
+    if(vacancyId){
+        setTimeout(function(){focusJobCard(vacancyId);},350);
+    }
+}
+
+function focusJobCard(vacancyId){
+    var el=document.getElementById('vac-card-'+vacancyId);
+    if(!el)return;
+    el.scrollIntoView({block:'center',behavior:'smooth'});
+    el.style.boxShadow='0 0 0 3px var(--accent-bg2)';
+    setTimeout(function(){el.style.boxShadow='';},1800);
+}
+
 async function lookupVesselByImo(force){
     var input=document.getElementById('vdb-imo-input');
     var result=document.getElementById('vdb-result');
@@ -3555,6 +3610,7 @@ async function lookupVesselByImo(force){
 }
 function showVesselDatabase(){
     var h='<div class="editor-narrow vdb-lookup-shell">';
+    h+=renderVesselDbJobContext();
     h+='<div class="vdb-lookup-row">';
     h+='<div class="field"><label>IMO number</label><input id="vdb-imo-input" inputmode="numeric" pattern="[0-9]*" maxlength="7" placeholder="e.g. 9855552" onkeydown="if(event.key===\'Enter\')lookupVesselByImo(false)"></div>';
     h+='<button class="btn btn-accent" id="vdb-search-btn" onclick="lookupVesselByImo(false)">Search</button>';
@@ -3562,7 +3618,16 @@ function showVesselDatabase(){
     h+='<div class="vdb-result" id="vdb-result"></div>';
     h+='</div>';
     document.getElementById('scr-content').innerHTML=h;show('scr-content');updateTabs('База судов');
-    setTimeout(function(){var input=document.getElementById('vdb-imo-input');if(input)input.focus();},0);
+    setTimeout(function(){
+        var input=document.getElementById('vdb-imo-input');
+        var pending=normalizeImo(vesselDbPendingImo||(vesselDbJobContext&&vesselDbJobContext.imo)||'');
+        if(input&&pending){
+            input.value=pending;
+            lookupVesselByImo(false);
+            return;
+        }
+        if(input)input.focus();
+    },0);
 }
 // === Vessel review form (write-side) ===
 // Schema is fetched from /api/review-schema/active and cached for 1h in memory + 24h localStorage.
@@ -3577,9 +3642,9 @@ async function fetchReviewSchema(){
         if(ls){
             var parsed=JSON.parse(ls);
             if(parsed&&parsed.version_id&&(now-(parsed.fetched_at||0))<86400000){
-                REVIEW_SCHEMA_CACHE=parsed;REVIEW_SCHEMA_AT=now;
+                REVIEW_SCHEMA_CACHE=applyReviewSchemaDisplayOverrides(parsed);REVIEW_SCHEMA_AT=now;
                 refreshReviewSchemaAsync().catch(function(){});
-                return parsed;
+                return REVIEW_SCHEMA_CACHE;
             }
         }
     }catch(_){}
@@ -3588,10 +3653,22 @@ async function fetchReviewSchema(){
 async function refreshReviewSchemaAsync(){
     var r=await fetch('https://api.skipi.app/api/review-schema/active');
     if(!r.ok)throw new Error('schema HTTP '+r.status);
-    var d=await r.json();d.fetched_at=Date.now();
+    var d=applyReviewSchemaDisplayOverrides(await r.json());d.fetched_at=Date.now();
     try{localStorage.setItem('skipi-review-schema',JSON.stringify(d));}catch(_){}
     REVIEW_SCHEMA_CACHE=d;REVIEW_SCHEMA_AT=Date.now();
     return d;
+}
+function applyReviewSchemaDisplayOverrides(schema){
+    if(!schema||!schema.definition||!Array.isArray(schema.definition.sections))return schema;
+    var titles={
+        workload:'Workload comfort',
+        hours_rest_fatigue:'Rest hours and recreation',
+        paperwork_bureaucracy:'Paperwork'
+    };
+    schema.definition.sections.forEach(function(sec){
+        if(sec&&titles[sec.id])sec.title=titles[sec.id];
+    });
+    return schema;
 }
 function bucketForDate(s){
     if(!s)return null;
@@ -3803,7 +3880,7 @@ function renderReviewForm(){
     h+='<div class="rff"><div><div id="rev-validation" class="rev-validation'+(v.ok?' ok':'')+'">'+esc(v.ok?'Ready to submit':(v.errors[0]||''))+'</div>';
     h+='<div class="rstatus">Draft autosaved · '+(v.rated||0)+'/'+v.min+' sections rated</div></div>';
     h+='<div style="display:flex;gap:6px;"><button class="btn btn-outline" onclick="closeReviewForm()">Close</button>';
-    h+='<button id="rev-submit" class="btn btn-accent" onclick="submitReviewForm()"'+(v.ok?'':' disabled')+'>Submit for moderation</button></div></div>';
+    h+='<button id="rev-submit" class="btn btn-accent" onclick="submitReviewForm()"'+(v.ok?'':' disabled')+'>Publish review</button></div></div>';
     card.innerHTML=h;
     if(prevScroll!==null){
         requestAnimationFrame(function(){
@@ -3878,7 +3955,7 @@ async function submitReviewForm(){
         clearReviewDraft(s.work.id);
         var imo=normalizeImo(s.work.imo);
         closeReviewForm();
-        showToast('Review submitted — pending moderation','success');
+        showToast('Review published','success');
         if(imo){
             try{await fetchVesselReviewProjection(imo,true);}catch(_){}
         }
@@ -4842,7 +4919,10 @@ async function showJobs(){
     h += '</div>';
 
     document.getElementById('scr-content').innerHTML=h;show('scr-content');updateTabs('Jobs');
-    if(on) loadJobsFeed();
+    if(on) {
+        loadJobsFeed();
+        startJobsActivePolling();
+    }
 }
 
 async function loadJobsFeed(){
@@ -4856,7 +4936,7 @@ async function loadJobsFeed(){
             var raw = localStorage.getItem('skipi-jobs-cache');
             if (raw) {
                 var parsed = JSON.parse(raw);
-                if (Array.isArray(parsed) && parsed.length) cached = parsed;
+                if (Array.isArray(parsed) && parsed.length) cached = jobsConcreteVesselItems(parsed);
             }
         } catch(e){}
     }
@@ -4902,7 +4982,7 @@ async function loadJobsFeed(){
         })();
 
         var results = await Promise.all([jobsP, threadsP]);
-        var items = results[0] || [];
+        var items = jobsConcreteVesselItems(results[0] || []);
         var threadsByVacancy = results[1] || {};
         items.forEach(function(v){ v._thread = threadsByVacancy[v.id] || null; });
 
@@ -4959,12 +5039,16 @@ async function checkNewJobsBackground(){
     try {
         var sp = await invoke('get_seafarer_personal');
         if (sp.ready_for_offers !== 'true') { clearJobsBadge(); return; }
+        if (currentView === 'jobs') {
+            refreshJobsFeedSilently();
+            return;
+        }
         var rank = sp.rank || null;
         var vt = (sp.preferred_vessel_types||'').split(',')[0].trim() || null;
         // vessel_type on seafarer profile uses a different taxonomy than
         // the crewing-side ('bulker' vs 'Bulk Carrier' etc.). Skip the
         // server-side filter and let the small list through to the user.
-        var items = await invoke('fetch_jobs', { rank: rank, vesselType: null });
+        var items = jobsConcreteVesselItems(await invoke('fetch_jobs', { rank: rank, vesselType: null }));
         var seen = jobsLoadSeen();
         var newOnes = items.filter(function(v){ return !seen[v.id]; });
         if (newOnes.length > 0) {
@@ -4980,6 +5064,38 @@ async function checkNewJobsBackground(){
 }
 
 var jobsPollTimer = null;
+var jobsActivePollTimer = null;
+function refreshJobsFeedSilently(){
+    if (currentView !== 'jobs') return;
+    if (window._jobsFeedRefreshBusy) return;
+    if (jobsHasOpenThread()) {
+        refreshOpenJobsThreads();
+        return;
+    }
+    window._jobsFeedRefreshBusy = true;
+    Promise.resolve(loadJobsFeed()).finally(function(){
+        window._jobsFeedRefreshBusy = false;
+    });
+}
+
+function startJobsActivePolling(){
+    if (jobsActivePollTimer) return;
+    jobsActivePollTimer = setInterval(function(){
+        if (currentView !== 'jobs') {
+            clearInterval(jobsActivePollTimer);
+            jobsActivePollTimer = null;
+            return;
+        }
+        refreshJobsFeedSilently();
+    }, 60000);
+}
+
+function jobsHasOpenThread(){
+    return Array.prototype.some.call(document.querySelectorAll('[id^="thread-"]'), function(host){
+        return host && host.dataset.loaded === '1' && host.style.display !== 'none';
+    });
+}
+
 function startJobsPolling(){
     if (jobsPollTimer) return;
     // Initial check 5s after boot, then every 60s — Refresh button removed,
@@ -5006,6 +5122,10 @@ function jobsSaveHidden(h){
     try { localStorage.setItem('skipi-jobs-hidden', JSON.stringify(h)); } catch(e){}
 }
 
+function jobsConcreteVesselItems(items){
+    return (items||[]).filter(function(v){ return !!normalizeImo(v&&v.vessel_imo); });
+}
+
 function jobsStarLine(value){
     var n = Number(value);
     if(!isFinite(n)) return '☆☆☆☆☆';
@@ -5015,30 +5135,107 @@ function jobsStarLine(value){
     return out;
 }
 
+function jobsVesselDisplayName(v){
+    if(!v)return '';
+    return String(v.vessel_name || (v.vessel_imo ? 'IMO '+v.vessel_imo : '') || '').trim();
+}
+
+function openVesselFromJob(vacancyId){
+    var v=findJobById(vacancyId);
+    if(!v){
+        showToast('Vacancy not found in the current Jobs list','error');
+        return;
+    }
+    var imo=normalizeImo(v.vessel_imo);
+    if(!imo){
+        showToast('This vacancy does not include a valid IMO number, so Skipi cannot open the vessel database. Ask the crewing for the vessel IMO before applying.','warn');
+        return;
+    }
+    vesselDbPendingImo=imo;
+    vesselDbJobContext={
+        source:'jobs',
+        vacancyId:v.id,
+        imo:imo,
+        title:v.title || (v.rank+' · '+v.vessel_type),
+        vessel_name:jobsVesselDisplayName(v),
+        reply_to:v.reply_to||''
+    };
+    showView('vessels',{fromJob:true});
+}
+
+function jobsVesselHtml(v, esc){
+    var label=jobsVesselDisplayName(v);
+    var imo=normalizeImo(v&&v.vessel_imo);
+    if(imo){
+        return '<button type="button" class="job-vessel-link" onclick="openVesselFromJob(\''+escAttr(v.id)+'\')" title="Open vessel database">'
+            + '<span>Vessel:</span><strong>'+esc(label)+'</strong>'
+            + (v.vessel_name ? '<span>· IMO '+esc(imo)+'</span>' : '')
+            + '</button>';
+    }
+    if(label){
+        return '<div class="job-vessel-missing">Vessel: '+esc(label)+' · IMO missing, vessel database unavailable</div>';
+    }
+    return '<div class="job-vessel-missing">Vessel not specified · IMO required before applying</div>';
+}
+
 function jobsVesselRatingHtml(v, esc){
     var r = v && v.vessel_rating;
+    var imo = normalizeImo(v&&v.vessel_imo);
+    var openAttrs = imo ? ' onclick="openVesselFromJob(\''+escAttr(v.id)+'\')" title="Open vessel database"' : '';
+    var tagOpen = imo ? '<button type="button" class="job-vessel-rating job-vessel-rating-link"'+openAttrs+'>' : '<div class="job-vessel-rating">';
+    var tagClose = imo ? '</button>' : '</div>';
     if(r && r.signals_available && r.average_overall !== null && r.average_overall !== undefined){
         var n = Number(r.average_overall);
-        return '<div class="job-vessel-rating">'
+        return tagOpen
             + '<span class="stars">'+jobsStarLine(n)+'</span>'
             + '<span class="meta">'+esc(n.toFixed(1))+'/5'
             + (r.review_count ? ' · '+esc(r.review_count)+' reviews' : '')
-            + '</span></div>';
+            + '</span>'+tagClose;
     }
     if(v && v.vessel_imo){
         var min = r && r.min_reviews ? r.min_reviews : 3;
-        return '<div class="job-vessel-rating empty">'
+        var emptyOpen = imo
+            ? '<button type="button" class="job-vessel-rating empty job-vessel-rating-link"'+openAttrs+'>'
+            : '<div class="job-vessel-rating empty">';
+        return emptyOpen
             + '<span class="stars">☆☆☆☆☆</span>'
             + '<span class="meta">No vessel rating yet'
             + (min ? ' · needs '+esc(min)+' approved reviews' : '')
-            + '</span></div>';
+            + '</span>'+tagClose;
     }
     return '';
+}
+
+function jobsCrewingIdentityHtml(v, esc){
+    var name = v && v.crewing_ref ? String(v.crewing_ref).trim() : '';
+    var jurisdiction = v && v.crewing_jurisdiction ? String(v.crewing_jurisdiction).trim().toUpperCase() : '';
+    var trustStatus = v && v.crewing_trust_status ? String(v.crewing_trust_status).trim().toLowerCase() : '';
+    var trustLabel = v && v.crewing_trust_label ? String(v.crewing_trust_label).trim() : '';
+    if(!trustLabel && trustStatus && trustStatus.indexOf('verified')===0){
+        trustLabel = 'Крюинг проверен Skipi';
+    }
+    if(!name && !jurisdiction && !trustLabel)return '';
+    var parts = [];
+    if(name)parts.push(esc(name));
+    if(jurisdiction)parts.push('registered in '+esc(jurisdiction));
+    var badge = '';
+    if(trustLabel){
+        var cls = 'job-trust-badge';
+        if(trustStatus.indexOf('legacy')>=0)cls += ' legacy';
+        if(trustStatus.indexOf('pending')>=0 || trustStatus.indexOf('unknown')>=0)cls += ' warn';
+        if(trustStatus.indexOf('block')>=0 || trustStatus.indexOf('scam')>=0)cls += ' blocked';
+        badge = '<span class="'+cls+'">'+esc(trustLabel)+'</span>';
+    }
+    return '<div style="font-size:11px;color:var(--text2);margin-top:3px;">Crewing: '+(parts.length?parts.join(' · '):'not specified')+badge+'</div>';
 }
 
 function renderJobsFeed(items){
     var host = document.getElementById('jobs-feed');
     if(!host) return;
+    var openThreadIds = Array.prototype.slice.call(host.querySelectorAll('[id^="thread-"]'))
+        .filter(function(el){ return el.style.display !== 'none' && el.dataset.loaded === '1'; })
+        .map(function(el){ return el.id.replace(/^thread-/, ''); });
+    var scrollYBefore = window.scrollY || 0;
     var hidden = jobsLoadHidden();
     var visible = (items||[]).filter(function(v){ return !hidden[v.id]; });
     var hiddenCount = (items||[]).length - visible.length;
@@ -5059,9 +5256,9 @@ function renderJobsFeed(items){
         html += '<div style="font-size:11px;color:var(--text2);margin-bottom:8px;text-align:right;">'
             +hiddenCount+' hidden. <span style="color:var(--accent);cursor:pointer;text-decoration:underline;" onclick="jobsUnhideAll()">Show all</span></div>';
     }
-    // Warm message cache for visible vacancies that already have a thread,
-    // so opening conversations is instant.
-    prefetchVacancyThreads(visible);
+    // Do not prefetch encrypted thread messages here. On WebKitGTK/Tauri,
+    // repeated background IPC + crypto/network work can make the UI look
+    // frozen. Threads load on explicit open, then refresh at a slower cadence.
     visible.forEach(function(v){
         var title = v.title || (v.rank+' · '+v.vessel_type);
         var salary = v.salary_min ? (v.salary_currency||'USD')+' '+v.salary_min
@@ -5080,16 +5277,9 @@ function renderJobsFeed(items){
             +(v.contract_months?' · '+v.contract_months+' months':'')
             +(salary?' · '+esc(salary):'')
             +'</div>';
-        if(v.vessel_name || v.vessel_imo){
-            html += '<div style="font-size:11px;color:var(--text2);margin-top:3px;">Vessel: '
-                + esc(v.vessel_name || 'IMO '+v.vessel_imo)
-                + (v.vessel_name && v.vessel_imo ? ' · IMO '+esc(v.vessel_imo) : '')
-                + '</div>';
-        }
+        html += jobsVesselHtml(v, esc);
         html += jobsVesselRatingHtml(v, esc);
-        if(v.crewing_ref){
-            html += '<div style="font-size:11px;color:var(--text2);margin-top:3px;">via '+esc(v.crewing_ref)+'</div>';
-        }
+        html += jobsCrewingIdentityHtml(v, esc);
         if(v.crewing_description){
             html += '<div class="job-crewing-desc"><strong>Crewing:</strong> '+esc(v.crewing_description)+'</div>';
         }
@@ -5131,6 +5321,19 @@ function renderJobsFeed(items){
         html += '</div>';
     });
     host.innerHTML = html;
+    if(openThreadIds.length){
+        openThreadIds.forEach(function(id){
+            setTimeout(function(){
+                var thread = document.getElementById('thread-'+id);
+                if(thread && thread.style.display === 'none'){
+                    toggleVacancyThread(id);
+                }
+            }, 0);
+        });
+        requestAnimationFrame(function(){
+            window.scrollTo({ top: scrollYBefore });
+        });
+    }
 }
 
 // Toggle inline E2E thread under a vacancy card.
@@ -5209,7 +5412,7 @@ async function toggleVacancyThread(vacancyId){
         var ta = document.getElementById('vac-compose-'+vacancyId);
         if (ta && (ta.value||'').length > 0) return;
         refreshVacancyThread(vacancyId, /*silent=*/true);
-    }, 5000);
+    }, 30000);
     host.dataset.pollId = String(pollId);
 }
 
@@ -5415,17 +5618,13 @@ async function openSendDocsDialog(vacancyId) {
     var counterpart = host.dataset.counterpartId;
     if (!applicationId || !counterpart) { showToast('No conversation context', 'error'); return; }
 
-    // Load packages so the user can pick a saved one (if any).
-    var packages = [];
-    try { packages = await invoke('get_packages') || []; } catch(e){}
-
     var overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:99999;display:flex;align-items:center;justify-content:center;';
-    var pkgOptions = packages.length
-        ? packages.map(function(p){
-            return '<option value="'+p.id+'">'+(p.title||'(untitled)')+(p.file_count?' — '+p.file_count+' files':'')+'</option>';
-          }).join('')
-        : '<option value="" disabled>No packages prepared yet</option>';
+    // Keep this dialog instant. The primary request-documents flow is full CV
+    // plus all vault documents; pre-prepared Packages can still be sent from
+    // the Packages module without blocking the chat on package enumeration.
+    var packages = [];
+    var pkgOptions = '<option value="" disabled>Use Packages module to send a saved package</option>';
 
     var card = document.createElement('div');
     card.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:20px 22px;max-width:440px;width:90%;color:var(--text);box-shadow:0 4px 16px rgba(0,0,0,0.5);';
@@ -5437,14 +5636,14 @@ async function openSendDocsDialog(vacancyId) {
       +   '<div style="font-size:11px;color:var(--text2);">Same layout as your CV tab — full identity disclosed.</div></div>'
       + '</label>'
       + '<label style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;cursor:pointer;">'
-      +   '<input type="checkbox" id="opt-all-docs" style="margin-top:3px;">'
+      +   '<input type="checkbox" id="opt-all-docs" checked style="margin-top:3px;">'
       +   '<div><div style="font-weight:600;font-size:13px;">All vault documents</div>'
-      +   '<div style="font-size:11px;color:var(--text2);">Each cert / passport / book sent as separate encrypted file.</div></div>'
+      +   '<div style="font-size:11px;color:var(--text2);">Structured encrypted bundle; crewing opens it as a document tree inside Skipi.</div></div>'
       + '</label>'
       + '<label style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;cursor:pointer;">'
-      +   '<input type="checkbox" id="opt-pkg" style="margin-top:3px;"'+(packages.length?'':' disabled')+'>'
+      +   '<input type="checkbox" id="opt-pkg" style="margin-top:3px;" disabled>'
       +   '<div style="flex:1;"><div style="font-weight:600;font-size:13px;">Pre-prepared package</div>'
-      +   '<select id="opt-pkg-id" style="margin-top:6px;width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:6px 8px;font-size:12px;"'+(packages.length?'':' disabled')+'>'+pkgOptions+'</select></div>'
+      +   '<select id="opt-pkg-id" style="margin-top:6px;width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:6px 8px;font-size:12px;" disabled>'+pkgOptions+'</select></div>'
       + '</label>'
       + '<div id="send-docs-status" style="font-size:11px;color:var(--text2);margin:10px 0 0;min-height:14px;"></div>'
       + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">'
@@ -5462,14 +5661,19 @@ async function openSendDocsDialog(vacancyId) {
         var wantCv  = card.querySelector('#opt-cv').checked;
         var wantAll = card.querySelector('#opt-all-docs').checked;
         var wantPkg = card.querySelector('#opt-pkg').checked;
+        var sendBtn = card.querySelector('#send-docs-go');
+        var cancelBtn = card.querySelector('#send-docs-cancel');
         if (!wantCv && !wantAll && !wantPkg) {
             card.querySelector('#send-docs-status').textContent = 'Pick at least one option.';
             return;
         }
+        sendBtn.disabled = true;
+        sendBtn.textContent = 'Sending...';
         var pkgId = wantPkg ? card.querySelector('#opt-pkg-id').value : '';
         var status = card.querySelector('#send-docs-status');
         status.textContent = 'Encrypting and uploading…';
         var sent = 0, failed = 0;
+        var failures = [];
         try { await invoke('register_my_pubkey'); } catch(e){}
         var sendOne = async function(filePath, niceName) {
             try {
@@ -5492,6 +5696,7 @@ async function openSendDocsDialog(vacancyId) {
                 sent++;
             } catch(e) {
                 failed++;
+                failures.push((niceName||filePath).split('/').pop()+': '+e);
                 console.log('upload failed for', niceName||filePath, e);
             }
         };
@@ -5508,7 +5713,11 @@ async function openSendDocsDialog(vacancyId) {
                 var p = (dl.endsWith('/')?dl:dl+'/') + fname;
                 await invoke('export_cv_pdf', { outputPath: p });
                 await sendOne(p, fname);
-            } catch(e){ status.textContent = 'CV export failed: '+e; }
+            } catch(e){
+                failed++;
+                failures.push('CV export: '+e);
+                status.textContent = 'CV export failed: '+e;
+            }
         }
         // 2. All vault documents — packaged into a single structured ZIP
         //    (manifest.json + files under their vault categories) so the
@@ -5540,8 +5749,16 @@ async function openSendDocsDialog(vacancyId) {
                         plaintext: bmark,
                     });
                     sent++;
-                } catch (e) { failed++; console.log('bundle upload failed:', e); }
-            } catch(e){ status.textContent = 'Bundle export failed: '+e; }
+                } catch (e) {
+                    failed++;
+                    failures.push('documents bundle: '+e);
+                    console.log('bundle upload failed:', e);
+                }
+            } catch(e){
+                failed++;
+                failures.push('documents bundle export: '+e);
+                status.textContent = 'Bundle export failed: '+e;
+            }
         }
         // 3. Pre-prepared package — exported to a temp .zip then uploaded as one file.
         if (wantPkg && pkgId) {
@@ -5550,7 +5767,11 @@ async function openSendDocsDialog(vacancyId) {
                 var pkgPath = (dl2.endsWith('/')?dl2:dl2+'/') + 'Skipi-package-'+pkgId+'.zip';
                 await invoke('export_package', { packageId: pkgId, destPath: pkgPath });
                 await sendOne(pkgPath, 'package.zip');
-            } catch(e){ status.textContent = 'Package export failed: '+e; }
+            } catch(e){
+                failed++;
+                failures.push('package export: '+e);
+                status.textContent = 'Package export failed: '+e;
+            }
         }
 
         if (sent) {
@@ -5558,15 +5779,30 @@ async function openSendDocsDialog(vacancyId) {
                 await invoke('send_encrypted_message', {
                     applicationId: applicationId,
                     toUserId: counterpart,
-                    plaintext: '[skipi:docs_response] Sent '+sent+' encrypted attachment'+(sent>1?'s':'')+'.',
+                    plaintext: '[skipi:docs_response] Sent '+sent+' encrypted attachment'+(sent>1?'s':'')+'.'
+                        +(failed ? ' Failed: '+failures.slice(0,2).join('; ') : ''),
                 });
             } catch(e) {
                 console.log('docs response marker failed:', e);
             }
-            showToast(sent+' file'+(sent>1?'s':'')+' sent — encrypted 🔒'+(failed?' ('+failed+' failed)':''), 'success');
+            if(failed){
+                var failText = failures.slice(0,3).join('; ');
+                status.textContent = 'Partial delivery: '+sent+' sent, '+failed+' failed. Crewing did not receive all selected documents. '+failText;
+                cancelBtn.textContent = 'Close';
+                sendBtn.textContent = 'Sent with errors';
+                showToast('Partial delivery: '+sent+' sent, '+failed+' failed', 'error');
+            } else {
+                status.textContent = sent+' file'+(sent>1?'s':'')+' sent — encrypted.';
+                showToast(sent+' file'+(sent>1?'s':'')+' sent — encrypted 🔒', 'success');
+                close();
+            }
         }
-        else showToast('Nothing sent — '+failed+' upload(s) failed', 'error');
-        close();
+        else {
+            status.textContent = 'Nothing sent. '+failed+' upload/export step(s) failed: '+failures.slice(0,3).join('; ');
+            cancelBtn.textContent = 'Close';
+            sendBtn.textContent = 'Send failed';
+            showToast('Nothing sent — '+failed+' upload/export step(s) failed', 'error');
+        }
         setTimeout(function(){ refreshVacancyThread(vacancyId, true); }, 0);
     };
 }
@@ -5649,6 +5885,9 @@ async function refreshVacancyThread(vacancyId, silent) {
     if (!host || !box) return;
     var applicationId = host.dataset.applicationId;
     if (!applicationId) return;
+    window._jobsThreadRefreshBusy = window._jobsThreadRefreshBusy || {};
+    if (window._jobsThreadRefreshBusy[vacancyId]) return;
+    window._jobsThreadRefreshBusy[vacancyId] = true;
     var msgs;
     try { msgs = await invoke('fetch_messages', { applicationId: applicationId }); }
     catch (e) {
@@ -5656,6 +5895,7 @@ async function refreshVacancyThread(vacancyId, silent) {
             var st = document.getElementById('vac-status-'+vacancyId);
             if (st) { st.textContent = 'Refresh failed: '+e; st.style.color = 'var(--red)'; }
         }
+        window._jobsThreadRefreshBusy[vacancyId] = false;
         return;
     }
     window._messagesByApp[applicationId] = msgs;
@@ -5663,7 +5903,10 @@ async function refreshVacancyThread(vacancyId, silent) {
     var pendingCount = box.querySelectorAll('.msg.pending').length;
     var newCount = msgs.length + pendingCount;
     var prevCount = parseInt(box.dataset.msgCount || '-1', 10);
-    if (newCount === prevCount) return;
+    if (newCount === prevCount) {
+        window._jobsThreadRefreshBusy[vacancyId] = false;
+        return;
+    }
     var nearBottom = (box.scrollHeight - box.scrollTop - box.clientHeight) < 30;
     var myId = (window._myIdentityCache && window._myIdentityCache.user_id) || '';
     if (!myId) {
@@ -5678,6 +5921,7 @@ async function refreshVacancyThread(vacancyId, silent) {
         patchSeafarerVacancyPreview(v);
         try { localStorage.setItem('skipi-jobs-cache', JSON.stringify(lastJobsItems)); } catch(e){}
     }
+    window._jobsThreadRefreshBusy[vacancyId] = false;
 }
 
 function refreshOpenJobsThreads() {
@@ -7697,35 +7941,51 @@ async function smtpClear(){
 }
 
 // ========== Beta feedback ==========
-// Opens the user's default mail client with a pre-filled bug report.
-// We pre-fill version + platform + current vault type so Tymur can triage without asking.
+// Creates a deterministic .eml feedback draft. We avoid mailto because it
+// silently drops body content in some clients and cannot carry diagnostics.
 async function reportIssue(){
     var version='(unknown)', platform='(unknown)';
     try{version=await invoke('get_app_version');}catch(e){}
     try{platform=await invoke('get_platform');}catch(e){}
-    var body=''+
-        'What happened:\n'+
-        '(describe the issue)\n\n'+
-        'Steps to reproduce:\n'+
-        '1. \n2. \n3. \n\n'+
-        'Expected:\n\n\n'+
-        '--- auto ---\n'+
-        'Skipi version: '+version+'\n'+
-        'Platform: '+platform+'\n'+
-        'Timestamp: '+new Date().toISOString()+'\n';
-    var subject='[Skipi beta] ';
-    var mailto='mailto:beta@skipi.app'+
-        '?subject='+encodeURIComponent(subject)+
-        '&body='+encodeURIComponent(body);
+    var kind='bug report';
     try{
-        // Prefer the Tauri shell open if available (it survives strict CSP)
-        if(window.__TAURI__&&window.__TAURI__.shell&&window.__TAURI__.shell.open){
-            await window.__TAURI__.shell.open(mailto);
-        }else{
-            window.location.href=mailto;
-        }
+        var picked=prompt('Feedback type: bug report or general feedback?', 'bug report');
+        if(picked&&picked.trim())kind=picked.trim();
+    }catch(e){}
+    var body=[
+        'Hello,',
+        '',
+        'Feedback type: '+kind,
+        '',
+        'What happened:',
+        '(describe the issue)',
+        '',
+        'Steps to reproduce:',
+        '1. ',
+        '2. ',
+        '3. ',
+        '',
+        'Expected:',
+        '',
+        '',
+        '--- auto ---',
+        'Skipi version: '+version,
+        'Platform: '+platform,
+        'Current module: '+(currentView||'(unknown)'),
+        'Timestamp: '+new Date().toISOString()
+    ].join('\n');
+    var subject='[Skipi beta] '+kind;
+    try{
+        var res=await invoke('create_email_file',{intent:{
+            to:['broker@capt-tymur.com'],
+            subject:subject,
+            body:body,
+            attachments:[],
+            purpose:'feedback_'+kind.replace(/[^A-Za-z0-9]+/g,'_')
+        }});
+        showToast('Feedback draft saved: '+(res&&res.eml_path?res.eml_path:'~/Downloads/Skipi/Outbox'), 'success');
     }catch(e){
-        alert('Не удалось открыть почтовый клиент. Напишите на beta@skipi.app вручную.\n\nVersion: '+version+'\nPlatform: '+platform);
+        alert('Не удалось создать .eml feedback. Напишите на broker@capt-tymur.com вручную.\n\nVersion: '+version+'\nPlatform: '+platform);
     }
 }
 

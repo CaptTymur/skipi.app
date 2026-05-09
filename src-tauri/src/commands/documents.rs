@@ -846,6 +846,74 @@ mod tests {
     }
 
     #[test]
+    fn attached_copy_survives_deleted_source_file() {
+        let (vault_path, conn) = create_temp_vault("skipi-attach-source-deleted");
+        let doc = test_doc("passport", "Passport", "Passport (Travel)");
+        db::insert_doc(&conn, &doc).unwrap();
+
+        let source = write_synthetic_source(&vault_path, &doc.id, "pdf");
+        let dest_name = attach_file_to_vault(&conn, &vault_path, &doc.id, &source).unwrap();
+        std::fs::remove_file(&source).unwrap();
+
+        let docs = db::get_all_docs(&conn).unwrap();
+        let attached = docs.iter().find(|d| d.id == doc.id).unwrap();
+        assert_eq!(attached.file_name.as_deref(), Some(dest_name.as_str()));
+        let vault_copy = vault_path.join(&doc.category).join(&dest_name);
+        assert!(vault_copy.exists(), "vault copy disappeared after source delete");
+        assert!(std::fs::read_to_string(vault_copy)
+            .unwrap()
+            .contains("DOC_ID=passport"));
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(vault_path);
+    }
+
+    #[test]
+    fn attach_large_and_corrupt_pdf_preserves_independent_metadata() {
+        let (vault_path, conn) = create_temp_vault("skipi-attach-large-corrupt");
+        let large = test_doc("large_pdf", "Medical", "Large PDF");
+        let corrupt = test_doc("corrupt_pdf", "Medical", "Corrupt PDF");
+        db::insert_doc(&conn, &large).unwrap();
+        db::insert_doc(&conn, &corrupt).unwrap();
+
+        let large_source = vault_path.join("large-source.pdf");
+        let mut large_bytes = vec![0_u8; 32 * 1024 * 1024];
+        large_bytes[..8].copy_from_slice(b"%PDF-1.7");
+        let marker_at = large_bytes.len() - 16;
+        large_bytes[marker_at..].copy_from_slice(b"SKIPI-LARGE-SMOK");
+        std::fs::write(&large_source, &large_bytes).unwrap();
+
+        let corrupt_source = vault_path.join("corrupt-source.pdf");
+        let corrupt_bytes = b"%PDF-corrupt\nnot a real pdf trailer\n";
+        std::fs::write(&corrupt_source, corrupt_bytes).unwrap();
+
+        let large_name = attach_file_to_vault(&conn, &vault_path, &large.id, &large_source).unwrap();
+        let corrupt_name =
+            attach_file_to_vault(&conn, &vault_path, &corrupt.id, &corrupt_source).unwrap();
+        assert_ne!(large_name, corrupt_name);
+
+        let docs = db::get_all_docs(&conn).unwrap();
+        let large_doc = docs.iter().find(|d| d.id == large.id).unwrap();
+        let corrupt_doc = docs.iter().find(|d| d.id == corrupt.id).unwrap();
+        assert_eq!(large_doc.file_size, Some(large_bytes.len() as i64));
+        assert_eq!(corrupt_doc.file_size, Some(corrupt_bytes.len() as i64));
+        assert_ne!(large_doc.sha256, corrupt_doc.sha256);
+        assert_eq!(
+            std::fs::metadata(vault_path.join(&large.category).join(&large_name))
+                .unwrap()
+                .len(),
+            large_bytes.len() as u64
+        );
+        assert_eq!(
+            std::fs::read(vault_path.join(&corrupt.category).join(&corrupt_name)).unwrap(),
+            corrupt_bytes
+        );
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(vault_path);
+    }
+
+    #[test]
     fn synthetic_profile_upload_smoke_keeps_each_certificate_in_place() {
         let (vault_path, conn) = create_temp_vault("skipi-synthetic-profile-smoke");
         let docs = vec![

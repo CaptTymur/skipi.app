@@ -213,6 +213,27 @@ def network_privacy_static(repo: pathlib.Path) -> Result:
     return Result("network privacy static gate", PASS, note, time.time() - started)
 
 
+def feedback_eml_static(repo: pathlib.Path) -> Result:
+    started = time.time()
+    html = read_text(repo / "dist" / "index.html")
+    body = extract_js_function(html, "reportIssue")
+    problems = []
+    if "broker@capt-tymur.com" not in body:
+        problems.append("feedback recipient is not broker@capt-tymur.com")
+    if "create_email_file" not in body:
+        problems.append("feedback does not use .eml generator")
+    if "mailto:" in body or "beta@skipi.app" in body:
+        problems.append("feedback still uses legacy mailto/beta address")
+    if problems:
+        return Result("feedback .eml gate", FAIL, "\n".join(problems), time.time() - started)
+    return Result(
+        "feedback .eml gate",
+        PASS,
+        "reportIssue creates a .eml draft to broker@capt-tymur.com with version/platform context.",
+        time.time() - started,
+    )
+
+
 def config_privacy_scan() -> Result:
     started = time.time()
     home = pathlib.Path.home()
@@ -438,6 +459,8 @@ def main(argv: Iterable[str]) -> int:
         for test_name in [
             "open_db_handles_cyrillic_and_spaces_path",
             "attach_file_uses_unique_paths_for_duplicate_titles",
+            "attached_copy_survives_deleted_source_file",
+            "attach_large_and_corrupt_pdf_preserves_independent_metadata",
             "synthetic_profile_upload_smoke_keeps_each_certificate_in_place",
             "vault_tree_export_skips_live_db_and_backup_targets",
             "packaged_demo_vault_has_db_and_no_runtime_secrets",
@@ -445,6 +468,7 @@ def main(argv: Iterable[str]) -> int:
             results.append(cargo_test(repo, test_name, args.timeout))
 
     results.append(network_privacy_static(repo))
+    results.append(feedback_eml_static(repo))
     results.append(backup_zip_static(repo))
     results.append(demo_vault_zip_sanity(repo))
     results.append(config_privacy_scan())

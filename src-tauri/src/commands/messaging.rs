@@ -22,6 +22,7 @@ use tauri::State;
 use crate::AppState;
 
 const PROD_API: &str = "https://api.skipi.app";
+const MAX_ATTACHMENT_BYTES: usize = 50 * 1024 * 1024;
 
 fn x25519_sk_path(vault_path: &Path) -> PathBuf {
     vault_path.join("_identity").join("x25519_sk.bin")
@@ -378,8 +379,8 @@ pub fn upload_encrypted_attachment(
 
     let path = Path::new(&file_path);
     let bytes = std::fs::read(path).map_err(|e| format!("read file: {e}"))?;
-    if bytes.len() > 10 * 1024 * 1024 {
-        return Err("file too large (>10 MB)".into());
+    if bytes.len() > MAX_ATTACHMENT_BYTES {
+        return Err("file too large (>50 MB)".into());
     }
     let original_filename = path
         .file_name()

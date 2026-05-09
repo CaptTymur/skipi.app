@@ -6,9 +6,9 @@
 //   * A full framework of required documents for the profile
 //   * Pre-filled metadata on ~15 documents with a realistic mix of statuses
 //     (valid / warning / expired / no-file) so the dashboard looks interesting
-//   * Synthetic placeholder PDF attached to every filled document (same file,
-//     reused from build_demo_pdf). Real AI scanning will fail on this demo PDF,
-//     and that is fine — demo is for UI exploration, not scanning.
+//   * Demo attachments for filled documents. The packaged demo vault must keep
+//     one unique file hash per document so attachment-mixup smoke tests stay
+//     signal-bearing.
 //   * Three entries of work history across different vessels.
 //
 // The demo is idempotent: re-running on the same path wipes existing rows so
@@ -507,6 +507,16 @@ fn populate_synthetic_demo_vault(vault_path: &Path) -> Result<Connection, String
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sha2::{Digest, Sha256};
+    use std::collections::HashMap;
+    use std::env;
+
+    fn sha256_file(path: &Path) -> String {
+        let bytes = fs::read(path).expect("read demo attachment");
+        let mut hasher = Sha256::new();
+        hasher.update(bytes);
+        hex::encode(hasher.finalize())
+    }
 
     #[test]
     fn packaged_demo_vault_has_db_and_no_runtime_secrets() {
@@ -524,5 +534,78 @@ mod tests {
         assert!(!names.iter().any(|n| n.starts_with("_dispatch/")));
         assert!(!names.iter().any(|n| n == "skipi.db-wal"));
         assert!(!names.iter().any(|n| n == "skipi.db-shm"));
+    }
+
+    #[test]
+    fn packaged_demo_vault_attachments_have_unique_hashes() {
+        let vault_path = env::temp_dir().join(format!("skipi-demo-hash-smoke-{}", Uuid::new_v4()));
+        extract_packaged_demo_vault(&vault_path).expect("extract packaged demo vault");
+        let conn = db::open_db(&vault_path).expect("open demo db");
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, category, title, file_name, sha256, file_size
+                 FROM documents
+                 WHERE file_name IS NOT NULL
+                 ORDER BY category, title",
+            )
+            .expect("prepare demo docs query");
+        let docs = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, Option<i64>>(5)?,
+                ))
+            })
+            .expect("query demo docs")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("read demo docs");
+
+        let mut by_hash: HashMap<String, Vec<String>> = HashMap::new();
+        for (id, category, title, file_name, stored_hash, stored_size) in docs {
+            let file_path = vault_path.join(&category).join(&file_name);
+            assert!(
+                file_path.exists(),
+                "demo attachment missing: {}/{}",
+                category,
+                file_name
+            );
+
+            let actual = sha256_file(&file_path);
+            assert_eq!(
+                stored_hash.as_deref(),
+                Some(actual.as_str()),
+                "stored hash mismatch for {}",
+                title
+            );
+            assert_eq!(
+                stored_size,
+                Some(file_path.metadata().expect("demo attachment metadata").len() as i64),
+                "stored file size mismatch for {}",
+                title
+            );
+
+            by_hash
+                .entry(actual)
+                .or_default()
+                .push(format!("{} ({})", id, title));
+        }
+
+        let duplicates: Vec<Vec<String>> = by_hash
+            .into_values()
+            .filter(|refs| refs.len() > 1)
+            .collect();
+        assert!(
+            duplicates.is_empty(),
+            "same demo file hash used by multiple docs: {:?}",
+            duplicates
+        );
+
+        drop(stmt);
+        drop(conn);
+        let _ = fs::remove_dir_all(&vault_path);
     }
 }
