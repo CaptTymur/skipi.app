@@ -5,7 +5,81 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.115';
+var APP_VERSION='0.4.116';
+var UI_LANG_KEY='skipi-ui-language';
+var UI_LANG_OPTIONS=[
+    ['en','English'],
+    ['tl','Tagalog'],
+    ['hi','Hindi / हिन्दी'],
+    ['id','Indonesian / Bahasa Indonesia'],
+];
+var UI_STRINGS={
+    en:{
+        'nav.files':'Files & data input','nav.experience':'Experience','nav.dashboard':'Dashboard','nav.cv':'CV','nav.packages':'Packages','nav.dispatch':'Mailings','nav.jobs':'Jobs','nav.information':'Information','nav.vessels':'Vessel DB',
+        'title.files':'Files & data input','title.experience':'Sea Service','title.dashboard':'Dashboard','title.cv':'CV','title.packages':'Packages','title.dispatch':'Mailings','title.jobs':'Jobs','title.information':'Information','title.vessels':'Vessel DB','title.settings':'Settings',
+        'welcome.subtitle':'Maritime Document Management','welcome.create':'Create Seafarer Vault','welcome.open':'Open Existing Vault','welcome.hint':'New vault folders are named clearly, for example Skipi Seafarer - Tymur Rudov. When opening a vault, select that named folder.','welcome.demo_prefix':'Just exploring?','welcome.demo':'Load demo seafarer',
+        'settings.general':'General','settings.general_desc':'Basic application settings.','settings.language':'Language','settings.language_desc':'Interface language.','settings.autovault':'Auto-open last vault','settings.autovault_desc':'Automatically open the last used vault on startup.',
+        'common.settings':'Settings','common.vault':'Vault','common.switch_vault':'Switch vault','jobs.languages':'Languages'
+    },
+    tl:{
+        'nav.files':'Mga file at data','nav.experience':'Karanasan','nav.dashboard':'Dashboard','nav.cv':'CV','nav.packages':'Mga package','nav.dispatch':'Mga mailing','nav.jobs':'Mga trabaho','nav.information':'Impormasyon','nav.vessels':'Database ng barko',
+        'title.files':'Mga file at data','title.experience':'Sea Service','title.dashboard':'Dashboard','title.cv':'CV','title.packages':'Mga package','title.dispatch':'Mga mailing','title.jobs':'Mga trabaho','title.information':'Impormasyon','title.vessels':'Database ng barko','title.settings':'Settings',
+        'welcome.subtitle':'Pamamahala ng dokumentong pandagat','welcome.create':'Gumawa ng Seafarer Vault','welcome.open':'Buksan ang umiiral na vault','welcome.hint':'Malinaw ang pangalan ng bagong vault folder, halimbawa Skipi Seafarer - Tymur Rudov. Kapag bubuksan ang vault, piliin ang folder na iyon.','welcome.demo_prefix':'Nagtitingin lang?','welcome.demo':'Buksan ang demo seafarer',
+        'settings.general':'General','settings.general_desc':'Pangunahing settings ng application.','settings.language':'Wika','settings.language_desc':'Wika ng interface.','settings.autovault':'Awtomatikong buksan ang huling vault','settings.autovault_desc':'Awtomatikong buksan ang huling ginamit na vault sa startup.',
+        'common.settings':'Settings','common.vault':'Vault','common.switch_vault':'Lumipat ng vault','jobs.languages':'Mga wika'
+    },
+    hi:{
+        'nav.files':'फ़ाइलें और डेटा','nav.experience':'अनुभव','nav.dashboard':'डैशबोर्ड','nav.cv':'CV','nav.packages':'पैकेज','nav.dispatch':'मेलिंग','nav.jobs':'नौकरियां','nav.information':'जानकारी','nav.vessels':'जहाज़ डेटाबेस',
+        'title.files':'फ़ाइलें और डेटा','title.experience':'Sea Service','title.dashboard':'डैशबोर्ड','title.cv':'CV','title.packages':'पैकेज','title.dispatch':'मेलिंग','title.jobs':'नौकरियां','title.information':'जानकारी','title.vessels':'जहाज़ डेटाबेस','title.settings':'सेटिंग्स',
+        'welcome.subtitle':'समुद्री दस्तावेज़ प्रबंधन','welcome.create':'Seafarer Vault बनाएं','welcome.open':'मौजूदा vault खोलें','welcome.hint':'नए vault folder का नाम साफ रखा जाता है, जैसे Skipi Seafarer - Tymur Rudov. Vault खोलते समय वही folder चुनें.','welcome.demo_prefix':'सिर्फ देख रहे हैं?','welcome.demo':'Demo seafarer खोलें',
+        'settings.general':'General','settings.general_desc':'Application की मूल settings.','settings.language':'भाषा','settings.language_desc':'Interface भाषा.','settings.autovault':'पिछला vault अपने-आप खोलें','settings.autovault_desc':'Startup पर अंतिम इस्तेमाल किया गया vault अपने-आप खोलें.',
+        'common.settings':'सेटिंग्स','common.vault':'Vault','common.switch_vault':'Vault बदलें','jobs.languages':'भाषाएं'
+    },
+    id:{
+        'nav.files':'File & data','nav.experience':'Pengalaman','nav.dashboard':'Dasbor','nav.cv':'CV','nav.packages':'Paket','nav.dispatch':'Mailing','nav.jobs':'Lowongan','nav.information':'Informasi','nav.vessels':'Basis data kapal',
+        'title.files':'File & data','title.experience':'Sea Service','title.dashboard':'Dasbor','title.cv':'CV','title.packages':'Paket','title.dispatch':'Mailing','title.jobs':'Lowongan','title.information':'Informasi','title.vessels':'Basis data kapal','title.settings':'Pengaturan',
+        'welcome.subtitle':'Manajemen dokumen maritim','welcome.create':'Buat Seafarer Vault','welcome.open':'Buka vault yang ada','welcome.hint':'Folder vault baru diberi nama jelas, misalnya Skipi Seafarer - Tymur Rudov. Saat membuka vault, pilih folder bernama itu.','welcome.demo_prefix':'Hanya melihat-lihat?','welcome.demo':'Buka demo seafarer',
+        'settings.general':'Umum','settings.general_desc':'Pengaturan dasar aplikasi.','settings.language':'Bahasa','settings.language_desc':'Bahasa antarmuka.','settings.autovault':'Buka vault terakhir otomatis','settings.autovault_desc':'Buka vault terakhir yang digunakan saat aplikasi mulai.',
+        'common.settings':'Pengaturan','common.vault':'Vault','common.switch_vault':'Ganti vault','jobs.languages':'Bahasa'
+    }
+};
+function getUiLang(){
+    var lang=localStorage.getItem(UI_LANG_KEY)||'en';
+    return UI_STRINGS[lang]?lang:'en';
+}
+function tr(key){
+    var lang=getUiLang();
+    return (UI_STRINGS[lang]&&UI_STRINGS[lang][key]) || UI_STRINGS.en[key] || key;
+}
+function setUiLang(lang){
+    if(!UI_STRINGS[lang])lang='en';
+    localStorage.setItem(UI_LANG_KEY,lang);
+    document.documentElement.lang=lang;
+    applyI18nChrome();
+    try{renderSettingsBody();}catch(e){}
+}
+function uiLanguageSelectHtml(){
+    var cur=getUiLang();
+    return '<select id="i-lang" onchange="setUiLang(this.value)">'
+        + UI_LANG_OPTIONS.map(function(o){return '<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('')
+        + '</select>';
+}
+function applyI18nChrome(){
+    document.documentElement.lang=getUiLang();
+    var pairs=[
+        ['mt-files','nav.files'],['mt-exp','nav.experience'],['mt-dash','nav.dashboard'],['mt-cv','nav.cv'],['mt-pkg','nav.packages'],['mt-disp','nav.dispatch'],['mt-jobs','nav.jobs'],['mt-info','nav.information'],['mt-vessels','nav.vessels'],
+        ['welcome-subtitle','welcome.subtitle'],['btn-create-vault','welcome.create'],['btn-open-vault','welcome.open'],['welcome-folder-hint','welcome.hint'],['welcome-demo-prefix','welcome.demo_prefix'],['welcome-demo-link','welcome.demo']
+    ];
+    pairs.forEach(function(p){
+        var el=document.getElementById(p[0]);
+        if(!el)return;
+        var span=el.querySelector&&el.querySelector('span');
+        if(span&&p[0].indexOf('mt-')===0)span.textContent=tr(p[1]);
+        else el.textContent=tr(p[1]);
+    });
+    var vault=document.getElementById('mb-vault');if(vault)vault.title=tr('common.switch_vault');
+    var gear=document.getElementById('mb-gear');if(gear)gear.title=tr('common.settings');
+}
 // Window title is set via `set_window_title` Rust command inside
 // updateTitlebar() — direct JS setTitle() is blocked by Tauri 2 ACL.
 // Human-readable labels for account types that go into the OS window title.
@@ -32,7 +106,7 @@ function updateTitlebar(vaultName,accountType){
         }
     }catch(e){}
 }
-document.addEventListener('DOMContentLoaded',function(){updateTitlebar();});
+document.addEventListener('DOMContentLoaded',function(){updateTitlebar();applyI18nChrome();});
 // Early top-level error trap — shows a visible red bar at the top of the
 // window even before the main script block runs or if it fails to parse.
 // Without this, a script error would silently kill all onclick handlers.
@@ -635,16 +709,16 @@ input, select, textarea, button { font-family:var(--font-ui); }
         <div class="editor" id="editor">
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
-                <p>Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.115</span></p>
-                <button class="btn btn-accent" onclick="showSetup()">Create Seafarer Vault</button>
-                <button class="btn btn-outline" onclick="openExisting()">Open Existing Vault</button>
+                <p id="welcome-subtitle">Maritime Document Management</p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.116</span></p>
+                <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
+                <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
-                <div style="margin-top:12px;font-size:11px;color:var(--text2);line-height:1.45;max-width:360px;">
+                <div id="welcome-folder-hint" style="margin-top:12px;font-size:11px;color:var(--text2);line-height:1.45;max-width:360px;">
                     New vault folders are named clearly, for example <code>Skipi Seafarer - Tymur Rudov</code>. When opening a vault, select that named folder.
                 </div>
                 <div style="margin-top:18px;font-size:12px;color:var(--text2);">
-                    Just exploring? <a href="#" onclick="loadDemoVault();return false;" style="color:var(--accent);">Load demo seafarer</a>
+                    <span id="welcome-demo-prefix">Just exploring?</span> <a href="#" id="welcome-demo-link" onclick="loadDemoVault();return false;" style="color:var(--accent);">Load demo seafarer</a>
                 </div>
             </div>
             <div id="scr-setup" style="display:none;"></div>
@@ -2460,7 +2534,11 @@ function showView(v, opts){
     if(ri)ri.classList.add('active');
     var mt=document.getElementById('mt-'+shortMap[v]);
     if(mt)mt.classList.add('active');
-    document.getElementById('panel-title').textContent={files:'Files & data input',dashboard:'Dashboard',cv:'CV',experience:'Sea Service',vessels:'База судов',packages:'Packages',dispatch:'Рассылки',jobs:'Jobs',information:'Information',settings:'Settings'}[v]||v;
+    document.getElementById('panel-title').textContent={
+        files:tr('title.files'),dashboard:tr('title.dashboard'),cv:tr('title.cv'),experience:tr('title.experience'),
+        vessels:tr('title.vessels'),packages:tr('title.packages'),dispatch:tr('title.dispatch'),jobs:tr('title.jobs'),
+        information:tr('title.information'),settings:tr('title.settings')
+    }[v]||v;
     document.getElementById('left-panel').style.display=(v==='dashboard'||v==='cv'||v==='experience'||v==='vessels'||v==='dispatch'||v==='jobs'||v==='information')?'none':'';
     // The second tabs row (breadcrumb-style tab with the current document name)
     // is only useful in Files view — in the other panels the panel title above
@@ -5278,7 +5356,7 @@ function renderJobsFeed(items){
             +(salary?' · '+esc(salary):'')
             +'</div>';
         if(v.languages && v.languages.length){
-            html += '<div style="font-size:11px;color:var(--text2);margin-top:3px;">Languages: '+esc(v.languages.join(', '))+'</div>';
+            html += '<div style="font-size:11px;color:var(--text2);margin-top:3px;">'+esc(tr('jobs.languages'))+': '+esc(v.languages.join(', '))+'</div>';
         }
         html += jobsVesselHtml(v, esc);
         html += jobsVesselRatingHtml(v, esc);
@@ -7375,21 +7453,10 @@ function renderSettingsBody(){
     var h = '';
 
     if(settingsTab === 'general'){
-        h += '<div class="settings-section"><h3>General</h3><div class="section-desc">Basic application settings.</div>';
-        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Language</div><div class="setting-desc">Interface language. Translations coming in a future release.</div></div>';
-        // Until actual translations land, all options stay disabled except
-        // English. The list is the priority set of seafarer-heavy languages
-        // (RU/UA/TL/HI/SI/ID) so users can see what's on the way.
-        h += '<div class="setting-control"><select>'+
-             '<option value="en" selected>English</option>'+
-             '<option value="ru" disabled>Русский (soon)</option>'+
-             '<option value="uk" disabled>Українська (soon)</option>'+
-             '<option value="tl" disabled>Tagalog (soon)</option>'+
-             '<option value="hi" disabled>हिन्दी / Hindi (soon)</option>'+
-             '<option value="si" disabled>සිංහල / Sinhala (soon)</option>'+
-             '<option value="id" disabled>Bahasa Indonesia (soon)</option>'+
-             '</select></div></div>';
-        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Auto-open last vault</div><div class="setting-desc">Automatically open the last used vault on startup.</div></div>';
+        h += '<div class="settings-section"><h3>'+tr('settings.general')+'</h3><div class="section-desc">'+tr('settings.general_desc')+'</div>';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">'+tr('settings.language')+'</div><div class="setting-desc">'+tr('settings.language_desc')+'</div></div>';
+        h += '<div class="setting-control">'+uiLanguageSelectHtml()+'</div></div>';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">'+tr('settings.autovault')+'</div><div class="setting-desc">'+tr('settings.autovault_desc')+'</div></div>';
         h += '<div class="setting-control"><label class="toggle"><input type="checkbox" checked disabled><span class="slider"></span></label></div></div>';
         h += '</div>';
     }
