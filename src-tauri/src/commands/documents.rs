@@ -1,4 +1,4 @@
-use super::work_history;
+use super::{messaging, work_history};
 use crate::db::{self, DocRecord};
 use crate::AppState;
 use crate::{frameworks, profiles};
@@ -860,7 +860,10 @@ mod tests {
         let attached = docs.iter().find(|d| d.id == doc.id).unwrap();
         assert_eq!(attached.file_name.as_deref(), Some(dest_name.as_str()));
         let vault_copy = vault_path.join(&doc.category).join(&dest_name);
-        assert!(vault_copy.exists(), "vault copy disappeared after source delete");
+        assert!(
+            vault_copy.exists(),
+            "vault copy disappeared after source delete"
+        );
         assert!(std::fs::read_to_string(vault_copy)
             .unwrap()
             .contains("DOC_ID=passport"));
@@ -888,7 +891,8 @@ mod tests {
         let corrupt_bytes = b"%PDF-corrupt\nnot a real pdf trailer\n";
         std::fs::write(&corrupt_source, corrupt_bytes).unwrap();
 
-        let large_name = attach_file_to_vault(&conn, &vault_path, &large.id, &large_source).unwrap();
+        let large_name =
+            attach_file_to_vault(&conn, &vault_path, &large.id, &large_source).unwrap();
         let corrupt_name =
             attach_file_to_vault(&conn, &vault_path, &corrupt.id, &corrupt_source).unwrap();
         assert_ne!(large_name, corrupt_name);
@@ -1320,7 +1324,11 @@ pub fn export_documents_bundle(
         let sign_off = entry.get("sign_off").and_then(|v| v.as_str());
         let folder_name = work_history::work_entry_storage_dir(vault_path, conn, entry_id)
             .ok()
-            .and_then(|p| p.file_name().and_then(|s| s.to_str()).map(|s| s.to_string()))
+            .and_then(|p| {
+                p.file_name()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.to_string())
+            })
             .unwrap_or_else(|| entry_id.to_string());
         for file in db::get_work_files(conn, entry_id).map_err(|e| e.to_string())? {
             let file_id = match file.get("id").and_then(|v| v.as_str()) {
@@ -1338,14 +1346,23 @@ pub fn export_documents_bundle(
             }
             let data = fs::read(&src).map_err(|e| format!("read {}: {}", src.display(), e))?;
             let in_zip = format!("Sea Service/{}/{}", folder_name, fname);
-            zip.start_file(&in_zip, options).map_err(|e| e.to_string())?;
+            zip.start_file(&in_zip, options)
+                .map_err(|e| e.to_string())?;
             zip.write_all(&data).map_err(|e| e.to_string())?;
-            let period = [sign_on, sign_off].into_iter().flatten().collect::<Vec<_>>().join(" - ");
+            let period = [sign_on, sign_off]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join(" - ");
             let title = [
                 Some(vessel_name),
                 position,
                 kind,
-                if period.is_empty() { None } else { Some(period.as_str()) },
+                if period.is_empty() {
+                    None
+                } else {
+                    Some(period.as_str())
+                },
             ]
             .into_iter()
             .flatten()
@@ -1378,15 +1395,33 @@ pub fn export_documents_bundle(
 
     // Optional seafarer metadata so the crewing card has labels.
     let info = db::get_vault_info(conn).map_err(|e| e.to_string())?;
+    let messaging_identity = messaging::identity_for_vault(vault_path)?;
+    let messaging_user_id = messaging_identity.user_id;
+    let messaging_pubkey_b64 = messaging_identity.pubkey_b64;
+    let vault_user_id = db::get_vault_info_value(conn, "user_id");
+    let vault_identity_pubkey = db::get_vault_info_value(conn, "identity_pubkey");
     let manifest = serde_json::json!({
         "schema_version": 1,
         "exported_at": chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+        "skipi_identity": {
+            "schema_version": 1,
+            "role": "seafarer",
+            "messaging_user_id": &messaging_user_id,
+            "messaging_pubkey_b64": &messaging_pubkey_b64,
+            "vault_user_id": vault_user_id.as_deref(),
+            "vault_identity_pubkey": vault_identity_pubkey.as_deref(),
+        },
         "exported_by": {
             "name": info.name,
             "rank": info.rank,
             "vessel_type": info.vessel_type,
             "position": info.position,
             "vessel_category": info.vessel_category,
+            "user_id": &messaging_user_id,
+            "messaging_user_id": &messaging_user_id,
+            "messaging_pubkey_b64": &messaging_pubkey_b64,
+            "vault_user_id": vault_user_id.as_deref(),
+            "identity_pubkey": vault_identity_pubkey.as_deref(),
         },
         "documents": manifest_docs,
     });

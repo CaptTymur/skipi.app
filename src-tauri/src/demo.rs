@@ -583,7 +583,12 @@ mod tests {
             );
             assert_eq!(
                 stored_size,
-                Some(file_path.metadata().expect("demo attachment metadata").len() as i64),
+                Some(
+                    file_path
+                        .metadata()
+                        .expect("demo attachment metadata")
+                        .len() as i64
+                ),
                 "stored file size mismatch for {}",
                 title
             );

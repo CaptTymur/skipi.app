@@ -220,6 +220,7 @@ pub fn run() {
             jobs::get_downloads_dir,
             mail_intent::create_email_file,
             // E2E messaging
+            messaging::get_api_base_override,
             messaging::get_my_identity,
             messaging::register_my_pubkey,
             messaging::send_encrypted_message,

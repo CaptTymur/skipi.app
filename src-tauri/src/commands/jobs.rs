@@ -8,6 +8,14 @@ use serde::{Deserialize, Serialize};
 
 const PROD_API: &str = "https://api.skipi.app";
 
+fn api_base() -> String {
+    std::env::var("SKIPI_API_BASE")
+        .ok()
+        .map(|s| s.trim().trim_end_matches('/').to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| PROD_API.to_string())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VesselRatingSummary {
     #[serde(default)]
@@ -128,7 +136,7 @@ pub fn fetch_jobs(
     rank: Option<String>,
     vessel_type: Option<String>,
 ) -> Result<Vec<PublicVacancy>, String> {
-    let mut url = format!("{}/api/vacancies?limit=100", PROD_API);
+    let mut url = format!("{}/api/vacancies?limit=100", api_base());
     if let Some(r) = rank.as_deref().filter(|s| !s.is_empty()) {
         url.push_str(&format!("&rank={}", urlencoding(r)));
     }
@@ -157,7 +165,7 @@ pub fn fetch_mailing_requests(
     rank: Option<String>,
     vessel_type: Option<String>,
 ) -> Result<Vec<PublicMailingRequest>, String> {
-    let mut url = format!("{}/api/mailing-requests?limit=100", PROD_API);
+    let mut url = format!("{}/api/mailing-requests?limit=100", api_base());
     if let Some(r) = rank.as_deref().filter(|s| !s.is_empty()) {
         url.push_str(&format!("&rank={}", urlencoding(r)));
     }
@@ -185,7 +193,8 @@ pub fn fetch_mailing_requests(
 pub fn mailing_request_send_click(request_id: String) -> Result<(), String> {
     let url = format!(
         "{}/api/mailing-requests/{}/send-click",
-        PROD_API, request_id
+        api_base(),
+        request_id
     );
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(8))
@@ -330,7 +339,7 @@ pub fn get_downloads_dir() -> Result<String, String> {
 }
 
 fn bump_counter(vacancy_id: &str, action: &str) -> Result<(), String> {
-    let url = format!("{}/api/vacancies/{}/{}", PROD_API, vacancy_id, action);
+    let url = format!("{}/api/vacancies/{}/{}", api_base(), vacancy_id, action);
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(8))
         .build()

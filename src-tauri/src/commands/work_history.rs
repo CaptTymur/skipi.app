@@ -263,8 +263,16 @@ fn work_entry_folder_name(conn: &rusqlite::Connection, entry_id: &str) -> Result
     Ok(format!(
         "{}_{}_{}",
         ident,
-        if yyyymm.is_empty() { "unknown" } else { &yyyymm },
-        if short_id.is_empty() { "entry" } else { &short_id }
+        if yyyymm.is_empty() {
+            "unknown"
+        } else {
+            &yyyymm
+        },
+        if short_id.is_empty() {
+            "entry"
+        } else {
+            &short_id
+        }
     ))
 }
 
@@ -470,10 +478,8 @@ mod tests {
 
     #[test]
     fn work_entry_storage_uses_sea_service_vault_folder() {
-        let vault_path = std::env::temp_dir().join(format!(
-            "skipi-sea-service-folder-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let vault_path =
+            std::env::temp_dir().join(format!("skipi-sea-service-folder-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&vault_path).unwrap();
         let conn = db::open_db(&vault_path).unwrap();
         db::add_work_entry(

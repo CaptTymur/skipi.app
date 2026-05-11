@@ -24,6 +24,17 @@ use crate::AppState;
 const PROD_API: &str = "https://api.skipi.app";
 const MAX_ATTACHMENT_BYTES: usize = 50 * 1024 * 1024;
 
+fn env_api_base() -> Option<String> {
+    std::env::var("SKIPI_API_BASE")
+        .ok()
+        .map(|s| s.trim().trim_end_matches('/').to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn api_base() -> String {
+    env_api_base().unwrap_or_else(|| PROD_API.to_string())
+}
+
 fn x25519_sk_path(vault_path: &Path) -> PathBuf {
     vault_path.join("_identity").join("x25519_sk.bin")
 }
@@ -68,6 +79,14 @@ pub struct MyIdentity {
     pub pubkey_b64: String,
 }
 
+pub(crate) fn identity_for_vault(vault_path: &Path) -> Result<MyIdentity, String> {
+    let (_sk, pk, user_id) = ensure_keypair(vault_path)?;
+    Ok(MyIdentity {
+        user_id,
+        pubkey_b64: base64::engine::general_purpose::STANDARD.encode(pk.as_bytes()),
+    })
+}
+
 fn current_vault_path(state: &State<AppState>) -> Result<PathBuf, String> {
     let guard = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
     guard
@@ -77,19 +96,20 @@ fn current_vault_path(state: &State<AppState>) -> Result<PathBuf, String> {
 }
 
 #[tauri::command]
+pub fn get_api_base_override() -> Option<String> {
+    env_api_base()
+}
+
+#[tauri::command]
 pub fn get_my_identity(state: State<AppState>) -> Result<MyIdentity, String> {
     let vault = current_vault_path(&state)?;
-    let (_sk, pk, user_id) = ensure_keypair(&vault)?;
-    Ok(MyIdentity {
-        user_id,
-        pubkey_b64: base64::engine::general_purpose::STANDARD.encode(pk.as_bytes()),
-    })
+    identity_for_vault(&vault)
 }
 
 #[tauri::command]
 pub fn register_my_pubkey(state: State<AppState>) -> Result<MyIdentity, String> {
     let me = get_my_identity(state)?;
-    let url = format!("{}/api/messaging/pubkey", PROD_API);
+    let url = format!("{}/api/messaging/pubkey", api_base());
     let body = serde_json::json!({
         "user_id": me.user_id,
         "pubkey_b64": me.pubkey_b64,
@@ -118,7 +138,7 @@ struct PubkeyResp {
 }
 
 fn lookup_pk(user_id: &str) -> Result<PublicKey, String> {
-    let url = format!("{}/api/messaging/pubkey/{}", PROD_API, user_id);
+    let url = format!("{}/api/messaging/pubkey/{}", api_base(), user_id);
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()
@@ -186,7 +206,8 @@ pub fn send_encrypted_message(
 
     let url = format!(
         "{}/api/messaging/threads/{}/messages",
-        PROD_API, application_id
+        api_base(),
+        application_id
     );
     let body = serde_json::json!({
         "from_user_id": my_user_id,
@@ -234,7 +255,7 @@ pub fn apply_via_e2e(
     let (_sk, _pk, my_user_id) = ensure_keypair(&vault)?;
     let _ = (crewing_user_id, crewing_pubkey_b64); // not needed at apply-time
 
-    let url = format!("{}/api/apply/{}/e2e", PROD_API, vacancy_id);
+    let url = format!("{}/api/apply/{}/e2e", api_base(), vacancy_id);
     let body = serde_json::json!({
         "from_user_id": my_user_id,
         "summary": summary_json,
@@ -267,7 +288,9 @@ pub fn fetch_messages(
     let (sk, _pk, my_user_id) = ensure_keypair(&vault)?;
     let url = format!(
         "{}/api/messaging/threads/{}/messages?user_id={}",
-        PROD_API, application_id, my_user_id
+        api_base(),
+        application_id,
+        my_user_id
     );
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
@@ -402,7 +425,8 @@ pub fn upload_encrypted_attachment(
 
     let url = format!(
         "{}/api/messaging/threads/{}/attachments",
-        PROD_API, application_id
+        api_base(),
+        application_id
     );
     let body = serde_json::json!({
         "from_user_id": my_user_id,
@@ -445,7 +469,9 @@ pub fn download_encrypted_attachment(
 
     let url = format!(
         "{}/api/messaging/attachments/{}/body?user_id={}",
-        PROD_API, attachment_id, my_user_id
+        api_base(),
+        attachment_id,
+        my_user_id
     );
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
