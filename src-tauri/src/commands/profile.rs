@@ -1061,6 +1061,7 @@ pub fn get_profile_status(state: State<AppState>) -> Result<serde_json::Value, S
         "stcw_level": stcw_level,
         "vessel_category": vessel_category,
         "position": position,
+        "is_demo": db::get_vault_info_value(conn, "is_demo"),
         "required": required,
         "missing_ids": missing,
         "completeness_pct": completeness,

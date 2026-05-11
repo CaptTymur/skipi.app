@@ -7,6 +7,15 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.118] — 2026-05-11
+
+### Added
+- Added a local-only Skipi builders group invite gate for real beta users:
+  seafarer vaults now show the Telegram invite only after the active profile
+  reaches at least 85% completeness and the user has added Sea Service.
+- Demo vaults are excluded from the invite gate so casual demo exploration does
+  not grant access to the developer feedback group.
+
 ## [0.4.113] — 2026-05-08
 
 ### Added

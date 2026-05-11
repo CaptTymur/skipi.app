@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.117';
+var APP_VERSION='0.4.118';
 var UI_LANG_KEY='skipi-ui-language';
 var UI_LANG_OPTIONS=[
     ['en','English'],
@@ -718,7 +718,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p id="welcome-subtitle">Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.117</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.118</span></p>
                 <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -2508,9 +2508,149 @@ async function loadVault(info){
     if(isSeafarer){
         startJobsPolling();
         setTimeout(prewarmJobsFeedIfReady, 800);
+        setTimeout(function(){maybeShowDeveloperGroupInvite();},1500);
     }
     // If this is a Seafarer vault with an incomplete profile, force completion.
     if(isSeafarer){ setTimeout(function(){ openForcedProfile(false); },400); }
+}
+
+// ========== Developer group invite gate ==========
+// Local-only gate: only active seafarer users who have filled at least 85% of
+// the active profile framework and added Sea Service see the invite.
+var DEVELOPER_GROUP_INVITE_URL='https://t.me/+_PhHogOGwq5kMmQy';
+var DEVELOPER_GROUP_INVITE_MIN_PCT=85;
+var _developerInviteCheckBusy=false;
+
+function developerInviteHash(s){
+    var h=0,str=String(s||'vault');
+    for(var i=0;i<str.length;i++){h=((h<<5)-h)+str.charCodeAt(i);h|=0;}
+    return Math.abs(h).toString(36);
+}
+
+async function developerInviteStorageBase(){
+    var p='';
+    try{p=await invoke('get_current_vault_path')||'';}catch(e){}
+    return 'skipi-dev-group-invite-v1:'+developerInviteHash(p||document.title||'vault');
+}
+
+function isSeafarerVault(){
+    return currentAccountType==='seafarer'||currentAccountType===''||!currentAccountType;
+}
+
+async function getDeveloperInviteEligibility(profileOverride){
+    if(!isSeafarerVault())return {eligible:false,reason:'not_seafarer'};
+    var profile=profileOverride||null;
+    var path='';
+    try{path=await invoke('get_current_vault_path')||'';}catch(e){}
+    if(!profile){
+        try{profile=await invoke('get_profile_status');}catch(e){return {eligible:false,reason:'profile_error',error:String(e)};}
+    }
+    var work=[];
+    try{work=await invoke('get_work_history')||[];}catch(e){work=[];}
+    var pct=Math.round(Number((profile&&profile.completeness_pct)||0));
+    var workCount=Array.isArray(work)?work.length:0;
+    var isDemo=String((profile&&profile.is_demo)||'')==='1'||/skipi demo/i.test(path);
+    return {
+        eligible:!isDemo&&pct>=DEVELOPER_GROUP_INVITE_MIN_PCT&&workCount>0,
+        pct:pct,
+        work_count:workCount,
+        is_demo:isDemo,
+        profile:profile,
+        path:path
+    };
+}
+
+function renderDeveloperGroupInviteCard(state){
+    if(!state||!state.eligible)return '';
+    var pct=state.pct||0;
+    var workCount=state.work_count||0;
+    var h='<div style="background:linear-gradient(135deg,rgba(26,115,232,.16),rgba(16,185,129,.10));border:1px solid rgba(26,115,232,.45);border-radius:8px;padding:14px 16px;margin-bottom:16px;">';
+    h+='<div style="display:flex;justify-content:space-between;gap:14px;align-items:flex-start;">';
+    h+='<div style="min-width:0;">';
+    h+='<div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);font-weight:800;margin-bottom:5px;">Skipi builders</div>';
+    h+='<div style="font-size:16px;font-weight:700;margin-bottom:5px;">Доступна группа разработчиков Skipi</div>';
+    h+='<div style="font-size:12px;color:var(--text2);line-height:1.45;">Вы заполнили профиль на '+pct+'% и добавили Sea Service ('+workCount+'). Можно вступить в Telegram-группу, где активные моряки помогают формировать развитие Skipi.</div>';
+    h+='<div style="font-size:11px;color:var(--text2);margin-top:7px;">Проверка выполняется локально. Ваш профиль не отправляется в Telegram или на сервер Skipi.</div>';
+    h+='</div>';
+    h+='<div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;flex:0 0 auto;">';
+    h+='<button class="btn btn-accent btn-sm" onclick="openDeveloperGroupInvite()">Вступить в Telegram</button>';
+    h+='<button class="btn btn-outline btn-sm" onclick="copyDeveloperGroupInvite()">Copy link</button>';
+    h+='</div></div></div>';
+    return h;
+}
+
+function closeDeveloperGroupInvite(){
+    var el=document.getElementById('developer-group-invite-overlay');
+    if(el)el.remove();
+}
+
+async function dismissDeveloperGroupInvite(){
+    try{
+        var base=await developerInviteStorageBase();
+        localStorage.setItem(base+':popup_seen',String(Date.now()));
+    }catch(e){}
+    closeDeveloperGroupInvite();
+}
+
+async function openDeveloperGroupInvite(){
+    try{
+        var base=await developerInviteStorageBase();
+        localStorage.setItem(base+':opened',String(Date.now()));
+        localStorage.setItem(base+':popup_seen',String(Date.now()));
+    }catch(e){}
+    closeDeveloperGroupInvite();
+    try{await invoke('open_external_url',{url:DEVELOPER_GROUP_INVITE_URL});}
+    catch(e){try{window.open(DEVELOPER_GROUP_INVITE_URL,'_blank');}catch(_){}}
+}
+
+async function copyDeveloperGroupInvite(){
+    try{
+        if(navigator.clipboard&&navigator.clipboard.writeText){
+            await navigator.clipboard.writeText(DEVELOPER_GROUP_INVITE_URL);
+            showToast('Invite link copied','success');
+            return;
+        }
+    }catch(e){}
+    showToast(DEVELOPER_GROUP_INVITE_URL,'info');
+}
+
+function showDeveloperGroupInviteNotice(state){
+    if(document.getElementById('developer-group-invite-overlay'))return;
+    state=state||{};
+    var h='<div id="developer-group-invite-overlay" class="modal-overlay open" onclick="if(event.target===this)dismissDeveloperGroupInvite();">';
+    h+='<div class="modal-panel" style="width:min(560px,92vw);">';
+    h+='<div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);font-weight:800;margin-bottom:6px;">Skipi builders</div>';
+    h+='<h3 style="margin:0 0 8px;font-size:18px;">Доступна группа разработчиков Skipi</h3>';
+    h+='<p style="font-size:13px;color:var(--text2);line-height:1.5;margin:0 0 10px;">Вы заполнили профиль моряка минимум на '+DEVELOPER_GROUP_INVITE_MIN_PCT+'% и добавили свой Sea Service. Это значит, что вы уже проверяете Skipi как реальный рабочий инструмент.</p>';
+    h+='<p style="font-size:13px;color:var(--text2);line-height:1.5;margin:0 0 12px;">Можно вступить в Telegram-группу, где мы обсуждаем разработку с активными пользователями: что ломается, чего не хватает, какие workflow важны морякам.</p>';
+    h+='<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:12px;color:var(--text2);line-height:1.45;margin-bottom:14px;">Проверка выполнена локально: профиль '+(state.pct||0)+'%, Sea Service записей: '+(state.work_count||0)+'. Ваши документы и профиль не отправляются.</div>';
+    h+='<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">';
+    h+='<button class="btn btn-outline btn-sm" onclick="dismissDeveloperGroupInvite()">Позже</button>';
+    h+='<button class="btn btn-accent btn-sm" onclick="openDeveloperGroupInvite()">Вступить в Telegram</button>';
+    h+='</div></div></div>';
+    document.body.insertAdjacentHTML('beforeend',h);
+}
+
+async function maybeShowDeveloperGroupInvite(){
+    if(_developerInviteCheckBusy)return;
+    _developerInviteCheckBusy=true;
+    try{
+        var fp=document.getElementById('forced-profile-overlay');
+        if(fp&&fp.style.display&&fp.style.display!=='none')return;
+        var state=await getDeveloperInviteEligibility();
+        if(!state.eligible)return;
+        var base=await developerInviteStorageBase();
+        if(localStorage.getItem(base+':popup_seen'))return;
+        showDeveloperGroupInviteNotice(state);
+    }catch(e){
+        logError('developer_group_invite',e);
+    }finally{
+        _developerInviteCheckBusy=false;
+    }
+}
+
+function scheduleDeveloperGroupInviteCheck(delayMs){
+    setTimeout(function(){maybeShowDeveloperGroupInvite();},delayMs||600);
 }
 
 // Auto-format date inputs as the user types digits (YYYY-MM-DD).
@@ -2996,6 +3136,7 @@ async function saveF(id,f,v){
         fs2[f]='verified';
         try{await invoke('update_field_statuses',{id:id,statuses:JSON.stringify(fs2)});}catch(e){}
         allDocs=await invoke('get_documents');renderTree();
+        scheduleDeveloperGroupInviteCheck(900);
     }catch(e){showToast(''+e,'error');logError('op',e);}
 }
 async function updExp(id,v){if(!v)return;try{await invoke('update_expiry',{id:id,validTo:v});allDocs=await invoke('get_documents');renderTree();var d=allDocs.find(function(x){return x.id===id;});if(d)await renderDoc(d);updateStatus();
@@ -3005,6 +3146,7 @@ async function updExp(id,v){if(!v)return;try{await invoke('update_expiry',{id:id
         var p=_slfPendingRecheckForDoc(id,'expired');
         if(p) _slfShowRecheckBanner(p);
     }
+    scheduleDeveloperGroupInviteCheck(900);
 }catch(e){showToast(''+e,'error');logError('op',e);}}
 async function attachF(id){
     var f=await open({multiple:false,title:'Select file',filters:[{name:'Documents',extensions:['pdf','jpg','jpeg','png','doc','docx']}]});
@@ -3062,6 +3204,7 @@ async function attachFFromPath(id,sourcePath){
         if(aiAutoscanEnabled()&&await aiIsConfigured()){
             setTimeout(function(){aiRec(id,true);},500);
         }
+        scheduleDeveloperGroupInviteCheck(900);
     }catch(e){showToast(''+e,'error');logError('attachFFromPath',e);}
 }
 
@@ -3179,6 +3322,8 @@ async function showDashboard(){
     // Profile completeness header (if seafarer profile is set)
     var profile=null;
     try{profile=await invoke('get_profile_status');}catch(e){}
+    var developerInviteState=null;
+    try{developerInviteState=await getDeveloperInviteEligibility(profile);}catch(e){developerInviteState=null;}
     if(profile&&profile.stcw_level&&profile.position){
         var pct=Math.round(profile.completeness_pct||0);
         h+='<div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:12px 14px;margin-bottom:16px;">';
@@ -3193,6 +3338,7 @@ async function showDashboard(){
         h+='<div style="margin-top:6px;font-size:11px;"><a href="#" onclick="showWorkHistory();return false;" style="color:var(--accent);">Work history</a> &middot; <a href="#" onclick="showView(\'vessels\');return false;" style="color:var(--accent);">База судов</a> &middot; <a href="#" onclick="showMissing();return false;" style="color:var(--accent);">Missing documents</a></div>';
         h+='</div>';
     }
+    h+=renderDeveloperGroupInviteCard(developerInviteState);
 
     h+='<div class="dash-grid">';
     h+='<div class="dash-card"><div class="num" style="color:var(--accent)">'+uploadedDocs.length+'</div><div class="lbl">Uploaded</div></div>';
@@ -4338,6 +4484,7 @@ async function saveWork(){
             notes:v('wh-notes')
         });
         await showWorkHistory();
+        scheduleDeveloperGroupInviteCheck(700);
     }catch(e){showToast('Error: '+e,'error');logError('op',e);}
 }
 
@@ -7965,6 +8112,7 @@ async function spSave(){
         var added=result&&result.docs_added?parseInt(result.docs_added,10):0;
         var changed=result&&result.framework_changed;
         showToast(changed?'Saved - requirements updated'+(added>0?' (+'+added+' slots)':''):'Saved','success');
+        scheduleDeveloperGroupInviteCheck(900);
     }catch(e){showToast('Save error: '+e,'error');logError('Save error',e);}
 }
 async function spUploadPhoto(){
