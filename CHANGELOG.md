@@ -7,6 +7,15 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.119] — 2026-05-11
+
+### Added
+- Added automatic API fallback from `https://api.skipi.app` to
+  `https://api-ru.skipi.app` for users whose networks cannot reach the primary
+  Contabo-hosted API.
+- Native Tauri commands now use the same fallback path for jobs, public board
+  counters, applications, E2E messaging, and encrypted chat attachments.
+
 ## [0.4.118] — 2026-05-11
 
 ### Added

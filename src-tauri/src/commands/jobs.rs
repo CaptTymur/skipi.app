@@ -1,20 +1,12 @@
-//! Public jobs board client — polls https://api.skipi.app/api/vacancies
-//! for vacancies that match the seafarer's profile (rank, vessel type).
+//! Public jobs board client. It polls the configured Skipi API, falling back
+//! from the primary endpoint to the Timeweb RF bridge when needed.
 //!
 //! Privacy: the desktop app sends only the broad filter parameters in the
 //! query string; the server never sees the seafarer's identity.
 
 use serde::{Deserialize, Serialize};
 
-const PROD_API: &str = "https://api.skipi.app";
-
-fn api_base() -> String {
-    std::env::var("SKIPI_API_BASE")
-        .ok()
-        .map(|s| s.trim().trim_end_matches('/').to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| PROD_API.to_string())
-}
+use crate::api;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VesselRatingSummary {
@@ -136,27 +128,19 @@ pub fn fetch_jobs(
     rank: Option<String>,
     vessel_type: Option<String>,
 ) -> Result<Vec<PublicVacancy>, String> {
-    let mut url = format!("{}/api/vacancies?limit=100", api_base());
+    let mut path = "/api/vacancies?limit=100".to_string();
     if let Some(r) = rank.as_deref().filter(|s| !s.is_empty()) {
-        url.push_str(&format!("&rank={}", urlencoding(r)));
+        path.push_str(&format!("&rank={}", urlencoding(r)));
     }
     if let Some(v) = vessel_type.as_deref().filter(|s| !s.is_empty()) {
-        url.push_str(&format!("&vessel_type={}", urlencoding(v)));
+        path.push_str(&format!("&vessel_type={}", urlencoding(v)));
     }
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
+        .connect_timeout(std::time::Duration::from_secs(4))
         .build()
         .map_err(|e| e.to_string())?;
-    let resp = client
-        .get(&url)
-        .send()
-        .map_err(|e| format!("network: {e}"))?;
-    let s = resp.status();
-    if !s.is_success() {
-        let body = resp.text().unwrap_or_default();
-        return Err(format!("server returned {s}: {body}"));
-    }
-    let parsed: VacancyListResp = resp.json().map_err(|e| format!("bad JSON: {e}"))?;
+    let parsed: VacancyListResp = api::get_json(&client, &path)?;
     Ok(parsed.items)
 }
 
@@ -165,50 +149,31 @@ pub fn fetch_mailing_requests(
     rank: Option<String>,
     vessel_type: Option<String>,
 ) -> Result<Vec<PublicMailingRequest>, String> {
-    let mut url = format!("{}/api/mailing-requests?limit=100", api_base());
+    let mut path = "/api/mailing-requests?limit=100".to_string();
     if let Some(r) = rank.as_deref().filter(|s| !s.is_empty()) {
-        url.push_str(&format!("&rank={}", urlencoding(r)));
+        path.push_str(&format!("&rank={}", urlencoding(r)));
     }
     if let Some(v) = vessel_type.as_deref().filter(|s| !s.is_empty()) {
-        url.push_str(&format!("&vessel_type={}", urlencoding(v)));
+        path.push_str(&format!("&vessel_type={}", urlencoding(v)));
     }
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
+        .connect_timeout(std::time::Duration::from_secs(4))
         .build()
         .map_err(|e| e.to_string())?;
-    let resp = client
-        .get(&url)
-        .send()
-        .map_err(|e| format!("network: {e}"))?;
-    let s = resp.status();
-    if !s.is_success() {
-        let body = resp.text().unwrap_or_default();
-        return Err(format!("server returned {s}: {body}"));
-    }
-    let parsed: MailingRequestListResp = resp.json().map_err(|e| format!("bad JSON: {e}"))?;
+    let parsed: MailingRequestListResp = api::get_json(&client, &path)?;
     Ok(parsed.items)
 }
 
 #[tauri::command]
 pub fn mailing_request_send_click(request_id: String) -> Result<(), String> {
-    let url = format!(
-        "{}/api/mailing-requests/{}/send-click",
-        api_base(),
-        request_id
-    );
+    let path = format!("/api/mailing-requests/{}/send-click", request_id);
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(8))
+        .connect_timeout(std::time::Duration::from_secs(4))
         .build()
         .map_err(|e| e.to_string())?;
-    let resp = client
-        .post(&url)
-        .send()
-        .map_err(|e| format!("network: {e}"))?;
-    let s = resp.status();
-    if !s.is_success() && s.as_u16() != 204 {
-        return Err(format!("server returned {s}"));
-    }
-    Ok(())
+    api::post_empty(&client, &path)
 }
 
 /// Tell the public board that someone hit Apply on this vacancy.
@@ -339,20 +304,13 @@ pub fn get_downloads_dir() -> Result<String, String> {
 }
 
 fn bump_counter(vacancy_id: &str, action: &str) -> Result<(), String> {
-    let url = format!("{}/api/vacancies/{}/{}", api_base(), vacancy_id, action);
+    let path = format!("/api/vacancies/{}/{}", vacancy_id, action);
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(8))
+        .connect_timeout(std::time::Duration::from_secs(4))
         .build()
         .map_err(|e| e.to_string())?;
-    let resp = client
-        .post(&url)
-        .send()
-        .map_err(|e| format!("network: {e}"))?;
-    let s = resp.status();
-    if !s.is_success() && s.as_u16() != 204 {
-        return Err(format!("server returned {s}"));
-    }
-    Ok(())
+    api::post_empty(&client, &path)
 }
 
 fn urlencoding(s: &str) -> String {

@@ -19,21 +19,9 @@ use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use tauri::State;
 
-use crate::AppState;
+use crate::{api, AppState};
 
-const PROD_API: &str = "https://api.skipi.app";
 const MAX_ATTACHMENT_BYTES: usize = 50 * 1024 * 1024;
-
-fn env_api_base() -> Option<String> {
-    std::env::var("SKIPI_API_BASE")
-        .ok()
-        .map(|s| s.trim().trim_end_matches('/').to_string())
-        .filter(|s| !s.is_empty())
-}
-
-fn api_base() -> String {
-    env_api_base().unwrap_or_else(|| PROD_API.to_string())
-}
 
 fn x25519_sk_path(vault_path: &Path) -> PathBuf {
     vault_path.join("_identity").join("x25519_sk.bin")
@@ -97,7 +85,7 @@ fn current_vault_path(state: &State<AppState>) -> Result<PathBuf, String> {
 
 #[tauri::command]
 pub fn get_api_base_override() -> Option<String> {
-    env_api_base()
+    api::env_api_base()
 }
 
 #[tauri::command]
@@ -109,7 +97,6 @@ pub fn get_my_identity(state: State<AppState>) -> Result<MyIdentity, String> {
 #[tauri::command]
 pub fn register_my_pubkey(state: State<AppState>) -> Result<MyIdentity, String> {
     let me = get_my_identity(state)?;
-    let url = format!("{}/api/messaging/pubkey", api_base());
     let body = serde_json::json!({
         "user_id": me.user_id,
         "pubkey_b64": me.pubkey_b64,
@@ -117,18 +104,10 @@ pub fn register_my_pubkey(state: State<AppState>) -> Result<MyIdentity, String> 
     });
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
+        .connect_timeout(std::time::Duration::from_secs(4))
         .build()
         .map_err(|e| e.to_string())?;
-    let resp = client
-        .post(&url)
-        .json(&body)
-        .send()
-        .map_err(|e| format!("network: {e}"))?;
-    if !resp.status().is_success() {
-        let s = resp.status();
-        let b = resp.text().unwrap_or_default();
-        return Err(format!("server returned {s}: {b}"));
-    }
+    api::post_json_empty(&client, "/api/messaging/pubkey", &body)?;
     Ok(me)
 }
 
@@ -138,19 +117,14 @@ struct PubkeyResp {
 }
 
 fn lookup_pk(user_id: &str) -> Result<PublicKey, String> {
-    let url = format!("{}/api/messaging/pubkey/{}", api_base(), user_id);
+    let path = format!("/api/messaging/pubkey/{}", user_id);
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
+        .connect_timeout(std::time::Duration::from_secs(4))
         .build()
         .map_err(|e| e.to_string())?;
-    let resp = client
-        .get(&url)
-        .send()
-        .map_err(|e| format!("network: {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!("recipient pubkey not found: {}", resp.status()));
-    }
-    let parsed: PubkeyResp = resp.json().map_err(|e| format!("bad JSON: {e}"))?;
+    let parsed: PubkeyResp =
+        api::get_json(&client, &path).map_err(|e| format!("recipient pubkey not found: {e}"))?;
     let raw = base64::engine::general_purpose::STANDARD
         .decode(&parsed.pubkey_b64)
         .map_err(|e| format!("bad b64: {e}"))?;
@@ -204,11 +178,7 @@ pub fn send_encrypted_message(
     payload.extend_from_slice(&ct);
     let ciphertext_b64 = base64::engine::general_purpose::STANDARD.encode(&payload);
 
-    let url = format!(
-        "{}/api/messaging/threads/{}/messages",
-        api_base(),
-        application_id
-    );
+    let path = format!("/api/messaging/threads/{}/messages", application_id);
     let body = serde_json::json!({
         "from_user_id": my_user_id,
         "to_user_id": to_user_id,
@@ -216,19 +186,10 @@ pub fn send_encrypted_message(
     });
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(20))
+        .connect_timeout(std::time::Duration::from_secs(4))
         .build()
         .map_err(|e| e.to_string())?;
-    let resp = client
-        .post(&url)
-        .json(&body)
-        .send()
-        .map_err(|e| format!("network: {e}"))?;
-    if !resp.status().is_success() {
-        let s = resp.status();
-        let b = resp.text().unwrap_or_default();
-        return Err(format!("server returned {s}: {b}"));
-    }
-    let server_msg: ServerMessage = resp.json().map_err(|e| format!("bad JSON: {e}"))?;
+    let server_msg: ServerMessage = api::post_json(&client, &path, &body)?;
     Ok(PlaintextMessage {
         id: server_msg.id,
         application_id: server_msg.application_id,
@@ -255,7 +216,7 @@ pub fn apply_via_e2e(
     let (_sk, _pk, my_user_id) = ensure_keypair(&vault)?;
     let _ = (crewing_user_id, crewing_pubkey_b64); // not needed at apply-time
 
-    let url = format!("{}/api/apply/{}/e2e", api_base(), vacancy_id);
+    let path = format!("/api/apply/{}/e2e", vacancy_id);
     let body = serde_json::json!({
         "from_user_id": my_user_id,
         "summary": summary_json,
@@ -263,19 +224,10 @@ pub fn apply_via_e2e(
     });
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
+        .connect_timeout(std::time::Duration::from_secs(4))
         .build()
         .map_err(|e| e.to_string())?;
-    let resp = client
-        .post(&url)
-        .json(&body)
-        .send()
-        .map_err(|e| format!("network: {e}"))?;
-    if !resp.status().is_success() {
-        let s = resp.status();
-        let b = resp.text().unwrap_or_default();
-        return Err(format!("server returned {s}: {b}"));
-    }
-    let ack: serde_json::Value = resp.json().map_err(|e| format!("bad JSON: {e}"))?;
+    let ack: serde_json::Value = api::post_json(&client, &path, &body)?;
     Ok(ack)
 }
 
@@ -286,24 +238,16 @@ pub fn fetch_messages(
 ) -> Result<Vec<PlaintextMessage>, String> {
     let vault = current_vault_path(&state)?;
     let (sk, _pk, my_user_id) = ensure_keypair(&vault)?;
-    let url = format!(
-        "{}/api/messaging/threads/{}/messages?user_id={}",
-        api_base(),
-        application_id,
-        my_user_id
+    let path = format!(
+        "/api/messaging/threads/{}/messages?user_id={}",
+        application_id, my_user_id
     );
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
+        .connect_timeout(std::time::Duration::from_secs(4))
         .build()
         .map_err(|e| e.to_string())?;
-    let resp = client
-        .get(&url)
-        .send()
-        .map_err(|e| format!("network: {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!("server returned {}", resp.status()));
-    }
-    let server_msgs: Vec<ServerMessage> = resp.json().map_err(|e| format!("bad JSON: {e}"))?;
+    let server_msgs: Vec<ServerMessage> = api::get_json(&client, &path)?;
     let mut out = Vec::with_capacity(server_msgs.len());
     // Cache pubkey lookups — a thread has at most one counterpart, but even
     // if it had many, we'd still want to avoid one HTTP call per message
@@ -423,11 +367,7 @@ pub fn upload_encrypted_attachment(
     payload.extend_from_slice(&ct);
     let ciphertext_b64 = base64::engine::general_purpose::STANDARD.encode(&payload);
 
-    let url = format!(
-        "{}/api/messaging/threads/{}/attachments",
-        api_base(),
-        application_id
-    );
+    let path = format!("/api/messaging/threads/{}/attachments", application_id);
     let body = serde_json::json!({
         "from_user_id": my_user_id,
         "to_user_id": to_user_id,
@@ -438,19 +378,10 @@ pub fn upload_encrypted_attachment(
     });
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
+        .connect_timeout(std::time::Duration::from_secs(4))
         .build()
         .map_err(|e| e.to_string())?;
-    let resp = client
-        .post(&url)
-        .json(&body)
-        .send()
-        .map_err(|e| format!("network: {e}"))?;
-    if !resp.status().is_success() {
-        let s = resp.status();
-        let b = resp.text().unwrap_or_default();
-        return Err(format!("server returned {s}: {b}"));
-    }
-    let parsed: AttachmentMeta = resp.json().map_err(|e| format!("bad JSON: {e}"))?;
+    let parsed: AttachmentMeta = api::post_json(&client, &path, &body)?;
     Ok(parsed)
 }
 
@@ -467,28 +398,20 @@ pub fn download_encrypted_attachment(
     let (sk, _pk, my_user_id) = ensure_keypair(&vault)?;
     let counterpart_pk = lookup_pk(&counterpart_user_id)?;
 
-    let url = format!(
-        "{}/api/messaging/attachments/{}/body?user_id={}",
-        api_base(),
-        attachment_id,
-        my_user_id
+    let path = format!(
+        "/api/messaging/attachments/{}/body?user_id={}",
+        attachment_id, my_user_id
     );
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
+        .connect_timeout(std::time::Duration::from_secs(4))
         .build()
         .map_err(|e| e.to_string())?;
-    let resp = client
-        .get(&url)
-        .send()
-        .map_err(|e| format!("network: {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!("server returned {}", resp.status()));
-    }
     #[derive(Deserialize)]
     struct Body {
         ciphertext_b64: String,
     }
-    let parsed: Body = resp.json().map_err(|e| format!("bad JSON: {e}"))?;
+    let parsed: Body = api::get_json(&client, &path)?;
     let raw = base64::engine::general_purpose::STANDARD
         .decode(&parsed.ciphertext_b64)
         .map_err(|e| format!("bad b64: {e}"))?;

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.118';
+var APP_VERSION='0.4.119';
 var UI_LANG_KEY='skipi-ui-language';
 var UI_LANG_OPTIONS=[
     ['en','English'],
@@ -718,7 +718,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p id="welcome-subtitle">Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.118</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.119</span></p>
                 <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -886,16 +886,75 @@ async function safeInvoke(cmd,args,opts){
     }
 }
 
-var SKIPI_API_BASE = localStorage.getItem('skipi-api-base') || 'https://api.skipi.app';
+var SKIPI_PRIMARY_API_BASE = 'https://api.skipi.app';
+var SKIPI_RU_API_BASE = 'https://api-ru.skipi.app';
+var SKIPI_API_OVERRIDE_KEY = 'skipi-api-base';
+var SKIPI_ACTIVE_API_KEY = 'skipi-active-api-base';
+var SKIPI_API_OVERRIDE = localStorage.getItem(SKIPI_API_OVERRIDE_KEY) || '';
+var SKIPI_API_BASE = normalizeApiBase(
+    SKIPI_API_OVERRIDE || localStorage.getItem(SKIPI_ACTIVE_API_KEY) || SKIPI_PRIMARY_API_BASE
+);
+function normalizeApiBase(base){
+    return String(base || SKIPI_PRIMARY_API_BASE).trim().replace(/\/+$/,'');
+}
 function apiBase(){
-    return String(SKIPI_API_BASE || 'https://api.skipi.app').replace(/\/+$/,'');
+    return normalizeApiBase(SKIPI_API_BASE || SKIPI_PRIMARY_API_BASE);
+}
+function apiBaseCandidates(){
+    if(SKIPI_API_OVERRIDE)return [normalizeApiBase(SKIPI_API_OVERRIDE)];
+    var bases=[];
+    function add(base){
+        var normalized=normalizeApiBase(base);
+        if(normalized&&bases.indexOf(normalized)===-1)bases.push(normalized);
+    }
+    add(SKIPI_API_BASE);
+    add(SKIPI_PRIMARY_API_BASE);
+    add(SKIPI_RU_API_BASE);
+    return bases;
+}
+function rememberApiBase(base){
+    if(SKIPI_API_OVERRIDE)return;
+    var normalized=normalizeApiBase(base);
+    if(!normalized)return;
+    SKIPI_API_BASE=normalized;
+    try{localStorage.setItem(SKIPI_ACTIVE_API_KEY,normalized);}catch(e){}
+}
+function shouldRetryApiResponse(resp,method){
+    var safe=(method==='GET'||method==='HEAD'||method==='OPTIONS');
+    return safe&&(resp.status===408||resp.status===429||resp.status>=500);
+}
+async function apiFetch(path,options,timeoutMs){
+    options=options||{};
+    var method=String(options.method||'GET').toUpperCase();
+    if(/^https?:\/\//i.test(String(path||'')))return fetchWithTimeout(path,options,timeoutMs||8000);
+    var suffix=String(path||'');
+    if(suffix.charAt(0)!=='/')suffix='/'+suffix;
+    var bases=apiBaseCandidates();
+    var lastErr=null;
+    for(var i=0;i<bases.length;i++){
+        var url=bases[i]+suffix;
+        try{
+            var resp=await fetchWithTimeout(url,options,timeoutMs||8000);
+            if(resp.ok)rememberApiBase(bases[i]);
+            if(i<bases.length-1&&shouldRetryApiResponse(resp,method)){
+                lastErr=new Error('HTTP '+resp.status+' from '+bases[i]);
+                continue;
+            }
+            return resp;
+        }catch(e){
+            lastErr=e;
+            if(i<bases.length-1)continue;
+        }
+    }
+    throw lastErr||new Error('API unavailable');
 }
 async function initApiBaseOverride(){
     try{
         var override = await invoke('get_api_base_override');
         if(override){
-            SKIPI_API_BASE = String(override).replace(/\/+$/,'');
-            localStorage.setItem('skipi-api-base', SKIPI_API_BASE);
+            SKIPI_API_OVERRIDE = normalizeApiBase(override);
+            SKIPI_API_BASE = SKIPI_API_OVERRIDE;
+            localStorage.setItem(SKIPI_API_OVERRIDE_KEY, SKIPI_API_BASE);
         }
     }catch(e){}
 }
@@ -1202,7 +1261,7 @@ var profileTax = null; // loaded lazily
 var serverCatalog = null; // cached server catalog for future cert-matrix slices
 var SERVER_CATALOG_CACHE_KEY = 'skipi-catalog';
 var SERVER_CATALOG_TTL_MS = 60 * 60 * 1000;
-var SERVER_CATALOG_URL = apiBase() + '/api/catalogs';
+var SERVER_CATALOG_URL = '/api/catalogs';
 var wizardState = {step:1,name:'',level:'',vessel_root:'',vessel_leaf:'',position:'',positionCustom:'',vault_path:''};
 
 // Categories whose docs are pre-seeded but not "mandatory" — e.g. Banking.
@@ -1255,7 +1314,7 @@ async function loadServerCatalog(){
     if(cached&&cached.payload)serverCatalog=cached.payload;
     if(cached&&cached.fetched_at&&Date.now()-cached.fetched_at<SERVER_CATALOG_TTL_MS)return serverCatalog;
     try{
-        var resp=await fetch(apiBase() + '/api/catalogs');
+        var resp=await apiFetch('/api/catalogs',{},8000);
         if(!resp.ok)return serverCatalog;
         var data=await resp.json();
         if(data&&data.positions&&data.vessel_types&&data.certs){
@@ -2769,7 +2828,7 @@ async function showInbox(){
     // Use the messaging inbox endpoint to get all messages addressed to us.
     // Group by application_id locally.
     try {
-        var inboxResp = await fetch(apiBase() + '/api/messaging/inbox/'+encodeURIComponent(me.user_id));
+        var inboxResp = await apiFetch('/api/messaging/inbox/'+encodeURIComponent(me.user_id),{},8000);
         var inboxMessages = await inboxResp.json();
         var byThread = {};
         inboxMessages.forEach(function(m){
@@ -3387,7 +3446,7 @@ async function showMissing(){
 
 // ========== Work history ==========
 function escAttr(s){return String(s||'').replace(/'/g,"&#39;").replace(/"/g,'&quot;');}
-var VESSEL_REVIEWS_API = apiBase() + '/api/vessels/';
+var VESSEL_REVIEWS_API = '/api/vessels/';
 var VESSEL_REVIEWS_FALLBACK_API = 'http://127.0.0.1:8000/api/vessels/';
 var VESSEL_REVIEW_CACHE_KEY = 'skipi-vessel-reviews-cache-v2';
 var VESSEL_REVIEW_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -3410,7 +3469,7 @@ function writeVesselReviewCache(cache){
     try{localStorage.setItem(VESSEL_REVIEW_CACHE_KEY,JSON.stringify(vesselReviewCache));}catch(e){}
 }
 function vesselApiBases(){
-    var bases=[apiBase() + '/api/vessels/'];
+    var bases=apiBaseCandidates().map(function(base){return base + '/api/vessels/';});
     if(VESSEL_REVIEWS_FALLBACK_API&&bases.indexOf(VESSEL_REVIEWS_FALLBACK_API)===-1)bases.push(VESSEL_REVIEWS_FALLBACK_API);
     return bases;
 }
@@ -3971,7 +4030,7 @@ async function fetchReviewSchema(){
     return refreshReviewSchemaAsync();
 }
 async function refreshReviewSchemaAsync(){
-    var r=await fetch(apiBase() + '/api/review-schema/active');
+    var r=await apiFetch('/api/review-schema/active',{},8000);
     if(!r.ok)throw new Error('schema HTTP '+r.status);
     var d=applyReviewSchemaDisplayOverrides(await r.json());d.fetched_at=Date.now();
     try{localStorage.setItem('skipi-review-schema',JSON.stringify(d));}catch(_){}
@@ -4263,11 +4322,11 @@ async function submitReviewForm(){
             section_ratings:sectionRatings,
             item_ratings:itemRatings
         };
-        var r=await fetch(apiBase() + '/api/reviews',{
+        var r=await apiFetch('/api/reviews',{
             method:'POST',
             headers:{'Content-Type':'application/json'},
             body:JSON.stringify(payload)
-        });
+        },15000);
         if(!r.ok){
             var body=await r.text();
             throw new Error('HTTP '+r.status+': '+body.slice(0,300));
@@ -4816,7 +4875,7 @@ async function doAddCustomDoc(){
 // Information module - seafarer market pulse. Privacy rule: only coarse
 // rank/vessel filters may be sent to the server. Offered salary is checked
 // locally in the browser and is never uploaded.
-var INFORMATION_API = apiBase() + '/api/information/snapshot';
+var INFORMATION_API = '/api/information/snapshot';
 var INFORMATION_CACHE_KEY = 'skipi-information-snapshot-v2';
 var informationSnapshot = null;
 var informationPersonal = {};
@@ -4881,12 +4940,9 @@ async function loadInformationSnapshot(profile,sp){
     var vesselType=informationEffectiveVesselType(sp,profile);
     if(rank)q.push('rank='+encodeURIComponent(rank));
     if(vesselType)q.push('vessel_type='+encodeURIComponent(vesselType));
-    var url=apiBase() + '/api/information/snapshot' + (q.length?'?'+q.join('&'):'');
+    var url='/api/information/snapshot' + (q.length?'?'+q.join('&'):'');
     try{
-        var ctrl=new AbortController();
-        var timer=setTimeout(function(){try{ctrl.abort();}catch(e){}},8000);
-        var r=await fetch(url,{signal:ctrl.signal});
-        clearTimeout(timer);
+        var r=await apiFetch(url,{},8000);
         if(!r.ok)throw new Error('server '+r.status);
         var snap=await r.json();
         snap._source='live';
@@ -5221,7 +5277,7 @@ async function showJobs(){
     // (Profile fields shown here previously were a duplicate of Settings →
     //  Seafarer Profile. Removed in v0.4.54 — single source of truth.)
 
-    // Feed — wired to api.skipi.app:8443 since v0.4.53.
+    // Feed is loaded through the shared API fallback chain.
     h += '<div id="jobs-feed-host">';
     if(!on){
         h += '<div style="border:1px dashed var(--border);border-radius:8px;padding:28px 20px;text-align:center;color:var(--text2);font-size:13px;">';
@@ -5291,7 +5347,7 @@ async function loadJobsFeed(){
             try {
                 var me = await invoke('get_my_identity');
                 if (!me || !me.user_id) return {};
-                var resp = await fetch(apiBase() + '/api/messaging/my-threads/'+encodeURIComponent(me.user_id));
+                var resp = await apiFetch('/api/messaging/my-threads/'+encodeURIComponent(me.user_id),{},8000);
                 if (!resp.ok) return {};
                 var threads = await resp.json();
                 var map = {};
