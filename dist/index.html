@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.119';
+var APP_VERSION='0.4.120';
 var UI_LANG_KEY='skipi-ui-language';
 var UI_LANG_OPTIONS=[
     ['en','English'],
@@ -718,7 +718,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p id="welcome-subtitle">Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.119</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.120</span></p>
                 <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -892,13 +892,13 @@ var SKIPI_API_OVERRIDE_KEY = 'skipi-api-base';
 var SKIPI_ACTIVE_API_KEY = 'skipi-active-api-base';
 var SKIPI_API_OVERRIDE = localStorage.getItem(SKIPI_API_OVERRIDE_KEY) || '';
 var SKIPI_API_BASE = normalizeApiBase(
-    SKIPI_API_OVERRIDE || localStorage.getItem(SKIPI_ACTIVE_API_KEY) || SKIPI_PRIMARY_API_BASE
+    SKIPI_API_OVERRIDE || localStorage.getItem(SKIPI_ACTIVE_API_KEY) || SKIPI_RU_API_BASE
 );
 function normalizeApiBase(base){
-    return String(base || SKIPI_PRIMARY_API_BASE).trim().replace(/\/+$/,'');
+    return String(base || SKIPI_RU_API_BASE).trim().replace(/\/+$/,'');
 }
 function apiBase(){
-    return normalizeApiBase(SKIPI_API_BASE || SKIPI_PRIMARY_API_BASE);
+    return normalizeApiBase(SKIPI_API_BASE || SKIPI_RU_API_BASE);
 }
 function apiBaseCandidates(){
     if(SKIPI_API_OVERRIDE)return [normalizeApiBase(SKIPI_API_OVERRIDE)];
@@ -907,9 +907,9 @@ function apiBaseCandidates(){
         var normalized=normalizeApiBase(base);
         if(normalized&&bases.indexOf(normalized)===-1)bases.push(normalized);
     }
+    add(SKIPI_RU_API_BASE);
     add(SKIPI_API_BASE);
     add(SKIPI_PRIMARY_API_BASE);
-    add(SKIPI_RU_API_BASE);
     return bases;
 }
 function rememberApiBase(base){

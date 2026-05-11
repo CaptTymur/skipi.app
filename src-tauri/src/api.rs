@@ -17,7 +17,7 @@ pub(crate) fn api_bases() -> Vec<String> {
     if let Some(base) = env_api_base() {
         return vec![base];
     }
-    vec![PRIMARY_API.to_string(), RU_API.to_string()]
+    vec![RU_API.to_string(), PRIMARY_API.to_string()]
 }
 
 fn normalize_api_base(base: &str) -> String {
