@@ -1,6 +1,7 @@
 use chrono::{DateTime, Duration, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
+use serde_json::{json, Value as JsonValue};
 use std::path::PathBuf;
 use uuid::Uuid;
 
@@ -41,6 +42,35 @@ pub struct AppFeedback {
     pub sync_error: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct DiagnosticSubmitResult {
+    pub id: String,
+    pub synced: bool,
+    pub sync_error: Option<String>,
+    pub db_path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AppDiagnostic {
+    pub id: String,
+    pub app: String,
+    pub app_version: String,
+    pub event_type: String,
+    pub severity: String,
+    pub message: String,
+    pub locale: Option<String>,
+    pub context: Option<String>,
+    pub platform: Option<String>,
+    pub os_version: Option<String>,
+    pub arch: Option<String>,
+    pub session_id: Option<String>,
+    pub install_id: Option<String>,
+    pub details_json: Option<String>,
+    pub created_at: String,
+    pub synced_at: Option<String>,
+    pub sync_error: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 struct ServerFeedback<'a> {
     id: &'a str,
@@ -50,6 +80,25 @@ struct ServerFeedback<'a> {
     comment: &'a str,
     locale: Option<&'a str>,
     context: Option<&'a str>,
+    client_created_at: &'a str,
+}
+
+#[derive(Debug, Serialize)]
+struct ServerDiagnostic<'a> {
+    id: &'a str,
+    app: &'a str,
+    app_version: &'a str,
+    event_type: &'a str,
+    severity: &'a str,
+    message: &'a str,
+    locale: Option<&'a str>,
+    context: Option<&'a str>,
+    platform: Option<&'a str>,
+    os_version: Option<&'a str>,
+    arch: Option<&'a str>,
+    session_id: Option<&'a str>,
+    install_id: Option<&'a str>,
+    details: Option<JsonValue>,
     client_created_at: &'a str,
 }
 
@@ -80,7 +129,31 @@ fn open_feedback_db() -> Result<Connection, String> {
         CREATE TABLE IF NOT EXISTS feedback_state (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS app_diagnostics (
+            id TEXT PRIMARY KEY,
+            app TEXT NOT NULL,
+            app_version TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            message TEXT NOT NULL,
+            locale TEXT,
+            context TEXT,
+            platform TEXT,
+            os_version TEXT,
+            arch TEXT,
+            session_id TEXT,
+            install_id TEXT,
+            details_json TEXT,
+            created_at TEXT NOT NULL,
+            synced_at TEXT,
+            sync_error TEXT
         );",
+    )
+    .map_err(|e| e.to_string())?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_app_diagnostics_created_at ON app_diagnostics(created_at)",
+        [],
     )
     .map_err(|e| e.to_string())?;
     Ok(conn)
@@ -139,6 +212,155 @@ fn sync_feedback_to_server(feedback: &AppFeedback) -> Result<(), String> {
     api::post_json_empty(&client, "/api/feedback", &payload)
 }
 
+fn clean_optional(value: Option<String>, max_chars: usize) -> Option<String> {
+    value
+        .map(|s| clean_text(&s, max_chars))
+        .filter(|s| !s.is_empty())
+}
+
+fn clean_text(value: &str, max_chars: usize) -> String {
+    let s = value.replace('\0', "").trim().to_string();
+    s.chars().take(max_chars).collect()
+}
+
+fn details_value(details_json: Option<&str>) -> Option<JsonValue> {
+    let raw = details_json?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    match serde_json::from_str::<JsonValue>(raw) {
+        Ok(v) if v.is_object() => Some(v),
+        Ok(v) => Some(json!({ "value": v })),
+        Err(_) => Some(json!({ "raw": clean_text(raw, 4000) })),
+    }
+}
+
+fn ensure_install_id(conn: &Connection) -> Result<String, String> {
+    if let Some(existing) = get_state(conn, "install_id")? {
+        return Ok(existing);
+    }
+    let install_id = Uuid::new_v4().to_string();
+    set_state(conn, "install_id", &install_id)?;
+    Ok(install_id)
+}
+
+fn current_session_id(conn: &Connection) -> Result<Option<String>, String> {
+    get_state(conn, "session_id")
+}
+
+fn sync_diagnostic_to_server(diagnostic: &AppDiagnostic) -> Result<(), String> {
+    let client = reqwest::blocking::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(4))
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let payload = ServerDiagnostic {
+        id: &diagnostic.id,
+        app: APP_SLUG,
+        app_version: &diagnostic.app_version,
+        event_type: &diagnostic.event_type,
+        severity: &diagnostic.severity,
+        message: &diagnostic.message,
+        locale: diagnostic.locale.as_deref(),
+        context: diagnostic.context.as_deref(),
+        platform: diagnostic.platform.as_deref(),
+        os_version: diagnostic.os_version.as_deref(),
+        arch: diagnostic.arch.as_deref(),
+        session_id: diagnostic.session_id.as_deref(),
+        install_id: diagnostic.install_id.as_deref(),
+        details: details_value(diagnostic.details_json.as_deref()),
+        client_created_at: &diagnostic.created_at,
+    };
+    api::post_json_empty(&client, "/api/diagnostics/report", &payload)
+}
+
+fn store_diagnostic(
+    conn: &Connection,
+    app_version: String,
+    event_type: String,
+    severity: String,
+    message: String,
+    locale: Option<String>,
+    context: Option<String>,
+    details_json: Option<String>,
+    session_id: Option<String>,
+    install_id: Option<String>,
+) -> Result<DiagnosticSubmitResult, String> {
+    let mut diagnostic = AppDiagnostic {
+        id: Uuid::new_v4().to_string(),
+        app: APP_SLUG.to_string(),
+        app_version: clean_text(&app_version, 32),
+        event_type: clean_text(&event_type, 64),
+        severity: match severity.as_str() {
+            "info" | "warn" | "fatal" => severity,
+            _ => "error".to_string(),
+        },
+        message: clean_text(&message, 2000),
+        locale: clean_optional(locale, 16),
+        context: clean_optional(context, 80),
+        platform: Some(std::env::consts::OS.to_string()),
+        os_version: None,
+        arch: Some(std::env::consts::ARCH.to_string()),
+        session_id,
+        install_id,
+        details_json: clean_optional(details_json, 12_000),
+        created_at: Utc::now().to_rfc3339(),
+        synced_at: None,
+        sync_error: None,
+    };
+    if diagnostic.event_type.is_empty() {
+        diagnostic.event_type = "unknown".to_string();
+    }
+    if diagnostic.message.is_empty() {
+        diagnostic.message = "(empty diagnostic message)".to_string();
+    }
+
+    conn.execute(
+        "INSERT INTO app_diagnostics
+         (id, app, app_version, event_type, severity, message, locale, context, platform, os_version, arch, session_id, install_id, details_json, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+        params![
+            diagnostic.id,
+            diagnostic.app,
+            diagnostic.app_version,
+            diagnostic.event_type,
+            diagnostic.severity,
+            diagnostic.message,
+            diagnostic.locale,
+            diagnostic.context,
+            diagnostic.platform,
+            diagnostic.os_version,
+            diagnostic.arch,
+            diagnostic.session_id,
+            diagnostic.install_id,
+            diagnostic.details_json,
+            diagnostic.created_at
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    let sync_result = sync_diagnostic_to_server(&diagnostic);
+    let synced = sync_result.is_ok();
+    let sync_error = sync_result.err();
+    let synced_at = if synced {
+        Some(Utc::now().to_rfc3339())
+    } else {
+        None
+    };
+    conn.execute(
+        "UPDATE app_diagnostics SET synced_at=?2, sync_error=?3 WHERE id=?1",
+        params![diagnostic.id, synced_at, sync_error],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(DiagnosticSubmitResult {
+        id: diagnostic.id,
+        synced,
+        sync_error,
+        db_path: feedback_db_path().to_string_lossy().to_string(),
+    })
+}
+
 #[tauri::command]
 pub fn get_feedback_prompt_state(app_version: String) -> Result<FeedbackPromptState, String> {
     let conn = open_feedback_db()?;
@@ -180,6 +402,93 @@ pub fn get_feedback_prompt_state(app_version: String) -> Result<FeedbackPromptSt
         last_prompted_at,
         last_submitted_at,
     })
+}
+
+#[tauri::command]
+pub fn init_app_diagnostics(
+    app_version: String,
+    locale: Option<String>,
+    context: Option<String>,
+) -> Result<(), String> {
+    let conn = open_feedback_db()?;
+    let install_id = ensure_install_id(&conn)?;
+    if get_state(&conn, "session_active")?.as_deref() == Some("1") {
+        let previous_session = get_state(&conn, "session_id")?;
+        let last_heartbeat_at = get_state(&conn, "last_heartbeat_at")?;
+        let last_screen = get_state(&conn, "last_screen")?;
+        let details = json!({
+            "previous_session_id": previous_session,
+            "last_heartbeat_at": last_heartbeat_at,
+            "last_screen": last_screen
+        })
+        .to_string();
+        let _ = store_diagnostic(
+            &conn,
+            app_version.clone(),
+            "unclean_shutdown".to_string(),
+            "warn".to_string(),
+            "Previous app session did not close cleanly".to_string(),
+            locale.clone(),
+            context.clone(),
+            Some(details),
+            get_state(&conn, "session_id")?,
+            Some(install_id.clone()),
+        );
+    }
+    let session_id = Uuid::new_v4().to_string();
+    let now = Utc::now().to_rfc3339();
+    set_state(&conn, "session_id", &session_id)?;
+    set_state(&conn, "session_active", "1")?;
+    set_state(&conn, "session_started_at", &now)?;
+    set_state(&conn, "last_heartbeat_at", &now)?;
+    set_state(&conn, "last_app_version", &app_version)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn app_heartbeat(app_version: String, last_screen: Option<String>) -> Result<(), String> {
+    let conn = open_feedback_db()?;
+    ensure_install_id(&conn)?;
+    set_state(&conn, "session_active", "1")?;
+    set_state(&conn, "last_app_version", &app_version)?;
+    set_state(&conn, "last_heartbeat_at", &Utc::now().to_rfc3339())?;
+    if let Some(screen) = clean_optional(last_screen, 80) {
+        set_state(&conn, "last_screen", &screen)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn mark_app_shutdown() -> Result<(), String> {
+    let conn = open_feedback_db()?;
+    set_state(&conn, "session_active", "0")?;
+    set_state(&conn, "last_shutdown_at", &Utc::now().to_rfc3339())
+}
+
+#[tauri::command]
+pub fn record_app_diagnostic(
+    app_version: String,
+    event_type: String,
+    severity: String,
+    message: String,
+    locale: Option<String>,
+    context: Option<String>,
+    details_json: Option<String>,
+) -> Result<DiagnosticSubmitResult, String> {
+    let conn = open_feedback_db()?;
+    let install_id = ensure_install_id(&conn)?;
+    store_diagnostic(
+        &conn,
+        app_version,
+        event_type,
+        severity,
+        message,
+        locale,
+        context,
+        details_json,
+        current_session_id(&conn)?,
+        Some(install_id),
+    )
 }
 
 #[tauri::command]

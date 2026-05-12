@@ -735,7 +735,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p id="welcome-subtitle">Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.121</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.123</span></p>
                 <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -1242,8 +1242,65 @@ async function doUpdate(){
     }
 }
 
-window.onerror = function(m,s,l){logError('window.onerror','JS:'+m+' L'+l);err('JS:'+m+' L'+l);};
-window.onunhandledrejection = function(e){logError('unhandledrejection',e.reason);err(''+e.reason);};
+function diagnosticsScreen(){
+    try{
+        if(typeof currentView!=='undefined' && currentView)return String(currentView);
+        var active=document.querySelector('.tab.active,[data-view].active,.nav-item.active');
+        if(active)return active.getAttribute('data-view')||active.id||active.textContent||'unknown';
+    }catch(e){}
+    return 'unknown';
+}
+function diagnosticLocale(){
+    try{return getUiLang ? getUiLang() : null;}catch(e){return null;}
+}
+function scrubDiagnosticText(v){
+    var s=String(v==null?'':v);
+    s=s.replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/g,'Bearer [redacted]');
+    s=s.replace(/token["'\s:=]+[A-Za-z0-9._~+/=-]{12,}/ig,'token=[redacted]');
+    return s.slice(0,4000);
+}
+function reportAppDiagnostic(eventType,severity,message,details){
+    try{
+        if(typeof invoke!=='function')return;
+        var body=Object.assign({screen:diagnosticsScreen(), href:location.hash||location.pathname, ts:new Date().toISOString()}, details||{});
+        invoke('record_app_diagnostic',{
+            appVersion:APP_VERSION,
+            eventType:eventType,
+            severity:severity||'error',
+            message:scrubDiagnosticText(message),
+            locale:diagnosticLocale(),
+            context:diagnosticsScreen(),
+            detailsJson:JSON.stringify(body)
+        }).catch(function(){});
+    }catch(e){}
+}
+function startAppDiagnostics(){
+    try{
+        if(typeof invoke!=='function')return;
+        invoke('init_app_diagnostics',{appVersion:APP_VERSION,locale:diagnosticLocale(),context:diagnosticsScreen()}).catch(function(){});
+        setInterval(function(){
+            try{invoke('app_heartbeat',{appVersion:APP_VERSION,lastScreen:diagnosticsScreen()}).catch(function(){});}catch(e){}
+        },10000);
+        var lastTick=Date.now();
+        setInterval(function(){
+            var now=Date.now(), lag=now-lastTick-15000;
+            lastTick=now;
+            if(lag>45000)reportAppDiagnostic('ui_lag','warn','UI event loop lag '+Math.round(lag/1000)+'s',{lag_ms:lag});
+        },15000);
+        window.addEventListener('beforeunload',function(){try{invoke('mark_app_shutdown').catch(function(){});}catch(e){}});
+    }catch(e){}
+}
+window.onerror = function(m,s,l,c,e){
+    logError('window.onerror','JS:'+m+' L'+l);
+    reportAppDiagnostic('js_error','error',m,{filename:s,line:l,column:c,stack:e&&e.stack});
+    err('JS:'+m+' L'+l);
+};
+window.onunhandledrejection = function(e){
+    var reason=e&&e.reason;
+    logError('unhandledrejection',reason);
+    reportAppDiagnostic('unhandledrejection','error',reason&&reason.message?reason.message:String(reason),{stack:reason&&reason.stack});
+    err(''+reason);
+};
 
 async function init() {
     for(var i=0;i<10;i++){if(window.__TAURI__&&window.__TAURI__.core)break;await new Promise(r=>setTimeout(r,300));}
@@ -1253,6 +1310,7 @@ async function init() {
     var wv=document.getElementById('welcome-version');if(wv)wv.textContent=APP_VERSION;
     convertFileSrc=window.__TAURI__.core.convertFileSrc||function(p){return p;};
     await initApiBaseOverride();
+    startAppDiagnostics();
     // Wire up native drag-and-drop (runs once, independent of vault state)
     setupDragDrop();
     setTimeout(function(){loadServerCatalog().catch(function(){});},500);
