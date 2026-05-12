@@ -3,6 +3,7 @@ mod commands;
 mod cv;
 mod db;
 mod demo;
+mod feedback;
 mod frameworks;
 mod identity;
 mod profiles;
@@ -220,6 +221,10 @@ pub fn run() {
             jobs::open_mail_with_attachment,
             jobs::get_downloads_dir,
             mail_intent::create_email_file,
+            feedback::get_feedback_prompt_state,
+            feedback::postpone_app_feedback,
+            feedback::submit_app_feedback,
+            feedback::list_app_feedback,
             // E2E messaging
             messaging::get_api_base_override,
             messaging::get_my_identity,
