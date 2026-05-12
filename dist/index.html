@@ -22,7 +22,9 @@ var UI_STRINGS={
 	        'settings.general':'General','settings.general_desc':'Basic application settings.','settings.language':'Language','settings.language_desc':'Interface language.','settings.autovault':'Auto-open last vault','settings.autovault_desc':'Automatically open the last used vault on startup.',
 	        'settings.nav_title':'Settings','settings.vaults':'Vaults','settings.seafarer_profile':'Seafarer Profile','settings.email':'Email sending','settings.appearance':'Appearance','settings.about_group':'About','settings.about':'About Skipi',
 	        'common.settings':'Settings','common.vault':'Vault','common.switch_vault':'Switch vault','jobs.languages':'Languages',
-	        'feedback.title':'Rate Skipi','feedback.desc':'Please tell us how the beta feels. Your stars and comment help decide what to fix first.','feedback.rating_label':'Your rating','feedback.comment_label':'Comment','feedback.comment_placeholder':'What worked well, what blocked you, or what should be improved?','feedback.later':'Later','feedback.submit':'Send feedback','feedback.saved':'Thank you. Feedback saved.','feedback.required':'Choose stars and add a comment.','feedback.manual_button':'Rate Skipi'
+	        'feedback.title':'Rate Skipi','feedback.desc':'Please tell us how the beta feels. Your stars and comment help decide what to fix first.','feedback.rating_label':'Your rating','feedback.comment_label':'Comment','feedback.comment_placeholder':'What worked well, what blocked you, or what should be improved?','feedback.later':'Later','feedback.submit':'Send feedback','feedback.saved':'Thank you. Feedback saved.','feedback.required':'Choose stars and add a comment.','feedback.manual_button':'Rate Skipi',
+	        'settings.recovery_key':'Seafarer recovery key','settings.recovery_key_desc':'This key restores the same seafarer identity on another device. Keep it private; anyone with this key can claim this vault identity.','settings.loading_identity':'Loading identity...','settings.identity_load_failed':'Could not load vault identity.','settings.key_hidden':'Hidden until you press Show','settings.vault_id':'Vault ID','settings.not_available':'not available','settings.dob':'DOB','settings.key_unavailable':'Recovery key is not available for this vault.','settings.show':'Show','settings.hide':'Hide','settings.copy':'Copy','settings.show_key':'Show key','settings.key_warning':'This is a private recovery key. Show it only when nobody can see your screen.','settings.key_copied':'Recovery key copied','settings.key_copy_failed':'Could not copy recovery key',
+	        'wizard.recovery_key_label':'Recovery key (optional)','wizard.recovery_key_hint':'Paste an existing Skipi recovery key when creating this vault on another device. Leave empty for a new identity.'
 	    },
 	    ru:{
 	        'nav.files':'Файлы и ввод данных','nav.experience':'Опыт работы','nav.dashboard':'Панель','nav.cv':'CV','nav.packages':'Пакеты','nav.dispatch':'Рассылки','nav.jobs':'Вакансии','nav.information':'Информация','nav.vessels':'База судов',
@@ -31,7 +33,9 @@ var UI_STRINGS={
 	        'settings.general':'Общие','settings.general_desc':'Основные настройки приложения.','settings.language':'Язык','settings.language_desc':'Язык интерфейса.','settings.autovault':'Открывать последний профиль','settings.autovault_desc':'Автоматически открывать последний использованный профиль при запуске.',
 	        'settings.nav_title':'Настройки','settings.vaults':'Профили','settings.seafarer_profile':'Профиль моряка','settings.email':'Отправка email','settings.appearance':'Внешний вид','settings.about_group':'О приложении','settings.about':'О Skipi',
 	        'common.settings':'Настройки','common.vault':'Профиль','common.switch_vault':'Сменить профиль','jobs.languages':'Языки',
-	        'feedback.title':'Оцените Skipi','feedback.desc':'Пожалуйста, расскажите, как вам бета-версия. Звёзды и комментарий помогут понять, что исправлять в первую очередь.','feedback.rating_label':'Ваша оценка','feedback.comment_label':'Комментарий','feedback.comment_placeholder':'Что получилось хорошо, что мешает, что нужно улучшить?','feedback.later':'Позже','feedback.submit':'Отправить отзыв','feedback.saved':'Спасибо. Отзыв сохранён.','feedback.required':'Выберите звёзды и напишите комментарий.','feedback.manual_button':'Оценить Skipi'
+	        'feedback.title':'Оцените Skipi','feedback.desc':'Пожалуйста, расскажите, как вам бета-версия. Звёзды и комментарий помогут понять, что исправлять в первую очередь.','feedback.rating_label':'Ваша оценка','feedback.comment_label':'Комментарий','feedback.comment_placeholder':'Что получилось хорошо, что мешает, что нужно улучшить?','feedback.later':'Позже','feedback.submit':'Отправить отзыв','feedback.saved':'Спасибо. Отзыв сохранён.','feedback.required':'Выберите звёзды и напишите комментарий.','feedback.manual_button':'Оценить Skipi',
+	        'settings.recovery_key':'Ключ восстановления моряка','settings.recovery_key_desc':'Этот ключ позволяет восстановить тот же профиль моряка на другом устройстве. Храните его приватно: любой человек с этим ключом сможет заявить цифровую identity профиля.','settings.loading_identity':'Загрузка identity...','settings.identity_load_failed':'Не удалось загрузить identity профиля.','settings.key_hidden':'Скрыт до нажатия «Показать»','settings.vault_id':'ID профиля','settings.not_available':'недоступно','settings.dob':'Дата рождения','settings.key_unavailable':'Ключ восстановления недоступен для этого профиля.','settings.show':'Показать','settings.hide':'Скрыть','settings.copy':'Копировать','settings.show_key':'Показать ключ','settings.key_warning':'Это приватный ключ восстановления. Показывайте его только если никто не видит экран.','settings.key_copied':'Ключ восстановления скопирован','settings.key_copy_failed':'Не удалось скопировать ключ восстановления',
+	        'wizard.recovery_key_label':'Ключ восстановления (необязательно)','wizard.recovery_key_hint':'Если создаёте профиль на другом устройстве, вставьте сюда существующий ключ Skipi. Оставьте поле пустым для новой identity.'
 	    },
     tl:{
         'nav.files':'Mga file at data','nav.experience':'Karanasan','nav.dashboard':'Dashboard','nav.cv':'CV','nav.packages':'Mga package','nav.dispatch':'Mga mailing','nav.jobs':'Mga trabaho','nav.information':'Impormasyon','nav.vessels':'Database ng barko',
@@ -1337,7 +1341,7 @@ var serverCatalog = null; // cached server catalog for future cert-matrix slices
 var SERVER_CATALOG_CACHE_KEY = 'skipi-catalog';
 var SERVER_CATALOG_TTL_MS = 60 * 60 * 1000;
 var SERVER_CATALOG_URL = '/api/catalogs';
-var wizardState = {step:1,name:'',level:'',vessel_root:'',vessel_leaf:'',position:'',positionCustom:'',vault_path:''};
+var wizardState = {step:1,name:'',level:'',vessel_root:'',vessel_leaf:'',position:'',positionCustom:'',vault_path:'',recovery_key:''};
 
 // Categories whose docs are pre-seeded but not "mandatory" — e.g. Banking.
 // Populated from backend `get_optional_categories` once at startup; used by
@@ -1853,7 +1857,7 @@ async function startSeafarerWizard(){
         logError('startSeafarerWizard/loadTaxonomy',e);
         return;
     }
-    wizardState={step:1,name:'',level:'',vessel_root:'',vessel_leaf:'',position:'',positionCustom:'',vault_path:''};
+    wizardState={step:1,name:'',level:'',vessel_root:'',vessel_leaf:'',position:'',positionCustom:'',vault_path:'',recovery_key:''};
     renderWizard();
 }
 
@@ -1956,6 +1960,10 @@ function renderWizard(){
         h+='</div>';
         h+='<div style="font-size:11px;color:var(--text2);margin-top:5px;">Default location is <code>Documents/Skipi</code>. You can create the vault without choosing a folder.</div>';
         h+='</div>';
+        h+='<div class="field" style="margin-bottom:12px;"><label>'+tr('wizard.recovery_key_label')+'</label>';
+        h+='<textarea id="w-recovery-key" rows="3" oninput="wizardState.recovery_key=this.value" placeholder="SKIPI-RECOVERY-V1-..." style="width:100%;resize:vertical;font-family:var(--font-mono);font-size:11px;">'+esc(wizardState.recovery_key||'')+'</textarea>';
+        h+='<div style="font-size:11px;color:var(--text2);margin-top:5px;">'+tr('wizard.recovery_key_hint')+'</div>';
+        h+='</div>';
         h+='<div class="actions"><button class="btn btn-accent" onclick="wFinish()">Create Vault &amp; Generate Structure</button> <button class="btn btn-outline" onclick="wBack()">&larr; Back</button></div>';
     }
     h+='</div>'; // close wizard-col-left
@@ -2039,6 +2047,8 @@ async function wFinish(){
     }
     var path=wizardState.vault_path;
     var vessId=wizardState.vessel_leaf||wizardState.vessel_root;
+    var rk=document.getElementById('w-recovery-key');
+    if(rk)wizardState.recovery_key=rk.value.trim();
     try{
         var info=await invoke('create_profile_vault',{
             path:path,
@@ -2046,7 +2056,8 @@ async function wFinish(){
             stcwLevel:wizardState.level,
             vesselCategory:vessId,
             position:wizardState.position,
-            positionLabel:wizardState.position.indexOf('other_')===0?wizardState.positionCustom:null
+            positionLabel:wizardState.position.indexOf('other_')===0?wizardState.positionCustom:null,
+            recoveryKey:wizardState.recovery_key||null
         });
         await loadVault(info);
         // Force the seafarer to complete the profile before using the app.
@@ -7900,6 +7911,8 @@ async function exportPkg(id,title){
 async function delPkg(id){if(!await uiConfirm('Delete this package?', {confirmLabel:'Delete', danger:true}))return;try{await invoke('delete_package',{packageId:id});await showPackages();}catch(e){showToast(''+e,'error');logError('op',e);}}
 
 var settingsTab = 'general';
+var vaultIdentityCache = null;
+var vaultIdentityVisible = false;
 
 function openSettings(tab){
     if(tab) settingsTab = tab;
@@ -7953,6 +7966,10 @@ function renderSettingsBody(){
         h += '<div class="settings-section"><h3>Vaults</h3><div class="section-desc">Manage your Skipi vaults. Each vault is a separate folder on your computer containing documents and metadata.</div>';
         h += '<div id="vault-current-row" class="setting-row"><div class="setting-info"><div class="setting-label">Current vault</div><div class="setting-desc" id="vault-current-path" style="font-family:var(--font-mono);font-size:11px;word-break:break-all;">Loading…</div></div>';
         h += '<div class="setting-control"><button class="btn btn-outline btn-sm" onclick="closeCurrentVault(false)">Close</button></div></div>';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">'+tr('settings.recovery_key')+'</div><div class="setting-desc">'+tr('settings.recovery_key_desc')+'</div>';
+        h += '<div id="vault-identity-user" class="setting-desc" style="margin-top:8px;font-family:var(--font-mono);font-size:11px;word-break:break-all;">'+tr('settings.loading_identity')+'</div>';
+        h += '<div id="vault-identity-key" class="setting-desc" style="margin-top:6px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-family:var(--font-mono);font-size:11px;word-break:break-all;">'+tr('settings.key_hidden')+'</div></div>';
+        h += '<div class="setting-control" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;"><button id="vault-identity-show-btn" class="btn btn-outline btn-sm" onclick="toggleVaultRecoveryKey()">'+tr('settings.show')+'</button><button class="btn btn-outline btn-sm" onclick="copyVaultRecoveryKey()">'+tr('settings.copy')+'</button></div></div>';
         h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Open another vault</div><div class="setting-desc">Choose an existing Skipi vault folder to switch to.</div></div>';
         h += '<div class="setting-control"><button class="btn btn-outline btn-sm" onclick="switchVault()">Open&hellip;</button></div></div>';
         h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Create new vault</div><div class="setting-desc">Close the current vault and start the setup flow for a new one.</div></div>';
@@ -8167,6 +8184,7 @@ function renderSettingsBody(){
             var el=document.getElementById('vault-current-path');
             if(el) el.textContent = p || '(no vault open)';
         }).catch(function(){});
+        loadVaultIdentityKey();
     }
     if(settingsTab === 'about'){
         invoke('get_app_version').then(function(v){
@@ -8177,6 +8195,102 @@ function renderSettingsBody(){
             var el=document.getElementById('about-platform');
             if(el) el.textContent = p || '(unknown)';
         }).catch(function(){});
+    }
+}
+
+function vaultIdentityProfileLabel(data){
+    data = data || {};
+    var p = data.profile || {};
+    var nameParts = [];
+    if(p.first_name) nameParts.push(p.first_name);
+    if(p.surname) nameParts.push(p.surname);
+    var label = nameParts.join(' ').trim() || p.name || '';
+    if(p.date_of_birth) label += (label ? ' | ' : '') + tr('settings.dob') + ' ' + p.date_of_birth;
+    return label;
+}
+
+function renderVaultIdentityKey(showFull){
+    var data = vaultIdentityCache || {};
+    var userEl = document.getElementById('vault-identity-user');
+    var keyEl = document.getElementById('vault-identity-key');
+    var btn = document.getElementById('vault-identity-show-btn');
+    var profileLabel = vaultIdentityProfileLabel(data);
+    if(userEl){
+        userEl.textContent = tr('settings.vault_id') + ': ' + (data.user_id || '('+tr('settings.not_available')+')') + (profileLabel ? ' | ' + profileLabel : '');
+    }
+    if(keyEl){
+        if(!data.recovery_key){
+            keyEl.textContent = tr('settings.key_unavailable');
+        }else if(showFull){
+            keyEl.textContent = data.recovery_key;
+        }else{
+            var k = data.recovery_key;
+            keyEl.textContent = k.slice(0, 24) + '-****-****-****-' + k.slice(-9);
+        }
+    }
+    if(btn) btn.textContent = showFull ? tr('settings.hide') : tr('settings.show');
+}
+
+async function loadVaultIdentityKey(){
+    vaultIdentityVisible = false;
+    var userEl = document.getElementById('vault-identity-user');
+    var keyEl = document.getElementById('vault-identity-key');
+    if(userEl) userEl.textContent = tr('settings.loading_identity');
+    if(keyEl) keyEl.textContent = tr('settings.key_hidden');
+    try{
+        vaultIdentityCache = await invoke('get_vault_identity_key');
+        renderVaultIdentityKey(false);
+    }catch(e){
+        vaultIdentityCache = null;
+        if(userEl) userEl.textContent = tr('settings.identity_load_failed');
+        if(keyEl) keyEl.textContent = String(e || 'Unknown error');
+    }
+}
+
+async function toggleVaultRecoveryKey(){
+    if(!vaultIdentityCache || !vaultIdentityCache.recovery_key){
+        await loadVaultIdentityKey();
+    }
+    if(!vaultIdentityCache || !vaultIdentityCache.recovery_key) return;
+    if(vaultIdentityVisible){
+        vaultIdentityVisible = false;
+        renderVaultIdentityKey(false);
+        return;
+    }
+    var ok = await uiConfirm(tr('settings.key_warning'), {confirmLabel:tr('settings.show_key')});
+    if(!ok) return;
+    vaultIdentityVisible = true;
+    renderVaultIdentityKey(true);
+}
+
+async function writeClipboardText(text){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+        await navigator.clipboard.writeText(text);
+        return;
+    }
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', 'readonly');
+    ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;';
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    if(!ok) throw new Error('Clipboard is not available');
+}
+
+async function copyVaultRecoveryKey(){
+    try{
+        if(!vaultIdentityCache || !vaultIdentityCache.recovery_key){
+            await loadVaultIdentityKey();
+        }
+        if(!vaultIdentityCache || !vaultIdentityCache.recovery_key){
+            throw new Error(tr('settings.key_unavailable'));
+        }
+        await writeClipboardText(vaultIdentityCache.recovery_key);
+        showToast(tr('settings.key_copied'), 'success');
+    }catch(e){
+        showToast(String(e || tr('settings.key_copy_failed')), 'error');
     }
 }
 

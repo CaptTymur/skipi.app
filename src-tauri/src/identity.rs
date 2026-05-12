@@ -36,6 +36,7 @@ use std::path::{Path, PathBuf};
 /// Current identity scheme version. If we ever migrate to a new signature
 /// algorithm we bump this and keep the old path around for legacy vaults.
 pub const IDENTITY_VERSION: u32 = 1;
+const RECOVERY_KEY_PREFIX: &str = "SKIPI-RECOVERY-V1";
 
 fn identity_dir(vault_path: &Path) -> PathBuf {
     vault_path.join("_identity")
@@ -43,6 +44,43 @@ fn identity_dir(vault_path: &Path) -> PathBuf {
 
 fn secret_key_path(vault_path: &Path) -> PathBuf {
     identity_dir(vault_path).join("sk.bin")
+}
+
+fn grouped(s: &str, group_size: usize) -> String {
+    s.as_bytes()
+        .chunks(group_size)
+        .map(|chunk| String::from_utf8_lossy(chunk).to_string())
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
+fn recovery_key_from_secret(secret: &[u8; 32]) -> String {
+    let encoded = BASE32_NOPAD.encode(secret);
+    format!("{}-{}", RECOVERY_KEY_PREFIX, grouped(&encoded, 4))
+}
+
+fn parse_recovery_key(input: &str) -> Result<[u8; 32], String> {
+    let normalized = input.trim().to_ascii_uppercase();
+    let prefix = format!("{}-", RECOVERY_KEY_PREFIX);
+    let body = normalized
+        .strip_prefix(&prefix)
+        .ok_or_else(|| "Recovery key must start with SKIPI-RECOVERY-V1".to_string())?;
+    let compact = body
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '-')
+        .collect::<String>();
+    let bytes = BASE32_NOPAD
+        .decode(compact.as_bytes())
+        .map_err(|_| "Invalid recovery key format".to_string())?;
+    if bytes.len() != 32 {
+        return Err(format!(
+            "Recovery key decodes to {} bytes, expected 32",
+            bytes.len()
+        ));
+    }
+    let mut secret = [0u8; 32];
+    secret.copy_from_slice(&bytes);
+    Ok(secret)
 }
 
 /// Derive a compact, human-friendlyish user_id from the raw public key.
@@ -102,4 +140,143 @@ pub fn ensure_vault_identity(conn: &Connection, vault_path: &Path) -> Result<(),
         .map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+/// Install an existing recovery key before ensure_vault_identity() stamps the
+/// public identity into vault_info. Used when a seafarer creates a vault on a
+/// second device and wants to keep the same Skipi identity.
+pub fn install_recovery_key(vault_path: &Path, recovery_key: &str) -> Result<(), String> {
+    let secret = parse_recovery_key(recovery_key)?;
+    let dir = identity_dir(vault_path);
+    fs::create_dir_all(&dir).map_err(|e| format!("identity dir: {}", e))?;
+    let sk_path = secret_key_path(vault_path);
+    if sk_path.exists() {
+        let existing = fs::read(&sk_path).map_err(|e| format!("read sk.bin: {}", e))?;
+        if existing.as_slice() == secret {
+            return Ok(());
+        }
+        return Err("This vault already has a different identity key".to_string());
+    }
+    let tmp = sk_path.with_extension("tmp");
+    fs::write(&tmp, secret).map_err(|e| format!("write sk.tmp: {}", e))?;
+    fs::rename(&tmp, &sk_path).map_err(|e| format!("rename sk.bin: {}", e))?;
+    Ok(())
+}
+
+/// Return the human-visible vault recovery material for Settings.
+///
+/// `recovery_key` is the encoded signing secret from `_identity/sk.bin`. It is
+/// enough to recreate the same vault identity on another device, so the UI must
+/// keep it hidden until the seafarer explicitly reveals or copies it.
+pub fn get_vault_identity_key(
+    conn: &Connection,
+    vault_path: &Path,
+) -> Result<serde_json::Value, String> {
+    ensure_vault_identity(conn, vault_path)?;
+
+    let bytes = fs::read(secret_key_path(vault_path)).map_err(|e| format!("read sk.bin: {}", e))?;
+    if bytes.len() != 32 {
+        return Err(format!(
+            "sk.bin is {} bytes, expected 32 - cannot show recovery key",
+            bytes.len()
+        ));
+    }
+    let mut secret = [0u8; 32];
+    secret.copy_from_slice(&bytes);
+    let signing = SigningKey::from_bytes(&secret);
+    let pub_bytes: [u8; 32] = signing.verifying_key().to_bytes();
+
+    Ok(serde_json::json!({
+        "version": IDENTITY_VERSION,
+        "user_id": derive_user_id(&pub_bytes),
+        "identity_pubkey": hex::encode(pub_bytes),
+        "recovery_key": recovery_key_from_secret(&secret),
+        "profile": {
+            "name": db::get_vault_info_value(conn, "name"),
+            "surname": db::get_vault_info_value(conn, "personal_surname"),
+            "first_name": db::get_vault_info_value(conn, "personal_first_name"),
+            "date_of_birth": db::get_vault_info_value(conn, "personal_dob"),
+        }
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recovery_key_is_readable_and_unpadded() {
+        let secret = [0u8; 32];
+        let key = recovery_key_from_secret(&secret);
+        assert!(key.starts_with("SKIPI-RECOVERY-V1-"));
+        assert!(!key.contains('='));
+        assert!(key
+            .trim_start_matches("SKIPI-RECOVERY-V1-")
+            .split('-')
+            .all(|part| part.len() == 4));
+    }
+
+    #[test]
+    fn recovery_key_roundtrips_secret() {
+        let mut secret = [0u8; 32];
+        secret[0] = 42;
+        secret[31] = 7;
+        let key = recovery_key_from_secret(&secret);
+        assert_eq!(parse_recovery_key(&key).unwrap(), secret);
+        assert_eq!(
+            parse_recovery_key(&key.to_ascii_lowercase()).unwrap(),
+            secret
+        );
+    }
+
+    #[test]
+    fn vault_identity_key_export_is_stable() {
+        let vault_path =
+            std::env::temp_dir().join(format!("skipi-identity-key-test-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&vault_path).unwrap();
+        let conn = db::open_db(&vault_path).unwrap();
+        db::set_vault_info(&conn, "name", "Test Seafarer").unwrap();
+        db::set_vault_info(&conn, "personal_first_name", "Ivan").unwrap();
+        db::set_vault_info(&conn, "personal_surname", "Petrov").unwrap();
+        db::set_vault_info(&conn, "personal_dob", "1988-02-03").unwrap();
+
+        let first = get_vault_identity_key(&conn, &vault_path).unwrap();
+        let second = get_vault_identity_key(&conn, &vault_path).unwrap();
+
+        assert_eq!(first["recovery_key"], second["recovery_key"]);
+        assert_eq!(first["user_id"], second["user_id"]);
+        assert_eq!(first["profile"]["first_name"], "Ivan");
+        assert_eq!(first["profile"]["surname"], "Petrov");
+        assert_eq!(first["profile"]["date_of_birth"], "1988-02-03");
+        assert!(first["recovery_key"]
+            .as_str()
+            .unwrap()
+            .starts_with("SKIPI-RECOVERY-V1-"));
+
+        drop(conn);
+        let _ = fs::remove_dir_all(&vault_path);
+    }
+
+    #[test]
+    fn installed_recovery_key_controls_new_vault_identity() {
+        let source_secret = [9u8; 32];
+        let recovery_key = recovery_key_from_secret(&source_secret);
+        let vault_path = std::env::temp_dir().join(format!(
+            "skipi-identity-install-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&vault_path).unwrap();
+        let conn = db::open_db(&vault_path).unwrap();
+
+        install_recovery_key(&vault_path, &recovery_key).unwrap();
+        let exported = get_vault_identity_key(&conn, &vault_path).unwrap();
+
+        assert_eq!(
+            exported["recovery_key"].as_str().unwrap(),
+            recovery_key.as_str()
+        );
+
+        drop(conn);
+        let _ = fs::remove_dir_all(&vault_path);
+    }
 }

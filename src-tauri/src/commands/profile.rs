@@ -89,6 +89,7 @@ pub fn create_profile_vault(
     vessel_category: String,
     position: String,
     position_label: Option<String>,
+    recovery_key: Option<String>,
 ) -> Result<VaultInfo, String> {
     let vault_path = PathBuf::from(&path);
     if vault_path.join("skipi.db").exists() {
@@ -98,6 +99,9 @@ pub fn create_profile_vault(
 
     let conn = db::open_db(&vault_path).map_err(|e| e.to_string())?;
     crate::reset_vault_content(&conn);
+    if let Some(key) = recovery_key.as_deref().filter(|s| !s.trim().is_empty()) {
+        identity::install_recovery_key(&vault_path, key)?;
+    }
     identity::ensure_vault_identity(&conn, &vault_path)?;
 
     db::set_vault_info(&conn, "account_type", "seafarer").map_err(|e| e.to_string())?;

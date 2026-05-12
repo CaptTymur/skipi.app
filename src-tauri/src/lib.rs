@@ -130,6 +130,7 @@ pub fn run() {
             vault::close_vault,
             vault::get_current_vault_path,
             vault::get_vault_path,
+            vault::get_vault_identity_key,
             vault::export_vault_backup,
             vault::import_vault_backup,
             // Documents
