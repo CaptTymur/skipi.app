@@ -127,6 +127,7 @@ struct MailingRequestListResp {
 pub fn fetch_jobs(
     rank: Option<String>,
     vessel_type: Option<String>,
+    nationality: Option<String>,
 ) -> Result<Vec<PublicVacancy>, String> {
     let mut path = "/api/vacancies?limit=100".to_string();
     if let Some(r) = rank.as_deref().filter(|s| !s.is_empty()) {
@@ -134,6 +135,9 @@ pub fn fetch_jobs(
     }
     if let Some(v) = vessel_type.as_deref().filter(|s| !s.is_empty()) {
         path.push_str(&format!("&vessel_type={}", urlencoding(v)));
+    }
+    if let Some(n) = nationality.as_deref().filter(|s| !s.is_empty()) {
+        path.push_str(&format!("&nationality={}", urlencoding(n)));
     }
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(15))

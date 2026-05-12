@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.121';
+var APP_VERSION='0.4.123';
 var UI_LANG_KEY='skipi-ui-language';
 var UI_LANG_OPTIONS=[
     ['ru','Русский'],
@@ -5445,8 +5445,12 @@ async function loadJobsFeed(){
         // the long form ("Second Officer"). Normalize before sending to
         // the server-side exact-match filter.
         if (rank) rank = canonicalRank(rank);
+        // Strict three-axis matching: rank + vessel_type + nationality.
+        // Profiles store short forms ("bulker"); the server canonicalizes
+        // aliases to the canonical label ("Bulk Carrier") before filtering.
+        var vt = (sp.preferred_vessel_types||'').split(',')[0].trim() || null;
 
-        var jobsP = invoke('fetch_jobs', { rank: rank, vesselType: null });
+        var jobsP = invoke('fetch_jobs', { rank: rank, vesselType: vt, nationality: (sp.nationality||null) });
         var threadsP = (async function(){
             try {
                 var me = await invoke('get_my_identity');
@@ -5524,10 +5528,10 @@ async function checkNewJobsBackground(){
         }
         var rank = sp.rank || null;
         var vt = (sp.preferred_vessel_types||'').split(',')[0].trim() || null;
-        // vessel_type on seafarer profile uses a different taxonomy than
-        // the crewing-side ('bulker' vs 'Bulk Carrier' etc.). Skip the
-        // server-side filter and let the small list through to the user.
-        var items = jobsConcreteVesselItems(await invoke('fetch_jobs', { rank: rank, vesselType: null }));
+        // Strict three-axis matching: server canonicalizes the vessel_type
+        // alias ('bulker' → 'Bulk Carrier') before filtering, so it is safe
+        // to pass the profile value through.
+        var items = jobsConcreteVesselItems(await invoke('fetch_jobs', { rank: rank, vesselType: vt, nationality: (sp.nationality||null) }));
         var seen = jobsLoadSeen();
         var newOnes = items.filter(function(v){ return !seen[v.id]; });
         if (newOnes.length > 0) {
