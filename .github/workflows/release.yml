@@ -8,8 +8,8 @@
 #   * Linux release MUST succeed even when Windows Authenticode signing is
 #     broken or unconfigured. For closed testing we still build an unsigned
 #     Windows installer; only the Tauri updater artifact is minisign-signed.
-#   * Windows/macOS test builds are mandatory from v0.4.106 onward so every
-#     release has the three tester platforms: Linux, macOS, Windows.
+#   * Windows test builds are mandatory from v0.4.106 onward. macOS builds
+#     are paused from 2026-05-12 to save GitHub Actions minutes.
 #   * A post-publish validation job (`verify-release`) downloads the
 #     just-published latest.json and asserts version, URLs, sigs.
 
@@ -163,8 +163,9 @@ jobs:
             | Linux (Debian/Ubuntu) | `.deb` | minisign (updater) |
             | Linux (universal) | `.AppImage` | minisign (updater) |
             | Linux (RPM-based) | `.rpm` | minisign (updater) |
-            | macOS (Intel/test) | `.dmg` / `.app.tar.gz` | unsigned Apple bundle; minisign for updater |
             | Windows (test) | `.msi` / `.exe` | no Authenticode; minisign for updater |
+
+            macOS beta artifacts are temporarily paused to save GitHub Actions minutes.
 
             ### What's new
 
@@ -180,13 +181,12 @@ jobs:
           prerelease: false
 
   # ----------------------------------------------------------------------
-  # macOS build — unsigned Apple bundle for testers. This does
-  # NOT perform Apple Developer ID signing or notarization. It still uses
-  # Tauri updater signing so the .app.tar.gz can be referenced from
-  # latest.json when the build succeeds.
+  # macOS build — paused from 2026-05-12 to save GitHub Actions minutes.
+  # Keep the job definition in place so it can be re-enabled quickly later.
   # ----------------------------------------------------------------------
   build-macos:
     name: Build (macOS unsigned)
+    if: ${{ false }}
     needs: [syntax-check, version-check]
     runs-on: macos-15-intel
     steps:
@@ -268,12 +268,13 @@ jobs:
           prerelease: false
 
   # ----------------------------------------------------------------------
-  # Manifest publication — Linux, macOS and Windows test builds are mandatory.
+  # Manifest publication — Linux and Windows test builds are mandatory.
+  # macOS is intentionally omitted while macOS builds are paused.
   # ----------------------------------------------------------------------
   publish-latest-json:
     name: Publish latest.json
-    needs: [build-linux, build-macos, build-windows]
-    if: needs.build-linux.result == 'success' && needs.build-macos.result == 'success' && needs.build-windows.result == 'success'
+    needs: [build-linux, build-windows]
+    if: needs.build-linux.result == 'success' && needs.build-windows.result == 'success'
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
@@ -284,7 +285,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
-          MAC_OUTCOME: ${{ needs.build-macos.result }}
           WIN_OUTCOME: ${{ needs.build-windows.result }}
         run: |
           set -eu
@@ -292,7 +292,6 @@ jobs:
           PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
 
-          echo "macOS job outcome: ${MAC_OUTCOME}"
           echo "Windows job outcome: ${WIN_OUTCOME}"
 
           mkdir -p sigs
@@ -336,25 +335,6 @@ jobs:
             exit 1
           fi
 
-          # macOS: updater wants the .app.tar.gz asset, not the .dmg.
-          MAC_SIG=""
-          MAC_URL=""
-          if [ "${MAC_OUTCOME}" = "success" ]; then
-            MAC_APP="$(find . -maxdepth 1 -type f -name '*.app.tar.gz.sig' | head -n1 || true)"
-            if [ -n "$MAC_APP" ]; then
-              MAC_ASSET="${MAC_APP#./}"
-              MAC_SIG="$(read_sig "$MAC_ASSET")"
-              MAC_URL="$(asset_url "${MAC_ASSET%.sig}")"
-            else
-              echo "::error::macOS build succeeded but no .app.tar.gz.sig was found; refusing to publish a release without macOS."
-              exit 1
-            fi
-          fi
-          if [ -z "$MAC_URL" ]; then
-            echo "::error::macOS build did not produce a manifest asset; refusing to publish a release without macOS."
-            exit 1
-          fi
-
           # Linux: prefer AppImage (self-contained, portable for updater).
           LINUX_SIG=""
           LINUX_URL=""
@@ -378,8 +358,6 @@ jobs:
             --arg win_url "$WIN_URL" \
             --arg linux_sig "$LINUX_SIG" \
             --arg linux_url "$LINUX_URL" \
-            --arg mac_sig "$MAC_SIG" \
-            --arg mac_url "$MAC_URL" \
             '
             def plat(sig; url):
               if (sig|length) > 0 and (url|length) > 0
@@ -393,7 +371,6 @@ jobs:
               platforms: (
                 {
                   "windows-x86_64": plat($win_sig; $win_url),
-                  "darwin-x86_64":  plat($mac_sig; $mac_url),
                   "linux-x86_64":   plat($linux_sig; $linux_url)
                 }
                 | with_entries(select(.value != null))
