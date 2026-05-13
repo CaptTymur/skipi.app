@@ -217,6 +217,7 @@ pub fn run() {
             // Public jobs board
             jobs::fetch_jobs,
             jobs::fetch_mailing_requests,
+            jobs::fetch_vessel_projection,
             jobs::job_apply_click,
             jobs::job_hide,
             jobs::mailing_request_send_click,

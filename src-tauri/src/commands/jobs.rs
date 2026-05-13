@@ -170,6 +170,22 @@ pub fn fetch_mailing_requests(
 }
 
 #[tauri::command]
+pub fn fetch_vessel_projection(imo: String) -> Result<serde_json::Value, String> {
+    let digits: String = imo.chars().filter(|c| c.is_ascii_digit()).collect();
+    if digits.len() != 7 {
+        return Err("IMO must contain exactly 7 digits".to_string());
+    }
+    let path = format!("/api/vessels/{}", digits);
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(12))
+        .connect_timeout(std::time::Duration::from_secs(4))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let parsed: serde_json::Value = api::get_json(&client, &path)?;
+    Ok(parsed)
+}
+
+#[tauri::command]
 pub fn mailing_request_send_click(request_id: String) -> Result<(), String> {
     let path = format!("/api/mailing-requests/{}/send-click", request_id);
     let client = reqwest::blocking::Client::builder()

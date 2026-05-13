@@ -3898,6 +3898,20 @@ async function fetchWithTimeout(url,options,timeoutMs){
     finally{clearTimeout(timer);}
 }
 async function requestVesselProjection(imo){
+    // Desktop-first path: use Tauri backend HTTP client. This bypasses
+    // WebView fetch/CORS issues that can surface as "TypeError: Load failed".
+    try{
+        if(typeof invoke==='function'){
+            var payload=await invoke('fetch_vessel_projection',{imo:String(imo||'')});
+            if(payload&&typeof payload==='object'){
+                return {status:'ok',imo:imo,payload:payload};
+            }
+        }
+    }catch(e){
+        logError('vessel_projection_invoke',e);
+    }
+
+    // Fallback path (kept for safety): direct fetch against known bases.
     var bases=vesselApiBases();
     return new Promise(function(resolve){
         var pending=bases.length;
