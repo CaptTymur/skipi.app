@@ -214,6 +214,94 @@ fn json_field_string(fields: &serde_json::Value, key: &str) -> Option<String> {
     }
 }
 
+fn requested_ready_for_offers(fields: &serde_json::Value) -> bool {
+    json_field_string(fields, "ready_for_offers")
+        .map(|s| s.eq_ignore_ascii_case("true") || s == "1" || s.eq_ignore_ascii_case("yes"))
+        .unwrap_or(false)
+}
+
+fn field_or_vault_info(
+    conn: &Connection,
+    fields: &serde_json::Value,
+    field_key: &str,
+    db_keys: &[&str],
+) -> Option<String> {
+    let field_candidates: &[&str] = match field_key {
+        "nationality" => &["nationality", "nationality_code"],
+        "rank" => &["rank", "position"],
+        "preferred_vessel_types" => &["preferred_vessel_types", "vessel_category", "vessel_type"],
+        _ => std::slice::from_ref(&field_key),
+    };
+    field_candidates
+        .iter()
+        .find_map(|key| json_field_string(fields, key))
+        .or_else(|| {
+            db_keys.iter().find_map(|key| {
+                db::get_vault_info_value(conn, key).filter(|s| !s.trim().is_empty())
+            })
+        })
+}
+
+fn seafarer_ready_profile_missing(
+    conn: &Connection,
+    fields: &serde_json::Value,
+) -> Vec<&'static str> {
+    let required: [(&str, &[&str], &str); 14] = [
+        ("surname", &["personal_surname"], "Surname"),
+        ("first_name", &["personal_first_name"], "First name"),
+        ("date_of_birth", &["personal_dob"], "Date of birth"),
+        (
+            "place_of_birth",
+            &["personal_place_of_birth"],
+            "Place of birth",
+        ),
+        (
+            "nationality",
+            &["personal_nationality", "personal_nationality_code"],
+            "Nationality",
+        ),
+        ("phones", &["personal_phones"], "Phone"),
+        ("email", &["personal_email"], "Email"),
+        ("rank", &["personal_rank", "rank", "position"], "Rank"),
+        (
+            "preferred_vessel_types",
+            &["preferred_vessel_types", "vessel_category", "vessel_type"],
+            "Vessel type",
+        ),
+        (
+            "nearest_airport",
+            &["personal_nearest_airport"],
+            "Nearest airport",
+        ),
+        (
+            "nearest_intl_airport",
+            &["personal_nearest_intl_airport"],
+            "Nearest international airport",
+        ),
+        (
+            "available_from",
+            &["personal_available_from"],
+            "Available for joining",
+        ),
+        ("min_salary", &["personal_min_salary"], "Minimum salary"),
+        ("home_address", &["personal_home_address"], "Home address"),
+    ];
+
+    required
+        .iter()
+        .filter_map(|(field_key, db_keys, label)| {
+            if field_or_vault_info(conn, fields, field_key, db_keys)
+                .map(|s| !s.trim().is_empty())
+                .unwrap_or(false)
+            {
+                None
+            } else {
+                Some(*label)
+            }
+        })
+        .collect()
+}
+
 fn template_change_items(
     templates: &[profiles::DocTemplate],
     other_ids: &std::collections::HashSet<String>,
@@ -837,6 +925,15 @@ pub fn set_seafarer_personal(
         ("ready_for_offers", "personal_ready_for_offers"),
         ("preferred_messenger", "personal_preferred_messenger"),
     ];
+    if requested_ready_for_offers(&fields) {
+        let missing = seafarer_ready_profile_missing(conn, &fields);
+        if !missing.is_empty() {
+            return Err(format!(
+                "Complete seafarer profile before enabling job offers: {}",
+                missing.join(", ")
+            ));
+        }
+    }
     let mut changed = false;
     for (k, db_key) in allowed.iter() {
         if let Some(v) = fields.get(*k) {
@@ -1076,6 +1173,45 @@ pub fn get_profile_status(state: State<AppState>) -> Result<serde_json::Value, S
 mod tests {
     use super::*;
     use std::collections::HashSet;
+
+    #[test]
+    fn ready_for_offers_requires_matchable_profile_fields() {
+        let vault_path =
+            std::env::temp_dir().join(format!("skipi-ready-profile-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&vault_path).unwrap();
+        let conn = db::open_db(&vault_path).unwrap();
+
+        for (key, value) in [
+            ("personal_surname", "Petrov"),
+            ("personal_first_name", "Ivan"),
+            ("personal_dob", "1988-02-03"),
+            ("personal_place_of_birth", "Odesa"),
+            ("personal_nationality", "Ukrainian"),
+            ("personal_phones", "+380000000000"),
+            ("personal_email", "ivan@example.com"),
+            ("personal_rank", "Second Officer"),
+            ("personal_nearest_airport", "Odesa (ODS)"),
+            ("personal_nearest_intl_airport", "Warsaw (WAW)"),
+            ("personal_available_from", "2026-06-01"),
+            ("personal_min_salary", "4500"),
+            ("personal_home_address", "Odesa, Ukraine"),
+        ] {
+            db::set_vault_info(&conn, key, value).unwrap();
+        }
+
+        let fields = serde_json::json!({"ready_for_offers": "true"});
+        let missing = seafarer_ready_profile_missing(&conn, &fields);
+        assert!(missing.contains(&"Vessel type"));
+
+        let fields = serde_json::json!({
+            "ready_for_offers": "true",
+            "preferred_vessel_types": "bulker",
+        });
+        assert!(seafarer_ready_profile_missing(&conn, &fields).is_empty());
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(vault_path);
+    }
 
     #[test]
     fn rank_change_adds_master_slots_without_deleting_oow_history() {

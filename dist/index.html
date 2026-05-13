@@ -788,6 +788,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
             <div class="field"><label>Phones *</label><div style="display:flex;gap:6px;"><input id="fp-phones" placeholder="+XX XXX..." style="flex:1;min-width:0;"><select id="fp-preferred_messenger" style="width:110px;flex:0 0 110px;"><option value="WhatsApp">WhatsApp</option><option value="Telegram">Telegram</option><option value="Viber">Viber</option><option value="Signal">Signal</option><option value="Other">Other</option></select></div></div>
             <div class="field"><label>Email *</label><input id="fp-email" type="email"></div>
             <div class="field"><label>Rank *</label><select id="fp-rank"></select></div>
+            <div class="field"><label>Vessel type *</label><select id="fp-preferred_vessel_types"></select></div>
             <div class="field"><label>Nearest airport *</label><input id="fp-nearest_airport" placeholder="Start typing…"></div>
             <div class="field"><label>Nearest intl airport *</label><input id="fp-nearest_intl_airport" placeholder="Start typing…"></div>
             <div class="field"><label>Available for joining *</label><input id="fp-available_from" type="text" inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" oninput="autoFormatDate(this)"></div>
@@ -2304,10 +2305,121 @@ function fpToggleReady(on){
 }
 function spToggleReady(on){
     var ids=['sp-min_salary','sp-min_salary_currency','sp-nearest_airport','sp-nearest_intl_airport','sp-available_from','sp-phones','sp-preferred_messenger'];
-    ids.forEach(function(id){var el=document.getElementById(id);if(el){el.disabled=!on;el.style.opacity=on?'1':'0.45';}});
+    ids.forEach(function(id){var el=document.getElementById(id);if(el){el.disabled=false;el.style.opacity='1';}});
 }
 function fpRequiredKeys(){
-    return ['surname','first_name','date_of_birth','place_of_birth','nationality','phones','email','rank','nearest_airport','nearest_intl_airport','available_from','min_salary','home_address'];
+    return ['surname','first_name','date_of_birth','place_of_birth','nationality','phones','email','rank','preferred_vessel_types','nearest_airport','nearest_intl_airport','available_from','min_salary','home_address'];
+}
+function readyProfileLabels(){
+    if(getUiLang()==='ru'){
+        return {
+            surname:'Фамилия',
+            first_name:'Имя',
+            date_of_birth:'Дата рождения',
+            place_of_birth:'Место рождения',
+            nationality:'Гражданство',
+            phones:'Телефон',
+            email:'Email',
+            rank:'Должность',
+            preferred_vessel_types:'Тип судна',
+            nearest_airport:'Ближайший аэропорт',
+            nearest_intl_airport:'Ближайший международный аэропорт',
+            available_from:'Дата готовности к посадке',
+            min_salary:'Минимальная зарплата',
+            home_address:'Домашний адрес'
+        };
+    }
+    return {
+        surname:'Surname',
+        first_name:'First name',
+        date_of_birth:'Date of birth',
+        place_of_birth:'Place of birth',
+        nationality:'Nationality',
+        phones:'Phone',
+        email:'Email',
+        rank:'Rank',
+        preferred_vessel_types:'Vessel type',
+        nearest_airport:'Nearest airport',
+        nearest_intl_airport:'Nearest international airport',
+        available_from:'Available for joining',
+        min_salary:'Minimum salary',
+        home_address:'Home address'
+    };
+}
+function readyProfileMissing(data){
+    data=data||{};
+    var labels=readyProfileLabels();
+    var missing=[];
+    fpRequiredKeys().forEach(function(k){
+        var v='';
+        if(k==='min_salary')v=String(data.min_salary||localStorage.getItem('skipi-sp-min_salary')||'');
+        else if(k==='preferred_vessel_types')v=String(data.preferred_vessel_types||data.vessel_category||data.vessel_type||'').split(',')[0];
+        else v=String(data[k]||'');
+        if(!v.trim())missing.push({key:k,label:labels[k]||k});
+    });
+    return missing;
+}
+function readyProfileGate(data){
+    var missing=readyProfileMissing(data);
+    return {ok:missing.length===0,missing:missing};
+}
+function closeReadyProfileRequired(){
+    var el=document.getElementById('ready-profile-required-overlay');
+    if(el)el.remove();
+}
+function openReadyProfileSettings(){
+    closeReadyProfileRequired();
+    openSettings('seafarer');
+}
+function readyProfileMissingListHtml(missing){
+    missing=missing||[];
+    if(!missing.length)return '';
+    var h='<ul style="margin:10px 0 0;padding-left:18px;color:var(--text);font-size:13px;line-height:1.55;">';
+    missing.forEach(function(m){h+='<li>'+esc(m.label||m.key)+'</li>';});
+    h+='</ul>';
+    return h;
+}
+function readyProfileInstructionText(){
+    return getUiLang()==='ru'
+        ? 'Чтобы Skipi правильно подбирал вакансии, заполните обязательные поля профиля моряка. Особенно важны должность и тип судна: без них вакансия может не попасть в вашу ленту.'
+        : 'Fill the required seafarer profile fields before enabling job offers. Rank and vessel type are especially important: without them a matching vacancy can be filtered out.';
+}
+function showReadyProfileRequired(missing){
+    closeReadyProfileRequired();
+    var title=getUiLang()==='ru'?'Заполните профиль моряка':'Complete your seafarer profile';
+    var openLabel=getUiLang()==='ru'?'Открыть профиль':'Open profile';
+    var closeLabel=getUiLang()==='ru'?'Позже':'Later';
+    var h='<div id="ready-profile-required-overlay" class="modal-overlay open" onclick="if(event.target===this)closeReadyProfileRequired();">';
+    h+='<div class="modal-panel" style="width:min(560px,92vw);">';
+    h+='<h3 style="margin-top:0;margin-bottom:8px;">'+esc(title)+'</h3>';
+    h+='<p style="color:var(--text2);font-size:13px;line-height:1.5;margin:0;">'+esc(readyProfileInstructionText())+'</p>';
+    h+=readyProfileMissingListHtml(missing);
+    h+='<div style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;">';
+    h+='<button class="btn btn-outline btn-sm" onclick="closeReadyProfileRequired()">'+esc(closeLabel)+'</button>';
+    h+='<button class="btn btn-accent btn-sm" onclick="openReadyProfileSettings()">'+esc(openLabel)+'</button>';
+    h+='</div></div></div>';
+    document.body.insertAdjacentHTML('beforeend',h);
+}
+async function populateVesselTypeSelect(el,current,placeholder){
+    if(!el)return;
+    if(!profileTax){profileTax=await invoke('get_profile_taxonomy');}
+    current=String(current||'').split(',')[0].trim();
+    var tree=(profileTax&&profileTax.vessel_tree)||[];
+    var roots=tree.filter(function(v){return !v.parent;});
+    var html='<option value="">'+esc(placeholder||'-- Select vessel type --')+'</option>';
+    roots.forEach(function(r){
+        var kids=tree.filter(function(v){return v.parent===r.id;});
+        if(kids.length===0){
+            html+='<option value="'+escAttr(r.id)+'"'+(current===r.id?' selected':'')+'>'+esc(r.label)+'</option>';
+        }else{
+            html+='<optgroup label="'+escAttr(r.label)+'">';
+            kids.forEach(function(k){
+                html+='<option value="'+escAttr(k.id)+'"'+(current===k.id?' selected':'')+'>'+esc(k.label)+'</option>';
+            });
+            html+='</optgroup>';
+        }
+    });
+    el.innerHTML=html;
 }
 async function openForcedProfile(forceOpen){
     // If already complete, don't force (unless forceOpen=true).
@@ -2330,6 +2442,7 @@ async function openForcedProfile(forceOpen){
         var natSel=document.getElementById('fp-nationality');
         populateNationalitySelect(natSel,data.nationality||'');
         populateSelect(document.getElementById('fp-rank'),RANKS,data.rank||'','-- Select rank --');
+        await populateVesselTypeSelect(document.getElementById('fp-preferred_vessel_types'),data.preferred_vessel_types||'','-- Select vessel type --');
         populateAirportDatalist();
         var curSel=document.getElementById('fp-min_salary_currency');
         populateSelect(curSel,CURRENCIES,data.currency||localStorage.getItem('skipi-sp-min_salary_currency')||'USD','');
@@ -2352,7 +2465,7 @@ async function openForcedProfile(forceOpen){
 async function fpSubmit(){
     var fields={};
     var missing=[];
-    var labelMap={surname:'Surname',first_name:'First name',date_of_birth:'Date of birth',place_of_birth:'Place of birth',nationality:'Nationality',phones:'Phones',email:'Email',rank:'Rank',nearest_airport:'Nearest airport',nearest_intl_airport:'Nearest intl airport',available_from:'Available from',home_address:'Home address',min_salary:'Minimum salary'};
+    var labelMap={surname:'Surname',first_name:'First name',date_of_birth:'Date of birth',place_of_birth:'Place of birth',nationality:'Nationality',phones:'Phones',email:'Email',rank:'Rank',preferred_vessel_types:'Vessel type',nearest_airport:'Nearest airport',nearest_intl_airport:'Nearest intl airport',available_from:'Available from',home_address:'Home address',min_salary:'Minimum salary'};
     fpRequiredKeys().forEach(function(k){
         var el=document.getElementById('fp-'+k);
         var v=el?(el.value||'').trim():'';
@@ -5421,6 +5534,12 @@ async function showJobs(){
     var sp={};
     try{ sp=await invoke('get_seafarer_personal'); }catch(e){}
     var on = sp.ready_for_offers==='true';
+    var profileGate = readyProfileGate(sp);
+    if(on && !profileGate.ok){
+        on=false;
+        sp.ready_for_offers='false';
+        try{await invoke('set_seafarer_personal',{fields:{ready_for_offers:'false'}});}catch(e){}
+    }
     var rankTxt = sp.rank || 'seafarer';
     var ship  = (sp.preferred_vessel_types||'').split(',')[0].trim();
     var minSal = sp.min_salary || '';
@@ -5446,6 +5565,15 @@ async function showJobs(){
     }
     h += '</p>';
     h += '</div>';
+
+    if(!profileGate.ok){
+        h += '<div style="border:1px solid var(--orange);border-radius:8px;padding:14px 16px;margin-bottom:16px;background:var(--bg);">';
+        h += '<div style="font-weight:700;margin-bottom:6px;">'+esc(getUiLang()==='ru'?'Заполните профиль перед получением вакансий':'Complete profile before receiving vacancies')+'</div>';
+        h += '<div style="font-size:12px;color:var(--text2);line-height:1.45;">'+esc(readyProfileInstructionText())+'</div>';
+        h += readyProfileMissingListHtml(profileGate.missing);
+        h += '<div style="margin-top:12px;"><button class="btn btn-accent btn-sm" onclick="openSettings(\'seafarer\')">'+esc(getUiLang()==='ru'?'Открыть профиль':'Open profile')+'</button></div>';
+        h += '</div>';
+    }
 
     // (Profile fields shown here previously were a duplicate of Settings →
     //  Seafarer Profile. Removed in v0.4.54 — single source of truth.)
@@ -5475,6 +5603,21 @@ async function showJobs(){
 
 async function loadJobsFeed(){
     var host = document.getElementById('jobs-feed');
+    var spForGate={};
+    try{spForGate=await invoke('get_seafarer_personal');}catch(e){}
+    var gateForFeed=readyProfileGate(spForGate);
+    if(!gateForFeed.ok){
+        if(host){
+            host.innerHTML = '<div style="border:1px dashed var(--orange);border-radius:8px;padding:20px;color:var(--text2);font-size:12px;">'
+                + '<div style="font-weight:700;color:var(--text);margin-bottom:6px;">'+esc(getUiLang()==='ru'?'Профиль не готов для подбора вакансий':'Profile is not ready for job matching')+'</div>'
+                + '<div>'+esc(readyProfileInstructionText())+'</div>'
+                + readyProfileMissingListHtml(gateForFeed.missing)
+                + '<button class="btn btn-accent btn-sm" style="margin-top:12px;" onclick="openSettings(&quot;seafarer&quot;)">'+esc(getUiLang()==='ru'?'Открыть профиль':'Open profile')+'</button>'
+                + '</div>';
+        }
+        try{await invoke('set_seafarer_personal',{fields:{ready_for_offers:'false'}});}catch(e){}
+        return [];
+    }
 
     // 1. Cache-first: render instantly from memory or localStorage so the
     //    Jobs tab feels native. Network refresh happens silently below.
@@ -5591,6 +5734,12 @@ async function checkNewJobsBackground(){
     try {
         var sp = await invoke('get_seafarer_personal');
         if (sp.ready_for_offers !== 'true') { clearJobsBadge(); return; }
+        var gate = readyProfileGate(sp);
+        if(!gate.ok){
+            clearJobsBadge();
+            try{await invoke('set_seafarer_personal',{fields:{ready_for_offers:'false'}});}catch(e){}
+            return;
+        }
         if (currentView === 'jobs') {
             refreshJobsFeedSilently();
             return;
@@ -5660,7 +5809,7 @@ async function prewarmJobsFeedIfReady(){
     if (currentView === 'jobs') return;
     try {
         var sp = await invoke('get_seafarer_personal');
-        if (sp && sp.ready_for_offers === 'true') {
+        if (sp && sp.ready_for_offers === 'true' && readyProfileGate(sp).ok) {
             await loadJobsFeed();
         }
     } catch(e) {}
@@ -7496,6 +7645,18 @@ function formatJobsRowTime(iso) {
 // seafarer profile field so Jobs tab and Profile settings stay in sync.
 async function setJobsToggle(on){
     try{
+        if(on){
+            var sp={};
+            try{sp=await invoke('get_seafarer_personal');}catch(e){}
+            var gate=readyProfileGate(sp);
+            if(!gate.ok){
+                var toggle=document.getElementById('jobs-master-toggle');
+                if(toggle)toggle.checked=false;
+                showReadyProfileRequired(gate.missing);
+                showToast(getUiLang()==='ru'?'Сначала заполните профиль моряка':'Complete your seafarer profile first','warn');
+                return;
+            }
+        }
         await invoke('set_seafarer_personal',{fields:{ready_for_offers: on?'true':'false'}});
         // Mirror into profile-settings checkboxes so the user sees the same
         // state if they open Settings → Seafarer afterwards.
@@ -8316,26 +8477,8 @@ async function spLoad(){
         // is a csv list, so we use the first token on load.
         var vt=document.getElementById('sp-preferred_vessel_type');
         if(vt){
-            try{
-                if(!profileTax){profileTax=await invoke('get_profile_taxonomy');}
-                var current=(data.preferred_vessel_types||'').split(',')[0].trim();
-                var tree=(profileTax&&profileTax.vessel_tree)||[];
-                var roots=tree.filter(function(v){return !v.parent;});
-                var html='<option value="">-- Select vessel type --</option>';
-                roots.forEach(function(r){
-                    var kids=tree.filter(function(v){return v.parent===r.id;});
-                    if(kids.length===0){
-                        html+='<option value="'+r.id+'"'+(current===r.id?' selected':'')+'>'+r.label+'</option>';
-                    }else{
-                        html+='<optgroup label="'+r.label+'">';
-                        kids.forEach(function(k){
-                            html+='<option value="'+k.id+'"'+(current===k.id?' selected':'')+'>'+k.label+'</option>';
-                        });
-                        html+='</optgroup>';
-                    }
-                });
-                vt.innerHTML=html;
-            }catch(e){logError('spLoad:vessel_type',e);}
+            try{await populateVesselTypeSelect(vt,data.preferred_vessel_types||'','-- Select vessel type --');}
+            catch(e){logError('spLoad:vessel_type',e);}
         }
         populateAirportDatalist();
         populateSelect(document.getElementById('sp-min_salary_currency'),CURRENCIES,data.currency||localStorage.getItem('skipi-sp-min_salary_currency')||'USD','');
@@ -8439,6 +8582,15 @@ async function spSave(){
     if(ms)fields.min_salary=ms.value.trim();
     var cs=document.getElementById('sp-min_salary_currency');
     if(cs&&cs.value)fields.currency=cs.value;
+    if(fields.ready_for_offers==='true'){
+        var gate=readyProfileGate(fields);
+        if(!gate.ok){
+            fields.ready_for_offers='false';
+            if(rdy)rdy.checked=false;
+            showReadyProfileRequired(gate.missing);
+            showToast(getUiLang()==='ru'?'Заполните профиль перед включением вакансий':'Complete your profile before enabling job offers','warn');
+        }
+    }
     try{
         var result=await invoke('set_seafarer_personal',{fields:fields});
         if(ms)localStorage.setItem('skipi-sp-min_salary',ms.value.trim());
