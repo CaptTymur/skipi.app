@@ -6163,18 +6163,13 @@ function renderJobsFeed(items){
         html += '</div>';
         html += '<div style="text-align:right;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:6px;">';
         html += '<div style="font-size:10px;color:var(--text2);">'+esc(v.published_at.slice(0,10))+'</div>';
+        var alreadyApplied = (window._appliedVacancyIds || {})[v.id];
         if (hasThread) {
-            html += '<button onclick="toggleVacancyThread(\''+esc(v.id)+'\')" style="padding:4px 12px;background:var(--accent);color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer;font-weight:600;">🔒 Open conversation</button>';
+            html += '<button onclick="openVacancyConversation(\''+esc(v.id)+'\')" style="padding:4px 12px;background:var(--accent);color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer;font-weight:600;">🔒 Open conversation</button>';
+        } else if (alreadyApplied) {
+            html += '<button onclick="openVacancyConversation(\''+esc(v.id)+'\')" style="padding:4px 12px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:11px;cursor:pointer;font-weight:600;">Applied ✓</button>';
         } else if(v.reply_to){
-            // If we already applied to this vacancy in this session, render
-            // a disabled "Applied ✓" instead of an active Apply — prevents
-            // double application even before the server-side thread shows up.
-            var alreadyApplied = (window._appliedVacancyIds || {})[v.id];
-            if (alreadyApplied) {
-                html += '<button disabled style="padding:4px 12px;background:var(--surface);color:var(--text2);border:1px solid var(--border);border-radius:4px;font-size:11px;font-weight:600;cursor:not-allowed;opacity:0.7;">Applied ✓</button>';
-            } else {
-                html += '<button id="apply-btn-'+esc(v.id)+'" onclick="jobsApply(\''+esc(v.id)+'\',\''+esc(v.reply_to)+'\',\''+esc(title).replace(/&quot;/g,'')+'\')" style="padding:4px 12px;background:var(--accent);color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer;font-weight:600;">Apply</button>';
-            }
+            html += '<button id="apply-btn-'+esc(v.id)+'" onclick="jobsApply(\''+esc(v.id)+'\',\''+esc(v.reply_to)+'\',\''+esc(title).replace(/&quot;/g,'')+'\')" style="padding:4px 12px;background:var(--accent);color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer;font-weight:600;">Apply</button>';
         }
         html += '<button onclick="jobsHide(\''+esc(v.id)+'\')" style="padding:3px 10px;background:transparent;color:var(--text2);border:1px solid var(--border);border-radius:4px;font-size:11px;cursor:pointer;">Hide</button>';
         html += '</div>';
@@ -6199,6 +6194,48 @@ function renderJobsFeed(items){
     }
 }
 
+async function refreshMyThreadsMap() {
+    try {
+        if (!window._myIdentityCache) {
+            window._myIdentityCache = await invoke('get_my_identity');
+        }
+        var me = window._myIdentityCache;
+        if (!me || !me.user_id) return {};
+        var resp = await apiFetch('/api/messaging/my-threads/'+encodeURIComponent(me.user_id), {}, 8000);
+        if (!resp.ok) return {};
+        var threads = await resp.json();
+        var map = {};
+        (threads || []).forEach(function(t){
+            var key = String((t && t.vacancy_id) || '').trim();
+            if (key) map[key] = t;
+        });
+        return map;
+    } catch(e) {
+        return {};
+    }
+}
+
+async function hydrateThreadsIntoJobsFeed() {
+    var map = await refreshMyThreadsMap();
+    if (!lastJobsItems || !lastJobsItems.length) return map;
+    var changed = false;
+    lastJobsItems = lastJobsItems.map(function(v){
+        var key = String((v && v.id) || '').trim();
+        var nextThread = map[key] || null;
+        if ((v._thread && !nextThread) || (!v._thread && nextThread)) changed = true;
+        return Object.assign({}, v, { _thread: nextThread || v._thread || null });
+    });
+    if (changed) {
+        try { localStorage.setItem('skipi-jobs-cache', JSON.stringify(lastJobsItems)); } catch(e){}
+    }
+    return map;
+}
+
+async function openVacancyConversation(vacancyId){
+    await hydrateThreadsIntoJobsFeed();
+    await toggleVacancyThread(vacancyId);
+}
+
 // Toggle inline E2E thread under a vacancy card.
 async function toggleVacancyThread(vacancyId){
     var host = document.getElementById('thread-'+vacancyId);
@@ -6212,7 +6249,11 @@ async function toggleVacancyThread(vacancyId){
     host.innerHTML = '<div class="chat-empty">Loading…</div>';
     var v = (lastJobsItems||[]).find(function(x){return x.id===vacancyId;});
     if(!v || !v._thread){
-        host.innerHTML = '<div class="chat-empty" style="color:var(--red);">No thread yet for this vacancy.</div>';
+        await hydrateThreadsIntoJobsFeed();
+        v = (lastJobsItems||[]).find(function(x){return x.id===vacancyId;});
+    }
+    if(!v || !v._thread){
+        host.innerHTML = '<div class="chat-empty" style="color:var(--text2);">Conversation is not available yet. If crewing already replied, this card will update automatically in a moment.</div>';
         return;
     }
     var applicationId = v._thread.application_id;
