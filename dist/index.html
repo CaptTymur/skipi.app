@@ -919,11 +919,32 @@ var SKIPI_API_BASE = normalizeApiBase(
 function normalizeApiBase(base){
     return String(base || SKIPI_RU_API_BASE).trim().replace(/\/+$/,'');
 }
+function isLoopbackApiBase(base){
+    var b=normalizeApiBase(base).toLowerCase();
+    return b.indexOf('http://127.0.0.1')===0
+        || b.indexOf('https://127.0.0.1')===0
+        || b.indexOf('http://localhost')===0
+        || b.indexOf('https://localhost')===0;
+}
 function apiBase(){
     return normalizeApiBase(SKIPI_API_BASE || SKIPI_RU_API_BASE);
 }
 function apiBaseCandidates(){
-    if(SKIPI_API_OVERRIDE)return [normalizeApiBase(SKIPI_API_OVERRIDE)];
+    if(SKIPI_API_OVERRIDE){
+        var overrideBase=normalizeApiBase(SKIPI_API_OVERRIDE);
+        if(!isLoopbackApiBase(overrideBase))return [overrideBase];
+        // Localhost override can break release builds when local dev API is down.
+        // Keep it first for local dev, but always include public fallbacks.
+        var localBases=[];
+        function addLocal(base){
+            var normalized=normalizeApiBase(base);
+            if(normalized&&localBases.indexOf(normalized)===-1)localBases.push(normalized);
+        }
+        addLocal(overrideBase);
+        addLocal(SKIPI_RU_API_BASE);
+        addLocal(SKIPI_PRIMARY_API_BASE);
+        return localBases;
+    }
     var bases=[];
     function add(base){
         var normalized=normalizeApiBase(base);
@@ -3898,16 +3919,21 @@ async function fetchWithTimeout(url,options,timeoutMs){
     finally{clearTimeout(timer);}
 }
 async function requestVesselProjection(imo){
+    var invokeErr = null;
     // Desktop-first path: use Tauri backend HTTP client. This bypasses
     // WebView fetch/CORS issues that can surface as "TypeError: Load failed".
     try{
         if(typeof invoke==='function'){
             var payload=await invoke('fetch_vessel_projection',{imo:String(imo||'')});
             if(payload&&typeof payload==='object'){
-                return {status:'ok',imo:imo,payload:payload};
+                return {status:'ok',imo:imo,payload:payload,source:'invoke'};
             }
+            invokeErr = 'empty response from fetch_vessel_projection';
+        }else{
+            invokeErr = 'tauri invoke is unavailable';
         }
     }catch(e){
+        invokeErr = String(e);
         logError('vessel_projection_invoke',e);
     }
 
@@ -3922,7 +3948,13 @@ async function requestVesselProjection(imo){
             if(done)return;
             if(pending>0)return;
             done=true;
-            resolve(sawNotFound?{status:'not_found',imo:imo}:{status:'error',imo:imo,error:lastError||'network error'});
+            if(sawNotFound){
+                resolve({status:'not_found',imo:imo});
+                return;
+            }
+            var msg = lastError || 'network error';
+            if(invokeErr)msg='invoke failed: '+invokeErr+'; fetch failed: '+msg;
+            resolve({status:'error',imo:imo,error:msg});
         }
         bases.forEach(function(base){
             fetchWithTimeout(base+encodeURIComponent(imo),{headers:{'Accept':'application/json'}},3500).then(function(resp){
@@ -6050,7 +6082,7 @@ function jobsVesselHtml(v, esc){
     if(imo){
         return '<button type="button" class="job-vessel-link" onclick="openVesselFromJob(\''+escAttr(v.id)+'\')" title="Open vessel database">'
             + '<span>Vessel:</span><strong>'+esc(label)+'</strong>'
-            + (v.vessel_name ? '<span>· IMO '+esc(imo)+'</span>' : '')
+            + '<span>· IMO '+esc(imo)+'</span>'
             + '</button>';
     }
     if(label){

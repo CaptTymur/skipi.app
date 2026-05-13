@@ -13,8 +13,19 @@ pub(crate) fn env_api_base() -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+fn is_loopback_api_base(base: &str) -> bool {
+    let trimmed = base.trim().trim_end_matches('/').to_ascii_lowercase();
+    trimmed.starts_with("http://127.0.0.1")
+        || trimmed.starts_with("https://127.0.0.1")
+        || trimmed.starts_with("http://localhost")
+        || trimmed.starts_with("https://localhost")
+}
+
 pub(crate) fn api_bases() -> Vec<String> {
     if let Some(base) = env_api_base() {
+        if is_loopback_api_base(&base) {
+            return vec![base, RU_API.to_string(), PRIMARY_API.to_string()];
+        }
         return vec![base];
     }
     vec![RU_API.to_string(), PRIMARY_API.to_string()]
