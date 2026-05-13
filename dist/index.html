@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.127';
+var APP_VERSION='0.4.128';
 var UI_LANG_KEY='skipi-ui-language';
 var UI_LANG_OPTIONS=[
     ['ru','Русский'],
@@ -739,7 +739,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p id="welcome-subtitle">Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.127</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.128</span></p>
                 <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -5956,6 +5956,13 @@ function jobsLoadHidden(){
 function jobsSaveHidden(h){
     try { localStorage.setItem('skipi-jobs-hidden', JSON.stringify(h)); } catch(e){}
 }
+function jobsLoadAppMap(){
+    try { return JSON.parse(localStorage.getItem('skipi-jobs-app-map')||'{}'); }
+    catch(e){ return {}; }
+}
+function jobsSaveAppMap(m){
+    try { localStorage.setItem('skipi-jobs-app-map', JSON.stringify(m||{})); } catch(e){}
+}
 
 function jobsConcreteVesselItems(items){
     return (items||[]).filter(function(v){ return !!normalizeImo(v&&v.vessel_imo); });
@@ -6112,6 +6119,7 @@ function renderJobsFeed(items){
     }
     var esc = function(s){return (s||'').toString().replace(/[<>&"]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c];});};
     var html = '';
+    var appMap = jobsLoadAppMap();
     if(hiddenCount > 0){
         html += '<div style="font-size:11px;color:var(--text2);margin-bottom:8px;text-align:right;">'
             +hiddenCount+' hidden. <span style="color:var(--accent);cursor:pointer;text-decoration:underline;" onclick="jobsUnhideAll()">Show all</span></div>';
@@ -6124,6 +6132,8 @@ function renderJobsFeed(items){
         var salary = v.salary_min ? (v.salary_currency||'USD')+' '+v.salary_min
             +(v.salary_max && v.salary_max!==v.salary_min ? '-'+v.salary_max : '')+'/mo' : '';
         var hasThread = !!v._thread;
+        var mapped = appMap[v.id] || null;
+        var hasMappedThread = (!hasThread && mapped && mapped.application_id);
         var threadCount = hasThread ? v._thread.message_count : 0;
         html += '<div id="vac-card-'+esc(v.id)+'" style="border:1px solid '+(hasThread?'var(--accent)':'var(--border)')+';border-radius:8px;padding:14px 16px;margin-bottom:10px;background:var(--surface);">';
         html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">';
@@ -6164,7 +6174,7 @@ function renderJobsFeed(items){
         html += '<div style="text-align:right;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:6px;">';
         html += '<div style="font-size:10px;color:var(--text2);">'+esc(v.published_at.slice(0,10))+'</div>';
         var alreadyApplied = (window._appliedVacancyIds || {})[v.id];
-        if (hasThread) {
+        if (hasThread || hasMappedThread) {
             html += '<button onclick="openVacancyConversation(\''+esc(v.id)+'\')" style="padding:4px 12px;background:var(--accent);color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer;font-weight:600;">🔒 Open conversation</button>';
         } else if (alreadyApplied) {
             html += '<button onclick="openVacancyConversation(\''+esc(v.id)+'\')" style="padding:4px 12px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:11px;cursor:pointer;font-weight:600;">Applied ✓</button>';
@@ -6218,10 +6228,24 @@ async function refreshMyThreadsMap() {
 async function hydrateThreadsIntoJobsFeed() {
     var map = await refreshMyThreadsMap();
     if (!lastJobsItems || !lastJobsItems.length) return map;
+    var appMap = jobsLoadAppMap();
     var changed = false;
     lastJobsItems = lastJobsItems.map(function(v){
         var key = String((v && v.id) || '').trim();
         var nextThread = map[key] || null;
+        if (!nextThread) {
+            var mapped = appMap[key];
+            if (mapped && mapped.application_id) {
+                nextThread = {
+                    application_id: mapped.application_id,
+                    vacancy_id: key,
+                    vacancy_title: v.title || '',
+                    vacancy_status: v.status || 'active',
+                    message_count: 0,
+                    last_message_at: mapped.updated_at || null
+                };
+            }
+        }
         if ((v._thread && !nextThread) || (!v._thread && nextThread)) changed = true;
         return Object.assign({}, v, { _thread: nextThread || v._thread || null });
     });
@@ -6251,6 +6275,20 @@ async function toggleVacancyThread(vacancyId){
     if(!v || !v._thread){
         await hydrateThreadsIntoJobsFeed();
         v = (lastJobsItems||[]).find(function(x){return x.id===vacancyId;});
+    }
+    if((!v || !v._thread) && vacancyId){
+        var mapped = jobsLoadAppMap()[vacancyId];
+        if (mapped && mapped.application_id) {
+            if (!v) v = { id: vacancyId };
+            v._thread = {
+                application_id: mapped.application_id,
+                vacancy_id: vacancyId,
+                message_count: 0
+            };
+            if (!host.dataset.counterpartId && mapped.counterpart_id) {
+                host.dataset.counterpartId = mapped.counterpart_id;
+            }
+        }
     }
     if(!v || !v._thread){
         host.innerHTML = '<div class="chat-empty" style="color:var(--text2);">Conversation is not available yet. If crewing already replied, this card will update automatically in a moment.</div>';
@@ -7601,6 +7639,15 @@ async function _jobsApplyProceed(vacancyId, replyTo, title){
             try {
                 var applicationId = ack && ack.application_id;
                 if (!applicationId) throw new Error('no application_id from server');
+                try {
+                    var appMap = jobsLoadAppMap();
+                    appMap[vacancyId] = {
+                        application_id: applicationId,
+                        counterpart_id: v.crewing_user_id || '',
+                        updated_at: new Date().toISOString()
+                    };
+                    jobsSaveAppMap(appMap);
+                } catch(e){}
                 var ts = (new Date()).toISOString().slice(0,10);
                 var rankSafe = (sp.rank || v.rank || 'CV').replace(/[^A-Za-z0-9_-]/g,'_');
                 var dl = await invoke('get_downloads_dir');
