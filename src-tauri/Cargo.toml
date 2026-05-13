@@ -1,6 +1,6 @@
 [package]
 name = "skipi"
-version = "0.4.125"
+version = "0.4.126"
 description = "Skipi — Maritime Document Management"
 authors = ["Tymur Rudov"]
 license = "MIT"
