@@ -184,6 +184,7 @@ pub fn run() {
             vault::get_recent_vaults,
             vault::forget_recent_vault,
             profile::get_matchable_profile,
+            profile::get_jobs_readiness_status,
             profile::get_seafarer_personal,
             profile::set_seafarer_personal,
             profile::upload_profile_photo,

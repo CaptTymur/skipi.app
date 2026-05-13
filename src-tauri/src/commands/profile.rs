@@ -302,6 +302,180 @@ fn seafarer_ready_profile_missing(
         .collect()
 }
 
+fn readiness_rank_label(conn: &Connection, fields: &serde_json::Value) -> Option<String> {
+    json_field_string(fields, "rank")
+        .or_else(|| db::get_vault_info_value(conn, "personal_rank"))
+        .or_else(|| db::get_vault_info_value(conn, "rank"))
+        .or_else(|| db::get_vault_info_value(conn, "position"))
+}
+
+fn normalized_readiness_key(value: &str) -> String {
+    value
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .flat_map(|c| c.to_lowercase())
+        .collect()
+}
+
+fn experience_optional_for_rank(rank: Option<&str>) -> bool {
+    let rank = match rank {
+        Some(v) if !v.trim().is_empty() => v.trim(),
+        _ => return false,
+    };
+    let key = normalized_readiness_key(rank);
+    if key.contains("cadet") || key.contains("student") {
+        return true;
+    }
+    if matches!(
+        key.as_str(),
+        "deckcadet"
+            | "enginecadet"
+            | "ordinaryseaman"
+            | "os"
+            | "wiper"
+            | "messman"
+            | "steward"
+            | "messmansteward"
+    ) {
+        return true;
+    }
+    matches!(
+        profiles::position_id_from_rank_label(rank),
+        Some("os" | "wiper" | "messman")
+    )
+}
+
+fn has_sea_service_entry(conn: &Connection) -> bool {
+    conn.query_row(
+        "SELECT COUNT(*) FROM work_history
+         WHERE TRIM(COALESCE(vessel_name, '')) <> ''
+            OR TRIM(COALESCE(position, '')) <> ''
+            OR TRIM(COALESCE(sign_on, '')) <> ''
+            OR TRIM(COALESCE(sign_off, '')) <> ''",
+        [],
+        |row| row.get::<_, i64>(0),
+    )
+    .map(|n| n > 0)
+    .unwrap_or(false)
+}
+
+fn document_matches_template(doc: &db::DocRecord, template: &profiles::DocTemplate) -> bool {
+    doc.template_id.as_deref() == Some(template.id)
+        || (doc.template_id.as_deref().unwrap_or("").is_empty()
+            && doc.title.eq_ignore_ascii_case(template.title))
+}
+
+fn required_document_gaps(conn: &Connection) -> Result<Vec<serde_json::Value>, String> {
+    let templates = current_required_profile_templates(conn)?;
+    if templates.is_empty() {
+        return Ok(Vec::new());
+    }
+    let docs = db::get_all_docs(conn).map_err(|e| e.to_string())?;
+    let today = chrono::Utc::now()
+        .date_naive()
+        .format("%Y-%m-%d")
+        .to_string();
+    let mut gaps = Vec::new();
+    for template in templates.iter() {
+        let matches: Vec<&db::DocRecord> = docs
+            .iter()
+            .filter(|doc| document_matches_template(doc, template))
+            .collect();
+        let reason = if matches.is_empty() {
+            Some("missing")
+        } else {
+            let with_file: Vec<&db::DocRecord> = matches
+                .iter()
+                .copied()
+                .filter(|doc| {
+                    doc.file_name
+                        .as_deref()
+                        .map(|s| !s.trim().is_empty())
+                        .unwrap_or(false)
+                })
+                .collect();
+            if with_file.is_empty() {
+                Some("no_file")
+            } else if with_file.iter().all(|doc| {
+                doc.valid_to
+                    .as_deref()
+                    .map(|v| !v.trim().is_empty() && v < today.as_str())
+                    .unwrap_or(false)
+            }) {
+                Some("expired")
+            } else {
+                None
+            }
+        };
+        if let Some(reason) = reason {
+            gaps.push(serde_json::json!({
+                "kind": "document",
+                "reason": reason,
+                "id": template.id,
+                "label": template.title,
+                "category": template.category,
+                "regulatory_basis": template.regulatory_basis,
+            }));
+        }
+    }
+    Ok(gaps)
+}
+
+fn seafarer_jobs_readiness_status(
+    conn: &Connection,
+    fields: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let profile_missing: Vec<serde_json::Value> = seafarer_ready_profile_missing(conn, fields)
+        .into_iter()
+        .map(|label| serde_json::json!({"kind": "profile", "label": label}))
+        .collect();
+    let document_missing = required_document_gaps(conn)?;
+    let rank_label = readiness_rank_label(conn, fields);
+    let experience_exempt = experience_optional_for_rank(rank_label.as_deref());
+    let experience_missing = !experience_exempt && !has_sea_service_entry(conn);
+    let mut missing = Vec::new();
+    missing.extend(profile_missing.iter().cloned());
+    missing.extend(document_missing.iter().cloned());
+    if experience_missing {
+        missing.push(serde_json::json!({
+            "kind": "experience",
+            "label": "Sea service / work experience",
+            "reason": "missing",
+        }));
+    }
+    Ok(serde_json::json!({
+        "ok": missing.is_empty(),
+        "profile_missing": profile_missing,
+        "document_missing": document_missing,
+        "experience_missing": experience_missing,
+        "experience_exempt": experience_exempt,
+        "rank": rank_label,
+        "missing": missing,
+    }))
+}
+
+fn readiness_error_message(status: &serde_json::Value) -> String {
+    let labels: Vec<String> = status
+        .get("missing")
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.get("label").and_then(|v| v.as_str()))
+                .map(|s| s.to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+    if labels.is_empty() {
+        "Complete seafarer readiness before enabling job offers".to_string()
+    } else {
+        format!(
+            "Complete seafarer readiness before enabling job offers: {}",
+            labels.join(", ")
+        )
+    }
+}
+
 fn template_change_items(
     templates: &[profiles::DocTemplate],
     other_ids: &std::collections::HashSet<String>,
@@ -821,6 +995,13 @@ pub fn get_matchable_profile(state: State<AppState>) -> Result<serde_json::Value
     }))
 }
 
+#[tauri::command]
+pub fn get_jobs_readiness_status(state: State<AppState>) -> Result<serde_json::Value, String> {
+    let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = lock.as_ref().ok_or("No vault open")?;
+    seafarer_jobs_readiness_status(conn, &serde_json::json!({}))
+}
+
 // ========== SEAFARER PERSONAL DETAILS ============================
 
 #[tauri::command]
@@ -972,6 +1153,18 @@ pub fn set_seafarer_personal(
         .get("docs_added")
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
+    if requested_ready_for_offers(&fields) {
+        let readiness = seafarer_jobs_readiness_status(conn, &serde_json::json!({}))?;
+        if !readiness
+            .get("ok")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
+            db::set_vault_info(conn, "personal_ready_for_offers", "false")
+                .map_err(|e| e.to_string())?;
+            return Err(readiness_error_message(&readiness));
+        }
+    }
     Ok(serde_json::json!({
         "saved": changed,
         "framework_changed": framework_changed,
@@ -1208,6 +1401,50 @@ mod tests {
             "preferred_vessel_types": "bulker",
         });
         assert!(seafarer_ready_profile_missing(&conn, &fields).is_empty());
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(vault_path);
+    }
+
+    #[test]
+    fn job_readiness_requires_required_docs_and_experience() {
+        let vault_path =
+            std::env::temp_dir().join(format!("skipi-job-ready-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&vault_path).unwrap();
+        let conn = db::open_db(&vault_path).unwrap();
+
+        for (key, value) in [
+            ("account_type", "seafarer"),
+            ("personal_surname", "Petrov"),
+            ("personal_first_name", "Ivan"),
+            ("personal_dob", "1988-02-03"),
+            ("personal_place_of_birth", "Odesa"),
+            ("personal_nationality", "Ukrainian"),
+            ("personal_phones", "+380000000000"),
+            ("personal_email", "ivan@example.com"),
+            ("personal_rank", "Second Officer"),
+            ("rank", "Second Officer"),
+            ("position", "second_officer"),
+            ("stcw_level", "operational"),
+            ("preferred_vessel_types", "bulker"),
+            ("vessel_category", "bulker"),
+            ("personal_nearest_airport", "Odesa (ODS)"),
+            ("personal_nearest_intl_airport", "Warsaw (WAW)"),
+            ("personal_available_from", "2026-06-01"),
+            ("personal_min_salary", "4500"),
+            ("personal_home_address", "Odesa, Ukraine"),
+        ] {
+            db::set_vault_info(&conn, key, value).unwrap();
+        }
+
+        let status = seafarer_jobs_readiness_status(&conn, &serde_json::json!({})).unwrap();
+        assert!(!status["ok"].as_bool().unwrap());
+        assert!(status["experience_missing"].as_bool().unwrap());
+        assert!(status["document_missing"].as_array().unwrap().len() > 3);
+
+        assert!(experience_optional_for_rank(Some("Deck Cadet")));
+        assert!(experience_optional_for_rank(Some("Ordinary Seaman (OS)")));
+        assert!(!experience_optional_for_rank(Some("Second Officer")));
 
         drop(conn);
         let _ = std::fs::remove_dir_all(vault_path);
