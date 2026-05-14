@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.130';
+var APP_VERSION='0.4.131';
 var UI_LANG_KEY='skipi-ui-language';
 var UI_LANG_OPTIONS=[
     ['ru','Русский'],
@@ -747,7 +747,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p id="welcome-subtitle">Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.130</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.131</span></p>
                 <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -4118,6 +4118,73 @@ function renderVesselReviewProjection(entry,imo){
 function renderVesselReviewLoading(){
     return '<div class="vrev-head"><span class="vrev-title">Vessel reviews</span><span class="badge badge-none">Checking</span></div>';
 }
+function renderRecentVesselReviews(items){
+    items=items||[];
+    var h='<div class="vdb-section"><h3>Latest vessel reviews</h3>';
+    if(!items.length){
+        h+='<div class="vdb-row"><div class="vdb-row-title">No public vessel reviews yet.</div><div class="vdb-row-meta">Reviewed vessels will appear here after seafarers submit approved reviews.</div></div>';
+        h+='</div>';
+        return h;
+    }
+    h+='<div class="vdb-list">';
+    items.slice(0,10).forEach(function(item){
+        var imo=normalizeImo(item.imo);
+        if(!imo)return;
+        var name=item.name_current||('IMO '+imo);
+        var meta=[];
+        if(item.vessel_type)meta.push(vdbLabel(item.vessel_type));
+        if(item.flag_current)meta.push(item.flag_current);
+        if(item.latest_review_at)meta.push('latest '+vdbDate(item.latest_review_at));
+        meta.push((item.review_count||0)+' review'+(Number(item.review_count)===1?'':'s'));
+        var rating='';
+        if(item.average_overall!==undefined&&item.average_overall!==null){
+            var n=Number(item.average_overall);
+            if(isFinite(n))rating=' · '+n.toFixed(1)+'/5';
+        }else if(item.signals_available){
+            rating=' · rating locked';
+        }
+        h+='<div class="vdb-row" role="button" tabindex="0" style="cursor:pointer;" onclick="openVesselFromRecentReview(\''+escAttr(imo)+'\')" onkeydown="if(event.key===\'Enter\')openVesselFromRecentReview(\''+escAttr(imo)+'\')">';
+        h+='<div class="vdb-row-title">'+esc(name)+' <span style="color:var(--text2);font-weight:500;">IMO '+esc(imo)+'</span></div>';
+        h+='<div class="vdb-row-meta">'+esc(meta.join(' · '))+rating+'</div>';
+        h+='</div>';
+    });
+    h+='</div></div>';
+    return h;
+}
+async function loadRecentVesselReviews(){
+    var host=document.getElementById('vdb-recent-reviews');
+    if(!host)return;
+    host.innerHTML='<div class="vdb-section"><h3>Latest vessel reviews</h3><div class="vdb-row"><div class="vdb-row-title">Loading latest reviewed vessels...</div></div></div>';
+    try{
+        var items=await invoke('fetch_recent_vessel_reviews',{limit:10});
+        host.innerHTML=renderRecentVesselReviews(items||[]);
+        return;
+    }catch(e){
+        logError('recent_vessel_reviews_invoke',e);
+    }
+    try{
+        var r=await apiFetch('/api/vessels/recent-reviews?limit=10',{},8000);
+        if(!r.ok)throw new Error('server '+r.status);
+        var data=await r.json();
+        host.innerHTML=renderRecentVesselReviews(data.items||[]);
+    }catch(e){
+        logError('recent_vessel_reviews',e);
+        host.innerHTML='<div class="vdb-section"><h3>Latest vessel reviews</h3><div class="vdb-row"><div class="vdb-row-title">Latest reviews unavailable.</div><div class="vdb-row-meta">'+esc(String(e))+'</div></div></div>';
+    }
+}
+function openVesselFromRecentReview(imo){
+    var norm=normalizeImo(imo);
+    if(!norm)return;
+    vesselDbPendingImo=norm;
+    vesselDbJobContext=null;
+    var input=document.getElementById('vdb-imo-input');
+    if(input){
+        input.value=norm;
+        lookupVesselByImo(false);
+    }else{
+        showVesselDatabase();
+    }
+}
 function vesselProjectionRatingSummary(data){
     data=data||{};
     var n=Number(data.average_overall);
@@ -4498,9 +4565,11 @@ function showVesselDatabase(){
     h+='<div class="field"><label>IMO number</label><input id="vdb-imo-input" inputmode="numeric" pattern="[0-9]*" maxlength="7" placeholder="e.g. 9855552" onkeydown="if(event.key===\'Enter\')lookupVesselByImo(false)"></div>';
     h+='<button class="btn btn-accent" id="vdb-search-btn" onclick="lookupVesselByImo(false)">Search</button>';
     h+='</div>';
+    h+='<div id="vdb-recent-reviews" style="margin-bottom:12px;"></div>';
     h+='<div class="vdb-result" id="vdb-result"></div>';
     h+='</div>';
     document.getElementById('scr-content').innerHTML=h;show('scr-content');updateTabs('База судов');
+    loadRecentVesselReviews();
     setTimeout(function(){
         var input=document.getElementById('vdb-imo-input');
         var pending=normalizeImo(vesselDbPendingImo||(vesselDbJobContext&&vesselDbJobContext.imo)||'');
@@ -5572,13 +5641,23 @@ function informationFallbackSnapshot(){
             {id:'fallback_numbeo',title:'Purchasing power needs a separate lens',summary:'Cost-of-living and local purchasing-power indices give a rough outside baseline.',implication:'A higher salary is not always a better between-contract life if the base is expensive.',source:'Numbeo Local Purchasing Power Index 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?displayColumn=5',source_date:'2026',confidence:'public_reference'}
         ],
         country_baselines:[
-            {id:'ua',country:'Ukraine',cost_of_living_index:28.2,rent_index:8.2,cost_plus_rent_index:19.2,groceries_index:28.8,restaurant_price_index:25.4,local_purchasing_power_index:50.0,usd_salary_stretch_rank:1,note:'Lowest cost-plus-rent baseline in this set. War-related safety, mobility, and regional risk are outside the index.',source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
-            {id:'ge',country:'Georgia',cost_of_living_index:33.1,rent_index:12.7,cost_plus_rent_index:24.0,groceries_index:32.3,restaurant_price_index:36.2,local_purchasing_power_index:43.0,usd_salary_stretch_rank:2,note:'Low cost base for USD income, but local purchasing power is the weakest in this comparison.',source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
-            {id:'ru',country:'Russia',cost_of_living_index:36.5,rent_index:12.3,cost_plus_rent_index:25.7,groceries_index:35.7,restaurant_price_index:35.4,local_purchasing_power_index:61.6,usd_salary_stretch_rank:3,note:'Lower cost than EU options in this set. Entry, banking, sanctions, and political risk are outside the cost index.',source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
-            {id:'md',country:'Moldova',cost_of_living_index:35.8,rent_index:14.7,cost_plus_rent_index:26.4,groceries_index:33.6,restaurant_price_index:32.5,local_purchasing_power_index:54.1,usd_salary_stretch_rank:4,note:'Low daily-cost baseline, with rent pressure higher than Ukraine, Georgia, Romania, and Bulgaria.',source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
-            {id:'ro',country:'Romania',cost_of_living_index:40.6,rent_index:12.0,cost_plus_rent_index:27.8,groceries_index:39.0,restaurant_price_index:43.5,local_purchasing_power_index:76.8,usd_salary_stretch_rank:5,note:'Moderate EU cost base with materially stronger local purchasing power than non-EU options.',source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
-            {id:'bg',country:'Bulgaria',cost_of_living_index:41.6,rent_index:11.1,cost_plus_rent_index:28.0,groceries_index:42.6,restaurant_price_index:42.6,local_purchasing_power_index:84.1,usd_salary_stretch_rank:6,note:'EU option with low rent pressure and stronger local purchasing power than Romania in this table.',source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
-            {id:'pl',country:'Poland',cost_of_living_index:47.3,rent_index:18.4,cost_plus_rent_index:34.4,groceries_index:41.1,restaurant_price_index:48.1,local_purchasing_power_index:97.1,usd_salary_stretch_rank:7,note:'Highest cost-plus-rent baseline in this set, but also the strongest local purchasing power.',source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'}
+            {id:'id',country:'Indonesia',cost_of_living_index:26.1,rent_index:9.1,cost_plus_rent_index:18.5,groceries_index:33.6,restaurant_price_index:15.3,local_purchasing_power_index:29.3,source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
+            {id:'ua',country:'Ukraine',cost_of_living_index:28.2,rent_index:8.2,cost_plus_rent_index:19.2,groceries_index:28.8,restaurant_price_index:25.4,local_purchasing_power_index:50.0,source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
+            {id:'ph',country:'Philippines',cost_of_living_index:30.1,rent_index:7.8,cost_plus_rent_index:20.2,groceries_index:35.4,restaurant_price_index:19.7,local_purchasing_power_index:33.9,source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
+            {id:'az',country:'Azerbaijan',cost_of_living_index:30.7,rent_index:9.7,cost_plus_rent_index:21.3,groceries_index:29.2,restaurant_price_index:35.3,local_purchasing_power_index:40.3,source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
+            {id:'lk',country:'Sri Lanka',cost_of_living_index:33.9,rent_index:7.2,cost_plus_rent_index:22.0,groceries_index:48.1,restaurant_price_index:24.3,local_purchasing_power_index:19.0,source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
+            {id:'ge',country:'Georgia',cost_of_living_index:33.1,rent_index:12.7,cost_plus_rent_index:24.0,groceries_index:32.3,restaurant_price_index:36.2,local_purchasing_power_index:43.0,source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
+            {id:'ru',country:'Russia',cost_of_living_index:36.5,rent_index:12.3,cost_plus_rent_index:25.7,groceries_index:35.7,restaurant_price_index:35.4,local_purchasing_power_index:61.6,source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
+            {id:'md',country:'Moldova',cost_of_living_index:35.8,rent_index:14.7,cost_plus_rent_index:26.4,groceries_index:33.6,restaurant_price_index:32.5,local_purchasing_power_index:54.1,source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
+            {id:'ro',country:'Romania',cost_of_living_index:40.6,rent_index:12.0,cost_plus_rent_index:27.8,groceries_index:39.0,restaurant_price_index:43.5,local_purchasing_power_index:76.8,source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
+            {id:'bg',country:'Bulgaria',cost_of_living_index:41.6,rent_index:11.1,cost_plus_rent_index:28.0,groceries_index:42.6,restaurant_price_index:42.6,local_purchasing_power_index:84.1,source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
+            {id:'am',country:'Armenia',cost_of_living_index:40.9,rent_index:15.2,cost_plus_rent_index:29.5,groceries_index:36.1,restaurant_price_index:40.3,local_purchasing_power_index:41.4,source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
+            {id:'jp',country:'Japan',cost_of_living_index:47.5,rent_index:14.7,cost_plus_rent_index:32.8,groceries_index:56.8,restaurant_price_index:30.3,local_purchasing_power_index:118.3,source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
+            {id:'pl',country:'Poland',cost_of_living_index:47.3,rent_index:18.4,cost_plus_rent_index:34.4,groceries_index:41.1,restaurant_price_index:48.1,local_purchasing_power_index:97.1,source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
+            {id:'ca',country:'Canada',cost_of_living_index:63.0,rent_index:31.5,cost_plus_rent_index:48.9,groceries_index:69.6,restaurant_price_index:64.1,local_purchasing_power_index:119.4,source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
+            {id:'de',country:'Germany',cost_of_living_index:68.7,rent_index:24.6,cost_plus_rent_index:49.0,groceries_index:64.9,restaurant_price_index:66.9,local_purchasing_power_index:138.3,source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
+            {id:'us',country:'United States',cost_of_living_index:68.8,rent_index:40.7,cost_plus_rent_index:56.3,groceries_index:74.0,restaurant_price_index:72.8,local_purchasing_power_index:146.0,source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
+            {id:'no',country:'Norway',cost_of_living_index:83.7,rent_index:29.2,cost_plus_rent_index:59.4,groceries_index:85.4,restaurant_price_index:88.6,local_purchasing_power_index:124.7,source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'}
         ],
         places:[
             {id:'ge_tbilisi',label:'Tbilisi, Georgia',summary:'Low tax, good flight access via TBS, moderate rent, strong fit for a between-contract base.',salary_power:'strong',flight_access:'medium',visa_residency:'strong',confidence:'curated'},
@@ -5802,14 +5881,19 @@ function informationIndexValue(v){
 function renderInformationCountryBaselines(snapshot){
     var countries=((snapshot&&snapshot.country_baselines)||[]).slice();
     if(!countries.length)return '<div class="info-empty">No country baseline available.</div>';
-    countries.sort(function(a,b){return (a.usd_salary_stretch_rank||999)-(b.usd_salary_stretch_rank||999);});
+    countries.sort(function(a,b){
+        var av=parseFloat(a.cost_plus_rent_index), bv=parseFloat(b.cost_plus_rent_index);
+        if(isNaN(av))av=999;
+        if(isNaN(bv))bv=999;
+        return av-bv;
+    });
     var first=countries[0]||{};
     var sourceUrl=first.source_url||'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026';
     var h='<div class="info-country-list">';
     h+='<div class="info-country-row head"><span>#</span><span>Country</span><span class="info-country-num">Cost+rent</span><span class="info-country-num">Rent</span><span class="info-country-num">Groceries</span><span class="info-country-num">Local power</span></div>';
-    countries.forEach(function(c){
+    countries.forEach(function(c,idx){
         h+='<div class="info-country-row">';
-        h+='<span class="info-pill">#'+esc(c.usd_salary_stretch_rank||'')+'</span>';
+        h+='<span class="info-pill">#'+esc(idx+1)+'</span>';
         h+='<span class="info-country-name">'+esc(c.country||'')+'</span>';
         h+='<span class="info-country-num"><small>Cost+rent</small>'+esc(informationIndexValue(c.cost_plus_rent_index))+'</span>';
         h+='<span class="info-country-num"><small>Rent</small>'+esc(informationIndexValue(c.rent_index))+'</span>';
@@ -5863,41 +5947,18 @@ async function showInformation(){
     var content=document.getElementById('scr-content');
     content.innerHTML='<div class="info-wrap"><div class="info-empty">Loading Information snapshot...</div></div>';
     show('scr-content');updateTabs('Information');
-    var profile=null, sp={}, work=[];
+    var profile=null, sp={};
     try{profile=await invoke('get_profile_status');}catch(e){}
     try{sp=await invoke('get_seafarer_personal');}catch(e){}
-    try{work=await invoke('get_work_history');}catch(e){work=[];}
     informationPersonal=sp||{};
     var snap=await loadInformationSnapshot(profile,sp);
-    var pct=profile?Math.round(profile.completeness_pct||0):0;
-    var profileComplete=pct>=85;
-    var seaServiceCount=(work||[]).filter(function(w){return String(w.imo||'').replace(/\D/g,'').length===7;}).length;
     var rank=informationEffectiveRank(sp)||'not set';
     var vessel=informationEffectiveVesselType(sp,profile)||'not set';
-    var hasInternalBand=!!informationPickBand(snap,sp);
     var h='<div class="info-wrap">';
-    h+='<div class="info-head"><div><h2>Information</h2><div class="info-sub">A reference point for a seafarer: what is normal, what is changing, and what needs a second look.</div></div>';
+    h+='<div class="info-head"><div><h2>Information</h2><div class="info-sub">Country cost baseline for a USD seafarer salary between contracts.</div></div>';
     h+='<div class="info-meta">'+informationSourceLabel(snap)+'<br>Updated '+esc(informationDate(snap.generated_at))+'<br>'+esc(rank)+' / '+esc(vessel)+'</div></div>';
-    h+='<div class="info-grid">';
-    h+=renderInformationBenchmarkCard(snap);
-    h+=renderInformationOfferCard(profileComplete,snap,sp);
-    h+='<div class="info-card"><div class="info-kicker">Method</div><h3>Confidence before precision</h3><p>Internal salary bands use Skipi vacancy aggregates only. Small samples are hidden; external cards are context, not salary truth.</p><div class="info-row"><span>Profile</span><span class="info-pill">'+pct+'%</span></div></div>';
-    h+='</div>';
-    if(!profileComplete){
-        h+='<div class="info-empty" style="margin-bottom:14px;">Complete your profile to personalize salary and market signals. Until then, this module shows broad reference points.</div>';
-    }
-    if(!hasInternalBand){
-        h+='<h3 style="font-size:14px;margin:18px 0 8px;">External reference</h3>';
-        h+=renderInformationReferences(snap);
-    }else{
-        h+='<h3 style="font-size:14px;margin:18px 0 8px;">Internal market signals</h3>';
-        h+=renderInformationSignals(snap);
-    }
     h+='<h3 style="font-size:14px;margin:18px 0 8px;">Country baseline</h3>';
     h+=renderInformationCountryBaselines(snap);
-    h+='<h3 style="font-size:14px;margin:18px 0 8px;">Vessel / employer baseline</h3>';
-    h+=renderInformationTrends(snap,seaServiceCount);
-    h+='<div class="info-empty" style="margin-top:12px;">'+esc(snap.source_note||'Aggregate snapshot only.')+'</div>';
     h+='</div>';
     content.innerHTML=h;
 }

@@ -113,6 +113,25 @@ pub struct PublicMailingRequest {
     pub hide_count: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecentVesselReview {
+    pub imo: i64,
+    #[serde(default)]
+    pub name_current: Option<String>,
+    #[serde(default)]
+    pub flag_current: Option<String>,
+    #[serde(default)]
+    pub vessel_type: Option<String>,
+    #[serde(default)]
+    pub latest_review_at: Option<String>,
+    #[serde(default)]
+    pub review_count: i64,
+    #[serde(default)]
+    pub signals_available: bool,
+    #[serde(default)]
+    pub average_overall: Option<f64>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct VacancyListResp {
     items: Vec<PublicVacancy>,
@@ -121,6 +140,11 @@ struct VacancyListResp {
 #[derive(Debug, Clone, Deserialize)]
 struct MailingRequestListResp {
     items: Vec<PublicMailingRequest>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct RecentVesselReviewListResp {
+    items: Vec<RecentVesselReview>,
 }
 
 #[tauri::command]
@@ -183,6 +207,19 @@ pub fn fetch_vessel_projection(imo: String) -> Result<serde_json::Value, String>
         .map_err(|e| e.to_string())?;
     let parsed: serde_json::Value = api::get_json(&client, &path)?;
     Ok(parsed)
+}
+
+#[tauri::command]
+pub fn fetch_recent_vessel_reviews(limit: Option<i64>) -> Result<Vec<RecentVesselReview>, String> {
+    let limit = limit.unwrap_or(10).clamp(1, 25);
+    let path = format!("/api/vessels/recent-reviews?limit={}", limit);
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(12))
+        .connect_timeout(std::time::Duration::from_secs(4))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let parsed: RecentVesselReviewListResp = api::get_json(&client, &path)?;
+    Ok(parsed.items)
 }
 
 #[tauri::command]

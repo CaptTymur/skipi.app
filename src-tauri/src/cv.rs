@@ -944,141 +944,160 @@ pub fn render_cv_pdf(
     cursor_y -= 4.0;
 
     // -------- Section heading: Sea Service --------
-    if cursor_y > margin + 40.0 {
-        cursor_y -= section_h;
-        pdf_fill_rect(
-            &layer,
-            margin,
-            cursor_y,
-            content_w,
-            section_h,
-            grey_bg.clone(),
-        );
-        pdf_text(
-            &layer,
-            "SEA SERVICE RECORD",
-            margin + 3.0,
-            cursor_y + 2.0,
-            9.0,
-            &bold,
-            accent.clone(),
-        );
-        cursor_y -= 1.0;
+    let sea_layer = if cursor_y <= margin + 40.0 {
+        let (page, page_layer) = doc.add_page(Mm(page_w as f32), Mm(page_h as f32), "Sea Service");
+        cursor_y = page_h - margin;
+        doc.get_page(page).get_layer(page_layer)
+    } else {
+        layer.clone()
+    };
 
-        // Columns: Vessel | IMO | Position | From | To
-        let col_vessel = content_w * 0.32;
-        let col_imo = content_w * 0.12;
-        let col_pos = content_w * 0.26;
-        let col_from = content_w * 0.15;
-        let _col_to = content_w - col_vessel - col_imo - col_pos - col_from;
+    cursor_y -= section_h;
+    pdf_fill_rect(
+        &sea_layer,
+        margin,
+        cursor_y,
+        content_w,
+        section_h,
+        grey_bg.clone(),
+    );
+    pdf_text(
+        &sea_layer,
+        "SEA SERVICE RECORD",
+        margin + 3.0,
+        cursor_y + 2.0,
+        9.0,
+        &bold,
+        accent.clone(),
+    );
+    cursor_y -= 1.0;
 
+    // Columns: Vessel | IMO | Position | From | To
+    let col_vessel = content_w * 0.32;
+    let col_imo = content_w * 0.12;
+    let col_pos = content_w * 0.26;
+    let col_from = content_w * 0.15;
+    let _col_to = content_w - col_vessel - col_imo - col_pos - col_from;
+
+    cursor_y -= cert_row_h;
+    pdf_fill_rect(
+        &sea_layer,
+        margin,
+        cursor_y,
+        content_w,
+        cert_row_h,
+        Color::Rgb(Rgb::new(0.85, 0.88, 0.94, None)),
+    );
+    pdf_text(
+        &sea_layer,
+        "VESSEL",
+        margin + 2.0,
+        cursor_y + 2.0,
+        7.5,
+        &bold,
+        dark.clone(),
+    );
+    pdf_text(
+        &sea_layer,
+        "IMO",
+        margin + col_vessel + 2.0,
+        cursor_y + 2.0,
+        7.5,
+        &bold,
+        dark.clone(),
+    );
+    pdf_text(
+        &sea_layer,
+        "POSITION",
+        margin + col_vessel + col_imo + 2.0,
+        cursor_y + 2.0,
+        7.5,
+        &bold,
+        dark.clone(),
+    );
+    pdf_text(
+        &sea_layer,
+        "SIGN ON",
+        margin + col_vessel + col_imo + col_pos + 2.0,
+        cursor_y + 2.0,
+        7.5,
+        &bold,
+        dark.clone(),
+    );
+    pdf_text(
+        &sea_layer,
+        "SIGN OFF",
+        margin + col_vessel + col_imo + col_pos + col_from + 2.0,
+        cursor_y + 2.0,
+        7.5,
+        &bold,
+        dark.clone(),
+    );
+
+    if data.work_history.is_empty() {
         cursor_y -= cert_row_h;
-        pdf_fill_rect(
-            &layer,
-            margin,
-            cursor_y,
-            content_w,
-            cert_row_h,
-            Color::Rgb(Rgb::new(0.85, 0.88, 0.94, None)),
-        );
+        pdf_stroke_rect(&sea_layer, margin, cursor_y, content_w, cert_row_h);
         pdf_text(
-            &layer,
-            "VESSEL",
+            &sea_layer,
+            "(no work history recorded)",
             margin + 2.0,
             cursor_y + 2.0,
-            7.5,
-            &bold,
+            8.0,
+            &reg,
+            subtle.clone(),
+        );
+    }
+    for w in &data.work_history {
+        if cursor_y < margin + 10.0 {
+            break;
+        }
+        cursor_y -= cert_row_h;
+        pdf_stroke_rect(&sea_layer, margin, cursor_y, content_w, cert_row_h);
+        pdf_text(
+            &sea_layer,
+            &truncate(&w.vessel_name, 28),
+            margin + 2.0,
+            cursor_y + 2.0,
+            8.0,
+            &reg,
             dark.clone(),
         );
         pdf_text(
-            &layer,
-            "IMO",
+            &sea_layer,
+            w.imo.as_deref().unwrap_or("—"),
             margin + col_vessel + 2.0,
             cursor_y + 2.0,
-            7.5,
-            &bold,
+            8.0,
+            &reg,
             dark.clone(),
         );
         pdf_text(
-            &layer,
-            "POSITION",
+            &sea_layer,
+            &truncate(&w.position, 22),
             margin + col_vessel + col_imo + 2.0,
             cursor_y + 2.0,
-            7.5,
-            &bold,
+            8.0,
+            &reg,
             dark.clone(),
         );
         pdf_text(
-            &layer,
-            "SIGN ON",
+            &sea_layer,
+            w.sign_on.as_deref().unwrap_or("—"),
             margin + col_vessel + col_imo + col_pos + 2.0,
             cursor_y + 2.0,
-            7.5,
-            &bold,
+            8.0,
+            &reg,
             dark.clone(),
         );
         pdf_text(
-            &layer,
-            "SIGN OFF",
+            &sea_layer,
+            w.sign_off.as_deref().unwrap_or("present"),
             margin + col_vessel + col_imo + col_pos + col_from + 2.0,
             cursor_y + 2.0,
-            7.5,
-            &bold,
+            8.0,
+            &reg,
             dark.clone(),
         );
-
-        for w in &data.work_history {
-            if cursor_y < margin + 10.0 {
-                break;
-            }
-            cursor_y -= cert_row_h;
-            pdf_stroke_rect(&layer, margin, cursor_y, content_w, cert_row_h);
-            pdf_text(
-                &layer,
-                &truncate(&w.vessel_name, 28),
-                margin + 2.0,
-                cursor_y + 2.0,
-                8.0,
-                &reg,
-                dark.clone(),
-            );
-            pdf_text(
-                &layer,
-                w.imo.as_deref().unwrap_or("—"),
-                margin + col_vessel + 2.0,
-                cursor_y + 2.0,
-                8.0,
-                &reg,
-                dark.clone(),
-            );
-            pdf_text(
-                &layer,
-                &truncate(&w.position, 22),
-                margin + col_vessel + col_imo + 2.0,
-                cursor_y + 2.0,
-                8.0,
-                &reg,
-                dark.clone(),
-            );
-            pdf_text(
-                &layer,
-                w.sign_on.as_deref().unwrap_or("—"),
-                margin + col_vessel + col_imo + col_pos + 2.0,
-                cursor_y + 2.0,
-                8.0,
-                &reg,
-                dark.clone(),
-            );
-            pdf_text(
-                &layer,
-                w.sign_off.as_deref().unwrap_or("present"),
-                margin + col_vessel + col_imo + col_pos + col_from + 2.0,
-                cursor_y + 2.0,
-                8.0,
-                &reg,
-                dark.clone(),
-            );
-        }
     }
 
     // -------- Footer --------
