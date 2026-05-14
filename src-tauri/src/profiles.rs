@@ -377,45 +377,16 @@ pub fn universal_base() -> Vec<DocTemplate> {
             typical_years: Some(10),
             notes: "National travel passport",
         },
-        // Seaman's Book — national (primary). Additional flag-state books can be added by user.
-        DocTemplate {
-            id: "seamans_book",
-            title: "Seaman's Book (Discharge Book)",
-            category: "Seaman's Book",
-            regulatory_basis: "National (flag state)",
-            has_expiry: false,
-            typical_years: None,
-            notes: "National seaman's book. Additional flag-state books can be added.",
-        },
-        // Seafarer's Identity Document
+        // Seafarer's Identity Document / national seaman book slot. In many
+        // administrations this is the same practical document for the user.
         DocTemplate {
             id: "sid",
-            title: "Seafarer's Identity Document (SID)",
+            title: "Seafarer's Identity Document / Seaman's Book",
             category: "Seaman's Book",
             regulatory_basis: "ILO C185",
             has_expiry: true,
             typical_years: Some(5),
-            notes: "ILO Seafarers' Identity Documents Convention",
-        },
-        // Visas
-        DocTemplate {
-            id: "visa_us",
-            title: "USA Visa (C1/D)",
-            category: "Visas",
-            regulatory_basis: "US Immigration and Nationality Act",
-            has_expiry: true,
-            typical_years: Some(10),
-            notes: "Transit/crewman visa. Required by ~50% of employers.",
-        },
-        DocTemplate {
-            id: "visa_schengen",
-            title: "Schengen Visa",
-            category: "Visas",
-            regulatory_basis: "EU Regulation 810/2009 (Visa Code)",
-            has_expiry: true,
-            typical_years: Some(5),
-            notes:
-                "Short-stay visa covering the Schengen Area. Useful for crew changes in EU ports.",
+            notes: "Primary seafarer identity/seaman book document. Additional flag-state books can be added separately.",
         },
         // Medical
         DocTemplate {
@@ -572,9 +543,6 @@ pub fn position_docs(pos_id: &str) -> Vec<DocTemplate> {
             DocTemplate { id: "radar_arpa", title: "Radar Navigation, Radar Plotting and ARPA",
                 category: "Deck Training", regulatory_basis: "STCW A-II/1",
                 has_expiry: false, typical_years: None, notes: "Radar observer / ARPA training" },
-            DocTemplate { id: "brm", title: "Bridge Resource Management (BRM)",
-                category: "Deck Training", regulatory_basis: "STCW A-II/1",
-                has_expiry: false, typical_years: None, notes: "" },
         ],
 
         // Management - Engine
@@ -866,6 +834,15 @@ pub fn conditional_seafarer_doc_templates() -> Vec<DocTemplate> {
 
 pub fn catalog_only_seafarer_doc_templates() -> Vec<DocTemplate> {
     vec![
+        DocTemplate { id: "seamans_book", title: "Seaman's Book (Discharge Book)",
+            category: "Seaman's Book", regulatory_basis: "National (flag state)",
+            has_expiry: false, typical_years: None, notes: "Additional national or discharge book if separate from the primary seafarer identity document." },
+        DocTemplate { id: "visa_us", title: "USA Visa (C1/D)",
+            category: "Visas", regulatory_basis: "US Immigration and Nationality Act",
+            has_expiry: true, typical_years: Some(10), notes: "Transit/crewman visa. Optional unless a vacancy, flag, port call, or employer specifically requires it." },
+        DocTemplate { id: "visa_schengen", title: "Schengen Visa",
+            category: "Visas", regulatory_basis: "EU Regulation 810/2009 (Visa Code)",
+            has_expiry: true, typical_years: Some(5), notes: "Useful for crew changes in EU ports. Optional unless a vacancy, route, or employer specifically requires it." },
         DocTemplate { id: "dangerous_hazardous_substances", title: "Dangerous and Hazardous Substances (Solid Bulk and Packaged)",
             category: "Bulk Carrier Specific", regulatory_basis: "STCW B-V/b, B-V/c; IMDG/IMSBC Code",
             has_expiry: true, typical_years: Some(5), notes: "Cargo-specific training for ships carrying dangerous and hazardous substances in solid bulk or packaged form" },
@@ -919,6 +896,7 @@ pub fn doc_template_by_title_or_id(value: &str) -> Option<DocTemplate> {
         | "flagbook"
         | "flagstateseamansbook"
         | "flagstateseamanbook" => Some("flag_seamans_book"),
+        "sid" | "seafarersidentitydocument" | "seafarersidentitydocumentsid" => Some("sid"),
         "goc" | "gmdssgoc" | "gmdssgeneraloperatorscertificate" => Some("gmdss_goc"),
         _ => None,
     };
@@ -1122,12 +1100,11 @@ pub fn applicable_frameworks_for_seafarer(
         stcw_requires.push("Medical Care on Board (VI/4-2)");
         stcw_requires.push("Designated Security Duties (VI/6-2)");
     }
-    if matches!(
-        pos_id,
-        "master" | "chief_officer" | "second_officer" | "third_officer"
-    ) {
+    if matches!(pos_id, "master" | "chief_officer" | "second_officer" | "third_officer") {
         stcw_requires.push("ECDIS Training Certificate");
         stcw_requires.push("Radar / ARPA Training");
+    }
+    if matches!(pos_id, "master" | "chief_officer") {
         stcw_requires.push("Bridge Resource Management");
     }
     if matches!(

@@ -389,24 +389,10 @@ const SEAFARER_BASE: &[DocTemplate] = &[
     },
     DocTemplate {
         category: "Seaman's Book",
-        title: "Seaman's Book (Discharge Book)",
-        has_expiry: false,
-        typical_years: None,
-        notes: "National seaman's book",
-    },
-    DocTemplate {
-        category: "Seaman's Book",
-        title: "Seafarer's Identity Document (SID)",
+        title: "Seafarer's Identity Document / Seaman's Book",
         has_expiry: true,
         typical_years: Some(5),
-        notes: "ILO C185",
-    },
-    DocTemplate {
-        category: "Visas",
-        title: "USA Visa (C1/D)",
-        has_expiry: true,
-        typical_years: Some(10),
-        notes: "Transit/crewman visa",
+        notes: "Primary seafarer identity/seaman book document",
     },
     DocTemplate {
         category: "Safety",
