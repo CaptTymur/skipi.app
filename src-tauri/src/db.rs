@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection, Result};
+use rusqlite::{params, Connection, OptionalExtension, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 #[cfg(unix)]
@@ -220,6 +220,31 @@ fn migrations() -> Vec<(u32, &'static str)> {
             ALTER TABLE work_history ADD COLUMN teu TEXT;
         "#,
         ),
+        // Migration 8: local receipt of vessel reviews sent by this vault.
+        // The public review goes to the server; this table keeps the user's
+        // own rating visible in Sea Service and enforces the local edit lock.
+        (
+            8,
+            r#"
+            CREATE TABLE IF NOT EXISTS vessel_review_receipts (
+                id TEXT PRIMARY KEY,
+                work_history_id TEXT NOT NULL,
+                vessel_imo TEXT NOT NULL,
+                vessel_name TEXT,
+                overall_rating REAL NOT NULL,
+                summary_json TEXT NOT NULL DEFAULT '{}',
+                submitted_at TEXT NOT NULL,
+                lock_until TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(work_history_id) REFERENCES work_history(id) ON DELETE CASCADE
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_vessel_review_receipts_work_history_id
+                ON vessel_review_receipts(work_history_id);
+            CREATE INDEX IF NOT EXISTS idx_vessel_review_receipts_imo
+                ON vessel_review_receipts(vessel_imo);
+        "#,
+        ),
     ]
 }
 
@@ -429,6 +454,58 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0]["dwt"], "");
         assert_eq!(entries[0]["teu"], "5100");
+
+        drop(conn);
+        let _ = fs::remove_dir_all(&vault_path);
+    }
+
+    #[test]
+    fn work_history_includes_local_vessel_review_receipt() {
+        let vault_path = env::temp_dir().join(format!("skipi-review-receipt-{}", Uuid::new_v4()));
+        fs::create_dir_all(&vault_path).unwrap();
+        let conn = open_db(&vault_path).unwrap();
+
+        add_work_entry(
+            &conn,
+            "entry-review-1",
+            "MV Rated",
+            Some("Bulk Carrier"),
+            Some("9855551"),
+            Some("Panama"),
+            Some("Test Manager"),
+            "Third Officer",
+            Some("2025-01-10"),
+            Some("2025-07-20"),
+            Some("82000"),
+            None,
+            None,
+        )
+        .unwrap();
+
+        upsert_vessel_review_receipt(
+            &conn,
+            "receipt-1",
+            "entry-review-1",
+            "9855551",
+            Some("MV Rated"),
+            4.2,
+            r#"{"sections":[{"title":"Food","rating":4}]}"#,
+            "2026-05-14T10:00:00Z",
+            "2026-06-13T10:00:00Z",
+        )
+        .unwrap();
+
+        let entries = get_work_history(&conn).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["local_review"]["overall_rating"], 4.2);
+        assert_eq!(
+            entries[0]["local_review"]["summary"]["sections"][0]["title"],
+            "Food"
+        );
+        assert_eq!(
+            entries[0]["local_review"]["lock_until"],
+            "2026-06-13T10:00:00Z"
+        );
 
         drop(conn);
         let _ = fs::remove_dir_all(&vault_path);
@@ -829,11 +906,30 @@ pub fn add_work_entry(
 
 pub fn get_work_history(conn: &Connection) -> Result<Vec<serde_json::Value>> {
     let mut stmt = conn.prepare(
-        "SELECT id, vessel_name, vessel_type, imo, flag, company, position, sign_on, sign_off, notes, created_at, evidence_folder, dwt, teu
-         FROM work_history ORDER BY COALESCE(sign_on, created_at) DESC"
+        "SELECT wh.id, wh.vessel_name, wh.vessel_type, wh.imo, wh.flag, wh.company, wh.position,
+                wh.sign_on, wh.sign_off, wh.notes, wh.created_at, wh.evidence_folder, wh.dwt, wh.teu,
+                vr.overall_rating, vr.summary_json, vr.submitted_at, vr.lock_until
+         FROM work_history wh
+         LEFT JOIN vessel_review_receipts vr ON vr.work_history_id = wh.id
+         ORDER BY COALESCE(wh.sign_on, wh.created_at) DESC"
     )?;
     let rows = stmt
         .query_map([], |row| {
+            let overall_rating = row.get::<_, Option<f64>>(14)?;
+            let summary = row
+                .get::<_, Option<String>>(15)?
+                .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+                .unwrap_or_else(|| serde_json::json!({}));
+            let local_review = if let Some(rating) = overall_rating {
+                serde_json::json!({
+                    "overall_rating": rating,
+                    "summary": summary,
+                    "submitted_at": row.get::<_, Option<String>>(16)?,
+                    "lock_until": row.get::<_, Option<String>>(17)?,
+                })
+            } else {
+                serde_json::Value::Null
+            };
             Ok(serde_json::json!({
                 "id": row.get::<_, String>(0)?,
                 "vessel_name": row.get::<_, String>(1)?,
@@ -849,10 +945,75 @@ pub fn get_work_history(conn: &Connection) -> Result<Vec<serde_json::Value>> {
                 "evidence_folder": row.get::<_, Option<String>>(11)?,
                 "dwt": row.get::<_, Option<String>>(12)?,
                 "teu": row.get::<_, Option<String>>(13)?,
+                "local_review": local_review,
             }))
         })?
         .collect::<Result<Vec<_>>>()?;
     Ok(rows)
+}
+
+pub fn get_vessel_review_receipt(
+    conn: &Connection,
+    work_history_id: &str,
+) -> Result<Option<serde_json::Value>> {
+    conn.query_row(
+        "SELECT vessel_imo, vessel_name, overall_rating, summary_json, submitted_at, lock_until
+         FROM vessel_review_receipts WHERE work_history_id = ?1",
+        params![work_history_id],
+        |row| {
+            let summary = row
+                .get::<_, Option<String>>(3)?
+                .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+                .unwrap_or_else(|| serde_json::json!({}));
+            Ok(serde_json::json!({
+                "work_history_id": work_history_id,
+                "vessel_imo": row.get::<_, String>(0)?,
+                "vessel_name": row.get::<_, Option<String>>(1)?,
+                "overall_rating": row.get::<_, f64>(2)?,
+                "summary": summary,
+                "submitted_at": row.get::<_, String>(4)?,
+                "lock_until": row.get::<_, String>(5)?,
+            }))
+        },
+    )
+    .optional()
+}
+
+pub fn upsert_vessel_review_receipt(
+    conn: &Connection,
+    id: &str,
+    work_history_id: &str,
+    vessel_imo: &str,
+    vessel_name: Option<&str>,
+    overall_rating: f64,
+    summary_json: &str,
+    submitted_at: &str,
+    lock_until: &str,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO vessel_review_receipts
+            (id, work_history_id, vessel_imo, vessel_name, overall_rating, summary_json, submitted_at, lock_until, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, datetime('now'), datetime('now'))
+         ON CONFLICT(work_history_id) DO UPDATE SET
+            vessel_imo = excluded.vessel_imo,
+            vessel_name = excluded.vessel_name,
+            overall_rating = excluded.overall_rating,
+            summary_json = excluded.summary_json,
+            submitted_at = excluded.submitted_at,
+            lock_until = excluded.lock_until,
+            updated_at = datetime('now')",
+        params![
+            id,
+            work_history_id,
+            vessel_imo,
+            vessel_name,
+            overall_rating,
+            summary_json,
+            submitted_at,
+            lock_until
+        ],
+    )?;
+    Ok(())
 }
 
 pub fn set_work_evidence_folder(

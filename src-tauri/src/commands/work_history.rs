@@ -7,6 +7,15 @@ use tauri::State;
 const SEA_SERVICE_DOCS_DIR: &str = "Sea Service";
 const LEGACY_WORK_HISTORY_DIR: &str = "_work_history";
 
+pub(crate) fn normalize_required_imo(imo: Option<String>) -> Result<String, String> {
+    let raw = imo.unwrap_or_default();
+    let digits: String = raw.chars().filter(|c| c.is_ascii_digit()).collect();
+    if digits.len() != 7 {
+        return Err("IMO number is required and must contain exactly 7 digits".to_string());
+    }
+    Ok(digits)
+}
+
 #[tauri::command]
 pub fn add_work_history(
     state: State<AppState>,
@@ -25,12 +34,13 @@ pub fn add_work_history(
     let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = lock.as_ref().ok_or("No vault open")?;
     let id = uuid::Uuid::new_v4().to_string();
+    let imo = normalize_required_imo(imo)?;
     db::add_work_entry(
         conn,
         &id,
         &vessel_name,
         vessel_type.as_deref(),
-        imo.as_deref(),
+        Some(imo.as_str()),
         flag.as_deref(),
         company.as_deref(),
         &position,
@@ -508,5 +518,17 @@ mod tests {
 
         drop(conn);
         let _ = fs::remove_dir_all(&vault_path);
+    }
+
+    #[test]
+    fn normalize_required_imo_requires_seven_digits() {
+        assert_eq!(
+            normalize_required_imo(Some("IMO 9855551".to_string())).unwrap(),
+            "9855551"
+        );
+        assert!(normalize_required_imo(Some("".to_string())).is_err());
+        assert!(normalize_required_imo(None).is_err());
+        assert!(normalize_required_imo(Some("98555".to_string())).is_err());
+        assert!(normalize_required_imo(Some("12345678".to_string())).is_err());
     }
 }

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.129';
+var APP_VERSION='0.4.130';
 var UI_LANG_KEY='skipi-ui-language';
 var UI_LANG_OPTIONS=[
     ['ru','Русский'],
@@ -338,6 +338,14 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .exp-vessel-rating-link.empty .stars { color:var(--text2); opacity:.55; }
 .exp-vessel-rating-link .meta { color:var(--text2); font-size:11px; }
 .exp-vessel-rating-link:hover .meta { color:var(--accent); text-decoration:underline; }
+.own-vessel-review { margin-top:7px; display:flex; align-items:center; gap:7px; flex-wrap:wrap; border:1px solid rgba(226,185,61,.28); background:rgba(226,185,61,.08); border-radius:5px; padding:5px 8px; font-size:11px; color:var(--text2); }
+.own-vessel-review .stars { color:var(--yellow); font-size:14px; line-height:1; letter-spacing:1px; }
+.own-vessel-review .meta strong { color:var(--text); }
+.own-vessel-review.locked { border-color:rgba(101,83,235,.30); background:var(--accent-bg); }
+.local-review-section { border:1px solid var(--border); border-radius:6px; padding:8px 10px; margin:8px 0; }
+.local-review-section-title { display:flex; justify-content:space-between; gap:8px; font-weight:700; font-size:12px; }
+.local-review-meta { color:var(--text2); font-size:11px; line-height:1.45; margin-top:3px; }
+.local-review-chip { display:inline-block; border:1px solid var(--border); border-radius:4px; padding:2px 7px; margin:3px 4px 0 0; font-size:11px; color:var(--text2); }
 .vdb-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:10px; }
 .vdb-card { border:1px solid var(--border); border-radius:6px; padding:12px 14px; background:var(--bg); min-width:0; }
 .vdb-card-title { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
@@ -739,7 +747,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p id="welcome-subtitle">Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.129</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.130</span></p>
                 <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -3895,6 +3903,40 @@ function normalizeImo(imo){
     var s=String(imo||'').replace(/\D/g,'');
     return /^\d{7}$/.test(s)?s:null;
 }
+function parseLocalReviewDate(value){
+    if(!value)return null;
+    var d=new Date(value);
+    return isNaN(d.getTime())?null:d;
+}
+function formatLocalReviewDate(value){
+    var d=parseLocalReviewDate(value);
+    return d?d.toISOString().slice(0,10):String(value||'');
+}
+function localReviewLocked(review){
+    var d=parseLocalReviewDate(review&&review.lock_until);
+    return !!(d&&d.getTime()>Date.now());
+}
+function localReviewStars(value){
+    var n=Number(value);
+    var full=isFinite(n)?Math.max(0,Math.min(5,Math.round(n))):0;
+    var out='';
+    for(var i=1;i<=5;i++)out+=i<=full?'★':'☆';
+    return out;
+}
+function localReviewRatingText(value){
+    var n=Number(value);
+    return isFinite(n)?n.toFixed(1)+'/5':'not rated';
+}
+function renderOwnVesselReview(entry){
+    var review=entry&&entry.local_review;
+    if(!review||review===null||review.overall_rating===undefined||review.overall_rating===null)return '';
+    var locked=localReviewLocked(review);
+    var meta='<strong>Your rating: '+esc(localReviewRatingText(review.overall_rating))+'</strong>';
+    if(review.submitted_at)meta+=' · submitted '+esc(formatLocalReviewDate(review.submitted_at));
+    if(locked)meta+=' · locked until '+esc(formatLocalReviewDate(review.lock_until));
+    else meta+=' · can be updated';
+    return '<div class="own-vessel-review '+(locked?'locked':'')+'"><span class="stars">'+localReviewStars(review.overall_rating)+'</span><span class="meta">'+meta+'</span></div>';
+}
 function readVesselReviewCache(){
     if(vesselReviewCache)return vesselReviewCache;
     try{vesselReviewCache=JSON.parse(localStorage.getItem(VESSEL_REVIEW_CACHE_KEY)||'{}')||{};}
@@ -4557,10 +4599,75 @@ async function openReviewFromImo(imo){
         await openReviewForm(matches[0]);
     }catch(e){showToast('Error: '+e,'error');logError('open_review_imo',e);}
 }
+function closeLocalReviewDetails(){
+    var el=document.getElementById('local-review-details-overlay');
+    if(el)el.remove();
+}
+async function showLocalReviewDetails(entryId){
+    try{
+        var entries=await invoke('get_work_history')||[];
+        var w=entries.find(function(e){return e.id===entryId;});
+        if(!w||!w.local_review){showToast('No local review found','warn');return;}
+        showLocalReviewDetailsForEntry(w);
+    }catch(e){showToast('Error: '+e,'error');logError('local_review_details',e);}
+}
+function showLocalReviewDetailsForEntry(entry){
+    var review=entry&&entry.local_review;
+    if(!review||review===null){showToast('No local review found','warn');return;}
+    closeLocalReviewDetails();
+    var summary=review.summary||{};
+    var locked=localReviewLocked(review);
+    var h='<div id="local-review-details-overlay" class="modal-overlay open" onclick="if(event.target===this)closeLocalReviewDetails();">';
+    h+='<div class="modal-panel" style="width:min(680px,92vw);">';
+    h+='<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">';
+    h+='<div><h3 style="margin:0 0 4px;">Your vessel review</h3>';
+    h+='<div class="local-review-meta">'+esc(entry.vessel_name||'Vessel')+(entry.imo?' · IMO '+esc(entry.imo):'')+(entry.position?' · '+esc(entry.position):'')+'</div></div>';
+    h+='<button class="btn btn-sm btn-outline" onclick="closeLocalReviewDetails()">&times;</button></div>';
+    h+='<div class="own-vessel-review '+(locked?'locked':'')+'" style="margin-top:12px;"><span class="stars">'+localReviewStars(review.overall_rating)+'</span><span class="meta"><strong>'+esc(localReviewRatingText(review.overall_rating))+'</strong>';
+    if(review.submitted_at)h+=' · submitted '+esc(formatLocalReviewDate(review.submitted_at));
+    if(locked)h+=' · cannot be changed until '+esc(formatLocalReviewDate(review.lock_until));
+    else h+=' · available for update';
+    h+='</span></div>';
+    var sections=summary.sections||[];
+    if(sections.length){
+        h+='<div style="margin-top:12px;">';
+        sections.forEach(function(sec){
+            h+='<div class="local-review-section">';
+            h+='<div class="local-review-section-title"><span>'+esc(sec.title||sec.id||'Section')+'</span><span>'+esc(localReviewRatingText(sec.rating))+'</span></div>';
+            if(sec.comment)h+='<div class="local-review-meta">'+esc(sec.comment)+'</div>';
+            (sec.items||[]).forEach(function(it){
+                h+='<div class="local-review-meta">'+esc(it.title||it.id||'Item')+' · '+esc(localReviewRatingText(it.rating))+(it.comment?' · '+esc(it.comment):'')+'</div>';
+            });
+            h+='</div>';
+        });
+        h+='</div>';
+    }
+    var warnings=summary.warning_flags||[];
+    if(warnings.length){
+        h+='<div style="margin-top:10px;"><div class="local-review-meta" style="font-weight:700;color:var(--text);">Warning flags</div>';
+        warnings.forEach(function(fl){h+='<span class="local-review-chip">'+esc(fl.title||fl.id||fl)+'</span>';});
+        h+='</div>';
+    }
+    ['best_thing','worst_thing','advice'].forEach(function(key){
+        if(!summary[key])return;
+        var label=key==='best_thing'?'Best thing':(key==='worst_thing'?'Worst thing':'Advice');
+        h+='<div class="local-review-section"><div class="local-review-section-title">'+esc(label)+'</div><div class="local-review-meta">'+esc(summary[key])+'</div></div>';
+    });
+    h+='<div class="actions" style="margin-top:14px;text-align:right;">';
+    h+='<button class="btn btn-outline" onclick="closeLocalReviewDetails()">Close</button>';
+    if(!locked)h+='<button class="btn btn-accent" onclick="closeLocalReviewDetails();openReviewFromEntryId(\''+escAttr(entry.id)+'\')">Update review</button>';
+    h+='</div></div></div>';
+    document.body.insertAdjacentHTML('beforeend',h);
+}
 async function openReviewForm(workEntry){
     if(!workEntry||!workEntry.id)return;
     var imo=normalizeImo(workEntry.imo);
     if(!imo){showToast('Vessel needs an IMO to write a review','warn');return;}
+    if(localReviewLocked(workEntry.local_review)){
+        showToast('This review can be changed after '+formatLocalReviewDate(workEntry.local_review.lock_until),'warn');
+        showLocalReviewDetailsForEntry(workEntry);
+        return;
+    }
     var gate=await getSeaServiceUnlockState();
     if(!gate.ok){
         showToast('Complete the minimum document structure before adding vessel reviews','warn');
@@ -4648,6 +4755,73 @@ function validateReviewForm(){
         }
     }
     return{ok:errors.length===0,errors:errors,rated:rated,min:minRated};
+}
+function computeLocalReviewOverall(state){
+    var vals=[];
+    Object.keys((state&&state.sections)||{}).forEach(function(sid){
+        var sec=state.sections[sid];if(!sec||!sec.mode||sec.mode==='na')return;
+        if(sec.mode==='rough'&&sec.rating!=null){
+            vals.push(Number(sec.rating));
+        }else if(sec.mode==='detailed'){
+            Object.keys(sec.items||{}).forEach(function(iid){
+                var it=sec.items[iid];
+                if(it&&it.rating!=null)vals.push(Number(it.rating));
+            });
+        }
+    });
+    vals=vals.filter(function(v){return isFinite(v)&&v>=1&&v<=5;});
+    if(!vals.length)return null;
+    var sum=vals.reduce(function(a,b){return a+b;},0);
+    return Math.round((sum/vals.length)*10)/10;
+}
+function warningFlagLabelsFromSchema(schema){
+    var out={};
+    var flags=(((schema||{}).definition||{}).warning_flags)||[];
+    flags.forEach(function(fl){
+        var id=(typeof fl==='string')?fl:fl.id;
+        if(!id)return;
+        out[id]=(typeof fl==='string')?String(fl).replace(/_/g,' '):(fl.title||String(id).replace(/_/g,' '));
+    });
+    return out;
+}
+function buildLocalReviewSummary(state){
+    var def=(state.schema&&state.schema.definition)||{};
+    var sections=def.sections||[];
+    var outSections=[];
+    sections.forEach(function(sec){
+        var st=state.sections[sec.id];
+        if(!st||!st.mode||st.mode==='na')return;
+        var row={id:sec.id,title:sec.title||sec.id,mode:st.mode,rating:null,comment:(st.comment||'').trim()||null,items:[]};
+        if(st.mode==='rough'){
+            if(st.rating==null)return;
+            row.rating=Number(st.rating);
+        }else if(st.mode==='detailed'){
+            var vals=[];
+            (sec.items||[]).forEach(function(it){
+                var ist=(st.items&&st.items[it.id])||null;
+                if(!ist||ist.rating==null)return;
+                var rating=Number(ist.rating);
+                if(isFinite(rating)){
+                    vals.push(rating);
+                    row.items.push({id:it.id,title:it.title||it.id,rating:rating,comment:(ist.comment||'').trim()||null});
+                }
+            });
+            if(!row.items.length)return;
+            row.rating=Math.round((vals.reduce(function(a,b){return a+b;},0)/vals.length)*10)/10;
+        }
+        outSections.push(row);
+    });
+    var labels=warningFlagLabelsFromSchema(state.schema);
+    var warnings=(state.warning_flags||[]).map(function(id){return {id:id,title:labels[id]||String(id).replace(/_/g,' ')};});
+    return {
+        schema_version:state.schema.version_id||null,
+        overall_rating:computeLocalReviewOverall(state),
+        sections:outSections,
+        warning_flags:warnings,
+        best_thing:(state.best_thing||'').trim()||null,
+        worst_thing:(state.worst_thing||'').trim()||null,
+        advice:(state.advice||'').trim()||null
+    };
 }
 function renderReviewForm(){
     var s=REVIEW_FORM_STATE;if(!s)return;
@@ -4793,10 +4967,30 @@ async function submitReviewForm(){
             var body=await r.text();
             throw new Error('HTTP '+r.status+': '+body.slice(0,300));
         }
+        var localSummary=buildLocalReviewSummary(s);
+        if(localSummary.overall_rating==null){
+            throw new Error('Could not calculate local overall rating');
+        }
+        try{
+            await invoke('record_local_vessel_review',{
+                workHistoryId:s.work.id,
+                vesselImo:s.imo,
+                vesselName:s.work.vessel_name||null,
+                overallRating:localSummary.overall_rating,
+                summaryJson:localSummary
+            });
+        }catch(localErr){
+            showToast('Review published, but local rating was not saved: '+localErr,'warn');
+            logError('review_local_receipt',localErr);
+        }
         clearReviewDraft(s.work.id);
         var imo=normalizeImo(s.work.imo);
+        var refreshExperience=(typeof currentView!=='undefined'&&currentView==='experience');
         closeReviewForm();
         showToast('Review published','success');
+        if(refreshExperience){
+            try{await showWorkHistory();}catch(refreshErr){logError('review_refresh_experience',refreshErr);}
+        }
         if(imo){
             try{await fetchVesselReviewProjection(imo,true);}catch(_){}
         }
@@ -4863,11 +5057,21 @@ async function showWorkHistory(){
             if(normImo){
                 h+='<div class="exp-vessel-db-strip" id="exp-vdb-'+escAttr(e.id)+'" data-exp-vdb-imo="'+normImo+'" data-exp-vdb-entry="'+escAttr(e.id)+'" data-exp-vdb-vessel="'+escAttr(e.vessel_name||'')+'"></div>';
             }
+            h+=renderOwnVesselReview(e);
             h+='</div>';
             h+='<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;">';
             h+='<button class="btn btn-sm btn-outline" onclick="attachWorkFile(\''+e.id+'\')">+ Attach</button>';
-            if(normalizeImo(e.imo)){
-                h+='<button class="btn btn-sm btn-outline" onclick="openReviewFromEntryId(\''+e.id+'\')" title="Write a structured review of this vessel">&#9733; Write review</button>';
+            if(normImo){
+                var localReview=e.local_review;
+                var hasLocalReview=localReview&&localReview!==null&&localReview.overall_rating!==undefined&&localReview.overall_rating!==null;
+                if(hasLocalReview){
+                    h+='<button class="btn btn-sm btn-outline" onclick="showLocalReviewDetails(\''+e.id+'\')" title="View your saved vessel review">&#9733; View rating</button>';
+                    if(!localReviewLocked(localReview)){
+                        h+='<button class="btn btn-sm btn-outline" onclick="openReviewFromEntryId(\''+e.id+'\')" title="Update this vessel review">Update review</button>';
+                    }
+                }else{
+                    h+='<button class="btn btn-sm btn-outline" onclick="openReviewFromEntryId(\''+e.id+'\')" title="Write a structured review of this vessel">&#9733; Write review</button>';
+                }
             }
             h+='<button class="btn btn-sm btn-outline btn-red" onclick="delWork(\''+e.id+'\')">Delete</button>';
             h+='</div>';
@@ -4931,7 +5135,7 @@ async function showAddWork(){
     h+='<div style="max-width:480px;">';
     h+='<div class="field-grid">';
     h+='<div class="field"><label>Vessel Name *</label><input id="wh-vessel" list="wh-prev-vessels" placeholder="M/V Example" autocomplete="off"></div>';
-    h+='<div class="field"><label>IMO Number</label><input id="wh-imo" placeholder="1234567"></div>';
+    h+='<div class="field"><label>IMO Number *</label><input id="wh-imo" inputmode="numeric" placeholder="1234567" required><div style="font-size:10px;color:var(--text2);margin-top:3px;">7 digits required for vessel database and reviews.</div></div>';
     h+='<div class="field"><label>Vessel Type</label><select id="wh-type"></select></div>';
     h+='<div class="field"><label>DWT</label><input id="wh-dwt" type="text" inputmode="numeric" placeholder="e.g. 82000"></div>';
     h+='<div class="field"><label>TEU</label><input id="wh-teu" type="text" inputmode="numeric" placeholder="container ships"></div>';
@@ -4984,6 +5188,12 @@ async function saveWork(){
     var v=function(id){return document.getElementById(id).value.trim()||null;};
     var vessel=v('wh-vessel'),pos=v('wh-position');
     if(!vessel||!pos){alert('Vessel name and Position are required');return;}
+    var imo=normalizeImo(v('wh-imo'));
+    if(!imo){
+        showToast('IMO Number is required and must contain exactly 7 digits','warn');
+        var imoEl=document.getElementById('wh-imo');if(imoEl)imoEl.focus();
+        return;
+    }
     var gate=await getSeaServiceUnlockState();
     if(!gate.ok){
         showToast('Complete the minimum document structure before adding Sea Service','warn');
@@ -4994,7 +5204,7 @@ async function saveWork(){
         await invoke('add_work_history',{
             vesselName:vessel,
             vesselType:v('wh-type'),
-            imo:v('wh-imo'),
+            imo:imo,
             flag:v('wh-flag'),
             company:v('wh-company'),
             position:pos,

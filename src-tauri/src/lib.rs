@@ -245,6 +245,7 @@ pub fn run() {
             // Vessel review identity (separate from crewing-facing identity)
             review::get_or_create_review_pubkey,
             review::compute_local_experience_hash,
+            review::record_local_vessel_review,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

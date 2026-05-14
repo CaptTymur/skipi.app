@@ -4,10 +4,12 @@
 // with their vessel reviews. The raw review_pubkey is sent only with the
 // review request; the server stores a secret-derived reviewer_hash.
 
-use crate::AppState;
+use crate::{db, AppState};
 use base64::Engine;
+use chrono::{DateTime, Duration, Utc};
 use ed25519_dalek::SigningKey;
 use rand_core::OsRng;
+use rusqlite::OptionalExtension;
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -15,6 +17,23 @@ use tauri::State;
 
 fn review_sk_path(vault: &Path) -> PathBuf {
     vault.join("_identity").join("review_sk.bin")
+}
+
+fn normalize_imo(imo: &str) -> Result<String, String> {
+    let digits: String = imo.chars().filter(|c| c.is_ascii_digit()).collect();
+    if digits.len() != 7 {
+        return Err("IMO number is required and must contain exactly 7 digits".to_string());
+    }
+    Ok(digits)
+}
+
+fn is_locked(lock_until: Option<&str>) -> bool {
+    let Some(lock_until) = lock_until else {
+        return false;
+    };
+    DateTime::parse_from_rfc3339(lock_until)
+        .map(|dt| dt.with_timezone(&Utc) > Utc::now())
+        .unwrap_or(false)
 }
 
 fn ensure_review_keypair(vault: &Path) -> Result<SigningKey, String> {
@@ -70,4 +89,71 @@ pub fn compute_local_experience_hash(
     hasher.update(b"|");
     hasher.update(work_history_id.as_bytes());
     Ok(hex::encode(hasher.finalize()))
+}
+
+#[tauri::command]
+pub fn record_local_vessel_review(
+    state: State<AppState>,
+    work_history_id: String,
+    vessel_imo: String,
+    vessel_name: Option<String>,
+    overall_rating: f64,
+    summary_json: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    if !overall_rating.is_finite() || !(1.0..=5.0).contains(&overall_rating) {
+        return Err("Overall rating must be between 1 and 5".to_string());
+    }
+    let imo = normalize_imo(&vessel_imo)?;
+    let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = lock.as_ref().ok_or("No vault open")?;
+
+    let entry_imo: Option<String> = conn
+        .query_row(
+            "SELECT imo FROM work_history WHERE id = ?1",
+            rusqlite::params![work_history_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let entry_imo = entry_imo.ok_or("Work history entry not found")?;
+    if normalize_imo(&entry_imo)? != imo {
+        return Err("Review IMO does not match the Sea Service entry".to_string());
+    }
+
+    if let Some(existing) =
+        db::get_vessel_review_receipt(conn, &work_history_id).map_err(|e| e.to_string())?
+    {
+        let lock_until = existing.get("lock_until").and_then(|v| v.as_str());
+        if is_locked(lock_until) {
+            return Err(format!(
+                "This vessel review is locked until {}",
+                lock_until.unwrap_or("the lock date")
+            ));
+        }
+    }
+
+    let now = Utc::now();
+    let submitted_at = now.format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let lock_until = (now + Duration::days(30))
+        .format("%Y-%m-%dT%H:%M:%SZ")
+        .to_string();
+    let summary_text = serde_json::to_string(&summary_json).map_err(|e| e.to_string())?;
+    let receipt_id = uuid::Uuid::new_v4().to_string();
+
+    db::upsert_vessel_review_receipt(
+        conn,
+        &receipt_id,
+        &work_history_id,
+        &imo,
+        vessel_name.as_deref(),
+        overall_rating,
+        &summary_text,
+        &submitted_at,
+        &lock_until,
+    )
+    .map_err(|e| e.to_string())?;
+
+    db::get_vessel_review_receipt(conn, &work_history_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Review receipt was not saved".to_string())
 }
