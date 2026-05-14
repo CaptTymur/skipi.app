@@ -24,11 +24,11 @@ fn is_loopback_api_base(base: &str) -> bool {
 pub(crate) fn api_bases() -> Vec<String> {
     if let Some(base) = env_api_base() {
         if is_loopback_api_base(&base) {
-            return vec![base, RU_API.to_string(), PRIMARY_API.to_string()];
+            return vec![base, PRIMARY_API.to_string(), RU_API.to_string()];
         }
         return vec![base];
     }
-    vec![RU_API.to_string(), PRIMARY_API.to_string()]
+    vec![PRIMARY_API.to_string(), RU_API.to_string()]
 }
 
 fn normalize_api_base(base: &str) -> String {

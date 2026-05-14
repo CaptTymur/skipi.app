@@ -914,10 +914,10 @@ var SKIPI_API_OVERRIDE_KEY = 'skipi-api-base';
 var SKIPI_ACTIVE_API_KEY = 'skipi-active-api-base';
 var SKIPI_API_OVERRIDE = localStorage.getItem(SKIPI_API_OVERRIDE_KEY) || '';
 var SKIPI_API_BASE = normalizeApiBase(
-    SKIPI_API_OVERRIDE || localStorage.getItem(SKIPI_ACTIVE_API_KEY) || SKIPI_RU_API_BASE
+    SKIPI_API_OVERRIDE || localStorage.getItem(SKIPI_ACTIVE_API_KEY) || SKIPI_PRIMARY_API_BASE
 );
 function normalizeApiBase(base){
-    return String(base || SKIPI_RU_API_BASE).trim().replace(/\/+$/,'');
+    return String(base || SKIPI_PRIMARY_API_BASE).trim().replace(/\/+$/,'');
 }
 function isLoopbackApiBase(base){
     var b=normalizeApiBase(base).toLowerCase();
@@ -927,7 +927,7 @@ function isLoopbackApiBase(base){
         || b.indexOf('https://localhost')===0;
 }
 function apiBase(){
-    return normalizeApiBase(SKIPI_API_BASE || SKIPI_RU_API_BASE);
+    return normalizeApiBase(SKIPI_API_BASE || SKIPI_PRIMARY_API_BASE);
 }
 function apiBaseCandidates(){
     if(SKIPI_API_OVERRIDE){
@@ -941,8 +941,8 @@ function apiBaseCandidates(){
             if(normalized&&localBases.indexOf(normalized)===-1)localBases.push(normalized);
         }
         addLocal(overrideBase);
-        addLocal(SKIPI_RU_API_BASE);
         addLocal(SKIPI_PRIMARY_API_BASE);
+        addLocal(SKIPI_RU_API_BASE);
         return localBases;
     }
     var bases=[];
@@ -950,9 +950,9 @@ function apiBaseCandidates(){
         var normalized=normalizeApiBase(base);
         if(normalized&&bases.indexOf(normalized)===-1)bases.push(normalized);
     }
-    add(SKIPI_RU_API_BASE);
     add(SKIPI_API_BASE);
     add(SKIPI_PRIMARY_API_BASE);
+    add(SKIPI_RU_API_BASE);
     return bases;
 }
 function rememberApiBase(base){
