@@ -212,8 +212,8 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .modules-bar .mb-vault:hover { border-color:var(--accent); }
 .modules-bar .mb-vault-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .modules-bar .mb-caret { opacity:.6; font-size:10px; }
-.modules-bar .mb-gear { width:28px; height:28px; display:flex; align-items:center; justify-content:center; border-radius:5px; cursor:pointer; color:var(--text2); font-size:14px; margin-left:4px; }
-.modules-bar .mb-gear:hover { color:var(--text); background:var(--hover); }
+.modules-bar .mb-gear { width:36px; height:30px; display:flex; align-items:center; justify-content:center; border-radius:6px; cursor:pointer; color:var(--text); font-size:21px; margin-left:6px; background:var(--bg); border:1px solid var(--border); line-height:1; }
+.modules-bar .mb-gear:hover { color:var(--accent); background:var(--accent-bg); border-color:var(--accent); }
 
 /* App layout */
 .app { display:flex; flex:1; overflow:hidden; }
@@ -3930,6 +3930,9 @@ function localReviewRatingText(value){
 function renderOwnVesselReview(entry){
     var review=entry&&entry.local_review;
     if(!review||review===null||review.overall_rating===undefined||review.overall_rating===null)return '';
+    var entryImo=normalizeImo(entry&&entry.imo);
+    var reviewImo=normalizeImo(review&&review.vessel_imo);
+    if(entryImo&&reviewImo&&entryImo!==reviewImo)return '';
     var locked=localReviewLocked(review);
     var meta='<strong>Your rating: '+esc(localReviewRatingText(review.overall_rating))+'</strong>';
     if(review.submitted_at)meta+=' · submitted '+esc(formatLocalReviewDate(review.submitted_at));
@@ -5129,6 +5132,7 @@ async function showWorkHistory(){
             h+=renderOwnVesselReview(e);
             h+='</div>';
             h+='<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;">';
+            h+='<button class="btn btn-sm btn-accent" onclick="showEditWork(\''+e.id+'\')">Edit</button>';
             h+='<button class="btn btn-sm btn-outline" onclick="attachWorkFile(\''+e.id+'\')">+ Attach</button>';
             if(normImo){
                 var localReview=e.local_review;
@@ -5142,7 +5146,7 @@ async function showWorkHistory(){
                     h+='<button class="btn btn-sm btn-outline" onclick="openReviewFromEntryId(\''+e.id+'\')" title="Write a structured review of this vessel">&#9733; Write review</button>';
                 }
             }
-            h+='<button class="btn btn-sm btn-outline btn-red" onclick="delWork(\''+e.id+'\')">Delete</button>';
+            h+='<button class="btn btn-sm btn-outline btn-red" onclick="delWork(\''+e.id+'\')">Delete entry</button>';
             h+='</div>';
             h+='</div>';
             if(normImo){
@@ -5193,6 +5197,52 @@ async function delWorkFile(id){
     try{await invoke('delete_work_file',{id:id});await showWorkHistory();}catch(err){showToast('Error: '+err,'error');logError('op',err);}
 }
 
+function workFormListWithCurrent(list,current){
+    list=(list||[]).slice();
+    current=(current||'').trim();
+    if(current&&list.indexOf(current)===-1)list.unshift(current);
+    return list;
+}
+
+function renderWorkEntryForm(entry){
+    entry=entry||null;
+    var isEdit=!!entry;
+    var title=isEdit?'Edit Work Entry':'Add Work Entry';
+    var saveCall=isEdit?'updateWork(\''+escAttr(entry.id)+'\')':'saveWork()';
+    var val=function(key){return entry&&entry[key]!=null?esc(entry[key]):'';};
+    var h='<h2 style="font-size:18px;margin-bottom:16px;">'+title+'</h2>';
+    h+='<div style="max-width:480px;">';
+    h+='<div class="field-grid">';
+    h+='<div class="field"><label>Vessel Name *</label><input id="wh-vessel" list="wh-prev-vessels" placeholder="M/V Example" autocomplete="off" value="'+val('vessel_name')+'"></div>';
+    h+='<div class="field"><label>IMO Number *</label><input id="wh-imo" inputmode="numeric" placeholder="1234567" required value="'+val('imo')+'"><div style="font-size:10px;color:var(--text2);margin-top:3px;">7 digits required for vessel database and reviews.</div></div>';
+    h+='<div class="field"><label>Vessel Type</label><select id="wh-type"></select></div>';
+    h+='<div class="field"><label>DWT</label><input id="wh-dwt" type="text" inputmode="numeric" placeholder="e.g. 82000" value="'+val('dwt')+'"></div>';
+    h+='<div class="field"><label>TEU</label><input id="wh-teu" type="text" inputmode="numeric" placeholder="container ships" value="'+val('teu')+'"></div>';
+    h+='<div class="field"><label>Flag</label><input id="wh-flag" list="maritime-flags" placeholder="Start typing… (Panama, Liberia, Marshall Islands, …)" value="'+val('flag')+'"></div>';
+    h+='<div class="field"><label>Company</label><input id="wh-company" placeholder="Shipping Co." value="'+val('company')+'"></div>';
+    h+='<div class="field"><label>Position *</label><select id="wh-position"></select></div>';
+    h+='<div class="field"><label>Sign On</label><input id="wh-on" type="text" inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" oninput="autoFormatDate(this)" value="'+val('sign_on')+'"></div>';
+    h+='<div class="field"><label>Sign Off</label><input id="wh-off" type="text" inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" oninput="autoFormatDate(this)" value="'+val('sign_off')+'"></div>';
+    h+='</div>';
+    h+='<div class="field"><label>Notes</label><input id="wh-notes" placeholder="Route, remarks..." value="'+val('notes')+'"></div>';
+    h+='<p style="color:var(--text2);font-size:11px;margin:8px 0 0;">After saving, you can attach supporting documents (contract, sea service letter, discharge, flight ticket) from the list view.</p>';
+    h+='<div class="actions" style="margin-top:12px;"><button class="btn btn-accent" onclick="'+saveCall+'">'+(isEdit?'Save changes':'Save')+'</button> <button class="btn btn-outline" onclick="showWorkHistory()">Cancel</button></div>';
+    h+='</div>';
+    return h;
+}
+
+async function populateWorkEntryFormControls(entry){
+    entry=entry||{};
+    // Populate dropdowns from loaded taxonomies
+    var vList=(types&&types.vessel_types&&types.vessel_types.length)?types.vessel_types:
+        ["Bulk Carrier","Container Ship","Tanker","Oil Tanker","Chemical Tanker","Product Tanker","LNG Carrier","LPG Carrier","General Cargo","Ro-Ro","Car Carrier","Reefer","Passenger","Cruise Ship","Ferry","Offshore Support","AHTS","PSV","Tug","OSV","Yacht","Other"];
+    var pList=(types&&types.ranks&&types.ranks.length)?types.ranks:RANKS;
+    populateSelect(document.getElementById('wh-type'),workFormListWithCurrent(vList,entry.vessel_type),entry.vessel_type||'','-- Select type --');
+    populateSelect(document.getElementById('wh-position'),workFormListWithCurrent(pList,entry.position),entry.position||'','-- Select position --');
+    populateFlagsDatalist();
+    await populatePrevVesselsDatalist();
+}
+
 async function showAddWork(){
     var gate=await getSeaServiceUnlockState();
     if(!gate.ok){
@@ -5200,33 +5250,17 @@ async function showAddWork(){
         showSeaServiceLock(gate,'Sea Service is locked','Sea Service locked');
         return;
     }
-    var h='<h2 style="font-size:18px;margin-bottom:16px;">Add Work Entry</h2>';
-    h+='<div style="max-width:480px;">';
-    h+='<div class="field-grid">';
-    h+='<div class="field"><label>Vessel Name *</label><input id="wh-vessel" list="wh-prev-vessels" placeholder="M/V Example" autocomplete="off"></div>';
-    h+='<div class="field"><label>IMO Number *</label><input id="wh-imo" inputmode="numeric" placeholder="1234567" required><div style="font-size:10px;color:var(--text2);margin-top:3px;">7 digits required for vessel database and reviews.</div></div>';
-    h+='<div class="field"><label>Vessel Type</label><select id="wh-type"></select></div>';
-    h+='<div class="field"><label>DWT</label><input id="wh-dwt" type="text" inputmode="numeric" placeholder="e.g. 82000"></div>';
-    h+='<div class="field"><label>TEU</label><input id="wh-teu" type="text" inputmode="numeric" placeholder="container ships"></div>';
-    h+='<div class="field"><label>Flag</label><input id="wh-flag" list="maritime-flags" placeholder="Start typing… (Panama, Liberia, Marshall Islands, …)"></div>';
-    h+='<div class="field"><label>Company</label><input id="wh-company" placeholder="Shipping Co."></div>';
-    h+='<div class="field"><label>Position *</label><select id="wh-position"></select></div>';
-    h+='<div class="field"><label>Sign On</label><input id="wh-on" type="text" inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" oninput="autoFormatDate(this)"></div>';
-    h+='<div class="field"><label>Sign Off</label><input id="wh-off" type="text" inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" oninput="autoFormatDate(this)"></div>';
-    h+='</div>';
-    h+='<div class="field"><label>Notes</label><input id="wh-notes" placeholder="Route, remarks..."></div>';
-    h+='<p style="color:var(--text2);font-size:11px;margin:8px 0 0;">After saving, you can attach supporting documents (contract, sea service letter, discharge, flight ticket) from the list view.</p>';
-    h+='<div class="actions" style="margin-top:12px;"><button class="btn btn-accent" onclick="saveWork()">Save</button> <button class="btn btn-outline" onclick="showWorkHistory()">Cancel</button></div>';
-    h+='</div>';
-    document.getElementById('scr-content').innerHTML=h;show('scr-content');
-    // Populate dropdowns from loaded taxonomies
-    var vList=(types&&types.vessel_types&&types.vessel_types.length)?types.vessel_types:
-        ["Bulk Carrier","Container Ship","Tanker","Oil Tanker","Chemical Tanker","Product Tanker","LNG Carrier","LPG Carrier","General Cargo","Ro-Ro","Car Carrier","Reefer","Passenger","Cruise Ship","Ferry","Offshore Support","AHTS","PSV","Tug","OSV","Yacht","Other"];
-    var pList=(types&&types.ranks&&types.ranks.length)?types.ranks:RANKS;
-    populateSelect(document.getElementById('wh-type'),vList,'','-- Select type --');
-    populateSelect(document.getElementById('wh-position'),pList,'','-- Select position --');
-    populateFlagsDatalist();
-    await populatePrevVesselsDatalist();
+    document.getElementById('scr-content').innerHTML=renderWorkEntryForm(null);show('scr-content');
+    await populateWorkEntryFormControls(null);
+}
+
+async function showEditWork(id){
+    var entries=[];
+    try{entries=await invoke('get_work_history')||[];}catch(e){showToast('Error: '+e,'error');logError('op',e);return;}
+    var entry=(entries||[]).find(function(e){return e&&e.id===id;});
+    if(!entry){showToast('Work entry not found','warn');await showWorkHistory();return;}
+    document.getElementById('scr-content').innerHTML=renderWorkEntryForm(entry);show('scr-content');updateTabs('Edit Sea Service');
+    await populateWorkEntryFormControls(entry);
 }
 
 // Fill the vessel-name datalist with the user's own prior work_history entries.
@@ -5253,16 +5287,34 @@ async function populatePrevVesselsDatalist(){
     dl.innerHTML=h;
 }
 
-async function saveWork(){
+function readWorkFormPayload(){
     var v=function(id){return document.getElementById(id).value.trim()||null;};
     var vessel=v('wh-vessel'),pos=v('wh-position');
-    if(!vessel||!pos){alert('Vessel name and Position are required');return;}
+    if(!vessel||!pos){alert('Vessel name and Position are required');return null;}
     var imo=normalizeImo(v('wh-imo'));
     if(!imo){
         showToast('IMO Number is required and must contain exactly 7 digits','warn');
         var imoEl=document.getElementById('wh-imo');if(imoEl)imoEl.focus();
-        return;
+        return null;
     }
+    return {
+        vesselName:vessel,
+        vesselType:v('wh-type'),
+        imo:imo,
+        flag:v('wh-flag'),
+        company:v('wh-company'),
+        position:pos,
+        signOn:v('wh-on'),
+        signOff:v('wh-off'),
+        dwt:v('wh-dwt'),
+        teu:v('wh-teu'),
+        notes:v('wh-notes')
+    };
+}
+
+async function saveWork(){
+    var payload=readWorkFormPayload();
+    if(!payload)return;
     var gate=await getSeaServiceUnlockState();
     if(!gate.ok){
         showToast('Complete the minimum document structure before adding Sea Service','warn');
@@ -5270,20 +5322,24 @@ async function saveWork(){
         return;
     }
     try{
-        await invoke('add_work_history',{
-            vesselName:vessel,
-            vesselType:v('wh-type'),
-            imo:imo,
-            flag:v('wh-flag'),
-            company:v('wh-company'),
-            position:pos,
-            signOn:v('wh-on'),
-            signOff:v('wh-off'),
-            dwt:v('wh-dwt'),
-            teu:v('wh-teu'),
-            notes:v('wh-notes')
-        });
+        await invoke('add_work_history',payload);
         await showWorkHistory();
+        scheduleDeveloperGroupInviteCheck(700);
+    }catch(e){showToast('Error: '+e,'error');logError('op',e);}
+}
+
+async function updateWork(id){
+    var payload=readWorkFormPayload();
+    if(!payload)return;
+    payload.id=id;
+    var gate=await getSeaServiceUnlockState();
+    if(!gate.ok){
+        showToast('Minimum documents are incomplete now, but this existing Sea Service record can still be edited','warn');
+    }
+    try{
+        await invoke('update_work_history',payload);
+        await showWorkHistory();
+        showToast('Sea Service entry updated','success');
         scheduleDeveloperGroupInviteCheck(700);
     }catch(e){showToast('Error: '+e,'error');logError('op',e);}
 }

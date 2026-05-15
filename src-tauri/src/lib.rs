@@ -198,6 +198,7 @@ pub fn run() {
             cv_commands::export_redacted_cv_pdf,
             // Work history
             work_history::add_work_history,
+            work_history::update_work_history,
             work_history::get_work_history,
             work_history::delete_work_entry,
             work_history::attach_work_file,

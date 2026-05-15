@@ -460,6 +460,59 @@ mod tests {
     }
 
     #[test]
+    fn work_history_update_rewrites_existing_entry() {
+        let vault_path = env::temp_dir().join(format!("skipi-work-update-{}", Uuid::new_v4()));
+        fs::create_dir_all(&vault_path).unwrap();
+        let conn = open_db(&vault_path).unwrap();
+
+        add_work_entry(
+            &conn,
+            "entry-edit-1",
+            "MV Before",
+            Some("Bulk Carrier"),
+            Some("9123456"),
+            Some("Panama"),
+            Some("Old Manager"),
+            "Third Officer",
+            Some("2025-01-10"),
+            Some("2025-07-20"),
+            Some("82000"),
+            None,
+            Some("Before edit"),
+        )
+        .unwrap();
+
+        update_work_entry(
+            &conn,
+            "entry-edit-1",
+            "MV After",
+            Some("Tanker"),
+            Some("9234567"),
+            Some("Liberia"),
+            Some("New Manager"),
+            "Second Officer",
+            Some("2025-08-01"),
+            Some("2026-01-15"),
+            Some("105000"),
+            None,
+            Some("After edit"),
+        )
+        .unwrap();
+
+        let entries = get_work_history(&conn).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["vessel_name"], "MV After");
+        assert_eq!(entries[0]["imo"], "9234567");
+        assert_eq!(entries[0]["company"], "New Manager");
+        assert_eq!(entries[0]["position"], "Second Officer");
+        assert_eq!(entries[0]["dwt"], "105000");
+        assert_eq!(entries[0]["notes"], "After edit");
+
+        drop(conn);
+        let _ = fs::remove_dir_all(&vault_path);
+    }
+
+    #[test]
     fn work_history_includes_local_vessel_review_receipt() {
         let vault_path = env::temp_dir().join(format!("skipi-review-receipt-{}", Uuid::new_v4()));
         fs::create_dir_all(&vault_path).unwrap();
@@ -904,6 +957,56 @@ pub fn add_work_entry(
     Ok(())
 }
 
+pub fn update_work_entry(
+    conn: &Connection,
+    id: &str,
+    vessel_name: &str,
+    vessel_type: Option<&str>,
+    imo: Option<&str>,
+    flag: Option<&str>,
+    company: Option<&str>,
+    position: &str,
+    sign_on: Option<&str>,
+    sign_off: Option<&str>,
+    dwt: Option<&str>,
+    teu: Option<&str>,
+    notes: Option<&str>,
+) -> Result<()> {
+    let changed = conn.execute(
+        "UPDATE work_history
+         SET vessel_name = ?2,
+             vessel_type = ?3,
+             imo = ?4,
+             flag = ?5,
+             company = ?6,
+             position = ?7,
+             sign_on = ?8,
+             sign_off = ?9,
+             dwt = ?10,
+             teu = ?11,
+             notes = ?12
+         WHERE id = ?1",
+        params![
+            id,
+            vessel_name,
+            vessel_type,
+            imo,
+            flag,
+            company,
+            position,
+            sign_on,
+            sign_off,
+            dwt,
+            teu,
+            notes
+        ],
+    )?;
+    if changed == 0 {
+        return Err(rusqlite::Error::QueryReturnedNoRows);
+    }
+    Ok(())
+}
+
 pub fn get_work_history(conn: &Connection) -> Result<Vec<serde_json::Value>> {
     let mut stmt = conn.prepare(
         "SELECT wh.id, wh.vessel_name, wh.vessel_type, wh.imo, wh.flag, wh.company, wh.position,
@@ -926,6 +1029,7 @@ pub fn get_work_history(conn: &Connection) -> Result<Vec<serde_json::Value>> {
                     "summary": summary,
                     "submitted_at": row.get::<_, Option<String>>(16)?,
                     "lock_until": row.get::<_, Option<String>>(17)?,
+                    "vessel_imo": row.get::<_, Option<String>>(3)?,
                 })
             } else {
                 serde_json::Value::Null

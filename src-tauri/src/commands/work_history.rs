@@ -55,6 +55,52 @@ pub fn add_work_history(
 }
 
 #[tauri::command]
+pub fn update_work_history(
+    state: State<AppState>,
+    id: String,
+    vessel_name: String,
+    vessel_type: Option<String>,
+    imo: Option<String>,
+    flag: Option<String>,
+    company: Option<String>,
+    position: String,
+    sign_on: Option<String>,
+    sign_off: Option<String>,
+    dwt: Option<String>,
+    teu: Option<String>,
+    notes: Option<String>,
+) -> Result<(), String> {
+    let vessel_name = vessel_name.trim();
+    let position = position.trim();
+    if vessel_name.is_empty() {
+        return Err("Vessel name is required".to_string());
+    }
+    if position.is_empty() {
+        return Err("Position is required".to_string());
+    }
+
+    let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = lock.as_ref().ok_or("No vault open")?;
+    let imo = normalize_required_imo(imo)?;
+    db::update_work_entry(
+        conn,
+        &id,
+        vessel_name,
+        vessel_type.as_deref(),
+        Some(imo.as_str()),
+        flag.as_deref(),
+        company.as_deref(),
+        position,
+        sign_on.as_deref(),
+        sign_off.as_deref(),
+        dwt.as_deref(),
+        teu.as_deref(),
+        notes.as_deref(),
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn get_work_history(state: State<AppState>) -> Result<Vec<serde_json::Value>, String> {
     let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = lock.as_ref().ok_or("No vault open")?;
