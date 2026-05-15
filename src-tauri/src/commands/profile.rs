@@ -258,7 +258,7 @@ fn seafarer_ready_profile_missing(
         (
             "nationality",
             &["personal_nationality", "personal_nationality_code"],
-            "Nationality",
+            "Citizenship",
         ),
         ("phones", &["personal_phones"], "Phone"),
         ("email", &["personal_email"], "Email"),

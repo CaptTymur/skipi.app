@@ -811,7 +811,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
             <div class="field"><label>First name *</label><input id="fp-first_name"></div>
             <div class="field"><label>Date of birth *</label><input id="fp-date_of_birth" type="text" inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" oninput="autoFormatDate(this)"></div>
             <div class="field"><label>Place of birth *</label><input id="fp-place_of_birth"></div>
-            <div class="field"><label>Nationality *</label><select id="fp-nationality"></select></div>
+            <div class="field"><label>Citizenship *</label><select id="fp-nationality"></select></div>
             <div class="field"><label>Phones *</label><div style="display:flex;gap:6px;"><input id="fp-phones" placeholder="+XX XXX..." style="flex:1;min-width:0;"><select id="fp-preferred_messenger" style="width:110px;flex:0 0 110px;"><option value="WhatsApp">WhatsApp</option><option value="Telegram">Telegram</option><option value="Viber">Viber</option><option value="Signal">Signal</option><option value="Other">Other</option></select></div></div>
             <div class="field"><label>Email *</label><input id="fp-email" type="email"></div>
             <div class="field"><label>Rank *</label><select id="fp-rank"></select></div>
@@ -2114,7 +2114,7 @@ async function wFinish(){
     }catch(e){showToast('Error: '+e,'error');logError('op',e);}
 }
 
-// ========== Nationality list (ISO-style) ==========
+// ========== Citizenship list (ISO-style) ==========
 var NATIONALITIES = [
     "Afghan","Albanian","Algerian","American","Andorran","Angolan","Argentine","Armenian","Australian","Austrian",
     "Azerbaijani","Bahamian","Bahraini","Bangladeshi","Barbadian","Belarusian","Belgian","Belizean","Beninese","Bhutanese",
@@ -2382,7 +2382,7 @@ function readyProfileLabels(){
         first_name:'First name',
         date_of_birth:'Date of birth',
         place_of_birth:'Place of birth',
-        nationality:'Nationality',
+        nationality:'Citizenship',
         phones:'Phone',
         email:'Email',
         rank:'Rank',
@@ -2630,7 +2630,7 @@ async function openForcedProfile(forceOpen){
 async function fpSubmit(){
     var fields={};
     var missing=[];
-    var labelMap={surname:'Surname',first_name:'First name',date_of_birth:'Date of birth',place_of_birth:'Place of birth',nationality:'Nationality',phones:'Phones',email:'Email',rank:'Rank',preferred_vessel_types:'Vessel type',nearest_airport:'Nearest airport',nearest_intl_airport:'Nearest intl airport',available_from:'Available from',home_address:'Home address',min_salary:'Minimum salary'};
+    var labelMap={surname:'Surname',first_name:'First name',date_of_birth:'Date of birth',place_of_birth:'Place of birth',nationality:'Citizenship',phones:'Phones',email:'Email',rank:'Rank',preferred_vessel_types:'Vessel type',nearest_airport:'Nearest airport',nearest_intl_airport:'Nearest intl airport',available_from:'Available from',home_address:'Home address',min_salary:'Minimum salary'};
     fpRequiredKeys().forEach(function(k){
         var el=document.getElementById('fp-'+k);
         var v=el?(el.value||'').trim():'';
@@ -5711,10 +5711,10 @@ async function showCv(){
     row('Experience',seaExp,'Citizenship',sp.nationality);
     row('Last name',sp.surname,'Marital status',sp.marital_status);
     row('First name',sp.first_name,'Children',sp.children_count);
-    row('Middle name',sp.middle_name,'Nationality',sp.nationality);
+    row('Middle name',sp.middle_name,'English level',sp.english_level||'');
     row('Birth date',sp.date_of_birth,'Birth place',sp.place_of_birth);
     row('Home address',sp.home_address,'Phone',sp.phones);
-    row('English level',sp.english_level||'','Email',sp.email);
+    row('Email',sp.email,'','');
     h+='</table>';
     // Right: photo
     h+='<div style="width:130px;min-width:130px;height:160px;'+bdr+'border-radius:4px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#f0f0f0;" id="cv-photo-box">';
@@ -6406,7 +6406,7 @@ async function loadJobsFeed(){
         // the long form ("Second Officer"). Normalize before sending to
         // the server-side exact-match filter.
         if (rank) rank = canonicalRank(rank);
-        // Strict three-axis matching: rank + vessel_type + nationality.
+        // Strict three-axis matching: rank + vessel_type + citizenship.
         // Profiles store short forms ("bulker"); the server canonicalizes
         // aliases to the canonical label ("Bulk Carrier") before filtering.
         var vt = (sp.preferred_vessel_types||'').split(',')[0].trim() || null;
@@ -8231,7 +8231,7 @@ async function _jobsApplyProceed(vacancyId, replyTo, title){
                 totalMo_ ? '- Total sea time: '+totalMo_+' months' : null,
                 rankMo_ ? '- Experience as '+sp.rank+': '+rankMo_+' months' : null,
                 sp.available_from ? '- Available from: '+sp.available_from : null,
-                sp.nationality ? '- Nationality: '+sp.nationality : null,
+                sp.nationality ? '- Citizenship: '+sp.nationality : null,
                 sp.min_salary ? '- Minimum salary expected: '+sp.min_salary+' '+(sp.min_salary_currency||'USD')+'/month' : null,
                 '',
                 'Sent end-to-end encrypted via Skipi (skipi.app).',
@@ -8327,7 +8327,7 @@ async function _jobsApplyProceed(vacancyId, replyTo, title){
     if (totalMo) bodyLines.push('- Total sea time: '+totalMo+' months');
     if (rankMo) bodyLines.push('- Experience as '+sp.rank+': '+rankMo+' months');
     if (sp.available_from) bodyLines.push('- Available from: '+sp.available_from);
-    if (sp.nationality) bodyLines.push('- Nationality: '+sp.nationality);
+    if (sp.nationality) bodyLines.push('- Citizenship: '+sp.nationality);
     if (sp.min_salary) bodyLines.push('- Minimum salary expected: '+sp.min_salary+' '+(sp.min_salary_currency||'USD')+'/month');
     bodyLines.push('');
     bodyLines.push('Redacted CV with full credentials is attached.');
@@ -9048,7 +9048,7 @@ function renderSettingsBody(){
         h += spField('sp-middle_name','Middle name');
         h += spField('sp-date_of_birth','Date of birth','date');
         h += spField('sp-place_of_birth','Place of birth');
-        h += '<div class="field"><label>Nationality</label><select id="sp-nationality"></select></div>';
+        h += '<div class="field"><label>Citizenship</label><select id="sp-nationality"></select></div>';
         h += '<div class="field"><label>Phones</label><div style="display:flex;gap:6px;"><input id="sp-phones" style="flex:1;min-width:0;"><select id="sp-preferred_messenger" style="width:110px;flex:0 0 110px;"><option value="WhatsApp">WhatsApp</option><option value="Telegram">Telegram</option><option value="Viber">Viber</option><option value="Signal">Signal</option><option value="Other">Other</option></select></div></div>';
         h += spField('sp-email','Email','email');
         h += '<div class="field"><label>Marital status</label><select id="sp-marital_status"><option value="">-- Select --</option><option value="Single">Single</option><option value="Married">Married</option><option value="Divorced">Divorced</option><option value="Widowed">Widowed</option></select></div>';
@@ -9364,7 +9364,7 @@ async function spLoad(){
         }
         populateAirportDatalist();
         populateSelect(document.getElementById('sp-min_salary_currency'),CURRENCIES,data.currency||localStorage.getItem('skipi-sp-min_salary_currency')||'USD','');
-        // Nationality + rank are populated above; the loop below handles
+        // Citizenship + rank are populated above; the loop below handles
         // free-text / date / simple-select fields. Select elements (marital
         // status, english level) accept assignment to `.value` the same way
         // as inputs, so they share this loop.

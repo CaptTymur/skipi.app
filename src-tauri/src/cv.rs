@@ -763,7 +763,7 @@ pub fn render_cv_pdf(
             blank(&data.personal.place_of_birth),
         ),
         (
-            "NATIONALITY",
+            "CITIZENSHIP",
             blank(&data.personal.nationality),
             "PHONES",
             blank(&data.personal.phones),
@@ -1457,11 +1457,11 @@ pub fn render_redacted_cv_pdf(
     let summary_field_h = 8.0;
     let half_w = content_w / 2.0;
 
-    // Row 1: Nationality + Year of birth
+    // Row 1: Citizenship + Year of birth
     cursor_y -= summary_field_h;
     pdf_field(
         &layer,
-        "NATIONALITY",
+        "CITIZENSHIP",
         blank(&rd.personal.nationality),
         margin,
         cursor_y,
