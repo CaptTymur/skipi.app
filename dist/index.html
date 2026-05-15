@@ -346,6 +346,25 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .local-review-section-title { display:flex; justify-content:space-between; gap:8px; font-weight:700; font-size:12px; }
 .local-review-meta { color:var(--text2); font-size:11px; line-height:1.45; margin-top:3px; }
 .local-review-chip { display:inline-block; border:1px solid var(--border); border-radius:4px; padding:2px 7px; margin:3px 4px 0 0; font-size:11px; color:var(--text2); }
+.review-nudge-card { border:1px solid rgba(101,83,235,.36); background:var(--accent-bg); border-radius:8px; padding:12px 14px; margin:0 0 14px; display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap; }
+.review-nudge-card strong { color:var(--text); }
+.review-nudge-card p { margin:3px 0 0; color:var(--text2); font-size:12px; line-height:1.45; max-width:620px; }
+.review-nudge-actions { display:flex; gap:7px; flex-wrap:wrap; justify-content:flex-end; }
+.review-trust-chip { display:inline-flex; align-items:center; gap:4px; border:1px solid rgba(35,185,122,.36); background:rgba(35,185,122,.10); color:var(--green); border-radius:999px; padding:2px 7px; font-size:10px; font-weight:700; }
+.review-impact-strip { border:1px dashed var(--border); border-radius:7px; padding:9px 11px; margin:10px 0; color:var(--text2); font-size:12px; line-height:1.45; }
+.review-impact-strip strong { color:var(--text); }
+.review-privacy-note { display:flex; gap:8px; align-items:flex-start; border:1px solid rgba(35,185,122,.28); background:rgba(35,185,122,.08); color:var(--text2); border-radius:7px; padding:8px 10px; margin-top:8px; font-size:11px; line-height:1.45; }
+.quick-review-box { border:1px solid rgba(101,83,235,.35); background:var(--accent-bg); border-radius:8px; padding:11px 12px; margin-bottom:12px; }
+.quick-review-head { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; flex-wrap:wrap; margin-bottom:8px; }
+.quick-review-title { font-weight:700; font-size:13px; color:var(--text); }
+.quick-review-desc { color:var(--text2); font-size:11px; line-height:1.45; margin-top:2px; max-width:560px; }
+.quick-review-stars { display:inline-flex; gap:3px; }
+.quick-review-stars button { background:transparent; border:0; color:var(--text2); cursor:pointer; font-size:22px; padding:0 2px; line-height:1; }
+.quick-review-stars button.on { color:var(--yellow); }
+.quick-tag-grid { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.quick-tag-grid button { border:1px solid var(--border); background:var(--surface); color:var(--text2); border-radius:999px; padding:4px 9px; font-size:11px; cursor:pointer; }
+.quick-tag-grid button.on { border-color:var(--accent); background:var(--accent); color:#fff; }
+.quick-review-note { width:100%; box-sizing:border-box; margin-top:8px; padding:7px 9px; border-radius:5px; border:1px solid var(--border); background:var(--bg); color:var(--text); font:inherit; font-size:12px; resize:vertical; min-height:38px; }
 .vdb-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:10px; }
 .vdb-card { border:1px solid var(--border); border-radius:6px; padding:12px 14px; background:var(--bg); min-width:0; }
 .vdb-card-title { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
@@ -3938,7 +3957,105 @@ function renderOwnVesselReview(entry){
     if(review.submitted_at)meta+=' · submitted '+esc(formatLocalReviewDate(review.submitted_at));
     if(locked)meta+=' · locked until '+esc(formatLocalReviewDate(review.lock_until));
     else meta+=' · can be updated';
+    meta+=' · <span class="review-trust-chip">verified by Sea Service</span>';
     return '<div class="own-vessel-review '+(locked?'locked':'')+'"><span class="stars">'+localReviewStars(review.overall_rating)+'</span><span class="meta">'+meta+'</span></div>';
+}
+var vesselReviewHighlightEntryId=null;
+var VESSEL_DB_VISITS_KEY='skipi-vessel-db-visits';
+function rvText(ru,en){return getUiLang()==='ru'?ru:en;}
+function vesselReviewHasLocal(entry){
+    var r=entry&&entry.local_review;
+    if(!r||r===null||r.overall_rating===undefined||r.overall_rating===null)return false;
+    var entryImo=normalizeImo(entry&&entry.imo);
+    var reviewImo=normalizeImo(r&&r.vessel_imo);
+    return !(entryImo&&reviewImo&&entryImo!==reviewImo);
+}
+function vesselReviewNeedsLocal(entry){
+    return !!(entry&&normalizeImo(entry.imo)&&!vesselReviewHasLocal(entry));
+}
+function vesselReviewSortKey(entry){
+    return String((entry&&entry.sign_off)||(entry&&entry.sign_on)||(entry&&entry.created_at)||'');
+}
+function vesselReviewContributionStats(entries){
+    entries=entries||[];
+    var reviewed=entries.filter(vesselReviewHasLocal);
+    var needs=entries.filter(vesselReviewNeedsLocal).sort(function(a,b){return vesselReviewSortKey(b).localeCompare(vesselReviewSortKey(a));});
+    return {
+        reviewed_count:reviewed.length,
+        needs_count:needs.length,
+        latest_unreviewed:needs[0]||null,
+        total_with_imo:entries.filter(function(e){return !!normalizeImo(e&&e.imo);}).length
+    };
+}
+async function loadVesselReviewContributionStats(){
+    try{return vesselReviewContributionStats(await invoke('get_work_history')||[]);}
+    catch(e){return vesselReviewContributionStats([]);}
+}
+function openLatestUnreviewedVesselReview(){
+    var st=window._vesselReviewStats||{};
+    var row=st.latest_unreviewed;
+    if(row&&row.id)openReviewFromEntryId(row.id);
+    else showView('experience');
+}
+function reviewContributionLine(stats){
+    stats=stats||{};
+    if(stats.reviewed_count>0){
+        return rvText(
+            'Вы уже помогли будущим морякам: подтверждённых отзывов '+stats.reviewed_count+'.',
+            'You have helped future crews with '+stats.reviewed_count+' verified vessel review'+(stats.reviewed_count===1?'':'s')+'.'
+        );
+    }
+    return rvText(
+        'Первый отзыв особенно ценен: он превращает ваш Sea Service в полезный сигнал для других моряков.',
+        'Your first review matters: it turns your Sea Service into a useful signal for other seafarers.'
+    );
+}
+function renderReviewNudgeCard(stats,context){
+    stats=stats||{};
+    var row=stats.latest_unreviewed;
+    if(!row&&stats.reviewed_count<=0)return '';
+    var title='', body='';
+    if(context==='jobs'){
+        title=rvText('Проверьте судно перед откликом','Review vessels before applying');
+        body=rvText(
+            'Базовые вакансии остаются доступными всем. Чем больше моряки оставляют подтверждённых отзывов, тем полезнее становятся оценки судов рядом с предложениями.',
+            'Basic vacancies stay visible for everyone. Verified vessel reviews make the vessel ratings beside job offers more useful.'
+        );
+    }else if(context==='vessels'){
+        title=rvText('База судов становится сильнее от ваших рейсов','Vessel DB gets stronger from your Sea Service');
+        body=rvText(
+            'Если вы уже работали на судне, оценка сохранится в вашей истории и попадёт в общую анонимную статистику.',
+            'If you worked on a vessel, your rating stays in your history and contributes to anonymous aggregate statistics.'
+        );
+    }else{
+        title=rvText('Оцените судно из вашего Sea Service','Rate a vessel from your Sea Service');
+        body=rvText(
+            'Оценка сохраняется в вашем послужном списке, помогает сравнивать будущие предложения и публикуется анонимно.',
+            'The rating stays in your career record, helps compare future offers, and is published anonymously.'
+        );
+    }
+    var h='<div class="review-nudge-card">';
+    h+='<div><strong>'+esc(title)+'</strong><p>'+esc(reviewContributionLine(stats))+' '+esc(body)+'</p>';
+    if(row){
+        h+='<p><span class="review-trust-chip">'+esc(rvText('подтверждается Sea Service','verified by Sea Service'))+'</span> '+esc(row.vessel_name||('IMO '+row.imo))+(row.imo?' · IMO '+esc(row.imo):'')+'</p>';
+    }
+    h+='</div><div class="review-nudge-actions">';
+    if(row)h+='<button class="btn btn-accent btn-sm" onclick="openLatestUnreviewedVesselReview()">'+esc(rvText('Оценить судно','Rate vessel'))+'</button>';
+    h+='<button class="btn btn-outline btn-sm" onclick="showView(\'vessels\')">'+esc(rvText('База судов','Vessel DB'))+'</button>';
+    h+='</div></div>';
+    return h;
+}
+function noteVesselDbVisit(){
+    var n=0;
+    try{n=parseInt(localStorage.getItem(VESSEL_DB_VISITS_KEY)||'0',10)||0;}catch(_){}
+    n++;
+    try{localStorage.setItem(VESSEL_DB_VISITS_KEY,String(n));}catch(_){}
+    return n;
+}
+function renderVesselDbReviewNudge(stats,visitCount){
+    if(!stats||!stats.latest_unreviewed)return '';
+    if((visitCount||0)<2&&stats.reviewed_count>0)return '';
+    return renderReviewNudgeCard(stats,'vessels');
 }
 function readVesselReviewCache(){
     if(vesselReviewCache)return vesselReviewCache;
@@ -4360,9 +4477,9 @@ function renderVesselDbStars(data){
         return '<div class="vdb-stars"><div class="vdb-starline">'+vdbStarLine(n)+'</div><div class="vdb-star-meta">'+n.toFixed(1)+'/5'+(data.review_count?' · '+esc(data.review_count)+' reviews':'')+'</div></div>';
     }
     if(access.signals_available){
-        return '<div class="vdb-stars locked"><div class="vdb-starline">☆☆☆☆☆</div><div class="vdb-star-meta">Rating signals exist, access is locked</div></div>';
+        return '<div class="vdb-stars locked"><div class="vdb-starline">☆☆☆☆☆</div><div class="vdb-star-meta">Rating signals exist · detailed view improves as verified seafarers contribute reviews</div></div>';
     }
-    return '<div class="vdb-stars empty"><div class="vdb-starline">☆☆☆☆☆</div><div class="vdb-star-meta">No public rating yet</div></div>';
+    return '<div class="vdb-stars empty"><div class="vdb-starline">☆☆☆☆☆</div><div class="vdb-star-meta">No public rating yet · your Sea Service review can start it</div></div>';
 }
 function vdbFactValue(value){
     if(value===null||value===undefined||value==='')return '';
@@ -4456,6 +4573,7 @@ function renderVesselDbSummary(data){
     if(data.flag_current)h+='<span class="badge badge-none">'+esc(data.flag_current)+'</span>';
     if(data.vessel_type)h+='<span class="badge badge-none">'+esc(vdbLabel(data.vessel_type))+'</span>';
     h+='</div></div>';
+    h+='<div class="review-impact-strip"><strong>'+esc(rvText('Как работает оценка','How ratings work'))+'</strong><br>'+esc(rvText('Базовые данные видны всем. Отзывы от моряков, у которых это судно есть в Sea Service, учитываются как подтверждённые и не раскрывают личность автора.','Basic vessel data is visible to everyone. Reviews from seafarers who have this vessel in Sea Service count as verified and do not disclose the author.'))+'</div>';
     h+='<div class="vdb-section"><h3>Vessel data</h3><div class="vdb-kv">';
     h+=vdbKv('Type',data.vessel_type? vdbLabel(data.vessel_type):'');
     h+=vdbKv('Subtype',data.vessel_subtype? vdbLabel(data.vessel_subtype):'');
@@ -4561,13 +4679,17 @@ async function lookupVesselByImo(force){
         if(btn)btn.disabled=false;
     }
 }
-function showVesselDatabase(){
+async function showVesselDatabase(){
+    var visitCount=noteVesselDbVisit();
+    var reviewStats=await loadVesselReviewContributionStats();
+    window._vesselReviewStats=reviewStats;
     var h='<div class="editor-narrow vdb-lookup-shell">';
     h+=renderVesselDbJobContext();
     h+='<div class="vdb-lookup-row">';
     h+='<div class="field"><label>IMO number</label><input id="vdb-imo-input" inputmode="numeric" pattern="[0-9]*" maxlength="7" placeholder="e.g. 9855552" onkeydown="if(event.key===\'Enter\')lookupVesselByImo(false)"></div>';
     h+='<button class="btn btn-accent" id="vdb-search-btn" onclick="lookupVesselByImo(false)">Search</button>';
     h+='</div>';
+    h+=renderVesselDbReviewNudge(reviewStats,visitCount);
     h+='<div id="vdb-recent-reviews" style="margin-bottom:12px;"></div>';
     h+='<div class="vdb-result" id="vdb-result"></div>';
     h+='</div>';
@@ -4644,11 +4766,82 @@ function loadReviewDraft(workId){try{var raw=localStorage.getItem(reviewDraftKey
 function saveReviewDraft(){
     var s=REVIEW_FORM_STATE;if(!s||!s.work)return;
     try{
-        var copy={sections:s.sections,warning_flags:s.warning_flags,best_thing:s.best_thing,worst_thing:s.worst_thing,advice:s.advice,evidence_level:s.evidence_level,_saved_at:Date.now()};
+        var copy={sections:s.sections,warning_flags:s.warning_flags,best_thing:s.best_thing,worst_thing:s.worst_thing,advice:s.advice,evidence_level:s.evidence_level,quick_overall:s.quick_overall,quick_tags:s.quick_tags,quick_comment:s.quick_comment,_saved_at:Date.now()};
         localStorage.setItem(reviewDraftKey(s.work.id),JSON.stringify(copy));
     }catch(_){}
 }
 function clearReviewDraft(workId){try{localStorage.removeItem(reviewDraftKey(workId));}catch(_){}}
+var QUICK_REVIEW_TAGS=[
+    {id:'salary_on_time',label_en:'Salary on time',label_ru:'Зарплата вовремя',kind:'positive'},
+    {id:'good_food',label_en:'Food was ok',label_ru:'Питание нормальное',kind:'positive'},
+    {id:'safe_operation',label_en:'Safe work',label_ru:'Безопасная работа',kind:'positive'},
+    {id:'good_internet',label_en:'Internet was ok',label_ru:'Интернет нормальный',kind:'positive'},
+    {id:'salary_delays',label_en:'Salary delays',label_ru:'Задержки зарплаты',kind:'warning'},
+    {id:'poor_food',label_en:'Poor food',label_ru:'Плохое питание',kind:'warning'},
+    {id:'bad_internet',label_en:'Bad internet',label_ru:'Плохой интернет',kind:'warning'},
+    {id:'unsafe_condition',label_en:'Unsafe work',label_ru:'Небезопасная работа',kind:'warning'},
+    {id:'bullying_harassment',label_en:'Bullying / harassment',label_ru:'Буллинг / давление',kind:'warning'},
+    {id:'delayed_crew_change',label_en:'Delayed crew change',label_ru:'Задержка смены',kind:'warning'}
+];
+function quickTagLabel(tag){return getUiLang()==='ru'?(tag.label_ru||tag.label_en):(tag.label_en||tag.label_ru||tag.id);}
+function quickTagsByIds(ids){
+    var map={};QUICK_REVIEW_TAGS.forEach(function(t){map[t.id]=t;});
+    return (ids||[]).map(function(id){return map[id]||{id:id,label_en:String(id).replace(/_/g,' '),kind:'note'};});
+}
+function setQuickReviewOverall(rating){
+    var s=REVIEW_FORM_STATE;if(!s)return;
+    s.quick_overall=rating;saveReviewDraft();renderReviewForm();
+}
+function toggleQuickReviewTag(id){
+    var s=REVIEW_FORM_STATE;if(!s)return;
+    s.quick_tags=s.quick_tags||[];
+    var i=s.quick_tags.indexOf(id);
+    if(i>=0)s.quick_tags.splice(i,1);else s.quick_tags.push(id);
+    saveReviewDraft();renderReviewForm();
+}
+function setQuickReviewComment(val){
+    var s=REVIEW_FORM_STATE;if(!s)return;
+    s.quick_comment=String(val||'').slice(0,600);saveReviewDraft();
+}
+function quickReviewWarningFlags(state){
+    var def=(state.schema&&state.schema.definition)||{};
+    var allowed={};
+    (def.warning_flags||[]).forEach(function(fl){
+        var id=(typeof fl==='string')?fl:fl.id;
+        if(id)allowed[id]=true;
+    });
+    return (state.quick_tags||[]).filter(function(id){
+        var tag=quickTagsByIds([id])[0];
+        return tag.kind==='warning'&&allowed[id];
+    });
+}
+function applyQuickReviewPreset(){
+    var s=REVIEW_FORM_STATE;if(!s)return;
+    var rating=Number(s.quick_overall);
+    if(!isFinite(rating)||rating<1||rating>5){showToast(rvText('Сначала выберите звёзды','Choose stars first'),'warn');return;}
+    var def=(s.schema&&s.schema.definition)||{};
+    (def.sections||[]).forEach(function(sec){
+        if(!sec||!sec.id)return;
+        s.sections[sec.id]={mode:'rough',rating:rating,comment:'',items:{}};
+    });
+    var warnings=quickReviewWarningFlags(s);
+    s.warning_flags=warnings;
+    var tags=quickTagsByIds(s.quick_tags||[]);
+    var positive=tags.filter(function(t){return t.kind==='positive';}).map(quickTagLabel);
+    var negative=tags.filter(function(t){return t.kind==='warning';}).map(quickTagLabel);
+    var comment=(s.quick_comment||'').trim();
+    if(rating>=4){
+        s.best_thing=comment||positive.join(', ')||rvText('Общее впечатление положительное.','Overall experience was positive.');
+        s.worst_thing=negative.join(', ')||rvText('Критичных проблем не отмечено.','No critical issue marked.');
+    }else{
+        s.best_thing=positive.join(', ')||rvText('Были отдельные нормальные стороны рейса.','There were some acceptable parts of the contract.');
+        s.worst_thing=comment||negative.join(', ')||rvText('Общее впечатление отрицательное.','Overall experience was negative.');
+    }
+    s.advice=comment||s.advice||'';
+    saveReviewDraft();
+    renderReviewForm();
+    showToast(rvText('Быстрый отзыв заполнен. Проверьте и опубликуйте.','Quick review filled. Review and publish.'),'success');
+}
 async function openReviewFromEntryId(entryId){
     try{
         var entries=await invoke('get_work_history')||[];
@@ -4699,7 +4892,14 @@ function showLocalReviewDetailsForEntry(entry){
     if(review.submitted_at)h+=' · submitted '+esc(formatLocalReviewDate(review.submitted_at));
     if(locked)h+=' · cannot be changed until '+esc(formatLocalReviewDate(review.lock_until));
     else h+=' · available for update';
-    h+='</span></div>';
+    h+=' · <span class="review-trust-chip">verified by Sea Service</span></span></div>';
+    h+='<div class="review-privacy-note"><span class="review-trust-chip">'+esc(rvText('анонимно','anonymous'))+'</span><span>'+esc(rvText('Этот отзыв не раскрывает ваше имя, CV или документы. В публичной базе используются только агрегированные оценки.','This review does not disclose your name, CV, or documents. Public vessel intelligence uses aggregate ratings only.'))+'</span></div>';
+    var quickTags=summary.quick_tags||[];
+    if(quickTags.length){
+        h+='<div style="margin-top:10px;"><div class="local-review-meta" style="font-weight:700;color:var(--text);">'+esc(rvText('Быстрые теги','Quick tags'))+'</div>';
+        quickTags.forEach(function(tag){h+='<span class="local-review-chip">'+esc(tag.title||tag.id||tag)+'</span>';});
+        h+='</div>';
+    }
     var sections=summary.sections||[];
     if(sections.length){
         h+='<div style="margin-top:12px;">';
@@ -4753,7 +4953,8 @@ async function openReviewForm(workEntry){
         schema:schema,work:workEntry,imo:imo,
         sections:draft.sections||{},warning_flags:draft.warning_flags||[],
         best_thing:draft.best_thing||'',worst_thing:draft.worst_thing||'',advice:draft.advice||'',
-        evidence_level:draft.evidence_level||'vault_experience',retro:false,submitting:false
+        evidence_level:draft.evidence_level||'vault_experience',retro:false,submitting:false,
+        quick_overall:draft.quick_overall||null,quick_tags:draft.quick_tags||[],quick_comment:draft.quick_comment||''
     };
     var el=document.getElementById('review-form-overlay');
     if(!el){
@@ -4885,11 +5086,16 @@ function buildLocalReviewSummary(state){
     });
     var labels=warningFlagLabelsFromSchema(state.schema);
     var warnings=(state.warning_flags||[]).map(function(id){return {id:id,title:labels[id]||String(id).replace(/_/g,' ')};});
+    var quickTags=quickTagsByIds(state.quick_tags||[]).map(function(tag){
+        return {id:tag.id,title:quickTagLabel(tag),kind:tag.kind||'note'};
+    });
     return {
         schema_version:state.schema.version_id||null,
         overall_rating:computeLocalReviewOverall(state),
         sections:outSections,
         warning_flags:warnings,
+        quick_tags:quickTags,
+        quick_comment:(state.quick_comment||'').trim()||null,
         best_thing:(state.best_thing||'').trim()||null,
         worst_thing:(state.worst_thing||'').trim()||null,
         advice:(state.advice||'').trim()||null
@@ -4906,9 +5112,28 @@ function renderReviewForm(){
     h+='<div class="rfh"><div>';
     h+='<h3>Review your contract on '+esc(w.vessel_name)+'</h3>';
     h+='<div class="meta">IMO '+esc(s.imo)+(w.position?' &middot; '+esc(w.position):'')+' &middot; '+esc((w.sign_on||'?')+' → '+(w.sign_off||'present'))+'</div>';
-    h+='<div class="meta">Public projection shows section averages only. Reviewer identity stays HMAC-only on the server, separate from your crewing-facing identity.</div>';
+    h+='<div class="review-privacy-note"><span class="review-trust-chip">'+esc(rvText('анонимно','anonymous'))+'</span><span>'+esc(rvText('Ваше имя, CV, документы и отклики крюингам не отправляются с отзывом. Сервер видит только анонимный ключ отзыва, IMO и агрегируемые оценки.','Your name, CV, documents, and crewing applications are not sent with this review. The server sees only an anonymous review key, IMO, and aggregateable ratings.'))+'</span></div>';
     h+='</div><button class="btn btn-sm btn-outline" onclick="closeReviewForm()">&times;</button></div>';
     h+='<div class="rfb">';
+    h+='<div class="quick-review-box">';
+    h+='<div class="quick-review-head"><div><div class="quick-review-title">'+esc(rvText('Быстрый отзыв','Quick review'))+'</div>';
+    h+='<div class="quick-review-desc">'+esc(rvText('Выберите общую оценку и 2-3 тега. Skipi заполнит минимальную структуру, а вы сможете сразу опубликовать или уточнить детали ниже.','Choose an overall rating and 2-3 tags. Skipi fills the minimum structure so you can publish immediately or fine-tune details below.'))+'</div></div>';
+    h+='<div class="quick-review-stars">';
+    for(var qs=1;qs<=5;qs++){
+        h+='<button class="'+(Number(s.quick_overall)>=qs?'on':'')+'" onclick="setQuickReviewOverall('+qs+')" title="'+qs+'/5">&#9733;</button>';
+    }
+    h+='</div></div>';
+    h+='<div class="quick-tag-grid">';
+    QUICK_REVIEW_TAGS.forEach(function(tag){
+        var on=(s.quick_tags||[]).indexOf(tag.id)>=0;
+        h+='<button class="'+(on?'on':'')+'" onclick="toggleQuickReviewTag(\''+tag.id+'\')" type="button">'+esc(quickTagLabel(tag))+'</button>';
+    });
+    h+='</div>';
+    h+='<textarea class="quick-review-note" rows="2" maxlength="600" placeholder="'+escAttr(rvText('Короткий комментарий: что важно знать следующему экипажу?','Short comment: what should the next crew know?'))+'" oninput="setQuickReviewComment(this.value)">'+esc(s.quick_comment||'')+'</textarea>';
+    h+='<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;">';
+    h+='<div class="quick-review-desc">'+esc(rvText('Комментарий желателен, но короткий. Подробности можно добавить в секциях ниже.','A short comment is helpful. You can add detail in the sections below.'))+'</div>';
+    h+='<button class="btn btn-accent btn-sm" onclick="applyQuickReviewPreset()">'+esc(rvText('Заполнить отзыв','Fill review'))+'</button>';
+    h+='</div></div>';
     sections.forEach(function(sec){
         var st=reviewSectionState(sec.id);
         h+='<div class="rev-section">';
@@ -5060,6 +5285,7 @@ async function submitReviewForm(){
         var refreshExperience=(typeof currentView!=='undefined'&&currentView==='experience');
         closeReviewForm();
         showToast('Review published','success');
+        try{window._vesselReviewStats=await loadVesselReviewContributionStats();}catch(_){}
         if(refreshExperience){
             try{await showWorkHistory();}catch(refreshErr){logError('review_refresh_experience',refreshErr);}
         }
@@ -5097,12 +5323,15 @@ async function showWorkHistory(){
     var entries=[];
     try{entries=await invoke('get_work_history');}catch(e){showToast('Error: '+e,'error');logError('op',e);return;}
     var gate=await getSeaServiceUnlockState();
+    var reviewStats=vesselReviewContributionStats(entries||[]);
+    window._vesselReviewStats=reviewStats;
     var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">';
     h+='<h2 style="font-size:18px;">Sea Service Record</h2>';
     if(gate.ok)h+='<button class="btn btn-accent" onclick="showAddWork()">+ Add Entry</button>';
     else h+='<button class="btn btn-outline" onclick="showMissing()">Complete profile</button>';
     h+='</div>';
     h+='<p style="color:var(--text2);font-size:12px;margin-bottom:16px;">Your career track. Add each contract with dates and vessel details. Attach supporting documents (contract, discharge letter, sea service letter, flight tickets) to build a verifiable record.</p>';
+    if(entries.length)h+=renderReviewNudgeCard(reviewStats,'experience');
     if(!gate.ok)h+=renderSeaServiceLock(gate,'Sea Service is locked');
     if(!entries.length){
         h+='<p style="color:var(--text2)">'+(gate.ok?'No entries yet. Click "Add Entry" to start building your sea service record.':'No entries yet. Complete the minimum document structure first, then add your contracts.')+'</p>';
@@ -5112,7 +5341,8 @@ async function showWorkHistory(){
             var period=(e.sign_on||'?')+' → '+(e.sign_off||'present');
             var files=[];
             try{files=await invoke('get_work_files',{entryId:e.id});}catch(err){files=[];}
-            h+='<div id="work-card-'+escAttr(e.id)+'" style="border:1px solid var(--border);border-radius:6px;padding:12px 14px;margin-bottom:10px;">';
+            var highlight=e.id===vesselReviewHighlightEntryId;
+            h+='<div id="work-card-'+escAttr(e.id)+'" style="border:1px solid '+(highlight?'var(--accent)':'var(--border)')+';border-radius:6px;padding:12px 14px;margin-bottom:10px;'+(highlight?'box-shadow:0 0 0 3px var(--accent-bg2);':'')+'">';
             h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">';
             var normImo=normalizeImo(e.imo);
             var vesselTitle=esc(e.vessel_name);
@@ -5175,6 +5405,13 @@ async function showWorkHistory(){
     }
     document.getElementById('scr-content').innerHTML=h;show('scr-content');updateTabs('Sea Service');
     hydrateVesselReviews(entries);
+    if(vesselReviewHighlightEntryId){
+        setTimeout(function(){
+            var id=vesselReviewHighlightEntryId;
+            vesselReviewHighlightEntryId=null;
+            focusWorkEntry(id);
+        },80);
+    }
 }
 
 async function attachWorkFile(entryId){
@@ -5322,8 +5559,10 @@ async function saveWork(){
         return;
     }
     try{
-        await invoke('add_work_history',payload);
+        var newId=await invoke('add_work_history',payload);
+        vesselReviewHighlightEntryId=newId||null;
         await showWorkHistory();
+        showToast(rvText('Sea Service сохранён. Теперь можно оценить судно.','Sea Service saved. You can now rate this vessel.'),'success');
         scheduleDeveloperGroupInviteCheck(700);
     }catch(e){showToast('Error: '+e,'error');logError('op',e);}
 }
@@ -6047,6 +6286,8 @@ async function showJobs(){
     var ship  = (sp.preferred_vessel_types||'').split(',')[0].trim();
     var minSal = sp.min_salary || '';
     var cur = sp.min_salary_currency || 'USD';
+    var reviewStats=await loadVesselReviewContributionStats();
+    window._vesselReviewStats=reviewStats;
 
     var h = '';
     h += '<div style="max-width:720px;margin:0 auto;">';
@@ -6081,6 +6322,7 @@ async function showJobs(){
         h += '</div>';
         h += '</div>';
     }
+    h += renderReviewNudgeCard(reviewStats,'jobs');
 
     // (Profile fields shown here previously were a duplicate of Settings →
     //  Seafarer Profile. Removed in v0.4.54 — single source of truth.)
@@ -6441,6 +6683,7 @@ function jobsVesselRatingHtml(v, esc){
             + '<span class="stars">☆☆☆☆☆</span>'
             + '<span class="meta">No vessel rating yet'
             + (min ? ' · needs '+esc(min)+' approved reviews' : '')
+            + (window._vesselReviewStats&&window._vesselReviewStats.latest_unreviewed ? ' · your verified review helps' : '')
             + '</span>'+tagClose;
     }
     return '';
