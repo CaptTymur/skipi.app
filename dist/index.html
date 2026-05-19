@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.133';
+var APP_VERSION='0.4.134';
 var UI_LANG_KEY='skipi-ui-language';
 var UI_LANG_OPTIONS=[
     ['ru','Русский'],
@@ -767,7 +767,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p id="welcome-subtitle">Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.133</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.134</span></p>
                 <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -815,7 +815,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
             <div class="field"><label>Citizenship *</label><select id="fp-nationality"></select></div>
             <div class="field"><label>Phones *</label><div style="display:flex;gap:6px;"><input id="fp-phones" placeholder="+XX XXX..." style="flex:1;min-width:0;"><select id="fp-preferred_messenger" style="width:110px;flex:0 0 110px;"><option value="WhatsApp">WhatsApp</option><option value="Telegram">Telegram</option><option value="Viber">Viber</option><option value="Signal">Signal</option><option value="Other">Other</option></select></div></div>
             <div class="field"><label>Email *</label><input id="fp-email" type="email"></div>
-            <div class="field"><label>Rank *</label><select id="fp-rank"></select></div>
+            <div class="field"><label>Rank *</label><select id="fp-rank" onchange="syncRankCustom('fp',true)"></select><input id="fp-rank_custom" placeholder="Type your rank" style="display:none;margin-top:6px;"></div>
             <div class="field"><label>Vessel type *</label><select id="fp-preferred_vessel_types"></select></div>
             <div class="field"><label>Nearest airport *</label><input id="fp-nearest_airport" placeholder="Start typing…"></div>
             <div class="field"><label>Nearest intl airport *</label><input id="fp-nearest_intl_airport" placeholder="Start typing…"></div>
@@ -865,15 +865,18 @@ var WIZARD_POSITION_TO_RANK = {
     chief_officer: 'Chief Officer',
     second_officer: '2nd Officer',
     third_officer: '3rd Officer',
+    junior_officer: 'Junior Officer',
     chief_engineer: 'Chief Engineer',
     second_engineer: '2nd Engineer',
     third_engineer: '3rd Engineer',
     fourth_engineer: '4th Engineer',
+    junior_engineer: 'Junior Engineer',
     eto: 'Electro-Technical Officer',
     bosun: 'Bosun',
     ab: 'AB',
     os: 'OS',
     cook: 'Cook',
+    cadet: 'Cadet',
     cadet_deck: 'Cadet',
     cadet_engine: 'Cadet',
 };
@@ -889,6 +892,8 @@ var RANK_ALIASES = {
     'Fourth Engineer': '4th Engineer',
     'Electro Technical Officer': 'Electro-Technical Officer',
     'ETO': 'Electro-Technical Officer',
+    'Deck Cadet': 'Cadet',
+    'Engine Cadet': 'Cadet',
 };
 function canonicalRank(r) {
     if (!r) return r;
@@ -1964,11 +1969,11 @@ function renderWizard(){
         var posList=profileTax.positions.filter(function(p){return p.level===wizardState.level;});
         var byDept={};
         posList.forEach(function(p){if(!byDept[p.dept])byDept[p.dept]=[];byDept[p.dept].push(p);});
-        var deptLabels={deck:'Deck Department',engine:'Engine Department',catering:'Catering Department',electrical:'Electrical Department'};
+        var deptLabels={deck:'Deck Department',engine:'Engine Department',catering:'Catering Department',electrical:'Electrical Department',other:'Other / Training'};
         // Make sure every known department shows an Other card, even if byDept is sparse
-        var allDepts=['deck','engine','electrical','catering'];
+        var allDepts=['deck','engine','electrical','catering','other'];
         allDepts.forEach(function(d){ if(!byDept[d]) byDept[d]=[]; });
-        ['deck','engine','electrical','catering'].forEach(function(dept){
+        ['deck','engine','electrical','catering','other'].forEach(function(dept){
             if(!byDept[dept])return;
             var dLabel=deptLabels[dept]||dept.charAt(0).toUpperCase()+dept.slice(1);
             h+='<div style="margin:22px 0 10px;padding:8px 12px;background:var(--bg2);border-left:3px solid var(--accent);border-radius:3px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--accent);letter-spacing:1.2px;">'+dLabel+'</div>';
@@ -2149,8 +2154,8 @@ function populateNationalitySelect(selectEl, currentVal){
 
 // ========== Maritime rank list (hard dropdown for Rank field) ==========
 var RANKS = [
-    "Master","Chief Officer","Second Officer","Third Officer","Deck Cadet",
-    "Chief Engineer","Second Engineer","Third Engineer","Fourth Engineer","Engine Cadet",
+    "Master","Chief Officer","Second Officer","Third Officer","Junior Officer","Cadet","Deck Cadet",
+    "Chief Engineer","Second Engineer","Third Engineer","Fourth Engineer","Junior Engineer","Engine Cadet",
     "Electro-Technical Officer","Electrician",
     "Bosun","Able Seaman","Ordinary Seaman",
     "Pumpman","Fitter","Motorman","Oiler","Wiper",
@@ -2163,6 +2168,41 @@ function populateSelect(selectEl, list, currentVal, placeholder){
     var h='<option value="">'+(placeholder||'-- Select --')+'</option>';
     list.forEach(function(n){ h+='<option value="'+n+'"'+(n===currentVal?' selected':'')+'>'+n+'</option>'; });
     selectEl.innerHTML=h;
+}
+function rankListContains(value){
+    return RANKS.indexOf(String(value||'')) !== -1;
+}
+function populateRankControl(prefix,currentVal,placeholder){
+    var selectEl=document.getElementById(prefix+'-rank');
+    if(!selectEl)return;
+    currentVal=String(currentVal||'').trim();
+    var isKnown=currentVal&&rankListContains(currentVal);
+    populateSelect(selectEl,RANKS,isKnown?currentVal:'',placeholder||'-- Select rank --');
+    var custom=document.getElementById(prefix+'-rank_custom');
+    if(custom){
+        custom.value=currentVal&&!isKnown?currentVal:'';
+    }
+    if(currentVal&&!isKnown)selectEl.value='Other';
+    syncRankCustom(prefix,false);
+}
+function syncRankCustom(prefix,focus){
+    var selectEl=document.getElementById(prefix+'-rank');
+    var custom=document.getElementById(prefix+'-rank_custom');
+    if(!selectEl||!custom)return;
+    var show=selectEl.value==='Other';
+    custom.style.display=show?'block':'none';
+    custom.required=show;
+    if(!show)custom.value='';
+    if(show&&focus)custom.focus();
+}
+function rankValueFromControl(prefix){
+    var selectEl=document.getElementById(prefix+'-rank');
+    if(!selectEl)return '';
+    if(selectEl.value==='Other'){
+        var custom=document.getElementById(prefix+'-rank_custom');
+        return custom?(custom.value||'').trim():'';
+    }
+    return (selectEl.value||'').trim();
 }
 
 // ========== Currencies (next to min salary) ==========
@@ -2609,7 +2649,7 @@ async function openForcedProfile(forceOpen){
         // Populate
         var natSel=document.getElementById('fp-nationality');
         populateNationalitySelect(natSel,data.nationality||'');
-        populateSelect(document.getElementById('fp-rank'),RANKS,data.rank||'','-- Select rank --');
+        populateRankControl('fp',data.rank||'','-- Select rank --');
         await populateVesselTypeSelect(document.getElementById('fp-preferred_vessel_types'),data.preferred_vessel_types||'','-- Select vessel type --');
         populateAirportDatalist();
         var curSel=document.getElementById('fp-min_salary_currency');
@@ -2636,7 +2676,7 @@ async function fpSubmit(){
     var labelMap={surname:'Surname',first_name:'First name',date_of_birth:'Date of birth',place_of_birth:'Place of birth',nationality:'Citizenship',phones:'Phones',email:'Email',rank:'Rank',preferred_vessel_types:'Vessel type',nearest_airport:'Nearest airport',nearest_intl_airport:'Nearest intl airport',available_from:'Available from',home_address:'Home address',min_salary:'Minimum salary'};
     fpRequiredKeys().forEach(function(k){
         var el=document.getElementById('fp-'+k);
-        var v=el?(el.value||'').trim():'';
+        var v=k==='rank'?rankValueFromControl('fp'):(el?(el.value||'').trim():'');
         if(!v)missing.push(labelMap[k]||k);
         if(k==='min_salary')fields.min_salary=v;
         else fields[k]=v;
@@ -5457,6 +5497,42 @@ function workFormListWithCurrent(list,current){
     if(current&&list.indexOf(current)===-1)list.unshift(current);
     return list;
 }
+function workPositionList(list){
+    list=(list||[]).slice();
+    if(list.indexOf('Other')===-1)list.push('Other');
+    return list;
+}
+function populateWorkPositionControl(list,current){
+    var sel=document.getElementById('wh-position');
+    if(!sel)return;
+    current=String(current||'').trim();
+    var base=workPositionList(list);
+    var known=current&&base.indexOf(current)!==-1;
+    populateSelect(sel,base,known?current:'','-- Select position --');
+    var custom=document.getElementById('wh-position_custom');
+    if(custom)custom.value=current&&!known?current:'';
+    if(current&&!known)sel.value='Other';
+    syncWorkPositionCustom(false);
+}
+function syncWorkPositionCustom(focus){
+    var sel=document.getElementById('wh-position');
+    var custom=document.getElementById('wh-position_custom');
+    if(!sel||!custom)return;
+    var show=sel.value==='Other';
+    custom.style.display=show?'block':'none';
+    custom.required=show;
+    if(!show)custom.value='';
+    if(show&&focus)custom.focus();
+}
+function workPositionValue(){
+    var sel=document.getElementById('wh-position');
+    if(!sel)return '';
+    if(sel.value==='Other'){
+        var custom=document.getElementById('wh-position_custom');
+        return custom?(custom.value||'').trim():'';
+    }
+    return (sel.value||'').trim();
+}
 
 function renderWorkEntryForm(entry){
     entry=entry||null;
@@ -5474,7 +5550,7 @@ function renderWorkEntryForm(entry){
     h+='<div class="field"><label>TEU</label><input id="wh-teu" type="text" inputmode="numeric" placeholder="container ships" value="'+val('teu')+'"></div>';
     h+='<div class="field"><label>Flag</label><input id="wh-flag" list="maritime-flags" placeholder="Start typing… (Panama, Liberia, Marshall Islands, …)" value="'+val('flag')+'"></div>';
     h+='<div class="field"><label>Company</label><input id="wh-company" placeholder="Shipping Co." value="'+val('company')+'"></div>';
-    h+='<div class="field"><label>Position *</label><select id="wh-position"></select></div>';
+    h+='<div class="field"><label>Position *</label><select id="wh-position" onchange="syncWorkPositionCustom(true)"></select><input id="wh-position_custom" placeholder="Type position" style="display:none;margin-top:6px;"></div>';
     h+='<div class="field"><label>Sign On</label><input id="wh-on" type="text" inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" oninput="autoFormatDate(this)" value="'+val('sign_on')+'"></div>';
     h+='<div class="field"><label>Sign Off</label><input id="wh-off" type="text" inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" oninput="autoFormatDate(this)" value="'+val('sign_off')+'"></div>';
     h+='</div>';
@@ -5492,7 +5568,7 @@ async function populateWorkEntryFormControls(entry){
         ["Bulk Carrier","Container Ship","Tanker","Oil Tanker","Chemical Tanker","Product Tanker","LNG Carrier","LPG Carrier","General Cargo","Ro-Ro","Car Carrier","Reefer","Passenger","Cruise Ship","Ferry","Offshore Support","AHTS","PSV","Tug","OSV","Yacht","Other"];
     var pList=(types&&types.ranks&&types.ranks.length)?types.ranks:RANKS;
     populateSelect(document.getElementById('wh-type'),workFormListWithCurrent(vList,entry.vessel_type),entry.vessel_type||'','-- Select type --');
-    populateSelect(document.getElementById('wh-position'),workFormListWithCurrent(pList,entry.position),entry.position||'','-- Select position --');
+    populateWorkPositionControl(pList,entry.position||'');
     populateFlagsDatalist();
     await populatePrevVesselsDatalist();
 }
@@ -5543,7 +5619,7 @@ async function populatePrevVesselsDatalist(){
 
 function readWorkFormPayload(){
     var v=function(id){return document.getElementById(id).value.trim()||null;};
-    var vessel=v('wh-vessel'),pos=v('wh-position');
+    var vessel=v('wh-vessel'),pos=workPositionValue();
     if(!vessel||!pos){alert('Vessel name and Position are required');return null;}
     var imo=normalizeImo(v('wh-imo'));
     if(!imo){
@@ -9074,7 +9150,7 @@ function renderSettingsBody(){
         // Rank + Vessel Type are the most load-bearing seafarer attributes —
         // surface them at the top so the user can see/adjust them without
         // scrolling past personal details first.
-        h += '<div class="field"><label>Rank</label><select id="sp-rank"></select></div>';
+        h += '<div class="field"><label>Rank</label><select id="sp-rank" onchange="syncRankCustom(\'sp\',true)"></select><input id="sp-rank_custom" placeholder="Type your rank" style="display:none;margin-top:6px;"></div>';
         h += '<div class="field"><label>Vessel type</label><select id="sp-preferred_vessel_type"></select></div>';
         h += spField('sp-surname','Surname');
         h += spField('sp-first_name','First name');
@@ -9386,7 +9462,7 @@ async function spLoad(){
         var data=await invoke('get_seafarer_personal');
         // Populate dropdowns before assigning values
         populateNationalitySelect(document.getElementById('sp-nationality'),data.nationality||'');
-        populateSelect(document.getElementById('sp-rank'),RANKS,data.rank||'','-- Select rank --');
+        populateRankControl('sp',data.rank||'','-- Select rank --');
         // Vessel type — grouped by root (Dry Cargo / Tanker / …). We only
         // store one primary type in the profile even though the Rust field
         // is a csv list, so we use the first token on load.
@@ -9487,6 +9563,7 @@ async function spSave(){
         var el=document.getElementById('sp-'+k);
         fields[k]=el?el.value:'';
     });
+    fields.rank=rankValueFromControl('sp');
     var rdy=document.getElementById('sp-ready_for_offers');
     fields.ready_for_offers=rdy&&rdy.checked?'true':'false';
     var msgr=document.getElementById('sp-preferred_messenger');

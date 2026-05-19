@@ -243,6 +243,12 @@ pub fn positions() -> Vec<Position> {
             dept: "deck",
         },
         Position {
+            id: "junior_officer",
+            label: "Junior Officer",
+            level: Operational,
+            dept: "deck",
+        },
+        Position {
             id: "third_engineer",
             label: "Third Engineer",
             level: Operational,
@@ -251,6 +257,12 @@ pub fn positions() -> Vec<Position> {
         Position {
             id: "fourth_engineer",
             label: "Fourth Engineer",
+            level: Operational,
+            dept: "engine",
+        },
+        Position {
+            id: "junior_engineer",
+            label: "Junior Engineer",
             level: Operational,
             dept: "engine",
         },
@@ -266,6 +278,12 @@ pub fn positions() -> Vec<Position> {
             label: "Bosun",
             level: Support,
             dept: "deck",
+        },
+        Position {
+            id: "cadet",
+            label: "Cadet",
+            level: Support,
+            dept: "other",
         },
         Position {
             id: "ab",
@@ -339,6 +357,9 @@ pub fn position_id_from_rank_label(value: &str) -> Option<&'static str> {
         "chiefmate" | "1stofficer" | "firstofficer" | "1o" | "co" => Some("chief_officer"),
         "secondmate" | "2ndofficer" | "2officer" | "2o" => Some("second_officer"),
         "thirdmate" | "3rdofficer" | "3officer" | "3o" => Some("third_officer"),
+        "juniorofficer" | "jrofficer" | "juniordeckofficer" => Some("junior_officer"),
+        "juniorengineer" | "jrengineer" | "juniorengineofficer" => Some("junior_engineer"),
+        "cadet" | "deckcadet" | "enginecadet" | "trainee" => Some("cadet"),
         "electrotechnicalofficer" | "electrotechnicalofficereto" => Some("eto"),
         "electrician" | "electrotechnicalrating" | "etr" => Some("ete"),
         "ableseaman" | "ablebodiedseaman" => Some("ab"),
@@ -534,7 +555,7 @@ pub fn position_docs(pos_id: &str) -> Vec<DocTemplate> {
                 category: "Deck Training", regulatory_basis: "STCW A-II/1, A-II/2",
                 has_expiry: false, typical_years: None, notes: "" },
         ],
-        "second_officer" | "third_officer" => vec![
+        "second_officer" | "third_officer" | "junior_officer" => vec![
             DocTemplate { id: "coc_oow", title: "Certificate of Competency — Officer in Charge of a Navigational Watch",
                 category: "Certificate of Competency", regulatory_basis: "STCW II/1",
                 has_expiry: true, typical_years: Some(5), notes: "OOW Deck" },
@@ -569,7 +590,7 @@ pub fn position_docs(pos_id: &str) -> Vec<DocTemplate> {
                 category: "Engine Training", regulatory_basis: "STCW A-III/2",
                 has_expiry: false, typical_years: None, notes: "" },
         ],
-        "third_engineer" | "fourth_engineer" => vec![
+        "third_engineer" | "fourth_engineer" | "junior_engineer" => vec![
             DocTemplate { id: "coc_eoow", title: "Certificate of Competency — Engineer Officer in Charge of a Watch",
                 category: "Certificate of Competency", regulatory_basis: "STCW III/1",
                 has_expiry: true, typical_years: Some(5), notes: "EOOW" },
@@ -797,6 +818,50 @@ pub fn required_docs_for_profile(
     merge(&mut out, &mut seen, position_docs(pos_id));
     merge(&mut out, &mut seen, vessel_extras(vessel_id, level));
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn position_catalog_includes_entry_and_junior_roles() {
+        assert_eq!(position("cadet").unwrap().label, "Cadet");
+        assert_eq!(position("junior_officer").unwrap().label, "Junior Officer");
+        assert_eq!(
+            position("junior_engineer").unwrap().label,
+            "Junior Engineer"
+        );
+
+        assert_eq!(position_id_from_rank_label("Cadet"), Some("cadet"));
+        assert_eq!(
+            position_id_from_rank_label("Junior Officer"),
+            Some("junior_officer")
+        );
+        assert_eq!(
+            position_id_from_rank_label("Junior Engineer"),
+            Some("junior_engineer")
+        );
+    }
+
+    #[test]
+    fn junior_roles_reuse_operational_certificate_slots() {
+        let junior_officer: Vec<&str> = position_docs("junior_officer")
+            .into_iter()
+            .map(|t| t.id)
+            .collect();
+        assert!(junior_officer.contains(&"coc_oow"));
+        assert!(junior_officer.contains(&"gmdss_goc"));
+
+        let junior_engineer: Vec<&str> = position_docs("junior_engineer")
+            .into_iter()
+            .map(|t| t.id)
+            .collect();
+        assert!(junior_engineer.contains(&"coc_eoow"));
+        assert!(junior_engineer.contains(&"erm"));
+
+        assert!(position_docs("cadet").is_empty());
+    }
 }
 
 pub fn all_seafarer_doc_templates() -> Vec<DocTemplate> {

@@ -31,6 +31,8 @@ Infrastructure strategy: start on Contabo because cash matters, scale up within 
 
 Security P0: before wide launch, keep the local-first boundary strict: server must not become a central vault for seafarer passports/certificates/contracts. Current security layer and gaps are captured in `SECURITY_THREAT_MODEL.md` and `skipi-server/SECURITY.md`. Highest-priority fixes: replace shared `ADMIN_TOKEN` with per-organization scoped tokens, add object-level authorization tests, pin seafarer user_id to application threads, add rate limits/WAF, add `/api/app-config` kill switches, move production to Postgres + Alembic + off-provider restore-tested backups, harden updater/release secrets, add CSP, and narrow Tauri FS capabilities.
 
+Architecture track: current beta remains a fast discovery/release loop. Future production backend work and trust/verification work are separate epics documented in `ARCHITECTURE_EPICS_FAST_RELEASES_TRUST.md`; real maritime/product rules discovered during beta are captured in `BUSINESS_RULES_REGISTER.md`.
+
 - **Автор:** Tymur Rudov (Master Mariner)
 - **Репозиторий:** https://github.com/CaptTymur/skipi.app (публичный)
 - **Последний релиз:** v0.4.14 (drag-and-drop добавлен)

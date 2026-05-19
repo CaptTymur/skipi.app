@@ -7,6 +7,17 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.134] — 2026-05-19
+
+### Added
+- Added Cadet, Junior Officer, and Junior Engineer to the seafarer rank and
+  position catalog.
+- Added custom rank and Sea Service position entry paths for real-world roles
+  that are not yet in the preset catalog.
+- Added architecture epics for future production backend work and
+  trust/verification, plus a lightweight business-rules register for beta
+  discoveries.
+
 ## [0.4.133] — 2026-05-19
 
 ### Added
