@@ -25,6 +25,7 @@ fn make_record(t: &DocTemplate) -> DocRecord {
         title: t.title.to_string(),
         file_name: None,
         has_expiry: t.has_expiry,
+        is_permanent: false,
         valid_to,
         notes: if t.notes.is_empty() {
             None
@@ -55,6 +56,7 @@ pub fn record_from_profile_template(t: &profiles::DocTemplate) -> DocRecord {
         title: t.title.to_string(),
         file_name: None,
         has_expiry: t.has_expiry,
+        is_permanent: profiles::default_is_permanent_doc(t.id),
         valid_from: None,
         valid_to,
         issued_by: None,
@@ -74,6 +76,20 @@ pub fn record_from_profile_template(t: &profiles::DocTemplate) -> DocRecord {
         content_type: None,
         visibility: "private".to_string(),
         is_national: false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn yellow_fever_template_defaults_to_permanent_certificate() {
+        let template = profiles::doc_template_by_title_or_id("yellow_fever").unwrap();
+        let record = record_from_profile_template(&template);
+        assert!(record.is_permanent);
+        assert!(!record.has_expiry);
+        assert!(record.valid_to.is_none());
     }
 }
 

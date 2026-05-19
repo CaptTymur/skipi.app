@@ -32,6 +32,7 @@ fn doc_has_user_payload(doc: &DocRecord) -> bool {
             .as_ref()
             .map(|s| !s.trim().is_empty())
             .unwrap_or(false)
+        || doc.is_permanent
 }
 
 fn doc_has_file_or_entered_identity(doc: &DocRecord) -> bool {
@@ -51,6 +52,7 @@ fn doc_has_file_or_entered_identity(doc: &DocRecord) -> bool {
             .as_ref()
             .map(|s| !s.trim().is_empty())
             .unwrap_or(false)
+        || doc.is_permanent
 }
 
 fn current_active_required_template_ids(conn: &rusqlite::Connection) -> HashSet<String> {
@@ -252,8 +254,9 @@ pub(crate) fn normalize_known_custom_docs(conn: &rusqlite::Connection) -> Result
                  valid_to = COALESCE(NULLIF(valid_to, ''), ?4),
                  notes = ?5,
                  regulatory_basis = ?6,
-                 template_id = ?7
-             WHERE id = ?8",
+                 template_id = ?7,
+                 is_permanent = ?8
+             WHERE id = ?9",
             params![
                 rec.category,
                 rec.title,
@@ -262,6 +265,7 @@ pub(crate) fn normalize_known_custom_docs(conn: &rusqlite::Connection) -> Result
                 rec.notes,
                 rec.regulatory_basis,
                 rec.template_id,
+                rec.is_permanent as i32,
                 doc.id,
             ],
         )
@@ -322,6 +326,7 @@ pub fn add_custom_doc(
     title: String,
     category: Option<String>,
     has_expiry: Option<bool>,
+    is_permanent: Option<bool>,
 ) -> Result<DocRecord, String> {
     let title = title.trim().to_string();
     if title.is_empty() {
@@ -338,6 +343,7 @@ pub fn add_custom_doc(
         })
         .unwrap_or_else(|| "Custom".to_string());
     let has_expiry = has_expiry.unwrap_or(false);
+    let is_permanent = is_permanent.unwrap_or(false);
 
     let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
     let vault_path = vault_lock.as_ref().ok_or("No vault open")?;
@@ -371,6 +377,7 @@ pub fn add_custom_doc(
             title: title.clone(),
             file_name: None,
             has_expiry,
+            is_permanent,
             valid_from: None,
             valid_to: None,
             issued_by: None,
@@ -395,6 +402,7 @@ pub fn add_custom_doc(
         "kind": if rec.template_id.is_some() { "known_template" } else { "custom" },
         "template_id": rec.template_id.clone(),
         "has_expiry": has_expiry,
+        "is_permanent": rec.is_permanent,
     })
     .to_string();
     let _ = db::log_event(conn, "doc_added", "document", Some(&id), Some(&payload));
@@ -453,12 +461,14 @@ pub fn add_catalog_doc(
             }
         })
         .unwrap_or_else(|| "Catalog".to_string());
+    let is_permanent = profiles::default_is_permanent_doc(&template_id);
     let rec = DocRecord {
         id: id.clone(),
         category: category.clone(),
         title: title.clone(),
         file_name: None,
         has_expiry,
+        is_permanent,
         valid_from: None,
         valid_to: None,
         issued_by: None,
@@ -480,6 +490,7 @@ pub fn add_catalog_doc(
         "kind": "catalog",
         "template_id": template_id,
         "has_expiry": has_expiry,
+        "is_permanent": is_permanent,
     })
     .to_string();
     let _ = db::log_event(conn, "doc_added", "document", Some(&id), Some(&payload));
@@ -773,6 +784,7 @@ mod tests {
             title: title.to_string(),
             file_name: None,
             has_expiry: true,
+            is_permanent: false,
             valid_from: None,
             valid_to: None,
             issued_by: None,
@@ -1030,6 +1042,7 @@ mod tests {
             title: "Ship Security Officer".to_string(),
             file_name: None,
             has_expiry: false,
+            is_permanent: false,
             valid_from: None,
             valid_to: None,
             issued_by: None,
@@ -1070,6 +1083,7 @@ mod tests {
             title: "Ice Navigation Advanced Training".to_string(),
             file_name: None,
             has_expiry: true,
+            is_permanent: false,
             valid_from: None,
             valid_to: None,
             issued_by: None,
@@ -1114,6 +1128,7 @@ mod tests {
                 title: title.to_string(),
                 file_name: None,
                 has_expiry: true,
+                is_permanent: false,
                 valid_from: None,
                 valid_to: None,
                 issued_by: None,
@@ -1157,6 +1172,7 @@ mod tests {
             title: "Ships carrying dangerous and hazardous substances in solid form in bulk and in packaged form".to_string(),
             file_name: None,
             has_expiry: true,
+            is_permanent: false,
             valid_from: None,
             valid_to: Some("2026-07-24".to_string()),
             issued_by: None,
@@ -1201,6 +1217,7 @@ mod tests {
             title: "ECDIS Training".to_string(),
             file_name: None,
             has_expiry: false,
+            is_permanent: false,
             valid_from: None,
             valid_to: None,
             issued_by: None,
@@ -1278,6 +1295,7 @@ pub fn export_documents_bundle(
                     "issued_by": doc.issued_by,
                     "valid_from": doc.valid_from,
                     "valid_to": doc.valid_to,
+                    "is_permanent": doc.is_permanent,
                     "file_path": serde_json::Value::Null,
                     "file_name": serde_json::Value::Null,
                 }));
@@ -1303,6 +1321,7 @@ pub fn export_documents_bundle(
             "issued_by": doc.issued_by,
             "valid_from": doc.valid_from,
             "valid_to": doc.valid_to,
+            "is_permanent": doc.is_permanent,
             "file_name": fname,
             "file_path": in_zip,
         }));

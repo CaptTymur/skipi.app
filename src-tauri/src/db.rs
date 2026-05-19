@@ -11,6 +11,8 @@ pub struct DocRecord {
     pub title: String,
     pub file_name: Option<String>,
     pub has_expiry: bool,
+    #[serde(default)]
+    pub is_permanent: bool,
     pub valid_from: Option<String>,
     pub valid_to: Option<String>,
     pub issued_by: Option<String>,
@@ -245,6 +247,16 @@ fn migrations() -> Vec<(u32, &'static str)> {
                 ON vessel_review_receipts(vessel_imo);
         "#,
         ),
+        // Migration 9: per-document permanent/no-expiry override.
+        // `has_expiry` remains template metadata; `is_permanent` is the user's
+        // statement that this particular certificate has no expiry date.
+        (
+            9,
+            r#"
+            ALTER TABLE documents ADD COLUMN is_permanent INTEGER NOT NULL DEFAULT 0;
+            UPDATE documents SET is_permanent = 1 WHERE template_id = 'yellow_fever';
+        "#,
+        ),
     ]
 }
 
@@ -428,6 +440,50 @@ mod tests {
     }
 
     #[test]
+    fn document_permanent_flag_roundtrips_and_updates() {
+        let vault_path = env::temp_dir().join(format!("skipi-doc-permanent-{}", Uuid::new_v4()));
+        fs::create_dir_all(&vault_path).unwrap();
+        let conn = open_db(&vault_path).unwrap();
+
+        let doc = DocRecord {
+            id: "doc-permanent".to_string(),
+            category: "Medical".to_string(),
+            title: "Permanent certificate".to_string(),
+            file_name: None,
+            has_expiry: true,
+            is_permanent: false,
+            valid_from: None,
+            valid_to: Some("2030-01-01".to_string()),
+            issued_by: None,
+            doc_number: None,
+            notes: None,
+            field_statuses: None,
+            regulatory_basis: None,
+            template_id: None,
+            sha256: None,
+            file_size: None,
+            content_type: None,
+            visibility: "private".to_string(),
+            is_national: false,
+        };
+        insert_doc(&conn, &doc).unwrap();
+        update_doc_field(&conn, "doc-permanent", "is_permanent", "true").unwrap();
+
+        let docs = get_all_docs(&conn).unwrap();
+        let stored = docs.iter().find(|d| d.id == "doc-permanent").unwrap();
+        assert!(stored.is_permanent);
+        assert_eq!(stored.valid_to.as_deref(), Some("2030-01-01"));
+
+        update_doc_field(&conn, "doc-permanent", "is_permanent", "0").unwrap();
+        let docs = get_all_docs(&conn).unwrap();
+        let stored = docs.iter().find(|d| d.id == "doc-permanent").unwrap();
+        assert!(!stored.is_permanent);
+
+        drop(conn);
+        let _ = fs::remove_dir_all(&vault_path);
+    }
+
+    #[test]
     fn work_history_roundtrips_vessel_capacity() {
         let vault_path = env::temp_dir().join(format!("skipi-work-capacity-{}", Uuid::new_v4()));
         fs::create_dir_all(&vault_path).unwrap();
@@ -605,8 +661,8 @@ pub fn insert_doc(conn: &Connection, doc: &DocRecord) -> Result<()> {
         "INSERT OR REPLACE INTO documents
             (id, category, title, file_name, has_expiry, valid_from, valid_to,
              issued_by, doc_number, notes, field_statuses, regulatory_basis,
-             template_id, sha256, file_size, content_type, visibility, is_national)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+             template_id, sha256, file_size, content_type, visibility, is_national, is_permanent)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
         params![
             doc.id,
             doc.category,
@@ -626,6 +682,7 @@ pub fn insert_doc(conn: &Connection, doc: &DocRecord) -> Result<()> {
             doc.content_type,
             doc.visibility,
             doc.is_national as i32,
+            doc.is_permanent as i32,
         ],
     )?;
     Ok(())
@@ -635,7 +692,7 @@ pub fn get_all_docs(conn: &Connection) -> Result<Vec<DocRecord>> {
     let mut stmt = conn.prepare(
         "SELECT id, category, title, file_name, has_expiry, valid_from, valid_to,
                 issued_by, doc_number, notes, field_statuses, regulatory_basis,
-                template_id, sha256, file_size, content_type, visibility, is_national
+                template_id, sha256, file_size, content_type, visibility, is_national, is_permanent
          FROM documents ORDER BY category, is_national DESC, title",
     )?;
     let docs = stmt
@@ -662,6 +719,7 @@ pub fn get_all_docs(conn: &Connection) -> Result<Vec<DocRecord>> {
                     .unwrap_or(None)
                     .unwrap_or_else(default_visibility),
                 is_national: row.get::<_, i32>(17).unwrap_or(0) != 0,
+                is_permanent: row.get::<_, i32>(18).unwrap_or(0) != 0,
             })
         })?
         .collect::<Result<Vec<_>>>()?;
@@ -732,6 +790,15 @@ pub fn update_doc_field(conn: &Connection, id: &str, field: &str, value: &str) -
         "valid_to" => "UPDATE documents SET valid_to = ?1 WHERE id = ?2",
         "issued_by" => "UPDATE documents SET issued_by = ?1 WHERE id = ?2",
         "doc_number" => "UPDATE documents SET doc_number = ?1 WHERE id = ?2",
+        "is_permanent" => {
+            let normalized = value.trim().to_ascii_lowercase();
+            let permanent = matches!(normalized.as_str(), "1" | "true" | "yes" | "on");
+            conn.execute(
+                "UPDATE documents SET is_permanent = ?1 WHERE id = ?2",
+                params![permanent as i32, id],
+            )?;
+            return Ok(());
+        }
         _ => return Ok(()),
     };
     conn.execute(sql, params![value, id])?;

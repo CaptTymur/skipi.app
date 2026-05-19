@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.132';
+var APP_VERSION='0.4.133';
 var UI_LANG_KEY='skipi-ui-language';
 var UI_LANG_OPTIONS=[
     ['ru','Русский'],
@@ -752,6 +752,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
             <div class="field"><label>Title *</label><input type="text" id="ac-title" placeholder="e.g. ECDIS Type-Specific — Furuno"></div>
             <div class="field"><label>Category</label><select id="ac-category"></select></div>
             <div class="field"><label><input type="checkbox" id="ac-has-expiry" checked style="margin-right:6px;">This certificate has an expiry date</label></div>
+            <div class="field"><label><input type="checkbox" id="ac-is-permanent" onchange="syncAddPermanent()" style="margin-right:6px;">Permanent certificate</label></div>
             <div class="actions" style="margin-top:18px;text-align:right;">
                 <button class="btn btn-outline" onclick="hideAddCustomDoc()">Cancel</button>
                 <button class="btn btn-accent" onclick="doAddCustomDoc()">Add Certificate</button>
@@ -766,7 +767,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p id="welcome-subtitle">Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.132</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.133</span></p>
                 <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -1535,7 +1536,7 @@ function docKindClass(d){
 }
 
 function docExpiryBadgeClass(d){
-    if(!d || !d.file_name || !d.has_expiry || !d.valid_to) return '';
+    if(!d || d.is_permanent || !d.file_name || !d.has_expiry || !d.valid_to) return '';
     var dl=Math.floor((new Date(d.valid_to)-new Date())/864e5);
     if(dl<30) return ' exp-critical';
     if(dl<90) return ' exp-warning';
@@ -1591,7 +1592,9 @@ function showDocRequirement(ev){
     var s=classify(d);
     var dl=days(d);
     var expiryText='';
-    if(d.file_name&&d.has_expiry&&dl!==null){
+    if(d.is_permanent){
+        expiryText='Permanent certificate';
+    }else if(d.file_name&&d.has_expiry&&dl!==null){
         if(dl<0)expiryText='Expired '+Math.abs(dl)+' day(s) ago';
         else if(dl===0)expiryText='Expires today';
         else expiryText='Expires in '+dl+' day(s)';
@@ -3189,14 +3192,15 @@ function autoFormatDate(el){
     el.value=out;
 }
 
-function classify(d){if(!d.has_expiry||!d.valid_to)return'none';var dl=Math.floor((new Date(d.valid_to)-new Date())/864e5);if(dl<0)return'expired';if(dl<30)return'critical';if(dl<90)return'warning';return'valid';}
-function days(d){if(!d.valid_to)return null;return Math.floor((new Date(d.valid_to)-new Date())/864e5);}
+function classify(d){if(d&&d.is_permanent)return'valid';if(!d.has_expiry||!d.valid_to)return'none';var dl=Math.floor((new Date(d.valid_to)-new Date())/864e5);if(dl<0)return'expired';if(dl<30)return'critical';if(dl<90)return'warning';return'valid';}
+function days(d){if(!d||d.is_permanent||!d.valid_to)return null;return Math.floor((new Date(d.valid_to)-new Date())/864e5);}
 function stColor(s){return{expired:'var(--red)',critical:'var(--orange)',warning:'#d4a017',valid:'var(--green)',none:'var(--text2)'}[s]||'var(--text2)';}
 // Numeric priority for aggregating worst-status per category in the sidebar.
 function docStatusRank(d){
     var isReq = isActiveRequiredDoc(d);
     if(!d.file_name && isReq) return 6;
     if(!d.file_name) return 0;
+    if(d.is_permanent) return 1;
     if(!d.has_expiry||!d.valid_to) return 0;
     var dl=Math.floor((new Date(d.valid_to)-new Date())/864e5);
     if(dl<0) return 7;       // expired beats missing (both red)
@@ -3557,6 +3561,7 @@ async function selDoc(id){
 async function renderDoc(d){
     var s=classify(d),dl=days(d),bc='badge-'+s;
     var st={expired:'Expired',critical:'Expiring soon',warning:'Attention',valid:'Valid',none:'No expiry'}[s];
+    if(d.is_permanent)st='Permanent';
     var dlt=dl!==null?(dl<0?Math.abs(dl)+'d overdue':dl+'d left'):'';
     var esc=function(v){return(v||'').replace(/"/g,'&quot;');};
 
@@ -3585,7 +3590,8 @@ async function renderDoc(d){
     h+='<div class="field"><label>'+fdot('doc_number',d.doc_number)+'Document No.</label><input placeholder="e.g. UA-12345" value="'+esc(d.doc_number)+'" onchange="saveF(\''+d.id+'\',\'doc_number\',this.value)"></div>';
     h+='<div class="field"><label>'+fdot('issued_by',d.issued_by)+'Issued By</label><input placeholder="e.g. Maritime Admin" value="'+esc(d.issued_by)+'" onchange="saveF(\''+d.id+'\',\'issued_by\',this.value)"></div>';
     h+='<div class="field"><label>'+fdot('valid_from',d.valid_from)+'Issue Date</label><input type="text" inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" value="'+(d.valid_from||'')+'" oninput="autoFormatDate(this)" onchange="saveF(\''+d.id+'\',\'valid_from\',this.value)"></div>';
-    h+='<div class="field"><label>'+fdot('valid_to',d.valid_to)+'Expiry Date</label><input id="vt" type="text" inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" value="'+(d.valid_to||'')+'" oninput="autoFormatDate(this)" onchange="updExp(\''+d.id+'\',this.value)"></div>';
+    h+='<div class="field"><label>'+fdot('valid_to',d.valid_to)+'Expiry Date</label><input id="vt" type="text" inputmode="numeric" placeholder="'+(d.is_permanent?'Permanent':'YYYY-MM-DD')+'" maxlength="10" value="'+(d.is_permanent?'':(d.valid_to||''))+'" '+(d.is_permanent?'disabled':'')+' oninput="autoFormatDate(this)" onchange="updExp(\''+d.id+'\',this.value)"></div>';
+    h+='<div class="field"><label>Validity</label><label style="display:flex;align-items:center;gap:7px;height:32px;color:var(--text);font-size:12px;"><input type="checkbox" '+(d.is_permanent?'checked':'')+' onchange="setPermanent(\''+d.id+'\',this.checked)" style="margin:0;">Permanent certificate</label></div>';
     h+='</div>';
 
     if(d.notes)h+='<p style="color:var(--text2);font-size:12px;margin-bottom:16px;">'+d.notes+'</p>';
@@ -3671,6 +3677,17 @@ async function updExp(id,v){if(!v)return;try{await invoke('update_expiry',{id:id
     }
     scheduleDeveloperGroupInviteCheck(900);
 }catch(e){showToast(''+e,'error');logError('op',e);}}
+async function setPermanent(id,checked){
+    try{
+        await invoke('update_doc_field',{id:id,field:'is_permanent',value:checked?'1':'0'});
+        allDocs=await invoke('get_documents');
+        renderTree();
+        var d=allDocs.find(function(x){return x.id===id;});
+        if(d)await renderDoc(d);
+        updateStatus();
+        scheduleDeveloperGroupInviteCheck(900);
+    }catch(e){showToast(''+e,'error');logError('op',e);}
+}
 async function attachF(id){
     var f=await open({multiple:false,title:'Select file',filters:[{name:'Documents',extensions:['pdf','jpg','jpeg','png','doc','docx']}]});
     if(!f)return;
@@ -5748,7 +5765,7 @@ async function showCv(){
                 h+='<td style="'+cellS+'font-family:var(--font-mono);font-size:12px;">'+e(c.doc_number)+'</td>';
                 h+='<td style="'+cellS+'">'+e(c.issued_by)+'</td>';
                 h+='<td style="'+cellS+'">'+e(c.valid_from)+'</td>';
-                h+='<td style="'+cellS+'color:'+vc+';">'+e(c.valid_to)+'</td>';
+                h+='<td style="'+cellS+'color:'+vc+';">'+e(c.is_permanent?'Permanent':c.valid_to)+'</td>';
                 h+='</tr>';
             });
         });
@@ -5861,6 +5878,17 @@ function pkgSelectAll(){
 }
 
 // ========== Add Custom Certificate modal ==========
+function syncAddPermanent(){
+    var permanent=document.getElementById('ac-is-permanent');
+    var hasExpiry=document.getElementById('ac-has-expiry');
+    if(!permanent||!hasExpiry)return;
+    if(permanent.checked){
+        hasExpiry.checked=false;
+        hasExpiry.disabled=true;
+    }else{
+        hasExpiry.disabled=false;
+    }
+}
 function showAddCustomDoc(){
     // Populate the category dropdown from the existing categories in the vault,
     // plus an "Other (type below)" escape hatch.
@@ -5880,6 +5908,8 @@ function showAddCustomDoc(){
     sel.innerHTML=opts;
     document.getElementById('ac-title').value='';
     document.getElementById('ac-has-expiry').checked=true;
+    document.getElementById('ac-has-expiry').disabled=false;
+    document.getElementById('ac-is-permanent').checked=false;
     var ov=document.getElementById('add-custom-overlay');
     ov.classList.add('open');
     ov.style.display='flex';
@@ -5896,8 +5926,9 @@ async function doAddCustomDoc(){
     var catSel=document.getElementById('ac-category');
     var category=(catSel&&catSel.value)?catSel.value:'Custom';
     var hasExpiry=document.getElementById('ac-has-expiry').checked;
+    var isPermanent=document.getElementById('ac-is-permanent').checked;
     try{
-        var rec=await invoke('add_custom_doc',{title:title,category:category,hasExpiry:hasExpiry});
+        var rec=await invoke('add_custom_doc',{title:title,category:category,hasExpiry:hasExpiry,isPermanent:isPermanent});
         allDocs=await invoke('get_documents');
         renderTree();
         hideAddCustomDoc();
@@ -7625,6 +7656,7 @@ function _slfBestStatus(docs, cid, today) {
         var d = matches[i];
         var rank;
         if (!d.file_name) rank = 0;
+        else if (d.is_permanent) rank = 2;
         else if (d.valid_to && d.valid_to < today) rank = 1;
         else rank = 2;
         if (rank > bestRank) { bestRank = rank; bestDoc = d; }
@@ -8188,11 +8220,12 @@ async function _jobsApplyProceed(vacancyId, replyTo, title){
                 var seafarerDocs = await invoke('get_documents');
                 certsSummary = (seafarerDocs || [])
                     .filter(function(d){
-                        return d.template_id && (d.file_name || d.valid_to);
+                        return d.template_id && (d.file_name || d.valid_to || d.is_permanent);
                     })
                     .map(function(d){ return {
                         template_id: d.template_id,
                         valid_to: d.valid_to || null,
+                        is_permanent: !!d.is_permanent,
                         has_file: !!d.file_name,
                     }; });
             } catch(e){ /* leave empty — apply still goes through */ }

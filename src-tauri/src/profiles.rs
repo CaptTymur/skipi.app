@@ -363,6 +363,10 @@ pub struct DocTemplate {
     pub notes: &'static str,
 }
 
+pub fn default_is_permanent_doc(template_id: &str) -> bool {
+    matches!(template_id, "yellow_fever")
+}
+
 // --- Universal base: every seafarer needs these regardless of role -------
 
 pub fn universal_base() -> Vec<DocTemplate> {
@@ -1100,7 +1104,10 @@ pub fn applicable_frameworks_for_seafarer(
         stcw_requires.push("Medical Care on Board (VI/4-2)");
         stcw_requires.push("Designated Security Duties (VI/6-2)");
     }
-    if matches!(pos_id, "master" | "chief_officer" | "second_officer" | "third_officer") {
+    if matches!(
+        pos_id,
+        "master" | "chief_officer" | "second_officer" | "third_officer"
+    ) {
         stcw_requires.push("ECDIS Training Certificate");
         stcw_requires.push("Radar / ARPA Training");
     }

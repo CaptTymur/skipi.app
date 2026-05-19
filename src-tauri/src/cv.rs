@@ -54,6 +54,8 @@ pub struct CvCertificate {
     pub issued_by: Option<String>,
     pub valid_from: Option<String>,
     pub valid_to: Option<String>,
+    #[serde(default)]
+    pub is_permanent: bool,
     pub regulatory_basis: Option<String>,
     pub status: String, // "valid" | "warning" | "expired" | "none"
 }
@@ -86,9 +88,12 @@ pub struct CvData {
 ///   - "expired"  — valid_to < today
 ///   - "warning"  — valid_to within 90 days
 ///   - "valid"    — valid_to > 90 days away or no expiry on a filled doc
-fn classify_status(valid_to: Option<&str>, has_file: bool) -> String {
+fn classify_status(valid_to: Option<&str>, has_payload: bool, is_permanent: bool) -> String {
     use chrono::{Duration, NaiveDate, Utc};
-    if valid_to.is_none() && !has_file {
+    if is_permanent {
+        return if has_payload { "valid" } else { "none" }.to_string();
+    }
+    if valid_to.is_none() && !has_payload {
         return "none".to_string();
     }
     let today = Utc::now().date_naive();
@@ -104,6 +109,17 @@ fn classify_status(valid_to: Option<&str>, has_file: bool) -> String {
         }
         None => "valid".to_string(),
     }
+}
+
+fn certificate_expiry_text(cert: &CvCertificate) -> String {
+    if cert.is_permanent {
+        return "Permanent".to_string();
+    }
+    cert.valid_to
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .unwrap_or("—")
+        .to_string()
 }
 
 /// Assemble the CV data structure from an open DB connection.
@@ -140,18 +156,24 @@ pub fn build_cv_data(conn: &Connection) -> Result<CvData, String> {
     };
 
     let docs = db::get_all_docs(conn).map_err(|e| e.to_string())?;
+    let has_certificate_payload = |d: &db::DocRecord| {
+        d.file_name.is_some()
+            || d.doc_number
+                .as_ref()
+                .map(|s| !s.is_empty())
+                .unwrap_or(false)
+            || d.issued_by.as_ref().map(|s| !s.is_empty()).unwrap_or(false)
+            || d.valid_from
+                .as_ref()
+                .map(|s| !s.is_empty())
+                .unwrap_or(false)
+            || d.valid_to.as_ref().map(|s| !s.is_empty()).unwrap_or(false)
+    };
     let certificates: Vec<CvCertificate> = docs
         .iter()
         // A CV should only show documents the seafarer actually has.
         // Skip truly empty slots (no file AND no metadata at all).
-        .filter(|d| {
-            d.file_name.is_some()
-                || d.doc_number
-                    .as_ref()
-                    .map(|s| !s.is_empty())
-                    .unwrap_or(false)
-                || d.valid_to.as_ref().map(|s| !s.is_empty()).unwrap_or(false)
-        })
+        .filter(|d| has_certificate_payload(d))
         .map(|d| CvCertificate {
             title: d.title.clone(),
             category: d.category.clone(),
@@ -159,8 +181,13 @@ pub fn build_cv_data(conn: &Connection) -> Result<CvData, String> {
             issued_by: d.issued_by.clone(),
             valid_from: d.valid_from.clone(),
             valid_to: d.valid_to.clone(),
+            is_permanent: d.is_permanent,
             regulatory_basis: d.regulatory_basis.clone(),
-            status: classify_status(d.valid_to.as_deref(), d.file_name.is_some()),
+            status: classify_status(
+                d.valid_to.as_deref(),
+                has_certificate_payload(d),
+                d.is_permanent,
+            ),
         })
         .collect();
 
@@ -301,7 +328,9 @@ fn build_document_xml(data: &CvData) -> String {
                     line.push_str(&format!(" — №{}", n));
                 }
             }
-            if let Some(ref to) = c.valid_to {
+            if c.is_permanent {
+                line.push_str(" (permanent)");
+            } else if let Some(ref to) = c.valid_to {
                 if !to.is_empty() {
                     line.push_str(&format!(" (valid until {})", to));
                 }
@@ -924,7 +953,7 @@ pub fn render_cv_pdf(
             &reg,
             dark.clone(),
         );
-        let expiry_text = cert.valid_to.as_deref().unwrap_or("—");
+        let expiry_text = certificate_expiry_text(cert);
         let expiry_color = match cert.status.as_str() {
             "expired" => Color::Rgb(Rgb::new(0.80, 0.20, 0.20, None)),
             "warning" => Color::Rgb(Rgb::new(0.85, 0.55, 0.10, None)),
@@ -932,7 +961,7 @@ pub fn render_cv_pdf(
         };
         pdf_text(
             &layer,
-            expiry_text,
+            &expiry_text,
             margin + col_title + col_no + col_issued + 2.0,
             cursor_y + 2.0,
             8.0,
@@ -1293,6 +1322,7 @@ fn redact_cv_data(data: &CvData) -> CvData {
                 issued_by: None,  // REDACTED
                 valid_from: valid_from_my,
                 valid_to: valid_to_my,
+                is_permanent: c.is_permanent,
                 regulatory_basis: c.regulatory_basis.clone(),
                 status: c.status.clone(),
             }
@@ -1680,7 +1710,7 @@ pub fn render_redacted_cv_pdf(
         );
         pdf_text(
             &layer,
-            cert.valid_to.as_deref().unwrap_or("—"),
+            &certificate_expiry_text(cert),
             margin + col_title + col_status + 2.0,
             cursor_y + 2.0,
             8.0,

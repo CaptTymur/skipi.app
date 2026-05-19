@@ -7,6 +7,18 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.133] — 2026-05-19
+
+### Added
+- Added a per-certificate permanent validity option for rare no-expiry
+  certificates.
+- Yellow Fever Vaccination now defaults to permanent validity while preserving
+  any manually entered expiry date if the flag is later disabled.
+
+### Changed
+- Certificate status, CV export, job-apply summaries, and document package
+  manifests now carry permanent certificate state explicitly.
+
 ## [0.4.119] — 2026-05-11
 
 ### Added
