@@ -7,6 +7,21 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.135] — 2026-05-21
+
+### Added
+- Added a custom document context menu on document-tree sections and a visible
+  dashboard action for adding custom certificates.
+- Added stronger selected-state styling for the active certificate.
+- Added Sea Service edit-form access to already attached supporting files.
+- Added hard searchable controls for Sea Service vessel names and flags.
+- Added broad fleet grouping in seafarer and vessel setup wizards: Merchant
+  Fleet, Passenger / Ro-Pax, and Offshore & Energy.
+
+### Changed
+- Disabled the native right-click context menu in the app shell.
+- Ready-for-offers now disables offer-specific profile fields when off.
+
 ## [0.4.134] — 2026-05-19
 
 ### Added

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.134';
+var APP_VERSION='0.4.135';
 var UI_LANG_KEY='skipi-ui-language';
 var UI_LANG_OPTIONS=[
     ['ru','Русский'],
@@ -246,6 +246,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .tree-folder { cursor:pointer; }
 .tree-folder-header { height:26px; display:flex; align-items:center; padding:0 8px 0 12px; gap:4px; font-size:12px; color:var(--text2); font-weight:600; }
 .tree-folder-header:hover { background:var(--hover); }
+.tree-folder-header.context-target { color:var(--accent); background:var(--accent-bg); }
 .tree-folder-header .arrow { font-size:9px; width:12px; transition:transform .12s; }
 .tree-folder-header .arrow.open { transform:rotate(90deg); }
 .tree-folder-header .cnt { margin-left:auto; font-size:10px; font-weight:400; }
@@ -259,8 +260,9 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .tree-file.specific { box-shadow:inset 3px 0 0 #b887ff; padding-left:29px; color:var(--text2); }
 .tree-file.custom { box-shadow:inset 3px 0 0 var(--orange); padding-left:29px; color:var(--text2); }
 .tree-file.inactive-template { opacity:.72; }
-.tree-file.active { background:var(--accent); color:#fff; font-weight:600; box-shadow:inset 3px 0 0 #fff; }
+.tree-file.active { background:linear-gradient(90deg,var(--accent),#4f46d8); color:#fff; font-weight:700; box-shadow:inset 4px 0 0 #fff, 0 0 0 1px rgba(255,255,255,.16); }
 .tree-file.active .icon { color:#fff; }
+.tree-file.active .name::after { content:' selected'; margin-left:6px; font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; opacity:.78; }
 .tree-file .icon { font-size:11px; color:var(--text2); width:14px; text-align:center; }
 .tree-file .name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .tree-file.pkg-sel { background:rgba(78,201,112,.12); }
@@ -278,6 +280,10 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .tree-file.active .kind-badge { color:#fff; border-color:rgba(255,255,255,.65); background:rgba(255,255,255,.14); }
 .tree-file.active .kind-badge.exp-warning { color:#ffe8a3; border-color:rgba(255,232,163,.9); background:rgba(226,185,61,.25); }
 .tree-file.active .kind-badge.exp-critical { color:#ffd8dc; border-color:rgba(255,216,220,.9); background:rgba(229,85,97,.28); }
+.doc-context-menu { position:fixed; z-index:10050; min-width:230px; max-width:310px; background:var(--surface); border:1px solid var(--border); border-radius:6px; box-shadow:0 12px 32px rgba(0,0,0,.42); padding:5px; display:none; }
+.doc-context-menu .ctx-title { padding:7px 9px 5px; font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--text2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; border-bottom:1px solid var(--border); margin-bottom:4px; }
+.doc-context-menu button { width:100%; display:flex; align-items:center; gap:8px; text-align:left; border:0; background:transparent; color:var(--text); padding:7px 9px; border-radius:4px; font-size:12px; cursor:pointer; }
+.doc-context-menu button:hover { background:var(--hover); color:var(--accent); }
 
 /* Center */
 .center { flex:1; display:flex; flex-direction:column; overflow:hidden; }
@@ -631,6 +637,9 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .setup .actions { text-align:center; margin-top:20px; }
 .wizard-card { border:1px solid var(--border); border-radius:6px; padding:10px 12px; margin-bottom:8px; cursor:pointer; transition:all 0.15s; }
 .wizard-card:hover { border-color:var(--accent); background:var(--bg2); }
+.wizard-fleet-title { margin:16px 0 7px; padding:7px 10px; border-left:3px solid var(--accent); background:var(--bg2); border-radius:4px; }
+.wizard-fleet-title .title { font-size:11px; font-weight:800; color:var(--accent); text-transform:uppercase; letter-spacing:.08em; }
+.wizard-fleet-title .desc { margin-top:3px; font-size:11px; color:var(--text2); line-height:1.35; }
 .profile-bar { background:var(--bg2); height:8px; border-radius:4px; overflow:hidden; margin:8px 0; }
 .profile-bar-fill { background:var(--green); height:100%; transition:width 0.3s; }
 .reg-basis { display:inline-block; background:var(--bg2); color:var(--text2); font-size:10px; padding:2px 6px; border-radius:3px; margin-left:6px; font-family:var(--font-mono); }
@@ -739,7 +748,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
 
     <!-- Left panel -->
     <div class="left-panel" id="left-panel" style="display:none;">
-        <div class="panel-header"><span id="panel-title">Files &amp; data input</span><span class="actions"><button id="btn-add-custom" class="btn btn-accent btn-sm" title="Add a certificate or document that isn't in the pre-seeded list" onclick="showAddCustomDoc()">+ Add document</button></span></div>
+        <div class="panel-header"><span id="panel-title">Files &amp; data input</span><span class="actions"><button id="btn-add-custom" class="btn btn-accent btn-sm" title="Add a certificate or document that isn't in the pre-seeded list" onclick="showAddCustomDoc()">+ Add custom certificate</button></span></div>
         <div class="panel-search"><input type="text" placeholder="Search..." id="search-input" oninput="onSearch(this.value)"></div>
         <div class="panel-tree" id="panel-tree"></div>
     </div>
@@ -767,7 +776,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p id="welcome-subtitle">Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.134</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.135</span></p>
                 <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -918,6 +927,94 @@ function showToast(msg,type){
 }
 
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+var _docContextMenuInstalled=false;
+function docContextMenuEl(){
+    var el=document.getElementById('doc-context-menu');
+    if(el)return el;
+    el=document.createElement('div');
+    el.id='doc-context-menu';
+    el.className='doc-context-menu';
+    el.innerHTML='<div class="ctx-title"></div><button type="button" data-action="add"><span>+</span><span>Add custom certificate here</span></button>';
+    el.addEventListener('mousedown',function(e){e.preventDefault();e.stopPropagation();});
+    el.addEventListener('click',function(e){
+        e.preventDefault();e.stopPropagation();
+        var btn=e.target.closest('button[data-action="add"]');
+        if(btn){
+            var cat=el.dataset.category||'';
+            closeDocContextMenu();
+            showAddCustomDoc(cat);
+        }
+    });
+    document.body.appendChild(el);
+    return el;
+}
+function closeDocContextMenu(){
+    var el=document.getElementById('doc-context-menu');
+    if(el){el.style.display='none';el.dataset.category='';}
+    document.querySelectorAll('.tree-folder-header.context-target').forEach(function(n){n.classList.remove('context-target');});
+}
+function openDocCategoryMenu(ev,category){
+    if(ev){ev.preventDefault();ev.stopPropagation();}
+    category=String(category||'').trim();
+    if(!category)return false;
+    closeDocContextMenu();
+    var el=docContextMenuEl();
+    el.dataset.category=category;
+    var title=el.querySelector('.ctx-title');
+    if(title)title.textContent=category;
+    el.style.display='block';
+    el.style.left='0px';
+    el.style.top='0px';
+    var x=ev&&ev.clientX?ev.clientX:16;
+    var y=ev&&ev.clientY?ev.clientY:16;
+    var rect=el.getBoundingClientRect();
+    var maxX=Math.max(8,window.innerWidth-rect.width-8);
+    var maxY=Math.max(8,window.innerHeight-rect.height-8);
+    el.style.left=Math.min(x,maxX)+'px';
+    el.style.top=Math.min(y,maxY)+'px';
+    var folder=ev&&ev.target&&ev.target.closest?ev.target.closest('.tree-folder'):null;
+    var header=folder?folder.querySelector('.tree-folder-header'):null;
+    if(header)header.classList.add('context-target');
+    return false;
+}
+function installContextMenuGuard(){
+    if(_docContextMenuInstalled)return;
+    _docContextMenuInstalled=true;
+    document.addEventListener('contextmenu',function(ev){
+        var header=ev.target&&ev.target.closest?ev.target.closest('.tree-folder-header'):null;
+        var folder=header&&header.closest?header.closest('.tree-folder'):null;
+        var tree=document.getElementById('panel-tree');
+        if(folder&&tree&&tree.contains(folder)){
+            return openDocCategoryMenu(ev,folder.getAttribute('data-cat')||'');
+        }
+        ev.preventDefault();
+        ev.stopPropagation();
+        closeDocContextMenu();
+        return false;
+    },true);
+    document.addEventListener('click',function(ev){
+        var menu=document.getElementById('doc-context-menu');
+        if(menu&&menu.contains(ev.target))return;
+        closeDocContextMenu();
+    },true);
+    document.addEventListener('keydown',function(ev){
+        if(ev.key==='Escape'){
+            closeDocContextMenu();
+            return;
+        }
+        var key=String(ev.key||'').toUpperCase();
+        if(ev.key==='F12'||(ev.ctrlKey&&ev.shiftKey&&(key==='I'||key==='J'||key==='C'))){
+            ev.preventDefault();
+            ev.stopPropagation();
+            closeDocContextMenu();
+            return false;
+        }
+    },true);
+    window.addEventListener('blur',closeDocContextMenu);
+    window.addEventListener('resize',closeDocContextMenu);
+}
+installContextMenuGuard();
 
 /* ── Local error log (kept in memory, exportable from Settings) ── */
 var _errorLog=[];
@@ -1905,6 +2002,56 @@ async function refreshSeafarerFramework(){
     }
 }
 
+function vesselFleetGroups(){
+    return [
+        {id:'merchant',label:'Merchant Fleet',desc:'Cargo-carrying trading fleet: dry cargo, containers, Ro-Ro, reefers and tankers.',roots:['cargo','tanker']},
+        {id:'passenger',label:'Passenger / Ro-Pax',desc:'Cruise ships, ferries and Ro-Pax vessels where passenger safety training matters.',roots:['passenger']},
+        {id:'offshore_energy',label:'Offshore & Energy',desc:'OSV, PSV, AHTS, offshore oil and gas, wind, cable, subsea and special-purpose work.',roots:['offshore']}
+    ];
+}
+
+function vesselRootDescription(id){
+    var map={
+        cargo:'Bulk, container, general cargo, Ro-Ro/car carrier and reefer work.',
+        tanker:'Oil, chemical, product and gas cargo operations.',
+        passenger:'Passenger ships, ferries, Ro-Pax and cruise vessels.',
+        offshore:'Offshore support, energy projects, subsea, cable and special-purpose vessels.'
+    };
+    return map[id]||'';
+}
+
+function renderVesselFleetRootCards(roots,pickFnName){
+    roots=roots||[];
+    var byId={},used={},h='',otherStarted=false;
+    roots.forEach(function(r){byId[r.id]=r;});
+    vesselFleetGroups().forEach(function(g){
+        var items=[];
+        g.roots.forEach(function(id){
+            if(byId[id]){
+                items.push(byId[id]);
+                used[id]=true;
+            }
+        });
+        if(!items.length)return;
+        h+='<div class="wizard-fleet-title"><div class="title">'+esc(g.label)+'</div><div class="desc">'+esc(g.desc)+'</div></div>';
+        items.forEach(function(r){
+            var desc=vesselRootDescription(r.id);
+            h+='<div class="wizard-card" onclick="'+pickFnName+'(\''+r.id+'\')"><div style="font-weight:600;">'+esc(r.label)+'</div>';
+            if(desc)h+='<div style="color:var(--text2);font-size:12px;margin-top:3px;line-height:1.35;">'+esc(desc)+'</div>';
+            h+='</div>';
+        });
+    });
+    roots.forEach(function(r){
+        if(used[r.id])return;
+        if(!otherStarted){
+            h+='<div class="wizard-fleet-title"><div class="title">Other Fleet</div><div class="desc">Additional vessel categories kept outside the main fleet blocks.</div></div>';
+            otherStarted=true;
+        }
+        h+='<div class="wizard-card" onclick="'+pickFnName+'(\''+r.id+'\')"><div style="font-weight:600;">'+esc(r.label)+'</div></div>';
+    });
+    return h;
+}
+
 // ========== Seafarer onboarding wizard ==========
 async function startSeafarerWizard(){
     try{
@@ -1938,13 +2085,10 @@ function renderWizard(){
         });
         h+='<div class="actions" style="margin-top:14px;"><button class="btn btn-outline" onclick="wBack()">&larr; Back</button> <button class="btn btn-accent" onclick="wNext()" id="w-next">Next &rarr;</button></div>';
     } else if(s===3){
-        h+='<p style="color:var(--text2);font-size:12px;margin-bottom:14px;">Choose the vessel type you specialize on. Start with a category, then drill down if needed.</p>';
+        h+='<p style="color:var(--text2);font-size:12px;margin-bottom:14px;">Choose the fleet block first, then drill down to the vessel family you work with.</p>';
         var roots=profileTax.vessel_tree.filter(function(v){return !v.parent;});
         if(!wizardState.vessel_root){
-            // No category chosen yet — show all top-level categories
-            roots.forEach(function(r){
-                h+='<div class="wizard-card" onclick="wPickRoot(\''+r.id+'\')"><div style="font-weight:600;">'+r.label+'</div></div>';
-            });
+            h+=renderVesselFleetRootCards(roots,'wPickRoot');
         } else {
             // Category chosen — show ONLY that category as a header, plus its subtypes
             var chosen=roots.find(function(r){return r.id===wizardState.vessel_root;});
@@ -2286,7 +2430,7 @@ function attachClosedCombobox(inputEl, list){
 function attachAirportComboboxes(){
     ['fp-nearest_airport','fp-nearest_intl_airport','sp-nearest_airport','sp-nearest_intl_airport'].forEach(function(id){
         var el=document.getElementById(id);
-        if(el) attachClosedCombobox(el, AIRPORT_HUBS);
+        if(el) attachClosedCombobox(el, workFormListWithCurrent(AIRPORT_HUBS,el.value||''));
     });
 }
 
@@ -2308,7 +2452,8 @@ function populateFlagsDatalist(){
 // Common maritime flag registries ordered roughly by merchant-fleet tonnage
 // and hiring frequency for CIS / Filipino / Indian seafarers. Top flags of
 // convenience first; national registries seafarers actually work under follow.
-// Datalist is hint-only — user can still type any flag if missing.
+// Used as a closed searchable combobox in Sea Service so downstream matching
+// does not receive arbitrary spellings.
 var MARITIME_FLAGS = [
     "Panama","Liberia","Marshall Islands",
     "Hong Kong","Singapore","Malta","Bahamas","Cyprus",
@@ -2390,16 +2535,30 @@ var AIRPORT_HUBS = [
 
 // ========== Forced seafarer profile ==========
 var _forcedProfileActive=false;
+function profileOfferFieldIds(prefix){
+    return [prefix+'-min_salary',prefix+'-min_salary_currency',prefix+'-nearest_airport',prefix+'-nearest_intl_airport',prefix+'-available_from',prefix+'-phones',prefix+'-preferred_messenger'];
+}
+function setOfferFieldsEnabled(prefix,on){
+    profileOfferFieldIds(prefix).forEach(function(id){
+        var el=document.getElementById(id);
+        if(el){
+            el.disabled=!on;
+            el.style.opacity=on?'1':'0.45';
+        }
+    });
+}
 function fpToggleReady(on){
-    var ids=['fp-min_salary','fp-min_salary_currency','fp-nearest_airport','fp-nearest_intl_airport','fp-available_from','fp-phones','fp-preferred_messenger'];
-    ids.forEach(function(id){var el=document.getElementById(id);if(el){el.disabled=!on;el.style.opacity=on?'1':'0.45';}});
+    setOfferFieldsEnabled('fp',on);
 }
 function spToggleReady(on){
-    var ids=['sp-min_salary','sp-min_salary_currency','sp-nearest_airport','sp-nearest_intl_airport','sp-available_from','sp-phones','sp-preferred_messenger'];
-    ids.forEach(function(id){var el=document.getElementById(id);if(el){el.disabled=false;el.style.opacity='1';}});
+    setOfferFieldsEnabled('sp',on);
 }
-function fpRequiredKeys(){
-    return ['surname','first_name','date_of_birth','place_of_birth','nationality','phones','email','rank','preferred_vessel_types','nearest_airport','nearest_intl_airport','available_from','min_salary','home_address'];
+function fpRequiredKeys(includeOfferFields){
+    var keys=['surname','first_name','date_of_birth','place_of_birth','nationality','email','rank','preferred_vessel_types','home_address'];
+    if(includeOfferFields!==false){
+        keys=keys.concat(['phones','nearest_airport','nearest_intl_airport','available_from','min_salary']);
+    }
+    return keys;
 }
 function readyProfileLabels(){
     if(getUiLang()==='ru'){
@@ -2441,7 +2600,7 @@ function readyProfileMissing(data){
     data=data||{};
     var labels=readyProfileLabels();
     var missing=[];
-    fpRequiredKeys().forEach(function(k){
+    fpRequiredKeys(true).forEach(function(k){
         var v='';
         if(k==='min_salary')v=String(data.min_salary||localStorage.getItem('skipi-sp-min_salary')||'');
         else if(k==='preferred_vessel_types')v=String(data.preferred_vessel_types||data.vessel_category||data.vessel_type||'').split(',')[0];
@@ -2636,7 +2795,7 @@ async function openForcedProfile(forceOpen){
         var minSal=String(data.min_salary||localStorage.getItem('skipi-sp-min_salary')||'');
         if(!forceOpen){
             var allSet=true;
-            fpRequiredKeys().forEach(function(k){
+            fpRequiredKeys(data.ready_for_offers==='true').forEach(function(k){
                 var v=k==='min_salary'?minSal:(data[k]||'');
                 if(!v||!String(v).trim())allSet=false;
             });
@@ -2651,13 +2810,13 @@ async function openForcedProfile(forceOpen){
         populateNationalitySelect(natSel,data.nationality||'');
         populateRankControl('fp',data.rank||'','-- Select rank --');
         await populateVesselTypeSelect(document.getElementById('fp-preferred_vessel_types'),data.preferred_vessel_types||'','-- Select vessel type --');
-        populateAirportDatalist();
         var curSel=document.getElementById('fp-min_salary_currency');
         populateSelect(curSel,CURRENCIES,data.currency||localStorage.getItem('skipi-sp-min_salary_currency')||'USD','');
         ['surname','first_name','date_of_birth','place_of_birth','phones','email','nearest_airport','nearest_intl_airport','available_from','home_address'].forEach(function(k){
             var el=document.getElementById('fp-'+k);
             if(el)el.value=data[k]||'';
         });
+        populateAirportDatalist();
         var ms=document.getElementById('fp-min_salary');
         if(ms)ms.value=minSal;
         var msgr=document.getElementById('fp-preferred_messenger');
@@ -2665,16 +2824,16 @@ async function openForcedProfile(forceOpen){
         var rdy=document.getElementById('fp-ready_for_offers');
         var rdyVal=data.ready_for_offers==='true';
         if(rdy){rdy.checked=rdyVal;}
-        // In forced-profile overlay all fields must stay enabled so the user can fill them.
-        // The ready_for_offers toggle only disables fields in the Settings panel, not here.
-        fpToggleReady(true);
+        fpToggleReady(rdyVal);
     }catch(e){logError('openForcedProfile',e);}
 }
 async function fpSubmit(){
     var fields={};
     var missing=[];
     var labelMap={surname:'Surname',first_name:'First name',date_of_birth:'Date of birth',place_of_birth:'Place of birth',nationality:'Citizenship',phones:'Phones',email:'Email',rank:'Rank',preferred_vessel_types:'Vessel type',nearest_airport:'Nearest airport',nearest_intl_airport:'Nearest intl airport',available_from:'Available from',home_address:'Home address',min_salary:'Minimum salary'};
-    fpRequiredKeys().forEach(function(k){
+    var rdy=document.getElementById('fp-ready_for_offers');
+    var readyOn=!!(rdy&&rdy.checked);
+    fpRequiredKeys(readyOn).forEach(function(k){
         var el=document.getElementById('fp-'+k);
         var v=k==='rank'?rankValueFromControl('fp'):(el?(el.value||'').trim():'');
         if(!v)missing.push(labelMap[k]||k);
@@ -2687,7 +2846,6 @@ async function fpSubmit(){
         return;
     }
     if(errEl)errEl.style.display='none';
-    var rdy=document.getElementById('fp-ready_for_offers');
     fields.ready_for_offers=rdy&&rdy.checked?'true':'false';
     var msgr=document.getElementById('fp-preferred_messenger');
     if(msgr)fields.preferred_messenger=msgr.value;
@@ -2757,12 +2915,10 @@ function renderVesselWizard(){
         h+='<div class="field"><label>IMO Number (optional)</label><input id="vw-imo" value="'+(vesselWizardState.imo||'').replace(/"/g,'&quot;')+'" placeholder="e.g. 9123456"></div>';
         h+='<div class="actions"><button class="btn btn-accent" onclick="vwNext()">Next &rarr;</button> <button class="btn btn-outline" onclick="showSetup()">Cancel</button></div>';
     } else if(s===2){
-        h+='<p style="color:var(--text2);font-size:12px;margin-bottom:14px;">Choose the vessel category. This determines which type-specific codes and certificates apply (IBC, IGC, Grain, SAR, etc.).</p>';
+        h+='<p style="color:var(--text2);font-size:12px;margin-bottom:14px;">Choose the fleet block and vessel category. This determines which type-specific codes and certificates apply (IBC, IGC, Grain, SAR, etc.).</p>';
         var roots=vesselTax.vessel_tree.filter(function(v){return !v.parent;});
         if(!vesselWizardState.category_root){
-            roots.forEach(function(r){
-                h+='<div class="wizard-card" onclick="vwPickRoot(\''+r.id+'\')"><div style="font-weight:600;">'+r.label+'</div></div>';
-            });
+            h+=renderVesselFleetRootCards(roots,'vwPickRoot');
         } else {
             var chosen=roots.find(function(r){return r.id===vesselWizardState.category_root;});
             var kids=vesselTax.vessel_tree.filter(function(v){return v.parent===vesselWizardState.category_root;});
@@ -3519,7 +3675,7 @@ function renderTree(){
           +' ondragstart="onCatDragStart(event)"'
           +' ondragover="onCatDragOver(event)"'
           +' ondrop="onCatDrop(event)">'
-          +'<div class="tree-folder-header" onclick="toggleF(this)"><span class="arrow open">&#9654;</span>'+esc(cat)+'</div><div class="tree-items open">';
+          +'<div class="tree-folder-header" onclick="toggleF(this)" title="Right-click to add a custom certificate to this section"><span class="arrow open">&#9654;</span>'+esc(cat)+'</div><div class="tree-items open">';
         data.docs.forEach(function(d){
             var a=d.id===selectedDocId?' active':'';
             var ic=d.file_name?'&#128196;':'&#128195;';
@@ -3536,7 +3692,7 @@ function renderTree(){
                     h+='<div class="tree-file'+kindClass+bg+'" onclick="togglePkg(\''+d.id+'\')"><span class="icon" style="font-size:18px;line-height:1;">'+(sel?'&#9745;':'&#9744;')+'</span>'+nameHtml+kindBadge+'</div>';
                 }
             }else{
-                h+='<div class="tree-file'+kindClass+a+'" onclick="selDoc(\''+d.id+'\')"><span class="icon">'+ic+'</span>'+nameHtml+kindBadge+'</div>';
+                h+='<div class="tree-file'+kindClass+a+'" onclick="selDoc(\''+d.id+'\')"'+(a?' aria-current="true" title="Selected certificate"':'')+'><span class="icon">'+ic+'</span>'+nameHtml+kindBadge+'</div>';
             }
         });
         h+='</div></div>';
@@ -3890,6 +4046,7 @@ var aiRec=guardOp('ai_recognize',_aiRec);
 
 async function showDashboard(){
     selectedDocId=null;
+    renderTree();
     // Only docs that actually carry a file are "uploaded". Empty required slots
     // (template rows without file_name) must not be counted as documents — they
     // represent expected certificates, not actual ones.
@@ -3897,7 +4054,7 @@ async function showDashboard(){
     var requiredMissing=allDocs.filter(function(d){return !d.file_name && isActiveRequiredDoc(d);}).length;
     var c={expired:0,critical:0,warning:0,warning_soft:0,valid:0,none:0};
     uploadedDocs.forEach(function(d){c[classify(d)]++;});
-    var h='<h2 style="font-size:18px;margin-bottom:16px;">Dashboard</h2>';
+    var h='<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap;"><h2 style="font-size:18px;margin:0;">Dashboard</h2><button class="btn btn-accent btn-sm" onclick="showAddCustomDoc()">+ Add custom certificate</button></div>';
 
     // Profile completeness header (if seafarer profile is set)
     var profile=null;
@@ -5471,14 +5628,15 @@ async function showWorkHistory(){
     }
 }
 
-async function attachWorkFile(entryId){
+async function attachWorkFile(entryId,stayInForm){
     if(!open){showToast('File dialog not available','error');return;}
     var f=await open({multiple:false,title:'Select supporting document',filters:[{name:'Documents',extensions:['pdf','jpg','jpeg','png','doc','docx','txt']}]});
     if(!f)return;
     var kind=await uiPrompt('Document type (optional): e.g. contract, sea_service_letter, discharge_letter, flight_ticket','');
     try{
         await invoke('attach_work_file',{entryId:entryId,sourcePath:f,kind:kind||null});
-        await showWorkHistory();
+        if(stayInForm)await showEditWork(entryId);
+        else await showWorkHistory();
     }catch(err){showToast('Error: '+err,'error');logError('op',err);}
 }
 
@@ -5486,9 +5644,36 @@ async function openWorkFile(id){
     try{await invoke('open_work_file',{id:id});}catch(err){showToast('Error: '+err,'error');logError('op',err);}
 }
 
-async function delWorkFile(id){
+async function delWorkFile(id,entryId){
     if(!await uiConfirm('Remove this attachment?', {confirmLabel:'Remove', danger:true}))return;
-    try{await invoke('delete_work_file',{id:id});await showWorkHistory();}catch(err){showToast('Error: '+err,'error');logError('op',err);}
+    try{
+        await invoke('delete_work_file',{id:id});
+        if(entryId)await showEditWork(entryId);
+        else await showWorkHistory();
+    }catch(err){showToast('Error: '+err,'error');logError('op',err);}
+}
+
+async function hydrateWorkFormFiles(entryId){
+    var host=document.getElementById('wh-files');
+    if(!host)return;
+    var files=[];
+    try{files=await invoke('get_work_files',{entryId:entryId})||[];}catch(e){host.innerHTML='Could not load supporting documents: '+esc(e);return;}
+    var h='<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;">';
+    h+='<div style="font-weight:600;color:var(--text);">Supporting documents</div>';
+    h+='<button class="btn btn-outline btn-sm" onclick="attachWorkFile(\''+escAttr(entryId)+'\',true)">+ Attach</button>';
+    h+='</div>';
+    if(!files.length){
+        h+='<div style="font-size:11px;color:var(--text2);">No files attached yet. Add contract, sea service letter, discharge, flight ticket, or other voyage evidence.</div>';
+    }else{
+        files.forEach(function(f){
+            var kind=f.kind?' <span style="font-size:10px;color:var(--text2);">['+esc(f.kind)+']</span>':'';
+            h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 0;border-top:1px solid var(--border);">';
+            h+='<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);">&#128196; '+esc(f.file_name)+kind+'</span>';
+            h+='<span style="display:flex;gap:4px;flex-shrink:0;"><button class="btn btn-sm btn-outline" onclick="openWorkFile(\''+escAttr(f.id)+'\')">Open</button><button class="btn btn-sm btn-outline btn-red" onclick="delWorkFile(\''+escAttr(f.id)+'\',\''+escAttr(entryId)+'\')">&times;</button></span>';
+            h+='</div>';
+        });
+    }
+    host.innerHTML=h;
 }
 
 function workFormListWithCurrent(list,current){
@@ -5496,6 +5681,82 @@ function workFormListWithCurrent(list,current){
     current=(current||'').trim();
     if(current&&list.indexOf(current)===-1)list.unshift(current);
     return list;
+}
+var workVesselPresets=[];
+function syncWorkVesselCustom(focus){
+    var sel=document.getElementById('wh-vessel');
+    var custom=document.getElementById('wh-vessel_custom');
+    if(!sel||!custom)return;
+    var show=sel.value==='__new__';
+    custom.style.display=show?'block':'none';
+    custom.required=show;
+    if(!show)custom.value='';
+    if(show&&focus)custom.focus();
+}
+function workVesselValue(){
+    var sel=document.getElementById('wh-vessel');
+    if(!sel)return '';
+    if(sel.value==='__new__'){
+        var custom=document.getElementById('wh-vessel_custom');
+        return custom?(custom.value||'').trim():'';
+    }
+    return (sel.value||'').trim();
+}
+function applyWorkVesselPreset(){
+    var sel=document.getElementById('wh-vessel');
+    if(!sel||sel.value==='__new__'||!sel.value)return;
+    var picked=null;
+    for(var i=0;i<workVesselPresets.length;i++){
+        if(workVesselPresets[i].vessel_name===sel.value){picked=workVesselPresets[i];break;}
+    }
+    if(!picked)return;
+    function fillIfEmpty(id,val){
+        var el=document.getElementById(id);
+        if(el&&!String(el.value||'').trim()&&val!=null)el.value=String(val);
+    }
+    fillIfEmpty('wh-imo',picked.imo);
+    fillIfEmpty('wh-type',picked.vessel_type);
+    fillIfEmpty('wh-flag',picked.flag);
+    fillIfEmpty('wh-company',picked.company);
+}
+async function populateWorkVesselControl(entry){
+    var sel=document.getElementById('wh-vessel');
+    if(!sel)return;
+    entry=entry||{};
+    var current=String(entry.vessel_name||'').trim();
+    var entries=[];
+    try{entries=await invoke('get_work_history')||[];}catch(e){entries=[];}
+    var seen={};
+    workVesselPresets=[];
+    (entries||[]).forEach(function(row){
+        var name=String(row&&row.vessel_name||'').trim();
+        if(!name)return;
+        var key=name.toLowerCase();
+        if(seen[key])return;
+        seen[key]=true;
+        workVesselPresets.push(row);
+    });
+    if(current&&!seen[current.toLowerCase()]){
+        workVesselPresets.unshift({vessel_name:current,imo:entry.imo,vessel_type:entry.vessel_type,flag:entry.flag,company:entry.company});
+        seen[current.toLowerCase()]=true;
+    }
+    workVesselPresets.sort(function(a,b){return String(a.vessel_name||'').localeCompare(String(b.vessel_name||''));});
+    var html='';
+    if(workVesselPresets.length)html+='<option value="">-- Select vessel --</option>';
+    workVesselPresets.forEach(function(row){
+        var name=String(row.vessel_name||'');
+        html+='<option value="'+esc(name)+'"'+(current===name?' selected':'')+'>'+esc(name)+'</option>';
+    });
+    html+='<option value="__new__"'+(!current?' selected':'')+'>+ New vessel...</option>';
+    sel.innerHTML=html;
+    var custom=document.getElementById('wh-vessel_custom');
+    if(custom)custom.value='';
+    if(current&&!seen[current.toLowerCase()]){
+        sel.value='__new__';
+        if(custom)custom.value=current;
+    }
+    if(!current&&!workVesselPresets.length)sel.value='__new__';
+    syncWorkVesselCustom(false);
 }
 function workPositionList(list){
     list=(list||[]).slice();
@@ -5543,19 +5804,23 @@ function renderWorkEntryForm(entry){
     var h='<h2 style="font-size:18px;margin-bottom:16px;">'+title+'</h2>';
     h+='<div style="max-width:480px;">';
     h+='<div class="field-grid">';
-    h+='<div class="field"><label>Vessel Name *</label><input id="wh-vessel" list="wh-prev-vessels" placeholder="M/V Example" autocomplete="off" value="'+val('vessel_name')+'"></div>';
+    h+='<div class="field"><label>Vessel Name *</label><select id="wh-vessel" onchange="syncWorkVesselCustom(true);applyWorkVesselPreset()"></select><input id="wh-vessel_custom" placeholder="Type vessel name" autocomplete="off" value="'+val('vessel_name')+'" style="display:none;margin-top:6px;"></div>';
     h+='<div class="field"><label>IMO Number *</label><input id="wh-imo" inputmode="numeric" placeholder="1234567" required value="'+val('imo')+'"><div style="font-size:10px;color:var(--text2);margin-top:3px;">7 digits required for vessel database and reviews.</div></div>';
     h+='<div class="field"><label>Vessel Type</label><select id="wh-type"></select></div>';
     h+='<div class="field"><label>DWT</label><input id="wh-dwt" type="text" inputmode="numeric" placeholder="e.g. 82000" value="'+val('dwt')+'"></div>';
     h+='<div class="field"><label>TEU</label><input id="wh-teu" type="text" inputmode="numeric" placeholder="container ships" value="'+val('teu')+'"></div>';
-    h+='<div class="field"><label>Flag</label><input id="wh-flag" list="maritime-flags" placeholder="Start typing… (Panama, Liberia, Marshall Islands, …)" value="'+val('flag')+'"></div>';
+    h+='<div class="field"><label>Flag</label><input id="wh-flag" placeholder="Start typing… (Panama, Liberia, Marshall Islands, …)" autocomplete="off" value="'+val('flag')+'"></div>';
     h+='<div class="field"><label>Company</label><input id="wh-company" placeholder="Shipping Co." value="'+val('company')+'"></div>';
     h+='<div class="field"><label>Position *</label><select id="wh-position" onchange="syncWorkPositionCustom(true)"></select><input id="wh-position_custom" placeholder="Type position" style="display:none;margin-top:6px;"></div>';
     h+='<div class="field"><label>Sign On</label><input id="wh-on" type="text" inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" oninput="autoFormatDate(this)" value="'+val('sign_on')+'"></div>';
     h+='<div class="field"><label>Sign Off</label><input id="wh-off" type="text" inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" oninput="autoFormatDate(this)" value="'+val('sign_off')+'"></div>';
     h+='</div>';
     h+='<div class="field"><label>Notes</label><input id="wh-notes" placeholder="Route, remarks..." value="'+val('notes')+'"></div>';
-    h+='<p style="color:var(--text2);font-size:11px;margin:8px 0 0;">After saving, you can attach supporting documents (contract, sea service letter, discharge, flight ticket) from the list view.</p>';
+    if(isEdit){
+        h+='<div id="wh-files" style="margin-top:12px;padding:10px;border:1px dashed var(--border);border-radius:6px;background:var(--bg2);font-size:12px;color:var(--text2);">Loading supporting documents...</div>';
+    }else{
+        h+='<p style="color:var(--text2);font-size:11px;margin:8px 0 0;">Save this entry first, then attach supporting documents (contract, sea service letter, discharge, flight ticket).</p>';
+    }
     h+='<div class="actions" style="margin-top:12px;"><button class="btn btn-accent" onclick="'+saveCall+'">'+(isEdit?'Save changes':'Save')+'</button> <button class="btn btn-outline" onclick="showWorkHistory()">Cancel</button></div>';
     h+='</div>';
     return h;
@@ -5567,10 +5832,15 @@ async function populateWorkEntryFormControls(entry){
     var vList=(types&&types.vessel_types&&types.vessel_types.length)?types.vessel_types:
         ["Bulk Carrier","Container Ship","Tanker","Oil Tanker","Chemical Tanker","Product Tanker","LNG Carrier","LPG Carrier","General Cargo","Ro-Ro","Car Carrier","Reefer","Passenger","Cruise Ship","Ferry","Offshore Support","AHTS","PSV","Tug","OSV","Yacht","Other"];
     var pList=(types&&types.ranks&&types.ranks.length)?types.ranks:RANKS;
+    await populateWorkVesselControl(entry);
     populateSelect(document.getElementById('wh-type'),workFormListWithCurrent(vList,entry.vessel_type),entry.vessel_type||'','-- Select type --');
     populateWorkPositionControl(pList,entry.position||'');
-    populateFlagsDatalist();
-    await populatePrevVesselsDatalist();
+    var flagEl=document.getElementById('wh-flag');
+    if(flagEl){
+        var flagList=workFormListWithCurrent(MARITIME_FLAGS,entry.flag||'');
+        (workVesselPresets||[]).forEach(function(row){flagList=workFormListWithCurrent(flagList,row&&row.flag);});
+        attachClosedCombobox(flagEl,flagList);
+    }
 }
 
 async function showAddWork(){
@@ -5591,6 +5861,7 @@ async function showEditWork(id){
     if(!entry){showToast('Work entry not found','warn');await showWorkHistory();return;}
     document.getElementById('scr-content').innerHTML=renderWorkEntryForm(entry);show('scr-content');updateTabs('Edit Sea Service');
     await populateWorkEntryFormControls(entry);
+    await hydrateWorkFormFiles(entry.id);
 }
 
 // Fill the vessel-name datalist with the user's own prior work_history entries.
@@ -5619,7 +5890,7 @@ async function populatePrevVesselsDatalist(){
 
 function readWorkFormPayload(){
     var v=function(id){return document.getElementById(id).value.trim()||null;};
-    var vessel=v('wh-vessel'),pos=workPositionValue();
+    var vessel=workVesselValue(),pos=workPositionValue();
     if(!vessel||!pos){alert('Vessel name and Position are required');return null;}
     var imo=normalizeImo(v('wh-imo'));
     if(!imo){
@@ -5965,7 +6236,7 @@ function syncAddPermanent(){
         hasExpiry.disabled=false;
     }
 }
-function showAddCustomDoc(){
+function showAddCustomDoc(preferredCategory){
     // Populate the category dropdown from the existing categories in the vault,
     // plus an "Other (type below)" escape hatch.
     var sel=document.getElementById('ac-category');
@@ -5981,7 +6252,13 @@ function showAddCustomDoc(){
             opts+='<option value="'+category.replace(/"/g,'&quot;')+'">'+category+'</option>';
         }
     });
+    preferredCategory=String(preferredCategory||'').trim();
+    if(preferredCategory&&!seen[preferredCategory]){
+        seen[preferredCategory]=true;
+        opts='<option value="'+esc(preferredCategory)+'">'+esc(preferredCategory)+'</option>'+opts;
+    }
     sel.innerHTML=opts;
+    if(preferredCategory)sel.value=preferredCategory;
     document.getElementById('ac-title').value='';
     document.getElementById('ac-has-expiry').checked=true;
     document.getElementById('ac-has-expiry').disabled=false;
@@ -9471,7 +9748,6 @@ async function spLoad(){
             try{await populateVesselTypeSelect(vt,data.preferred_vessel_types||'','-- Select vessel type --');}
             catch(e){logError('spLoad:vessel_type',e);}
         }
-        populateAirportDatalist();
         populateSelect(document.getElementById('sp-min_salary_currency'),CURRENCIES,data.currency||localStorage.getItem('skipi-sp-min_salary_currency')||'USD','');
         // Citizenship + rank are populated above; the loop below handles
         // free-text / date / simple-select fields. Select elements (marital
@@ -9482,6 +9758,7 @@ async function spLoad(){
             var el=document.getElementById('sp-'+k);
             if(el)el.value=data[k]||'';
         });
+        populateAirportDatalist();
         var ms=document.getElementById('sp-min_salary');
         if(ms)ms.value=String(data.min_salary||localStorage.getItem('skipi-sp-min_salary')||'');
         // Messenger + ready toggle

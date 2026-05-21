@@ -16,6 +16,7 @@ Status values:
 | 2026-05-19 | Product/domain review | Real rank names vary and the preset list is incomplete. Cadet, Junior Officer, and Junior Engineer are needed immediately. | Rank selector needs stronger presets plus a custom role path. Repeated custom roles can later graduate into presets. | Profile/rank storage must preserve custom display text. | Implemented |
 | 2026-05-19 | Developer feedback | Production trust will matter for seafarers, crewing companies, reviews, vacancies, and marketplace-style workflows. | Verification should be a separate trust epic, not a blocker for the beta document vault. | Future identity, organization, entitlement, moderation, and privacy models. | Candidate |
 | 2026-05-19 | Developer feedback | Some shared workflows may not always start from a clean IMO value. | Validate where IMO must be mandatory and where a draft/manual vessel flow is acceptable. | Possible API/model changes for vessel drafts, matching, and review eligibility. | Candidate |
+| 2026-05-21 | Product/domain review | Seafarers often think about vessel choice first as broad fleet blocks: merchant cargo fleet, passenger or Ro-Pax work, and offshore/energy support. | Setup wizard should group existing vessel categories by fleet block without changing saved vessel-type IDs. | UI grouping only for now; taxonomy IDs and document framework remain compatible. | Implemented |
 
 ## Entry Template
 
