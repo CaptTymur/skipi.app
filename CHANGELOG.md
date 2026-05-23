@@ -7,6 +7,20 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.137] — 2026-05-23
+
+### Added
+- Added India to the Information country baseline fallback.
+- Added quick document-tree filters for required, missing, expiring, uploaded,
+  and custom documents.
+
+### Changed
+- Renamed `Files & data input` to `Documents`.
+- Simplified the Sea Service cards, Country baseline table, Jobs readiness
+  strip, and Mailings copy/layout for a denser beta UI.
+- Dashboard is no longer shown as a top-level module; the profile-completeness
+  chip opens it directly.
+
 ## [0.4.136] — 2026-05-23
 
 ### Added

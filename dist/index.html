@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.136';
+var APP_VERSION='0.4.137';
 var UI_LANG_KEY='skipi-ui-language';
 var UI_LANG_OPTIONS=[
     ['ru','Русский'],
@@ -16,8 +16,8 @@ var UI_LANG_OPTIONS=[
 ];
 var UI_STRINGS={
 	    en:{
-	        'nav.files':'Files & data input','nav.experience':'Experience','nav.dashboard':'Dashboard','nav.cv':'CV','nav.packages':'Packages','nav.dispatch':'Mailings','nav.jobs':'Jobs','nav.information':'Information','nav.vessels':'Vessel DB',
-	        'title.files':'Files & data input','title.experience':'Sea Service','title.dashboard':'Dashboard','title.cv':'CV','title.packages':'Packages','title.dispatch':'Mailings','title.jobs':'Jobs','title.information':'Information','title.vessels':'Vessel DB','title.settings':'Settings',
+	        'nav.files':'Documents','nav.experience':'Experience','nav.dashboard':'Dashboard','nav.cv':'CV','nav.packages':'Packages','nav.dispatch':'Mailings','nav.jobs':'Jobs','nav.information':'Information','nav.vessels':'Vessel DB',
+	        'title.files':'Documents','title.experience':'Sea Service','title.dashboard':'Dashboard','title.cv':'CV','title.packages':'Packages','title.dispatch':'Mailings','title.jobs':'Jobs','title.information':'Information','title.vessels':'Vessel DB','title.settings':'Settings',
 	        'welcome.subtitle':'Maritime Document Management','welcome.create':'Create Seafarer Vault','welcome.open':'Open Existing Vault','welcome.hint':'New vault folders are named clearly, for example Skipi Seafarer - Tymur Rudov. When opening a vault, select that named folder.','welcome.demo_prefix':'Just exploring?','welcome.demo':'Load demo seafarer',
 	        'settings.general':'General','settings.general_desc':'Basic application settings.','settings.language':'Language','settings.language_desc':'Interface language.','settings.autovault':'Auto-open last vault','settings.autovault_desc':'Automatically open the last used vault on startup.',
 	        'settings.nav_title':'Settings','settings.vaults':'Vaults','settings.seafarer_profile':'Seafarer Profile','settings.email':'Email sending','settings.appearance':'Appearance','settings.about_group':'About','settings.about':'About Skipi',
@@ -27,8 +27,8 @@ var UI_STRINGS={
 	        'wizard.recovery_key_label':'Recovery key (optional)','wizard.recovery_key_hint':'Paste an existing Skipi recovery key when creating this vault on another device. Leave empty for a new identity.'
 	    },
 	    ru:{
-	        'nav.files':'Файлы и ввод данных','nav.experience':'Опыт работы','nav.dashboard':'Панель','nav.cv':'CV','nav.packages':'Пакеты','nav.dispatch':'Рассылки','nav.jobs':'Вакансии','nav.information':'Информация','nav.vessels':'База судов',
-	        'title.files':'Файлы и ввод данных','title.experience':'Морской опыт','title.dashboard':'Панель','title.cv':'CV','title.packages':'Пакеты','title.dispatch':'Рассылки','title.jobs':'Вакансии','title.information':'Информация','title.vessels':'База судов','title.settings':'Настройки',
+	        'nav.files':'Документы','nav.experience':'Опыт работы','nav.dashboard':'Панель','nav.cv':'CV','nav.packages':'Пакеты','nav.dispatch':'Рассылки','nav.jobs':'Вакансии','nav.information':'Информация','nav.vessels':'База судов',
+	        'title.files':'Документы','title.experience':'Морской опыт','title.dashboard':'Панель','title.cv':'CV','title.packages':'Пакеты','title.dispatch':'Рассылки','title.jobs':'Вакансии','title.information':'Информация','title.vessels':'База судов','title.settings':'Настройки',
 	        'welcome.subtitle':'Морские документы и CV','welcome.create':'Создать профиль моряка','welcome.open':'Открыть существующий профиль','welcome.hint':'Новые папки профиля называются понятно, например Skipi Seafarer - Tymur Rudov. При открытии выбирайте именно эту папку.','welcome.demo_prefix':'Просто посмотреть?','welcome.demo':'Открыть демо-профиль',
 	        'settings.general':'Общие','settings.general_desc':'Основные настройки приложения.','settings.language':'Язык','settings.language_desc':'Язык интерфейса.','settings.autovault':'Открывать последний профиль','settings.autovault_desc':'Автоматически открывать последний использованный профиль при запуске.',
 	        'settings.nav_title':'Настройки','settings.vaults':'Профили','settings.seafarer_profile':'Профиль моряка','settings.email':'Отправка email','settings.appearance':'Внешний вид','settings.about_group':'О приложении','settings.about':'О Skipi',
@@ -38,22 +38,22 @@ var UI_STRINGS={
 	        'wizard.recovery_key_label':'Ключ восстановления (необязательно)','wizard.recovery_key_hint':'Если создаёте профиль на другом устройстве, вставьте сюда существующий ключ Skipi. Оставьте поле пустым для новой identity.'
 	    },
     tl:{
-        'nav.files':'Mga file at data','nav.experience':'Karanasan','nav.dashboard':'Dashboard','nav.cv':'CV','nav.packages':'Mga package','nav.dispatch':'Mga mailing','nav.jobs':'Mga trabaho','nav.information':'Impormasyon','nav.vessels':'Database ng barko',
-        'title.files':'Mga file at data','title.experience':'Sea Service','title.dashboard':'Dashboard','title.cv':'CV','title.packages':'Mga package','title.dispatch':'Mga mailing','title.jobs':'Mga trabaho','title.information':'Impormasyon','title.vessels':'Database ng barko','title.settings':'Settings',
+        'nav.files':'Mga dokumento','nav.experience':'Karanasan','nav.dashboard':'Dashboard','nav.cv':'CV','nav.packages':'Mga package','nav.dispatch':'Mga mailing','nav.jobs':'Mga trabaho','nav.information':'Impormasyon','nav.vessels':'Database ng barko',
+        'title.files':'Mga dokumento','title.experience':'Sea Service','title.dashboard':'Dashboard','title.cv':'CV','title.packages':'Mga package','title.dispatch':'Mga mailing','title.jobs':'Mga trabaho','title.information':'Impormasyon','title.vessels':'Database ng barko','title.settings':'Settings',
         'welcome.subtitle':'Pamamahala ng dokumentong pandagat','welcome.create':'Gumawa ng Seafarer Vault','welcome.open':'Buksan ang umiiral na vault','welcome.hint':'Malinaw ang pangalan ng bagong vault folder, halimbawa Skipi Seafarer - Tymur Rudov. Kapag bubuksan ang vault, piliin ang folder na iyon.','welcome.demo_prefix':'Nagtitingin lang?','welcome.demo':'Buksan ang demo seafarer',
         'settings.general':'General','settings.general_desc':'Pangunahing settings ng application.','settings.language':'Wika','settings.language_desc':'Wika ng interface.','settings.autovault':'Awtomatikong buksan ang huling vault','settings.autovault_desc':'Awtomatikong buksan ang huling ginamit na vault sa startup.',
         'common.settings':'Settings','common.vault':'Vault','common.switch_vault':'Lumipat ng vault','jobs.languages':'Mga wika'
     },
     hi:{
-        'nav.files':'फ़ाइलें और डेटा','nav.experience':'अनुभव','nav.dashboard':'डैशबोर्ड','nav.cv':'CV','nav.packages':'पैकेज','nav.dispatch':'मेलिंग','nav.jobs':'नौकरियां','nav.information':'जानकारी','nav.vessels':'जहाज़ डेटाबेस',
-        'title.files':'फ़ाइलें और डेटा','title.experience':'Sea Service','title.dashboard':'डैशबोर्ड','title.cv':'CV','title.packages':'पैकेज','title.dispatch':'मेलिंग','title.jobs':'नौकरियां','title.information':'जानकारी','title.vessels':'जहाज़ डेटाबेस','title.settings':'सेटिंग्स',
+        'nav.files':'दस्तावेज़','nav.experience':'अनुभव','nav.dashboard':'डैशबोर्ड','nav.cv':'CV','nav.packages':'पैकेज','nav.dispatch':'मेलिंग','nav.jobs':'नौकरियां','nav.information':'जानकारी','nav.vessels':'जहाज़ डेटाबेस',
+        'title.files':'दस्तावेज़','title.experience':'Sea Service','title.dashboard':'डैशबोर्ड','title.cv':'CV','title.packages':'पैकेज','title.dispatch':'मेलिंग','title.jobs':'नौकरियां','title.information':'जानकारी','title.vessels':'जहाज़ डेटाबेस','title.settings':'सेटिंग्स',
         'welcome.subtitle':'समुद्री दस्तावेज़ प्रबंधन','welcome.create':'Seafarer Vault बनाएं','welcome.open':'मौजूदा vault खोलें','welcome.hint':'नए vault folder का नाम साफ रखा जाता है, जैसे Skipi Seafarer - Tymur Rudov. Vault खोलते समय वही folder चुनें.','welcome.demo_prefix':'सिर्फ देख रहे हैं?','welcome.demo':'Demo seafarer खोलें',
         'settings.general':'General','settings.general_desc':'Application की मूल settings.','settings.language':'भाषा','settings.language_desc':'Interface भाषा.','settings.autovault':'पिछला vault अपने-आप खोलें','settings.autovault_desc':'Startup पर अंतिम इस्तेमाल किया गया vault अपने-आप खोलें.',
         'common.settings':'सेटिंग्स','common.vault':'Vault','common.switch_vault':'Vault बदलें','jobs.languages':'भाषाएं'
     },
     id:{
-        'nav.files':'File & data','nav.experience':'Pengalaman','nav.dashboard':'Dasbor','nav.cv':'CV','nav.packages':'Paket','nav.dispatch':'Mailing','nav.jobs':'Lowongan','nav.information':'Informasi','nav.vessels':'Basis data kapal',
-        'title.files':'File & data','title.experience':'Sea Service','title.dashboard':'Dasbor','title.cv':'CV','title.packages':'Paket','title.dispatch':'Mailing','title.jobs':'Lowongan','title.information':'Informasi','title.vessels':'Basis data kapal','title.settings':'Pengaturan',
+        'nav.files':'Dokumen','nav.experience':'Pengalaman','nav.dashboard':'Dasbor','nav.cv':'CV','nav.packages':'Paket','nav.dispatch':'Mailing','nav.jobs':'Lowongan','nav.information':'Informasi','nav.vessels':'Basis data kapal',
+        'title.files':'Dokumen','title.experience':'Sea Service','title.dashboard':'Dasbor','title.cv':'CV','title.packages':'Paket','title.dispatch':'Mailing','title.jobs':'Lowongan','title.information':'Informasi','title.vessels':'Basis data kapal','title.settings':'Pengaturan',
         'welcome.subtitle':'Manajemen dokumen maritim','welcome.create':'Buat Seafarer Vault','welcome.open':'Buka vault yang ada','welcome.hint':'Folder vault baru diberi nama jelas, misalnya Skipi Seafarer - Tymur Rudov. Saat membuka vault, pilih folder bernama itu.','welcome.demo_prefix':'Hanya melihat-lihat?','welcome.demo':'Buka demo seafarer',
         'settings.general':'Umum','settings.general_desc':'Pengaturan dasar aplikasi.','settings.language':'Bahasa','settings.language_desc':'Bahasa antarmuka.','settings.autovault':'Buka vault terakhir otomatis','settings.autovault_desc':'Buka vault terakhir yang digunakan saat aplikasi mulai.',
         'common.settings':'Pengaturan','common.vault':'Vault','common.switch_vault':'Ganti vault','jobs.languages':'Bahasa'
@@ -83,7 +83,7 @@ function uiLanguageSelectHtml(){
 function applyI18nChrome(){
     document.documentElement.lang=getUiLang();
     var pairs=[
-        ['mt-files','nav.files'],['mt-exp','nav.experience'],['mt-dash','nav.dashboard'],['mt-cv','nav.cv'],['mt-pkg','nav.packages'],['mt-disp','nav.dispatch'],['mt-jobs','nav.jobs'],['mt-info','nav.information'],['mt-vessels','nav.vessels'],
+        ['mt-files','nav.files'],['mt-exp','nav.experience'],['mt-cv','nav.cv'],['mt-pkg','nav.packages'],['mt-disp','nav.dispatch'],['mt-jobs','nav.jobs'],['mt-info','nav.information'],['mt-vessels','nav.vessels'],
         ['welcome-subtitle','welcome.subtitle'],['btn-create-vault','welcome.create'],['btn-open-vault','welcome.open'],['welcome-folder-hint','welcome.hint'],['welcome-demo-prefix','welcome.demo_prefix'],['welcome-demo-link','welcome.demo']
     ];
     pairs.forEach(function(p){
@@ -225,6 +225,8 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .modules-bar .mb-spacer { flex:1; }
 .profile-completion-chip { display:flex; align-items:center; gap:7px; height:26px; padding:0 10px; border-radius:5px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:12px; font-weight:600; cursor:pointer; margin-right:6px; white-space:nowrap; }
 .profile-completion-chip:hover { border-color:var(--accent); background:var(--accent-bg); }
+.profile-completion-chip.active { border-color:var(--accent); background:var(--accent-bg); }
+.profile-completion-chip:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .profile-completion-chip .pc-dot { width:8px; height:8px; border-radius:50%; background:var(--orange); box-shadow:0 0 0 2px rgba(255,255,255,.05); }
 .profile-completion-chip .pc-label { max-width:96px; overflow:hidden; text-overflow:ellipsis; }
 .dispatch-tabs { display:flex; gap:6px; flex-wrap:wrap; margin:12px 0 14px; border-bottom:1px solid var(--border); }
@@ -253,6 +255,12 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .panel-search { padding:6px 8px; border-bottom:1px solid var(--border); }
 .panel-search input { width:100%; padding:4px 8px; background:var(--bg); border:1px solid var(--border); border-radius:4px; color:var(--text); font-size:12px; outline:none; }
 .panel-search input:focus { border-color:var(--accent); }
+.doc-filter-bar { display:flex; gap:4px; flex-wrap:wrap; padding:6px 8px; border-bottom:1px solid var(--border); background:var(--surface); }
+.doc-filter-bar button { border:1px solid var(--border); background:var(--bg); color:var(--text2); border-radius:999px; padding:3px 7px; font-size:10px; font-weight:700; cursor:pointer; line-height:1.2; }
+.doc-filter-bar button:hover { color:var(--text); border-color:var(--accent); }
+.doc-filter-bar button.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+.doc-filter-bar .count { opacity:.72; margin-left:3px; font-weight:600; }
+.tree-empty { color:var(--text2); font-size:11px; line-height:1.4; padding:12px 10px; }
 .panel-tree { flex:1; overflow-y:auto; padding:4px 0; }
 
 /* Tree */
@@ -357,6 +365,15 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .exp-vessel-rating-link.empty .stars { color:var(--text2); opacity:.55; }
 .exp-vessel-rating-link .meta { color:var(--text2); font-size:11px; }
 .exp-vessel-rating-link:hover .meta { color:var(--accent); text-decoration:underline; }
+.exp-actionbar { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; align-items:flex-start; min-width:164px; }
+.exp-more { position:relative; }
+.exp-more summary { list-style:none; border:1px solid var(--border); background:transparent; color:var(--text); border-radius:4px; padding:3px 8px; font-size:11px; font-weight:600; cursor:pointer; }
+.exp-more summary::-webkit-details-marker { display:none; }
+.exp-more[open] summary { border-color:var(--accent); background:var(--accent-bg); color:var(--accent); }
+.exp-more-menu { position:absolute; right:0; top:calc(100% + 4px); z-index:120; min-width:170px; border:1px solid var(--border); border-radius:6px; background:var(--surface); box-shadow:0 10px 26px rgba(0,0,0,.38); padding:4px; }
+.exp-more-menu button { width:100%; border:0; background:transparent; color:var(--text); text-align:left; border-radius:4px; padding:6px 8px; font-size:11px; cursor:pointer; }
+.exp-more-menu button:hover { background:var(--hover); color:var(--accent); }
+.exp-more-menu button.danger { color:var(--red); }
 .own-vessel-review { margin-top:7px; display:flex; align-items:center; gap:7px; flex-wrap:wrap; border:1px solid rgba(226,185,61,.28); background:rgba(226,185,61,.08); border-radius:5px; padding:5px 8px; font-size:11px; color:var(--text2); }
 .own-vessel-review .stars { color:var(--yellow); font-size:14px; line-height:1; letter-spacing:1px; }
 .own-vessel-review .meta strong { color:var(--text); }
@@ -431,6 +448,13 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .job-trust-badge.warn { border-color:rgba(242,184,64,.40); background:rgba(242,184,64,.12); color:var(--yellow); }
 .job-trust-badge.blocked { border-color:rgba(230,82,82,.42); background:rgba(230,82,82,.10); color:var(--red); }
 .job-crewing-desc { font-size:12px; color:var(--text); margin-top:6px; line-height:1.35; white-space:pre-wrap; max-height:54px; overflow:hidden; border-left:2px solid var(--border); padding-left:8px; }
+.jobs-shell { max-width:920px; margin:0 auto; }
+.jobs-status-strip { border:1px solid var(--border); border-radius:7px; padding:10px 12px; margin-bottom:14px; background:var(--bg); display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.jobs-status-strip.on { border-color:rgba(124,111,247,.45); background:var(--accent-bg); }
+.jobs-status-main { display:flex; align-items:center; gap:10px; min-width:0; flex:1; }
+.jobs-status-main label { display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; font-weight:800; color:var(--text); white-space:nowrap; }
+.jobs-status-main input { width:17px; height:17px; accent-color:var(--accent); cursor:pointer; }
+.jobs-status-text { color:var(--text2); font-size:12px; line-height:1.35; min-width:180px; }
 .vdb-context { border:1px solid var(--accent); background:var(--accent-bg); border-radius:6px; padding:10px 12px; margin-bottom:12px; display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap; }
 .vdb-context-title { font-weight:700; font-size:13px; }
 .vdb-context-meta { color:var(--text2); font-size:11px; margin-top:2px; }
@@ -527,6 +551,14 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .info-band div { background:var(--bg); border:1px solid var(--border); border-radius:5px; padding:7px 8px; text-align:center; }
 .info-band b { display:block; font-size:14px; color:var(--text); }
 .info-band span { display:block; font-size:10px; color:var(--text2); }
+.info-country-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:10px 0 12px; }
+.info-country-card { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:11px 12px; min-width:0; }
+.info-country-card .rank { color:var(--accent); font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; margin-bottom:5px; }
+.info-country-card .country { font-size:15px; font-weight:800; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.info-country-card .value { margin-top:8px; display:flex; justify-content:space-between; gap:8px; color:var(--text2); font-size:11px; }
+.info-country-card .value strong { color:var(--text); font-size:15px; }
+.info-country-details { margin:8px 0 12px; }
+.info-country-details summary { cursor:pointer; color:var(--accent); font-weight:700; font-size:12px; margin-bottom:8px; }
 .info-country-list { display:grid; gap:8px; margin:10px 0 18px; }
 .info-country-row { display:grid; grid-template-columns:32px minmax(110px,1fr) repeat(4,minmax(72px,auto)); gap:10px; align-items:center; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:10px 12px; font-size:12px; min-width:0; }
 .info-country-row.head { background:transparent; color:var(--text2); font-size:10px; font-weight:700; text-transform:uppercase; }
@@ -541,6 +573,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
 @media(max-width:720px){
     .info-head{flex-direction:column;}
     .info-meta{text-align:left;}
+    .info-country-summary{grid-template-columns:1fr;}
     .info-country-row{grid-template-columns:32px 1fr 1fr; align-items:start;}
     .info-country-row.head{display:none;}
     .info-country-num{text-align:left;}
@@ -726,9 +759,8 @@ input, select, textarea, button { font-family:var(--font-ui); }
      strip has been removed; vault switcher + settings gear moved here
      from the sidebar footer. -->
 <div class="modules-bar" id="modules-bar" style="display:none;">
-    <div class="mod-tab active" onclick="showView('files')" id="mt-files" title="Files and data input"><span>Files &amp; data input</span></div>
+    <div class="mod-tab active" onclick="showView('files')" id="mt-files" title="Documents"><span>Documents</span></div>
     <div class="mod-tab" onclick="showView('experience')" id="mt-exp" title="Work Experience"><span>Experience</span></div>
-    <div class="mod-tab" onclick="showView('dashboard')" id="mt-dash" title="Dashboard"><span>Dashboard</span></div>
     <div class="mod-tab" onclick="showView('cv')" id="mt-cv" title="CV"><span>CV</span></div>
     <div class="mod-tab" onclick="showView('packages')" id="mt-pkg" title="Packages"><span>Packages</span></div>
     <div class="mod-tab" onclick="showView('dispatch')" id="mt-disp" title="Mailings"><span>Рассылки</span></div>
@@ -736,7 +768,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
     <div class="mod-tab" onclick="showView('information')" id="mt-info" title="Information - market pulse"><span>Information</span></div>
     <div class="mod-tab" onclick="showView('vessels')" id="mt-vessels" title="База судов"><span>База судов</span></div>
     <div class="mb-spacer"></div>
-    <div class="profile-completion-chip" id="profile-completion-chip" onclick="showView('dashboard')" title="Profile completeness">
+    <div class="profile-completion-chip" id="profile-completion-chip" onclick="openProfileDashboard()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openProfileDashboard();}" role="button" tabindex="0" title="Profile completeness">
         <span class="pc-dot" id="pc-dot"></span>
         <span class="pc-label" id="pc-label">Profile --%</span>
     </div>
@@ -765,8 +797,9 @@ input, select, textarea, button { font-family:var(--font-ui); }
 
     <!-- Left panel -->
     <div class="left-panel" id="left-panel" style="display:none;">
-        <div class="panel-header"><span id="panel-title">Files &amp; data input</span><span class="actions"><button id="btn-add-custom" class="btn btn-accent btn-sm" title="Add a certificate or document that isn't in the pre-seeded list" onclick="showAddCustomDoc()">+ Add custom certificate</button></span></div>
+        <div class="panel-header"><span id="panel-title">Documents</span><span class="actions"><button id="btn-add-custom" class="btn btn-accent btn-sm" title="Add a certificate or document that isn't in the pre-seeded list" onclick="showAddCustomDoc()">+ Add custom certificate</button></span></div>
         <div class="panel-search"><input type="text" placeholder="Search..." id="search-input" oninput="onSearch(this.value)"></div>
+        <div class="doc-filter-bar" id="doc-filter-bar"></div>
         <div class="panel-tree" id="panel-tree"></div>
     </div>
 
@@ -793,7 +826,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p id="welcome-subtitle">Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.136</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.137</span></p>
                 <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -877,7 +910,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
 <script>
 var invoke, open, saveDlg, convertFileSrc;
 var types = {vessel_types:[], ranks:[]};
-var allDocs = [], selectedDocId = null, searchTerm = '', currentView = 'files';
+var allDocs = [], selectedDocId = null, searchTerm = '', docTreeFilter = 'all', currentView = 'files';
 var pkgMode = false, pkgSelected = [];
 var currentAccountType = '';
 var currentWizardPosition = '';
@@ -952,9 +985,12 @@ function profileCompletenessColor(pct){
 }
 function profileCompletenessHint(pct){
     if(typeof getUiLang==='function'&&getUiLang()==='ru'){
-        return 'Заполненность профиля: '+pct+'%. Чем полнее профиль, тем больше возможностей Skipi открывает, включая больше адресов для массовой рассылки.';
+        return 'Заполненность профиля: '+pct+'%. Нажмите, чтобы открыть Dashboard. Чем полнее профиль, тем больше возможностей Skipi открывает, включая больше адресов для массовой рассылки.';
     }
-    return 'Profile completeness: '+pct+'%. A more complete profile unlocks more Skipi opportunities, including more agency mailing addresses.';
+    return 'Profile completeness: '+pct+'%. Click to open Dashboard. A more complete profile unlocks more Skipi opportunities, including more agency mailing addresses.';
+}
+function openProfileDashboard(){
+    showView('dashboard');
 }
 async function updateProfileCompletionChip(profileOverride){
     var chip=document.getElementById('profile-completion-chip');
@@ -974,6 +1010,7 @@ async function updateProfileCompletionChip(profileOverride){
     if(label)label.textContent='Profile '+pct+'%';
     if(dot)dot.style.background=profileCompletenessColor(pct);
     chip.title=profileCompletenessHint(pct);
+    chip.setAttribute('aria-label',chip.title);
 }
 
 var _docContextMenuInstalled=false;
@@ -3469,6 +3506,8 @@ function showView(v, opts){
     if(ri)ri.classList.add('active');
     var mt=document.getElementById('mt-'+shortMap[v]);
     if(mt)mt.classList.add('active');
+    var pcNav=document.getElementById('profile-completion-chip');
+    if(pcNav)pcNav.classList.toggle('active',v==='dashboard');
     document.getElementById('panel-title').textContent={
         files:tr('title.files'),dashboard:tr('title.dashboard'),cv:tr('title.cv'),experience:tr('title.experience'),
         vessels:tr('title.vessels'),packages:tr('title.packages'),dispatch:tr('title.dispatch'),jobs:tr('title.jobs'),
@@ -3698,13 +3737,60 @@ async function sendInboxReply(){
 
 function onSearch(v){searchTerm=v.toLowerCase();renderTree();}
 
+function docTreeFilterLabels(){
+    if(getUiLang()==='ru'){
+        return {all:'Все',required:'Обязательные',missing:'Нет файла',expiring:'Сроки',uploaded:'Загружено',custom:'Свои'};
+    }
+    return {all:'All',required:'Required',missing:'Missing',expiring:'Expiring',uploaded:'Uploaded',custom:'Custom'};
+}
+function docMatchesTreeFilter(d){
+    if(!d)return false;
+    if(docTreeFilter==='required')return isActiveRequiredDoc(d);
+    if(docTreeFilter==='missing')return isActiveRequiredDoc(d)&&!d.file_name;
+    if(docTreeFilter==='expiring'){
+        var s=classify(d);
+        return !!d.file_name&&(s==='expired'||s==='critical'||s==='warning');
+    }
+    if(docTreeFilter==='uploaded')return !!d.file_name;
+    if(docTreeFilter==='custom')return !d.template_id;
+    return true;
+}
+function docFilterCount(filter){
+    var prev=docTreeFilter;
+    docTreeFilter=filter;
+    var n=(allDocs||[]).filter(docMatchesTreeFilter).length;
+    docTreeFilter=prev;
+    return n;
+}
+function setDocTreeFilter(filter){
+    docTreeFilter=filter||'all';
+    renderTree();
+}
+function renderDocFilterBar(){
+    var host=document.getElementById('doc-filter-bar');
+    if(!host)return;
+    var labels=docTreeFilterLabels();
+    var order=['all','required','missing','expiring','uploaded','custom'];
+    host.innerHTML=order.map(function(id){
+        var active=docTreeFilter===id?' active':'';
+        return '<button type="button" class="'+active.trim()+'" onclick="setDocTreeFilter(\''+id+'\')">'+esc(labels[id]||id)+'<span class="count">'+docFilterCount(id)+'</span></button>';
+    }).join('');
+}
+function docTreeKindBadge(d){
+    if(isActiveRequiredDoc(d))return '';
+    return docKindBadge(d);
+}
+
 function renderTree(){
     var cats={};
     allDocs.forEach(function(d){
-        if(searchTerm&&d.title.toLowerCase().indexOf(searchTerm)===-1)return;
+        var hay=((d.title||'')+' '+(d.category||'')).toLowerCase();
+        if(searchTerm&&hay.indexOf(searchTerm)===-1)return;
+        if(!docMatchesTreeFilter(d))return;
         if(!cats[d.category])cats[d.category]={docs:[]};
         cats[d.category].docs.push(d);
     });
+    renderDocFilterBar();
     var h='';
     var order=orderedCategories(cats);
     order.forEach(function(cat){var data=cats[cat]; if(!data) return;
@@ -3724,12 +3810,12 @@ function renderTree(){
           +' ondragstart="onCatDragStart(event)"'
           +' ondragover="onCatDragOver(event)"'
           +' ondrop="onCatDrop(event)">'
-          +'<div class="tree-folder-header" onclick="toggleF(this)" title="Right-click to add a custom certificate to this section"><span class="arrow open">&#9654;</span>'+esc(cat)+'</div><div class="tree-items open">';
+          +'<div class="tree-folder-header" onclick="toggleF(this)" title="Right-click to add a custom certificate to this section"><span class="arrow open">&#9654;</span>'+esc(cat)+'<span class="cnt">'+data.docs.length+'</span></div><div class="tree-items open">';
         data.docs.forEach(function(d){
             var a=d.id===selectedDocId?' active':'';
             var ic=d.file_name?'&#128196;':'&#128195;';
             var kindClass=docKindClass(d);
-            var kindBadge=docKindBadge(d);
+            var kindBadge=docTreeKindBadge(d);
             var nameHtml='<span class="name">'+esc(d.title)+'</span>';
             if(pkgMode){
                 var hasFile=!!d.file_name;
@@ -3746,6 +3832,7 @@ function renderTree(){
         });
         h+='</div></div>';
     });
+    if(!h)h='<div class="tree-empty">'+esc(getUiLang()==='ru'?'Нет документов для этого фильтра.':'No documents match this filter.')+'</div>';
     document.getElementById('panel-tree').innerHTML=h;
 }
 
@@ -5625,22 +5712,24 @@ async function showWorkHistory(){
             }
             h+=renderOwnVesselReview(e);
             h+='</div>';
-            h+='<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;">';
+            h+='<div class="exp-actionbar">';
             h+='<button class="btn btn-sm btn-accent" onclick="showEditWork(\''+e.id+'\')">Edit</button>';
-            h+='<button class="btn btn-sm btn-outline" onclick="attachWorkFile(\''+e.id+'\')">+ Attach</button>';
+            h+='<button class="btn btn-sm btn-outline" onclick="attachWorkFile(\''+e.id+'\')">Attach</button>';
+            h+='<details class="exp-more"><summary>More</summary><div class="exp-more-menu">';
             if(normImo){
                 var localReview=e.local_review;
                 var hasLocalReview=localReview&&localReview!==null&&localReview.overall_rating!==undefined&&localReview.overall_rating!==null;
                 if(hasLocalReview){
-                    h+='<button class="btn btn-sm btn-outline" onclick="showLocalReviewDetails(\''+e.id+'\')" title="View your saved vessel review">&#9733; View rating</button>';
+                    h+='<button onclick="showLocalReviewDetails(\''+e.id+'\')" title="View your saved vessel review">&#9733; View rating</button>';
                     if(!localReviewLocked(localReview)){
-                        h+='<button class="btn btn-sm btn-outline" onclick="openReviewFromEntryId(\''+e.id+'\')" title="Update this vessel review">Update review</button>';
+                        h+='<button onclick="openReviewFromEntryId(\''+e.id+'\')" title="Update this vessel review">Update review</button>';
                     }
                 }else{
-                    h+='<button class="btn btn-sm btn-outline" onclick="openReviewFromEntryId(\''+e.id+'\')" title="Write a structured review of this vessel">&#9733; Write review</button>';
+                    h+='<button onclick="openReviewFromEntryId(\''+e.id+'\')" title="Write a structured review of this vessel">&#9733; Write review</button>';
                 }
             }
-            h+='<button class="btn btn-sm btn-outline btn-red" onclick="delWork(\''+e.id+'\')">Delete entry</button>';
+            h+='<button class="danger" onclick="delWork(\''+e.id+'\')">Delete entry</button>';
+            h+='</div></details>';
             h+='</div>';
             h+='</div>';
             if(normImo){
@@ -5662,7 +5751,7 @@ async function showWorkHistory(){
                 });
                 h+='</div>';
             }else{
-                h+='<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);font-size:11px;color:var(--text2);">No voyage documents attached yet. Use + Attach to copy contract evidence into the vault.</div>';
+                h+='<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border);font-size:11px;color:var(--text2);">No voyage documents yet.</div>';
             }
             h+='</div>';
         }
@@ -6370,6 +6459,7 @@ function informationFallbackSnapshot(){
             {id:'fallback_numbeo',title:'Purchasing power needs a separate lens',summary:'Cost-of-living and local purchasing-power indices give a rough outside baseline.',implication:'A higher salary is not always a better between-contract life if the base is expensive.',source:'Numbeo Local Purchasing Power Index 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?displayColumn=5',source_date:'2026',confidence:'public_reference'}
         ],
         country_baselines:[
+            {id:'in',country:'India',cost_of_living_index:18.9,rent_index:4.3,cost_plus_rent_index:12.4,groceries_index:21.6,restaurant_price_index:15.6,local_purchasing_power_index:76.4,source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
             {id:'id',country:'Indonesia',cost_of_living_index:26.1,rent_index:9.1,cost_plus_rent_index:18.5,groceries_index:33.6,restaurant_price_index:15.3,local_purchasing_power_index:29.3,source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
             {id:'ua',country:'Ukraine',cost_of_living_index:28.2,rent_index:8.2,cost_plus_rent_index:19.2,groceries_index:28.8,restaurant_price_index:25.4,local_purchasing_power_index:50.0,source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
             {id:'ph',country:'Philippines',cost_of_living_index:30.1,rent_index:7.8,cost_plus_rent_index:20.2,groceries_index:35.4,restaurant_price_index:19.7,local_purchasing_power_index:33.9,source:'Numbeo Cost of Living Index by Country 2026',source_url:'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026',source_date:'2026',confidence:'public_reference'},
@@ -6618,7 +6708,19 @@ function renderInformationCountryBaselines(snapshot){
     });
     var first=countries[0]||{};
     var sourceUrl=first.source_url||'https://www.numbeo.com/cost-of-living/rankings_by_country.jsp?title=2026';
-    var h='<div class="info-country-list">';
+    var top=countries.slice(0,3);
+    var h='<div class="info-country-summary">';
+    top.forEach(function(c,idx){
+        h+='<div class="info-country-card">';
+        h+='<div class="rank">#'+esc(idx+1)+' USD baseline</div>';
+        h+='<div class="country">'+esc(c.country||'')+'</div>';
+        h+='<div class="value"><span>Cost+rent</span><strong>'+esc(informationIndexValue(c.cost_plus_rent_index))+'</strong></div>';
+        h+='<div class="value"><span>Local power</span><strong>'+esc(informationIndexValue(c.local_purchasing_power_index))+'</strong></div>';
+        h+='</div>';
+    });
+    h+='</div>';
+    h+='<details class="info-country-details"><summary>Full country table ('+countries.length+')</summary>';
+    h+='<div class="info-country-list">';
     h+='<div class="info-country-row head"><span>#</span><span>Country</span><span class="info-country-num">Cost+rent</span><span class="info-country-num">Rent</span><span class="info-country-num">Groceries</span><span class="info-country-num">Local power</span></div>';
     countries.forEach(function(c,idx){
         h+='<div class="info-country-row">';
@@ -6630,7 +6732,7 @@ function renderInformationCountryBaselines(snapshot){
         h+='<span class="info-country-num"><small>Local power</small>'+esc(informationIndexValue(c.local_purchasing_power_index))+'</span>';
         h+='</div>';
     });
-    h+='</div>';
+    h+='</div></details>';
     h+='<div class="info-empty">Sorted by lower cost-plus-rent for a USD salary. Local purchasing power reflects local income, not seafarer contracts. War, visa, tax, banking, and safety are not included. <a href="'+escAttr(sourceUrl)+'" onclick="openInformationSource(this.href);return false;" style="color:var(--accent);">Numbeo 2026 source</a></div>';
     return h;
 }
@@ -6710,6 +6812,7 @@ async function showJobs(){
     var sp={};
     try{ sp=await invoke('get_seafarer_personal'); }catch(e){}
     var on = sp.ready_for_offers==='true';
+    var ru=getUiLang()==='ru';
     var readinessGate = await jobsReadinessGate(sp);
     if(on && !readinessGate.ok){
         on=false;
@@ -6724,24 +6827,14 @@ async function showJobs(){
     window._vesselReviewStats=reviewStats;
 
     var h = '';
-    h += '<div style="max-width:720px;margin:0 auto;">';
+    h += '<div class="jobs-shell">';
 
-    // Primary affordance — giant toggle + status line
-    h += '<div style="border:1px solid var(--border);border-radius:10px;padding:20px 24px;margin-bottom:20px;background:'+(on?'var(--accent-bg)':'var(--bg)')+';">';
-    h += '<div style="display:flex;align-items:center;gap:16px;">';
-    h += '<label style="display:flex;align-items:center;gap:12px;cursor:pointer;">'+
-         '<input type="checkbox" id="jobs-master-toggle"'+(on?' checked':'')+' onchange="setJobsToggle(this.checked)" style="width:22px;height:22px;accent-color:var(--accent);cursor:pointer;">'+
-         '<span style="font-size:18px;font-weight:700;color:'+(on?'var(--accent)':'var(--text)')+';">Ready for offers</span>'+
-         '</label>';
-    h += '<span style="flex:1;text-align:right;font-size:12px;color:var(--text2);">'+(on?'Skipi is looking for matching jobs':'Flip the switch when you\'re open to offers')+'</span>';
+    h += '<div class="jobs-status-strip '+(on?'on':'off')+'">';
+    h += '<div class="jobs-status-main">';
+    h += '<label><input type="checkbox" id="jobs-master-toggle"'+(on?' checked':'')+' onchange="setJobsToggle(this.checked)">'+esc(ru?'Готов к предложениям':'Ready for offers')+'</label>';
+    h += '<div class="jobs-status-text">'+esc(on?(ru?'Подбор вакансий активен. Skipi проверяет только общие фильтры: должность, тип судна, доступность и зарплату.':'Vacancy matching is active. Skipi checks broad filters only: rank, vessel type, availability and salary.'):(ru?'Не ищет предложения. Подбор, уведомления и offer-feedback выключены, пока тумблер не активен.':'Off market. Matching, vacancy alerts and offer-related feedback stay quiet until you turn this on.'))+'</div>';
     h += '</div>';
-    h += '<p style="margin-top:12px;font-size:12px;color:var(--text2);line-height:1.5;">';
-    if(on){
-        h += 'Skipi will poll the public jobs board on <code style="font-size:11px;">skipi.app</code> for vacancies that match your rank, vessel type, availability, and salary expectations — and surface them here. The server sees only those criteria, never your identity.';
-    } else {
-        h += 'When enabled, your Skipi will check the public jobs board on <code style="font-size:11px;">skipi.app</code> for vacancies matching your profile and show them here. The server only sees broad filters (rank, vessel type) — not you personally. No alerts, no account, no tracking.';
-    }
-    h += '</p>';
+    h += '<button class="btn btn-outline btn-sm" onclick="openSettings(\'seafarer\')">'+esc(getUiLang()==='ru'?'Профиль':'Profile')+'</button>';
     h += '</div>';
 
     if(!readinessGate.ok){
@@ -6764,13 +6857,12 @@ async function showJobs(){
     // Feed is loaded through the shared API fallback chain.
     h += '<div id="jobs-feed-host">';
     if(!on){
-        h += '<div style="border:1px dashed var(--border);border-radius:8px;padding:28px 20px;text-align:center;color:var(--text2);font-size:13px;">';
-        h += '<div style="font-size:28px;margin-bottom:10px;">⚪</div>';
-        h += '<div style="font-weight:600;margin-bottom:6px;color:var(--text);">You\'re off the market</div>';
-        h += '<div style="font-size:12px;max-width:420px;margin:0 auto;line-height:1.5;">Enable "Ready for offers" above when you want Skipi to watch for vacancies. No background traffic happens until you do.</div>';
+        h += '<div style="border:1px dashed var(--border);border-radius:8px;padding:16px 18px;color:var(--text2);font-size:13px;">';
+        h += '<div style="font-weight:700;margin-bottom:4px;color:var(--text);">'+esc(ru?'Предложения выключены':'You\'re off the market')+'</div>';
+        h += '<div style="font-size:12px;line-height:1.45;">'+esc(ru?'Включите готовность к предложениям, когда хотите получать подходящие вакансии. Пока тумблер выключен, фонового подбора нет.':'Enable "Ready for offers" when you want Skipi to watch for vacancies. No background matching happens while it is off.')+'</div>';
         h += '</div>';
     } else {
-        h += '<div style="font-weight:600;font-size:13px;margin-bottom:10px;">Latest matching vacancies</div>';
+        h += '<div style="font-weight:600;font-size:13px;margin-bottom:10px;">'+esc(ru?'Свежие подходящие вакансии':'Latest matching vacancies')+'</div>';
         h += '<div id="jobs-feed">Loading...</div>';
     }
     h += '</div>';
@@ -8983,9 +9075,10 @@ function dispatchTabButton(tab,label){
     return '<button type="button" class="dispatch-tab '+(dispatchTab===tab?'active':'')+'" onclick="setDispatchTab(\''+tab+'\')">'+esc(label)+'</button>';
 }
 function dispatchRecipientsLabel(){
-    if(dispatchTab==='agency_db')return 'Selected agency database recipients';
-    if(dispatchTab==='crewing_requests')return 'Selected crewing request recipients';
-    return 'Recipients (one email per line or comma-separated)';
+    var ru=getUiLang()==='ru';
+    if(dispatchTab==='agency_db')return ru?'Получатели из базы агентств':'Selected agency database recipients';
+    if(dispatchTab==='crewing_requests')return ru?'Получатели из запросов крюингов':'Selected crewing request recipients';
+    return ru?'Получатели: один email в строке или через запятую':'Recipients: one email per line or comma-separated';
 }
 async function getProfileCompletenessForDispatch(){
     try{
@@ -9025,6 +9118,7 @@ function renderAgencyDatabasePanel(data){
     var host=document.getElementById('disp-agency-db-host');
     if(!host)return;
     data=data||{};
+    var ru=getUiLang()==='ru';
     var total=Number(data.total_addresses||0);
     var allowed=Number(data.allowed_addresses||0);
     var locked=Number(data.locked_addresses||0);
@@ -9032,22 +9126,22 @@ function renderAgencyDatabasePanel(data){
     var label=data.nationality_label||'Unknown nationality';
     var h='';
     h+='<div class="dispatch-kpi-row">';
-    h+='<div class="dispatch-kpi"><div class="num">'+pct+'%</div><div class="lbl">Profile</div></div>';
-    h+='<div class="dispatch-kpi"><div class="num" style="color:var(--accent)">'+allowed+'</div><div class="lbl">Unlocked</div></div>';
+    h+='<div class="dispatch-kpi"><div class="num">'+pct+'%</div><div class="lbl">'+esc(ru?'Профиль':'Profile')+'</div></div>';
+    h+='<div class="dispatch-kpi"><div class="num" style="color:var(--accent)">'+allowed+'</div><div class="lbl">'+esc(ru?'Доступно':'Unlocked')+'</div></div>';
     h+='<div class="dispatch-kpi"><div class="num">'+total+'</div><div class="lbl">'+esc(label)+'</div></div>';
-    h+='<div class="dispatch-kpi"><div class="num" style="color:var(--orange)">'+locked+'</div><div class="lbl">Locked</div></div>';
+    h+='<div class="dispatch-kpi"><div class="num" style="color:var(--orange)">'+locked+'</div><div class="lbl">'+esc(ru?'Закрыто':'Locked')+'</div></div>';
     h+='</div>';
-    h+='<div style="font-size:12px;color:var(--text2);line-height:1.45;margin-bottom:10px;">Доступно '+allowed+' из '+total+' адресов: Skipi открывает долю базы пропорционально заполненности профиля. Заполните профиль до 100%, чтобы открыть всю базу.</div>';
+    h+='<div style="font-size:12px;color:var(--text2);line-height:1.45;margin-bottom:10px;">'+esc(ru?'Доступно '+allowed+' из '+total+' адресов: Skipi открывает долю базы пропорционально заполненности профиля. Заполните профиль до 100%, чтобы открыть всю базу.':'Available '+allowed+' of '+total+' addresses. Skipi unlocks the agency database proportionally to profile completeness.')+'</div>';
     if(!data.nationality_code){
-        h+='<div style="border:1px dashed var(--border);border-radius:6px;padding:12px;color:var(--text2);font-size:12px;">Укажите национальность в профиле, чтобы Skipi выбрал правильную базу агентств.</div>';
+        h+='<div style="border:1px dashed var(--border);border-radius:6px;padding:12px;color:var(--text2);font-size:12px;">'+esc(ru?'Укажите национальность в профиле, чтобы Skipi выбрал правильную базу агентств.':'Set nationality in the profile so Skipi can choose the right agency database.')+'</div>';
     }else if(total===0){
-        h+='<div style="border:1px dashed var(--border);border-radius:6px;padding:12px;color:var(--text2);font-size:12px;line-height:1.45;">База для '+esc(label)+' пока пустая. Шаблон создан здесь:<br><span style="font-family:var(--font-mono);font-size:11px;color:var(--text);">'+esc(data.db_path||'')+'</span></div>';
+        h+='<div style="border:1px dashed var(--border);border-radius:6px;padding:12px;color:var(--text2);font-size:12px;line-height:1.45;">'+esc(ru?'База для '+label+' пока пустая. Шаблон создан здесь:':'The database for '+label+' is empty. Template created here:')+'<br><span style="font-family:var(--font-mono);font-size:11px;color:var(--text);">'+esc(data.db_path||'')+'</span></div>';
     }else if(!allowed){
-        h+='<div style="border:1px dashed var(--border);border-radius:6px;padding:12px;color:var(--text2);font-size:12px;">В базе есть адреса, но текущая заполненность профиля пока не открывает рассылку по ним.</div>';
+        h+='<div style="border:1px dashed var(--border);border-radius:6px;padding:12px;color:var(--text2);font-size:12px;">'+esc(ru?'В базе есть адреса, но текущая заполненность профиля пока не открывает рассылку по ним.':'The database has addresses, but current profile completeness does not unlock mailing yet.')+'</div>';
     }else{
         h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;flex-wrap:wrap;">';
-        h+='<div style="font-size:12px;color:var(--text2);">'+allowed+' email'+(allowed===1?'':'s')+' ready for mailing</div>';
-        h+='<button class="btn btn-accent btn-sm" onclick="useAgencyDatabaseRecipients()">Use available addresses</button>';
+        h+='<div style="font-size:12px;color:var(--text2);">'+esc(ru?(allowed+' адресов готовы к рассылке'):(allowed+' email'+(allowed===1?'':'s')+' ready for mailing'))+'</div>';
+        h+='<button class="btn btn-accent btn-sm" onclick="useAgencyDatabaseRecipients()">'+esc(ru?'Вставить доступные адреса':'Use available addresses')+'</button>';
         h+='</div>';
         lastAgencyDbRecipients.slice(0,12).forEach(function(a){
             h+='<div style="border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:6px;background:var(--surface);">';
@@ -9058,7 +9152,7 @@ function renderAgencyDatabasePanel(data){
             }
             h+='</div>';
         });
-        if(allowed>12)h+='<div style="font-size:11px;color:var(--text2);">+'+(allowed-12)+' more hidden in this preview</div>';
+        if(allowed>12)h+='<div style="font-size:11px;color:var(--text2);">'+esc(ru?('+'+(allowed-12)+' адресов скрыто в превью'):('+'+(allowed-12)+' more hidden in this preview'))+'</div>';
     }
     host.innerHTML=h;
 }
@@ -9082,9 +9176,10 @@ async function showDispatch(){
     try{pkgs=await invoke('get_packages');}catch(e){}
     try{dispatches=await invoke('get_dispatches');}catch(e){}
     var sendGate=await dispatchSendableGate();
+    var ru=getUiLang()==='ru';
     if(['manual','agency_db','crewing_requests'].indexOf(dispatchTab)===-1)dispatchTab='manual';
-    var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><h2 style="font-size:18px;">Рассылки</h2></div>';
-    h+='<p style="color:var(--text2);font-size:12px;margin-bottom:10px;">Три сценария рассылки: вручную на нужный email, массово по базе агентств для национальности моряка, или по активным запросам крюингов в Skipi.</p>';
+    var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><h2 style="font-size:18px;">'+esc(ru?'Рассылки':'Mailings')+'</h2></div>';
+    h+='<p style="color:var(--text2);font-size:12px;margin-bottom:10px;">'+esc(ru?'Выберите сценарий, проверьте получателей и отправьте CV с документами.':'Choose a scenario, review recipients, then send your CV with documents.')+'</p>';
     if(!sendGate.ok){
         h+='<div style="border:1px solid var(--orange);border-radius:8px;padding:14px 16px;margin-bottom:14px;background:var(--bg);">';
         h+='<div style="font-weight:700;margin-bottom:6px;">'+esc(getUiLang()==='ru'?'Пока нечего рассылать':'Nothing to send yet')+'</div>';
@@ -9093,26 +9188,26 @@ async function showDispatch(){
         h+='</div>';
     }
     h+='<div class="dispatch-tabs">';
-    h+=dispatchTabButton('manual','1. Вручную');
-    h+=dispatchTabButton('agency_db','2. База агентств');
-    h+=dispatchTabButton('crewing_requests','3. Запросы крюингов');
+    h+=dispatchTabButton('manual',ru?'Вручную':'Manual');
+    h+=dispatchTabButton('agency_db',ru?'База агентств':'Agency database');
+    h+=dispatchTabButton('crewing_requests',ru?'Запросы крюингов':'Crewing requests');
     h+='</div>';
     if(dispatchTab==='manual'){
         h+='<div class="dispatch-panel">';
-        h+='<div style="font-size:13px;font-weight:700;">Manual recipients</div>';
-        h+='<div style="font-size:11px;color:var(--text2);margin-top:3px;">Введите один или несколько email адресов, которым нужно отправить CV и документы.</div>';
+        h+='<div style="font-size:13px;font-weight:700;">'+esc(ru?'Ручная рассылка':'Manual recipients')+'</div>';
+        h+='<div style="font-size:11px;color:var(--text2);margin-top:3px;">'+esc(ru?'Введите один или несколько email адресов.':'Enter one or more email addresses.')+'</div>';
         h+='</div>';
     }else if(dispatchTab==='agency_db'){
         h+='<div class="dispatch-panel">';
         h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">';
-        h+='<div><div style="font-size:13px;font-weight:700;">Agency database mailing</div><div style="font-size:11px;color:var(--text2);margin-top:3px;">Skipi выбирает базу по национальности моряка и открывает адреса пропорционально заполненности профиля.</div></div>';
-        h+='<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-outline btn-sm" onclick="loadAgencyDatabaseRecipients()">Load database</button><button class="btn btn-outline btn-sm" onclick="openAgencyDatabaseFile()">Open JSON</button></div>';
+        h+='<div><div style="font-size:13px;font-weight:700;">'+esc(ru?'База агентств':'Agency database mailing')+'</div><div style="font-size:11px;color:var(--text2);margin-top:3px;">'+esc(ru?'База выбирается по национальности моряка; число адресов зависит от заполненности профиля.':'Skipi selects the database by nationality; the number of addresses depends on profile completeness.')+'</div></div>';
+        h+='<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-outline btn-sm" onclick="loadAgencyDatabaseRecipients()">'+esc(ru?'Загрузить базу':'Load database')+'</button><button class="btn btn-outline btn-sm" onclick="openAgencyDatabaseFile()">JSON</button></div>';
         h+='</div><div id="disp-agency-db-host" style="margin-top:10px;"></div></div>';
     }else{
         h+='<div class="dispatch-panel">';
         h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">';
-        h+='<div><div style="font-size:13px;font-weight:700;">Agency mailing requests</div><div style="font-size:11px;color:var(--text2);margin-top:3px;">Accredited crewings can publish standing requests to receive CVs for a rank/vessel profile.</div></div>';
-        h+='<button class="btn btn-outline btn-sm" '+(sendGate.ok?'':'disabled title="Complete CV or upload documents first" ')+'onclick="loadDispatchMailingRequests()">Load matching requests</button>';
+        h+='<div><div style="font-size:13px;font-weight:700;">'+esc(ru?'Запросы крюингов':'Crewing requests')+'</div><div style="font-size:11px;color:var(--text2);margin-top:3px;">'+esc(ru?'Крюинги могут публиковать запросы на CV под конкретную должность и тип судна.':'Crewings can publish requests to receive CVs for a rank and vessel profile.')+'</div></div>';
+        h+='<button class="btn btn-outline btn-sm" '+(sendGate.ok?'':'disabled title="Complete CV or upload documents first" ')+'onclick="loadDispatchMailingRequests()">'+esc(ru?'Загрузить запросы':'Load matching requests')+'</button>';
         h+='</div><div id="disp-mailing-host" style="margin-top:10px;"></div></div>';
     }
     h+='<div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:20px;background:var(--bg);">';
@@ -9121,20 +9216,20 @@ async function showDispatch(){
     h+='<div class="field"><label>'+esc(dispatchRecipientsLabel())+'</label><textarea id="disp-to" rows="3" oninput="dispatchRecipientsDraft=this.value" style="width:100%;font-family:var(--font-mono);font-size:12px;" placeholder="crewing@example.com&#10;manager@example.com">'+esc(dispatchRecipientsDraft)+'</textarea></div>';
 
     // 2. CV mode radio buttons
-    h+='<div style="margin:12px 0 6px;font-size:13px;"><b>CV mode</b></div>';
+    h+='<div style="margin:12px 0 6px;font-size:13px;"><b>'+esc(ru?'Тип CV':'CV mode')+'</b></div>';
     h+='<div style="margin:4px 0 4px 4px;"><label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px;">'+
        '<input type="radio" name="disp-cv-mode" value="redacted" checked style="margin-top:3px;width:16px;height:16px;accent-color:var(--accent);">'+
-       '<span><b>Privacy-protected CV</b> <span style="color:var(--green);font-size:11px;">(recommended)</span><div style="font-size:11px;color:var(--text2);">Initials only, contacts hidden, cert numbers masked. Employer can request your full profile if interested.</div></span>'+
+       '<span><b>'+esc(ru?'CV с защитой приватности':'Privacy-protected CV')+'</b> <span style="color:var(--green);font-size:11px;">'+esc(ru?'рекомендуется':'recommended')+'</span><div style="font-size:11px;color:var(--text2);">'+esc(ru?'Инициалы вместо полного имени, контакты скрыты, номера сертификатов замаскированы.':'Initials only, contacts hidden, certificate numbers masked.')+'</div></span>'+
        '</label></div>';
     h+='<div style="margin:4px 0 4px 4px;"><label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px;">'+
        '<input type="radio" name="disp-cv-mode" value="full" style="margin-top:3px;width:16px;height:16px;accent-color:var(--accent);">'+
-       '<span><b>Full CV</b><div style="font-size:11px;color:var(--text2);">All personal details included. Use only when you already know and trust the employer.</div></span>'+
+       '<span><b>'+esc(ru?'Полное CV':'Full CV')+'</b><div style="font-size:11px;color:var(--text2);">'+esc(ru?'Все личные данные включены. Используйте только для известных адресатов.':'All personal details included. Use only for recipients you already trust.')+'</div></span>'+
        '</label></div>';
 
     // 3. Send Documents checkbox + package dropdown
     h+='<div style="margin:12px 0 6px;"><label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px;">'+
        '<input type="checkbox" id="disp-include-docs" '+(pkgs.length?'':'disabled ')+'onchange="onToggleDispatchDocs()" style="margin-top:3px;width:16px;height:16px;accent-color:var(--accent);">'+
-       '<span><b>Include documents package</b><div style="font-size:11px;color:var(--text2);">'+(pkgs.length?'ZIP with your packaged documents.':'No packages yet — go to <b>Packages</b> to create one first.')+'</div></span>'+
+       '<span><b>'+esc(ru?'Добавить пакет документов':'Include documents package')+'</b><div style="font-size:11px;color:var(--text2);">'+(pkgs.length?esc(ru?'ZIP с подготовленными документами.':'ZIP with your packaged documents.'):esc(ru?'Пакетов пока нет. Создайте пакет во вкладке Packages.':'No packages yet. Create one in Packages first.'))+'</div></span>'+
        '</label></div>';
     if(pkgs.length){
         h+='<div id="disp-pkg-row" style="display:none;margin:6px 0 6px 28px;">';
@@ -9149,17 +9244,17 @@ async function showDispatch(){
 
     // 4. Action buttons
     h+='<div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">'+
-       '<button class="btn btn-outline" '+(sendGate.ok?'':'disabled ')+'onclick="doDispatchPrepare()">Prepare files</button>'+
-       '<button class="btn btn-accent" '+(sendGate.ok?'':'disabled ')+'onclick="doDispatchUnified()">Send &#128231;</button>'+
+       '<button class="btn btn-outline" '+(sendGate.ok?'':'disabled ')+'onclick="doDispatchPrepare()">'+esc(ru?'Подготовить файлы':'Prepare files')+'</button>'+
+       '<button class="btn btn-accent" '+(sendGate.ok?'':'disabled ')+'onclick="doDispatchUnified()">'+esc(ru?'Отправить':'Send')+' &#128231;</button>'+
        '</div>';
     h+='</div>';
 
     // History
-    h+='<h3 style="font-size:14px;margin-bottom:8px;">Recent dispatches</h3>';
+    h+='<h3 style="font-size:14px;margin-bottom:8px;">'+esc(ru?'Последние рассылки':'Recent dispatches')+'</h3>';
     if(!dispatches.length){
-        h+='<p style="color:var(--text2);font-size:12px;">No dispatches yet.</p>';
+        h+='<p style="color:var(--text2);font-size:12px;">'+esc(ru?'Рассылок пока нет.':'No dispatches yet.')+'</p>';
     }else{
-        h+='<table class="pkg-table"><thead><tr><th>Date</th><th>Package</th><th>To</th></tr></thead><tbody>';
+        h+='<table class="pkg-table"><thead><tr><th>'+esc(ru?'Дата':'Date')+'</th><th>'+esc(ru?'Пакет':'Package')+'</th><th>'+esc(ru?'Кому':'To')+'</th></tr></thead><tbody>';
         dispatches.forEach(function(d){
             var dt=new Date(d.created_at);
             h+='<tr><td>'+dt.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})+' '+dt.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})+'</td>';
@@ -9168,7 +9263,7 @@ async function showDispatch(){
         });
         h+='</tbody></table>';
     }
-    document.getElementById('scr-content').innerHTML=h;show('scr-content');updateTabs('Рассылки');
+    document.getElementById('scr-content').innerHTML=h;show('scr-content');updateTabs(ru?'Рассылки':'Mailings');
     if(dispatchTab==='agency_db'&&lastAgencyDbResult)renderAgencyDatabasePanel(lastAgencyDbResult);
     if(dispatchTab==='agency_db'&&!lastAgencyDbResult)setTimeout(loadAgencyDatabaseRecipients,0);
     if(dispatchTab==='crewing_requests'&&lastDispatchMailingRequests.length)renderDispatchMailingRequests(lastDispatchMailingRequests);
@@ -9198,13 +9293,14 @@ async function loadDispatchMailingRequests(){
 function renderDispatchMailingRequests(items){
     var host=document.getElementById('disp-mailing-host');
     if(!host)return;
+    var ru=getUiLang()==='ru';
     if(!items||!items.length){
-        host.innerHTML='<div style="border:1px dashed var(--border);border-radius:6px;padding:12px;color:var(--text2);font-size:12px;">No active mailing requests match your current rank yet.</div>';
+        host.innerHTML='<div style="border:1px dashed var(--border);border-radius:6px;padding:12px;color:var(--text2);font-size:12px;">'+esc(ru?'Активных запросов под текущую должность пока нет.':'No active mailing requests match your current rank yet.')+'</div>';
         return;
     }
     var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
-        +'<div style="font-size:12px;color:var(--text2);">'+items.length+' active request'+(items.length>1?'s':'')+'</div>'
-        +'<button class="btn btn-accent btn-sm" onclick="useDispatchMailingRecipients()">Use selected recipients</button>'
+        +'<div style="font-size:12px;color:var(--text2);">'+esc(ru?(items.length+' активных запросов'):(items.length+' active request'+(items.length>1?'s':'')))+'</div>'
+        +'<button class="btn btn-accent btn-sm" onclick="useDispatchMailingRecipients()">'+esc(ru?'Вставить выбранных':'Use selected recipients')+'</button>'
         +'</div>';
     items.forEach(function(r){
         h+='<label style="display:block;border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:6px;background:var(--surface);cursor:pointer;">';
@@ -10369,7 +10465,7 @@ async function closeCurrentVault(forget){
 
 function resetToWelcome(){
     closeSettings();
-    allDocs=[];selectedDocId=null;searchTerm='';
+    allDocs=[];selectedDocId=null;searchTerm='';docTreeFilter='all';
     pkgMode=false;pkgSelected=[];
     var tabs=document.getElementById('tabs');if(tabs){tabs.innerHTML='';tabs.style.display='none';}
     var tree=document.getElementById('panel-tree');if(tree)tree.innerHTML='';
