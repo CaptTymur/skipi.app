@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.135';
+var APP_VERSION='0.4.136';
 var UI_LANG_KEY='skipi-ui-language';
 var UI_LANG_OPTIONS=[
     ['ru','Русский'],
@@ -223,6 +223,19 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .modules-bar .mod-tab.active { color:#fff; background:var(--accent); font-weight:600; box-shadow:0 1px 0 var(--accent); }
 .modules-bar .mod-tab .mi { font-size:14px; }
 .modules-bar .mb-spacer { flex:1; }
+.profile-completion-chip { display:flex; align-items:center; gap:7px; height:26px; padding:0 10px; border-radius:5px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:12px; font-weight:600; cursor:pointer; margin-right:6px; white-space:nowrap; }
+.profile-completion-chip:hover { border-color:var(--accent); background:var(--accent-bg); }
+.profile-completion-chip .pc-dot { width:8px; height:8px; border-radius:50%; background:var(--orange); box-shadow:0 0 0 2px rgba(255,255,255,.05); }
+.profile-completion-chip .pc-label { max-width:96px; overflow:hidden; text-overflow:ellipsis; }
+.dispatch-tabs { display:flex; gap:6px; flex-wrap:wrap; margin:12px 0 14px; border-bottom:1px solid var(--border); }
+.dispatch-tab { border:1px solid transparent; border-bottom:none; background:transparent; color:var(--text2); padding:8px 12px; border-radius:6px 6px 0 0; cursor:pointer; font-size:12px; font-weight:700; }
+.dispatch-tab:hover { color:var(--text); background:var(--hover); }
+.dispatch-tab.active { color:#fff; background:var(--accent); border-color:var(--accent); }
+.dispatch-panel { border:1px solid var(--border); border-radius:8px; padding:14px 16px; margin-bottom:14px; background:var(--bg); }
+.dispatch-kpi-row { display:flex; gap:8px; flex-wrap:wrap; margin:10px 0; }
+.dispatch-kpi { min-width:104px; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 10px; }
+.dispatch-kpi .num { font-size:20px; font-weight:800; line-height:1; }
+.dispatch-kpi .lbl { font-size:10px; text-transform:uppercase; color:var(--text2); margin-top:4px; }
 
 /* Ribbon (icon strip) */
 .ribbon { width:40px; background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; align-items:center; padding:8px 0; gap:4px; }
@@ -723,6 +736,10 @@ input, select, textarea, button { font-family:var(--font-ui); }
     <div class="mod-tab" onclick="showView('information')" id="mt-info" title="Information - market pulse"><span>Information</span></div>
     <div class="mod-tab" onclick="showView('vessels')" id="mt-vessels" title="База судов"><span>База судов</span></div>
     <div class="mb-spacer"></div>
+    <div class="profile-completion-chip" id="profile-completion-chip" onclick="showView('dashboard')" title="Profile completeness">
+        <span class="pc-dot" id="pc-dot"></span>
+        <span class="pc-label" id="pc-label">Profile --%</span>
+    </div>
     <div class="mb-vault" id="mb-vault" onclick="openVaultSwitcher(event)" title="Switch vault">
         <span>&#128451;</span>
         <span class="mb-vault-name" id="pf-vault-name">Vault</span>
@@ -776,7 +793,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p id="welcome-subtitle">Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.135</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.136</span></p>
                 <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -927,6 +944,37 @@ function showToast(msg,type){
 }
 
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+var lastProfileCompletenessPct=0;
+var _profileCompletionLoading=false;
+function profileCompletenessColor(pct){
+    return pct>=80?'var(--green)':pct>=50?'var(--yellow)':'var(--orange)';
+}
+function profileCompletenessHint(pct){
+    if(typeof getUiLang==='function'&&getUiLang()==='ru'){
+        return 'Заполненность профиля: '+pct+'%. Чем полнее профиль, тем больше возможностей Skipi открывает, включая больше адресов для массовой рассылки.';
+    }
+    return 'Profile completeness: '+pct+'%. A more complete profile unlocks more Skipi opportunities, including more agency mailing addresses.';
+}
+async function updateProfileCompletionChip(profileOverride){
+    var chip=document.getElementById('profile-completion-chip');
+    if(!chip)return;
+    var profile=profileOverride||null;
+    if(!profile){
+        if(_profileCompletionLoading)return;
+        _profileCompletionLoading=true;
+        try{profile=await invoke('get_profile_status');}catch(e){profile=null;}
+        _profileCompletionLoading=false;
+    }
+    var pct=0;
+    if(profile&&isFinite(Number(profile.completeness_pct)))pct=Math.max(0,Math.min(100,Math.round(Number(profile.completeness_pct))));
+    lastProfileCompletenessPct=pct;
+    var label=document.getElementById('pc-label');
+    var dot=document.getElementById('pc-dot');
+    if(label)label.textContent='Profile '+pct+'%';
+    if(dot)dot.style.background=profileCompletenessColor(pct);
+    chip.title=profileCompletenessHint(pct);
+}
 
 var _docContextMenuInstalled=false;
 function docContextMenuEl(){
@@ -3413,6 +3461,7 @@ function showView(v, opts){
         vesselDbPendingImo=null;
     }
     currentView=v;
+    updateProfileCompletionChip();
     document.querySelectorAll('.ribbon-icon').forEach(function(el){el.classList.remove('active');});
     document.querySelectorAll('.modules-bar .mod-tab').forEach(function(el){el.classList.remove('active');});
     var shortMap={files:'files',dashboard:'dash',cv:'cv',experience:'exp',vessels:'vessels',packages:'pkg',dispatch:'disp',jobs:'jobs',information:'info',settings:'set'};
@@ -4059,6 +4108,7 @@ async function showDashboard(){
     // Profile completeness header (if seafarer profile is set)
     var profile=null;
     try{profile=await invoke('get_profile_status');}catch(e){}
+    updateProfileCompletionChip(profile);
     var developerInviteState=null;
     try{developerInviteState=await getDeveloperInviteEligibility(profile);}catch(e){developerInviteState=null;}
     if(profile&&profile.stcw_level&&profile.position){
@@ -8915,13 +8965,126 @@ function showNoSendableContent(){
     showToast(getUiLang()==='ru'?'Сначала заполните CV или загрузите документы':'Complete a CV or upload documents first','warn');
 }
 
+var dispatchTab='manual';
+var dispatchRecipientsDraft='';
+var lastAgencyDbRecipients=[];
+var lastAgencyDbResult=null;
+
+function captureDispatchRecipients(){
+    var ta=document.getElementById('disp-to');
+    if(ta)dispatchRecipientsDraft=ta.value||'';
+}
+function setDispatchTab(tab){
+    captureDispatchRecipients();
+    dispatchTab=tab||'manual';
+    showDispatch();
+}
+function dispatchTabButton(tab,label){
+    return '<button type="button" class="dispatch-tab '+(dispatchTab===tab?'active':'')+'" onclick="setDispatchTab(\''+tab+'\')">'+esc(label)+'</button>';
+}
+function dispatchRecipientsLabel(){
+    if(dispatchTab==='agency_db')return 'Selected agency database recipients';
+    if(dispatchTab==='crewing_requests')return 'Selected crewing request recipients';
+    return 'Recipients (one email per line or comma-separated)';
+}
+async function getProfileCompletenessForDispatch(){
+    try{
+        var profile=await invoke('get_profile_status');
+        updateProfileCompletionChip(profile);
+        return Math.max(0,Math.min(100,Math.round(Number(profile&&profile.completeness_pct)||0)));
+    }catch(e){
+        return lastProfileCompletenessPct||0;
+    }
+}
+async function openAgencyDatabaseFile(){
+    try{
+        var path=await invoke('agency_mailing_database_path');
+        await invoke('open_file_in_default',{path:path});
+    }catch(e){
+        showToast('Open database failed: '+e,'error');
+        logError('openAgencyDatabaseFile',e);
+    }
+}
+async function loadAgencyDatabaseRecipients(){
+    var host=document.getElementById('disp-agency-db-host');
+    if(host)host.innerHTML='<div style="font-size:12px;color:var(--text2);">Loading database...</div>';
+    try{
+        var sp={};
+        try{sp=await invoke('get_seafarer_personal');}catch(e){}
+        var pct=await getProfileCompletenessForDispatch();
+        var data=await invoke('fetch_agency_mailing_database',{nationality:sp.nationality||null,profilePct:pct});
+        lastAgencyDbResult=data;
+        lastAgencyDbRecipients=(data&&Array.isArray(data.agencies))?data.agencies:[];
+        renderAgencyDatabasePanel(data);
+    }catch(e){
+        if(host)host.innerHTML='<div style="font-size:12px;color:var(--red);">Failed to load: '+esc(e)+'</div>';
+        logError('loadAgencyDatabaseRecipients',e);
+    }
+}
+function renderAgencyDatabasePanel(data){
+    var host=document.getElementById('disp-agency-db-host');
+    if(!host)return;
+    data=data||{};
+    var total=Number(data.total_addresses||0);
+    var allowed=Number(data.allowed_addresses||0);
+    var locked=Number(data.locked_addresses||0);
+    var pct=Number(data.profile_pct||0);
+    var label=data.nationality_label||'Unknown nationality';
+    var h='';
+    h+='<div class="dispatch-kpi-row">';
+    h+='<div class="dispatch-kpi"><div class="num">'+pct+'%</div><div class="lbl">Profile</div></div>';
+    h+='<div class="dispatch-kpi"><div class="num" style="color:var(--accent)">'+allowed+'</div><div class="lbl">Unlocked</div></div>';
+    h+='<div class="dispatch-kpi"><div class="num">'+total+'</div><div class="lbl">'+esc(label)+'</div></div>';
+    h+='<div class="dispatch-kpi"><div class="num" style="color:var(--orange)">'+locked+'</div><div class="lbl">Locked</div></div>';
+    h+='</div>';
+    h+='<div style="font-size:12px;color:var(--text2);line-height:1.45;margin-bottom:10px;">Доступно '+allowed+' из '+total+' адресов: Skipi открывает долю базы пропорционально заполненности профиля. Заполните профиль до 100%, чтобы открыть всю базу.</div>';
+    if(!data.nationality_code){
+        h+='<div style="border:1px dashed var(--border);border-radius:6px;padding:12px;color:var(--text2);font-size:12px;">Укажите национальность в профиле, чтобы Skipi выбрал правильную базу агентств.</div>';
+    }else if(total===0){
+        h+='<div style="border:1px dashed var(--border);border-radius:6px;padding:12px;color:var(--text2);font-size:12px;line-height:1.45;">База для '+esc(label)+' пока пустая. Шаблон создан здесь:<br><span style="font-family:var(--font-mono);font-size:11px;color:var(--text);">'+esc(data.db_path||'')+'</span></div>';
+    }else if(!allowed){
+        h+='<div style="border:1px dashed var(--border);border-radius:6px;padding:12px;color:var(--text2);font-size:12px;">В базе есть адреса, но текущая заполненность профиля пока не открывает рассылку по ним.</div>';
+    }else{
+        h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;flex-wrap:wrap;">';
+        h+='<div style="font-size:12px;color:var(--text2);">'+allowed+' email'+(allowed===1?'':'s')+' ready for mailing</div>';
+        h+='<button class="btn btn-accent btn-sm" onclick="useAgencyDatabaseRecipients()">Use available addresses</button>';
+        h+='</div>';
+        lastAgencyDbRecipients.slice(0,12).forEach(function(a){
+            h+='<div style="border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:6px;background:var(--surface);">';
+            h+='<div style="font-size:13px;font-weight:700;">'+esc(a.name||a.email)+'</div>';
+            h+='<div style="font-size:11px;color:var(--text2);font-family:var(--font-mono);margin-top:2px;">'+esc(a.email||'')+'</div>';
+            if(a.country||a.city||a.website){
+                h+='<div style="font-size:11px;color:var(--text2);margin-top:2px;">'+esc([a.city,a.country,a.website].filter(Boolean).join(' · '))+'</div>';
+            }
+            h+='</div>';
+        });
+        if(allowed>12)h+='<div style="font-size:11px;color:var(--text2);">+'+(allowed-12)+' more hidden in this preview</div>';
+    }
+    host.innerHTML=h;
+}
+function useAgencyDatabaseRecipients(){
+    var emails=[];
+    var seen={};
+    (lastAgencyDbRecipients||[]).forEach(function(a){
+        var e=String(a.email||'').trim();
+        var key=e.toLowerCase();
+        if(e&&!seen[key]){seen[key]=true;emails.push(e);}
+    });
+    if(!emails.length){showToast('No unlocked agency addresses yet','warn');return;}
+    var ta=document.getElementById('disp-to');
+    dispatchRecipientsDraft=emails.join('\n');
+    if(ta)ta.value=dispatchRecipientsDraft;
+    showToast(emails.length+' agency recipient'+(emails.length>1?'s':'')+' loaded','success');
+}
+
 async function showDispatch(){
     var pkgs=[], dispatches=[];
     try{pkgs=await invoke('get_packages');}catch(e){}
     try{dispatches=await invoke('get_dispatches');}catch(e){}
     var sendGate=await dispatchSendableGate();
+    if(['manual','agency_db','crewing_requests'].indexOf(dispatchTab)===-1)dispatchTab='manual';
     var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><h2 style="font-size:18px;">Рассылки</h2></div>';
-    h+='<p style="color:var(--text2);font-size:12px;margin-bottom:16px;">Send your CV/documents to specific email addresses, or fill the recipient list from accredited agency mailing requests published on skipi.app.</p>';
+    h+='<p style="color:var(--text2);font-size:12px;margin-bottom:10px;">Три сценария рассылки: вручную на нужный email, массово по базе агентств для национальности моряка, или по активным запросам крюингов в Skipi.</p>';
     if(!sendGate.ok){
         h+='<div style="border:1px solid var(--orange);border-radius:8px;padding:14px 16px;margin-bottom:14px;background:var(--bg);">';
         h+='<div style="font-weight:700;margin-bottom:6px;">'+esc(getUiLang()==='ru'?'Пока нечего рассылать':'Nothing to send yet')+'</div>';
@@ -8929,15 +9092,33 @@ async function showDispatch(){
         h+='<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-outline btn-sm" onclick="openSettings(\'seafarer\')">'+esc(getUiLang()==='ru'?'Профиль':'Profile')+'</button><button class="btn btn-outline btn-sm" onclick="showView(\'files\')">'+esc(getUiLang()==='ru'?'Документы':'Documents')+'</button></div>';
         h+='</div>';
     }
-    h+='<div style="border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:14px;background:var(--bg);">';
-    h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">';
-    h+='<div><div style="font-size:13px;font-weight:700;">Agency mailing requests</div><div style="font-size:11px;color:var(--text2);margin-top:3px;">Accredited crewings can publish standing requests to receive CVs for a rank/vessel profile.</div></div>';
-    h+='<button class="btn btn-outline btn-sm" '+(sendGate.ok?'':'disabled title="Complete CV or upload documents first" ')+'onclick="loadDispatchMailingRequests()">Load matching requests</button>';
-    h+='</div><div id="disp-mailing-host" style="margin-top:10px;"></div></div>';
+    h+='<div class="dispatch-tabs">';
+    h+=dispatchTabButton('manual','1. Вручную');
+    h+=dispatchTabButton('agency_db','2. База агентств');
+    h+=dispatchTabButton('crewing_requests','3. Запросы крюингов');
+    h+='</div>';
+    if(dispatchTab==='manual'){
+        h+='<div class="dispatch-panel">';
+        h+='<div style="font-size:13px;font-weight:700;">Manual recipients</div>';
+        h+='<div style="font-size:11px;color:var(--text2);margin-top:3px;">Введите один или несколько email адресов, которым нужно отправить CV и документы.</div>';
+        h+='</div>';
+    }else if(dispatchTab==='agency_db'){
+        h+='<div class="dispatch-panel">';
+        h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">';
+        h+='<div><div style="font-size:13px;font-weight:700;">Agency database mailing</div><div style="font-size:11px;color:var(--text2);margin-top:3px;">Skipi выбирает базу по национальности моряка и открывает адреса пропорционально заполненности профиля.</div></div>';
+        h+='<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-outline btn-sm" onclick="loadAgencyDatabaseRecipients()">Load database</button><button class="btn btn-outline btn-sm" onclick="openAgencyDatabaseFile()">Open JSON</button></div>';
+        h+='</div><div id="disp-agency-db-host" style="margin-top:10px;"></div></div>';
+    }else{
+        h+='<div class="dispatch-panel">';
+        h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">';
+        h+='<div><div style="font-size:13px;font-weight:700;">Agency mailing requests</div><div style="font-size:11px;color:var(--text2);margin-top:3px;">Accredited crewings can publish standing requests to receive CVs for a rank/vessel profile.</div></div>';
+        h+='<button class="btn btn-outline btn-sm" '+(sendGate.ok?'':'disabled title="Complete CV or upload documents first" ')+'onclick="loadDispatchMailingRequests()">Load matching requests</button>';
+        h+='</div><div id="disp-mailing-host" style="margin-top:10px;"></div></div>';
+    }
     h+='<div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:20px;background:var(--bg);">';
 
     // 1. Recipients
-    h+='<div class="field"><label>Recipients (one email per line or comma-separated)</label><textarea id="disp-to" rows="3" style="width:100%;font-family:var(--font-mono);font-size:12px;" placeholder="crewing@example.com&#10;manager@example.com"></textarea></div>';
+    h+='<div class="field"><label>'+esc(dispatchRecipientsLabel())+'</label><textarea id="disp-to" rows="3" oninput="dispatchRecipientsDraft=this.value" style="width:100%;font-family:var(--font-mono);font-size:12px;" placeholder="crewing@example.com&#10;manager@example.com">'+esc(dispatchRecipientsDraft)+'</textarea></div>';
 
     // 2. CV mode radio buttons
     h+='<div style="margin:12px 0 6px;font-size:13px;"><b>CV mode</b></div>';
@@ -8988,6 +9169,9 @@ async function showDispatch(){
         h+='</tbody></table>';
     }
     document.getElementById('scr-content').innerHTML=h;show('scr-content');updateTabs('Рассылки');
+    if(dispatchTab==='agency_db'&&lastAgencyDbResult)renderAgencyDatabasePanel(lastAgencyDbResult);
+    if(dispatchTab==='agency_db'&&!lastAgencyDbResult)setTimeout(loadAgencyDatabaseRecipients,0);
+    if(dispatchTab==='crewing_requests'&&lastDispatchMailingRequests.length)renderDispatchMailingRequests(lastDispatchMailingRequests);
 }
 
 var lastDispatchMailingRequests = [];
@@ -9048,7 +9232,8 @@ async function useDispatchMailingRecipients(){
         if(e&&!seen[key]){seen[key]=true;emails.push(e);}
     });
     var ta=document.getElementById('disp-to');
-    if(ta)ta.value=emails.join('\n');
+    dispatchRecipientsDraft=emails.join('\n');
+    if(ta)ta.value=dispatchRecipientsDraft;
     selected.forEach(function(r){invoke('mailing_request_send_click',{requestId:r.id}).catch(function(){});});
     showToast(emails.length+' recipient'+(emails.length>1?'s':'')+' loaded from agency requests','success');
 }
@@ -9104,6 +9289,7 @@ async function openPreparedDispatchFolder(){
 async function doDispatchUnified(){
     var gate=await dispatchSendableGate();
     if(!gate.ok){showNoSendableContent();return;}
+    captureDispatchRecipients();
     var toRaw=(document.getElementById('disp-to')||{}).value||'';
     var cvMode=(document.querySelector('input[name="disp-cv-mode"]:checked')||{}).value||'redacted';
     var includeCv=true; // CV is always sent (mode determines redacted vs full)
@@ -9125,6 +9311,21 @@ async function doDispatchUnified(){
     if(!recipients.length){alert('Enter at least one valid recipient');return;}
     if(dupCount>0){
         if(!await uiConfirm('Sending to '+recipients.length+' unique recipient(s); removed '+dupCount+' duplicate(s).\n\nContinue?', {confirmLabel:'Continue'}))return;
+    }
+    if(dispatchTab==='agency_db'){
+        var db=lastAgencyDbResult||{};
+        var bucket=db.nationality_label||db.nationality_code||'Agency database';
+        var total=Number(db.total_addresses||recipients.length||0);
+        var locked=Number(db.locked_addresses||0);
+        var pct=Number(db.profile_pct||lastProfileCompletenessPct||0);
+        var fullUnlock=(total>0&&locked===0);
+        var msg='Agency database mailing\n\n'
+            +'Bucket: '+bucket+'\n'
+            +'Recipients: '+recipients.length+'\n'
+            +'Profile completeness: '+pct+'%\n'
+            +'Full database unlocked: '+(fullUnlock?'yes':'no')+(locked>0?' ('+locked+' locked)':'')+'\n\n'
+            +'Send this mailing?';
+        if(!await uiConfirm(msg,{confirmLabel:'Send'}))return;
     }
 
     var draft=await buildDispatchDraft(includeDocs?'docs':'cv');
@@ -9788,6 +9989,7 @@ async function refreshDocsAfterFrameworkChange(){
     allDocs=await invoke('get_documents');
     renderTree();
     updateStatus();
+    updateProfileCompletionChip();
     if(currentView==='dashboard')await showDashboard();
 }
 
@@ -10435,6 +10637,7 @@ function updateStatus(){
     allDocs.forEach(function(d){if(d.file_name&&classify(d)==='expired')c.expired++;if(!d.file_name&&isActiveRequiredDoc(d))c.nofile++;});
     document.getElementById('st-left').textContent=c.total+' documents'+(c.expired?' · '+c.expired+' expired':'');
     document.getElementById('st-right').textContent=c.nofile+' required missing';
+    updateProfileCompletionChip();
 }
 
 function show(id){document.getElementById(id).style.display='';}

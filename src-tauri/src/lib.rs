@@ -89,8 +89,8 @@ pub(crate) fn base64_encode(data: &[u8]) -> String {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     use commands::{
-        ai, cv_commands, documents, email, jobs, mail_intent, messaging, packages, profile, review,
-        vault, work_history,
+        agency_mailing, ai, cv_commands, documents, email, jobs, mail_intent, messaging, packages,
+        profile, review, vault, work_history,
     };
 
     tauri::Builder::default()
@@ -166,6 +166,8 @@ pub fn run() {
             packages::prepare_dispatch_attachments,
             packages::record_dispatch_history,
             packages::get_dispatch_dir,
+            agency_mailing::agency_mailing_database_path,
+            agency_mailing::fetch_agency_mailing_database,
             // Profile
             profile::get_profile_taxonomy,
             profile::get_optional_categories,

@@ -7,6 +7,21 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.136] — 2026-05-23
+
+### Added
+- Added the `Рассылки -> База агентств` flow with a bundled seed of 50 public
+  crewing/recruitment inboxes across Ukraine, Russia, India, Philippines, and
+  Indonesia.
+- Added a visible profile-completeness chip in the top bar; agency-database
+  mailing unlocks addresses proportionally to profile completeness.
+- Added a final confirmation step for agency-database mass mailing showing
+  bucket, recipient count, profile completeness, and locked address count.
+
+### Changed
+- Reworked `Рассылки` into three explicit tabs: manual recipients, agency
+  database, and crewing mailing requests.
+
 ## [0.4.135] — 2026-05-21
 
 ### Added

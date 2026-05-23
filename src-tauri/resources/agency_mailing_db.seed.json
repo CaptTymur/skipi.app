@@ -1,0 +1,486 @@
+{
+  "version": 1,
+  "updated_at": "2026-05-23T00:00:00Z",
+  "nationalities": [
+    {
+      "code": "UA",
+      "label": "Ukraine",
+      "agencies": [
+        {
+          "name": "Univis LTD",
+          "email": "crew@univis.com.ua",
+          "website": "https://crewing.odessa.ua",
+          "city": "Odesa",
+          "country": "Ukraine",
+          "source_url": "https://crewing.odessa.ua/en/kontaktyi/kontaktnaya-informatsiya/",
+          "notes": "Official contact page lists this as the email for application forms and says applications sent to the office email will not be considered."
+        },
+        {
+          "name": "Avis Crewing Agency",
+          "email": "crew@avis-crewing.com",
+          "website": "https://avis-crewing.com",
+          "city": "Odesa",
+          "country": "Ukraine",
+          "source_url": "https://avis-crewing.com/",
+          "notes": "Official site describes the company as a crew recruitment agency and publishes this inbox in the contact section."
+        },
+        {
+          "name": "Maritime Intelligent Agency",
+          "email": "cv@mia-crew.com",
+          "website": "https://www.mia-crew.com",
+          "city": "Odesa",
+          "country": "Ukraine",
+          "source_url": "https://www.mia-crew.com/contacts",
+          "notes": "Official contact page lists this as the job enquiries/CV inbox."
+        },
+        {
+          "name": "D&D Crewing Services",
+          "email": "dandcrewing@dandcrewing.com",
+          "website": "https://dandcrewing.com",
+          "city": "Odesa",
+          "country": "Ukraine",
+          "source_url": "https://dandcrewing.com/contacts",
+          "notes": "Official contacts page for the crewing agency; secondary Gmail and operations inbox were not added."
+        },
+        {
+          "name": "NODDOS Marine",
+          "email": "cv@noddosmarine.com",
+          "website": "https://noddosmarine.com",
+          "city": "Odesa",
+          "country": "Ukraine",
+          "source_url": "https://noddosmarine.com/",
+          "notes": "Official site describes NODDOS as an Odessa crewing agency and publishes this CV inbox."
+        },
+        {
+          "name": "Columbia Shipmanagement Ukraine",
+          "email": "forcv@csm-ua.com",
+          "website": "https://csm-ua.com",
+          "city": "Odesa",
+          "country": "Ukraine",
+          "source_url": "https://csm-ua.com/en/contact-us/",
+          "notes": "Official contact page lists this address for CVs and recruitment contact."
+        },
+        {
+          "name": "E-CREWING",
+          "email": "info@e-crewing.net",
+          "website": "https://www.e-crewing.net",
+          "city": "Odesa",
+          "country": "Ukraine",
+          "source_url": "https://www.e-crewing.net/contacts",
+          "notes": "Official contact page describes crew manning inquiries and seafarer applications; it also directs applicants to Fast Apply for vacancies."
+        },
+        {
+          "name": "Odessa Crewing Agency",
+          "email": "crew@oca-crewing.com",
+          "website": "https://oca-crewing.com",
+          "city": "Odesa",
+          "country": "Ukraine",
+          "source_url": "https://oca-crewing.com/en/contacts",
+          "notes": "Official contacts page publishes this inbox via Cloudflare email protection; UKRCREWING also marks it as the email for sending CVs."
+        },
+        {
+          "name": "Meridian Marine",
+          "email": "con.mdnmar@gmail.com",
+          "website": "https://www.meridianmar.com",
+          "city": "Odesa",
+          "country": "Ukraine",
+          "source_url": "https://www.meridianmar.com/",
+          "notes": "Official crewing agency site lists this inbox in the contact section; Gmail domain retained because it is published by the agency itself."
+        },
+        {
+          "name": "Ever Nautic",
+          "email": "info@evernautic.com",
+          "website": "https://www.evernautic.com",
+          "city": "Odesa",
+          "country": "Ukraine",
+          "source_url": "https://www.evernautic.com/",
+          "notes": "Official site describes Ever Nautic as a licensed maritime recruitment agency and publishes this contact inbox."
+        }
+      ]
+    },
+    {
+      "code": "RU",
+      "label": "Russia",
+      "agencies": [
+        {
+          "name": "Seamploy",
+          "email": "cv@seamploy.com",
+          "website": "https://seamploy.com",
+          "city": "Saint Petersburg",
+          "country": "Russia",
+          "source_url": "https://seamploy.com/contact",
+          "notes": "Official contact page lists this as the seafarer/CV email for the Saint Petersburg office."
+        },
+        {
+          "name": "RusAm Maritime",
+          "email": "cv@rusamagency.ru",
+          "website": "https://rusamagency.ru",
+          "city": "Kaliningrad",
+          "country": "Russia",
+          "source_url": "https://rusamagency.ru/en/about-us/",
+          "notes": "Official company page describes crewing services and marks this inbox for applications."
+        },
+        {
+          "name": "STMA Ltd.",
+          "email": "crewing@stmagroup.ru",
+          "website": "https://www.stmagroup.ru",
+          "city": "Novorossiysk",
+          "country": "Russia",
+          "source_url": "https://www.stmagroup.ru/contact-us.html",
+          "notes": "Official contact page lists this crewing inbox; site SSL certificate was expired during manual fetch."
+        },
+        {
+          "name": "All Crew LLC",
+          "email": "cv@allcrew.net",
+          "website": "https://allcrew.net",
+          "city": "Kaliningrad",
+          "country": "Russia",
+          "source_url": "https://allcrew.net/contacts",
+          "notes": "Official contact page lists cv@allcrew.net for applications and states no other emails should be used."
+        },
+        {
+          "name": "Nordvegr Ltd.",
+          "email": "office@nordvegr.ru",
+          "website": "https://nordvegr.ru",
+          "city": "Kaliningrad",
+          "country": "Russia",
+          "source_url": "https://nordvegr.ru/en/",
+          "notes": "Official site describes marine personnel recruitment and publishes this office inbox; applications are also accepted through an online form."
+        },
+        {
+          "name": "Teide Ltd.",
+          "email": "info@teidecrewing.com",
+          "website": "https://www.teidecrewing.com",
+          "city": "Kaliningrad",
+          "country": "Russia",
+          "source_url": "https://www.teidecrewing.com/site/contact",
+          "notes": "Official contact page for TeideCrewing Ltd.; page footer describes crewing, applications, and services for shipowners."
+        },
+        {
+          "name": "Sovcomflot Crewing Office",
+          "email": "scf-spbcrewagent@scf-group.com",
+          "website": "https://www.scf-group.com",
+          "city": "Saint Petersburg",
+          "country": "Russia",
+          "source_url": "https://www.scf-group.com/en/career/crewing_offices/",
+          "notes": "Official crewing offices page lists this Saint Petersburg crew-agent inbox; Vladivostok and Novorossiysk office inboxes were not added as separate rows."
+        },
+        {
+          "name": "Spliethoff Crewing Russia",
+          "email": "petersburg@spliethoff.com",
+          "website": "https://www.spliethoff.com",
+          "city": "Saint Petersburg",
+          "country": "Russia",
+          "source_url": "https://www.spliethoff.com/contact/crewing-russia/",
+          "notes": "Official Spliethoff contact page for the Russia crewing office publishes this inbox."
+        },
+        {
+          "name": "Wilhelmsen Marine Personnel Novorossiysk Ltd.",
+          "email": "vadim.korenev@wilhelmsen.com",
+          "website": "https://www.wilhelmsen.com",
+          "city": "Novorossiysk",
+          "country": "Russia",
+          "source_url": "https://www.wilhelmsen.com/ship-management/resources/ukraine-crew-management/russia/",
+          "notes": "Official Wilhelmsen Russia manning office page says applicants should send CVs to the displayed email; personal-format address retained because it is the official recruitment contact."
+        },
+        {
+          "name": "Marlow Navigation Russia",
+          "email": "office-1@marlow.ru",
+          "website": "https://marlow-navigation.com",
+          "city": "Saint Petersburg",
+          "country": "Russia",
+          "source_url": "https://marlow-navigation.com/en/marlow-russia.asp",
+          "notes": "Official Marlow Russia page describes recruitment and training of Russian seafarers and publishes this Saint Petersburg office inbox."
+        }
+      ]
+    },
+    {
+      "code": "IN",
+      "label": "India",
+      "agencies": [
+        {
+          "name": "Xfinity Maritime Services Pvt. Ltd.",
+          "email": "cs@xfinitymaritime.com",
+          "website": "https://www.xfinitymaritime.com",
+          "city": "Navi Mumbai",
+          "country": "India",
+          "source_url": "https://www.xfinitymaritime.com/contact.html",
+          "notes": "Official contact page labels this inbox for seafarer applications and states zero recruitment fees."
+        },
+        {
+          "name": "Wilhelmsen Ship Management (India) Pvt. Ltd.",
+          "email": "wsm-bom-recruitment@wilhelmsen.com",
+          "website": "https://www.wilhelmsen.com",
+          "city": "Mumbai",
+          "country": "India",
+          "source_url": "https://www.wilhelmsen.com/ship-management/crew-management/india/",
+          "notes": "Official Wilhelmsen India manning office page instructs seafarers to send CVs to this recruitment email."
+        },
+        {
+          "name": "Kami Marine & Trade Central Pvt. Ltd.",
+          "email": "crewing@kamimtc.org",
+          "website": "https://www.kamimtc.in",
+          "city": "Navi Mumbai",
+          "country": "India",
+          "source_url": "https://www.kamimtc.in/",
+          "notes": "Official site describes seafarer recruitment and publishes this crewing inbox."
+        },
+        {
+          "name": "ASK Maritime",
+          "email": "crewing@askmaritime.com",
+          "website": "https://askmaritime.com",
+          "city": "Mumbai",
+          "country": "India",
+          "source_url": "https://askmaritime.com/contact",
+          "notes": "Official contact page lists this under Crewing for seafarer recruiting and ship management inquiries."
+        },
+        {
+          "name": "Galaxy Mariners & Shipping Company",
+          "email": "recruitment@galaxymariners.org",
+          "website": "https://www.galaxymariners.org",
+          "city": "Thane",
+          "country": "India",
+          "source_url": "https://www.galaxymariners.org/seafarer-help-desk.html",
+          "notes": "Official seafarer help desk page lists this recruitment inbox for urgent seafarer/cadet vacancies."
+        },
+        {
+          "name": "SPM Shipping Services Pvt. Ltd.",
+          "email": "info@spmshippingservice.com",
+          "website": "https://www.spmshippingservice.com",
+          "city": "Navi Mumbai",
+          "country": "India",
+          "source_url": "https://www.spmshippingservice.com/",
+          "notes": "Official site describes RPSL-approved recruitment, placement, and crew management services and publishes this contact inbox."
+        },
+        {
+          "name": "Exynos Manning Agency Pvt. Ltd.",
+          "email": "crewing@exynosmanningagency.com",
+          "website": "https://exynosmanningagency.com",
+          "city": "Navi Mumbai",
+          "country": "India",
+          "source_url": "https://exynosmanningagency.com/Contact-Us.html",
+          "notes": "Official contact page lists RPSL details and publishes this crewing inbox."
+        },
+        {
+          "name": "Star Sea Management Pvt. Ltd.",
+          "email": "mumbai@starseamanagement.com",
+          "website": "https://starseamgmt.com",
+          "city": "Mumbai",
+          "country": "India",
+          "source_url": "https://starseamgmt.com/about-us/",
+          "notes": "Official about page describes manning and crewing services and instructs seafarers seeking career growth to send CVs to this Mumbai inbox."
+        },
+        {
+          "name": "MOL Maritime (India) Pvt. Ltd.",
+          "email": "molmi@molgroup.com",
+          "website": "https://www.mol.co.jp",
+          "city": "Mumbai",
+          "country": "India",
+          "source_url": "https://www.mol.co.jp/en/contact/seafarer/",
+          "notes": "MOL Group seafarer employment page lists this as the Fleet Personnel Officer contact for India."
+        },
+        {
+          "name": "Varren Marines Shipping Pvt. Ltd.",
+          "email": "crewing@vmsshipping.in",
+          "website": "https://vmsshipping.in",
+          "city": "Navi Mumbai",
+          "country": "India",
+          "source_url": "https://vmsshipping.in/crew-management/",
+          "notes": "Official crew-management page lists this inbox for seafarer job inquiries and shows an RPSL number."
+        }
+      ]
+    },
+    {
+      "code": "PH",
+      "label": "Philippines",
+      "agencies": [
+        {
+          "name": "Orophil Shipping International Co. Inc.",
+          "email": "recruitment@orophil.com.ph",
+          "website": "https://www.orophil.com.ph",
+          "city": "Manila",
+          "country": "Philippines",
+          "source_url": "https://www.orophil.com.ph/contact.php",
+          "notes": "Official contact page instructs seafarer applicants to send completed information sheets to this recruitment inbox."
+        },
+        {
+          "name": "WilhMar Manning Philippines Inc.",
+          "email": "wsm-mnl-info@wilhmar.com",
+          "website": "https://www.wilhmar.com",
+          "city": "Pasay",
+          "country": "Philippines",
+          "source_url": "https://www.wilhelmsen.com/ship-management/crew-management/philippines-wilhmar-manning-office/",
+          "notes": "Official WilhMar manning office page instructs applicants to send CVs to this email."
+        },
+        {
+          "name": "Euro-Asiatic Shipping Inc.",
+          "email": "crewing@euro-asiatic.com",
+          "website": "https://www.euro-asiatic.com",
+          "city": "Cebu",
+          "country": "Philippines",
+          "source_url": "https://www.euro-asiatic.com/",
+          "notes": "Official site lists this as the Crewing Department inbox."
+        },
+        {
+          "name": "Wilhelmsen-Smith Bell Manning Inc.",
+          "email": "bsb-mnl-recruitment@wilhelmsen.com",
+          "website": "https://www.wilhelmsen.com",
+          "city": "Makati",
+          "country": "Philippines",
+          "source_url": "https://www.wilhelmsen.com/ship-management/crew-management/philippines/",
+          "notes": "Official Philippines manning office page lists this recruitment department email and instructs applicants to send CVs."
+        },
+        {
+          "name": "Magsaysay MOL Marine, Inc.",
+          "email": "mmm.portengineer@magmol.com",
+          "website": "https://www.mol.co.jp",
+          "city": "Manila",
+          "country": "Philippines",
+          "source_url": "https://www.mol.co.jp/en/contact/seafarer/",
+          "notes": "MOL Group seafarer employment page lists this Manila HR and recruitment contact for Magsaysay MOL Marine."
+        },
+        {
+          "name": "Senator Crewing (Manila) Inc.",
+          "email": "scm@scm.com.ph",
+          "website": "https://senatorcrewing.com",
+          "city": "Paranaque",
+          "country": "Philippines",
+          "source_url": "https://senatorcrewing.com/contact-us/",
+          "notes": "Official contact page describes Senator Crewing Manila as a licensed manning agency and publishes this contact inbox."
+        },
+        {
+          "name": "Galant Maritime Services Inc.",
+          "email": "gmsi@galant.com.ph",
+          "website": "https://galant.com.ph",
+          "city": "Manila",
+          "country": "Philippines",
+          "source_url": "https://galant.com.ph/contact-us/",
+          "notes": "Official contact page describes manning agency service and maritime careers and publishes this inbox."
+        },
+        {
+          "name": "New Filipino Maritime Agencies Inc.",
+          "email": "crew.manning@newfil.com.ph",
+          "website": "https://www.newfil.com.ph",
+          "city": "Makati",
+          "country": "Philippines",
+          "source_url": "https://www.newfil.com.ph/",
+          "notes": "Official site lists crew manning as a service and publishes this crew-manning inbox; helpdesk@newfil.com.ph was not added."
+        },
+        {
+          "name": "Interorient Maritime Enterprises Inc.",
+          "email": "inormph@interorient.com.ph",
+          "website": "https://www.interorient.com.ph",
+          "city": "Pasig",
+          "country": "Philippines",
+          "source_url": "https://www.interorient.com.ph/contact.php",
+          "notes": "Official contact page describes Filipino crew and recruitment manning services and publishes this Philippines inbox."
+        },
+        {
+          "name": "Technomar Crew Management Corporation",
+          "email": "tcmc.recruitment@technomar.com.ph",
+          "website": "https://technomar.com.ph",
+          "city": "Manila",
+          "country": "Philippines",
+          "source_url": "https://technomar.com.ph/apply-now",
+          "notes": "Official Apply Now page publishes this recruitment inbox along with operations and vacancies contacts; recruitment inbox selected as primary."
+        }
+      ]
+    },
+    {
+      "code": "ID",
+      "label": "Indonesia",
+      "agencies": [
+        {
+          "name": "Nurindo Manning Services",
+          "email": "recruitment@nurindomanning.com",
+          "website": "https://nurindomanning.com",
+          "city": "Jakarta",
+          "country": "Indonesia",
+          "source_url": "https://nurindomanning.com/",
+          "notes": "Official site identifies this as the apply email for seafarer placements."
+        },
+        {
+          "name": "PT Keenindo Bintas Marine",
+          "email": "crew@bintas.co.id",
+          "website": "https://www.bintas.co.id",
+          "city": "North Jakarta",
+          "country": "Indonesia",
+          "source_url": "https://www.bintas.co.id/",
+          "notes": "Official site describes crewing and manning services and publishes this crew inbox."
+        },
+        {
+          "name": "PT Indonesia Logistik Maritim",
+          "email": "info@inlogmar.id",
+          "website": "https://inlogmar.id",
+          "city": "Jakarta",
+          "country": "Indonesia",
+          "source_url": "https://inlogmar.id/",
+          "notes": "Official site describes licensed seafarer recruitment and crew management and publishes this contact inbox."
+        },
+        {
+          "name": "PT Surya Global Cemerlang",
+          "email": "info@suryagc.com",
+          "website": "https://suryagc.com",
+          "city": "North Jakarta",
+          "country": "Indonesia",
+          "source_url": "https://suryagc.com/",
+          "notes": "Official site describes manning agency services connecting Indonesian seafarers with international shipowners and publishes this contact inbox."
+        },
+        {
+          "name": "PT McMOL Crewing International",
+          "email": "crewing@mcmol-international.com",
+          "website": "https://www.mol.co.jp",
+          "city": "Jakarta",
+          "country": "Indonesia",
+          "source_url": "https://www.mol.co.jp/en/contact/seafarer/",
+          "notes": "MOL Group seafarer employment page lists this Indonesian manning contact; alternate mcsi_crewing@mcs-internasional.com was not added to avoid duplicate agency rows."
+        },
+        {
+          "name": "PT Savana Charta Indonesia",
+          "email": "ops@sachi.id",
+          "website": "https://sachi.id",
+          "city": "Jakarta",
+          "country": "Indonesia",
+          "source_url": "https://sachi.id/",
+          "notes": "Official site describes crewing/manning services and publishes this operations inbox in official info."
+        },
+        {
+          "name": "PT Jakarta Konsultan Marine",
+          "email": "crewing@jk-marine.co.id",
+          "website": "https://jk-marine.co.id",
+          "city": "Jakarta",
+          "country": "Indonesia",
+          "source_url": "https://jk-marine.co.id/contact-3/",
+          "notes": "Official contact page describes a manning and crewing agency for Indonesian seafarers and publishes this crewing inbox."
+        },
+        {
+          "name": "PT Fudo Global Indonesia",
+          "email": "marketing.fudo@fudoindonesia.com",
+          "website": "https://www.fudoindonesia.com",
+          "city": "Jakarta",
+          "country": "Indonesia",
+          "source_url": "https://www.fudoindonesia.com/",
+          "notes": "Official site describes manning and crew-management services and publishes this contact inbox; role is marketing/contact rather than CV-specific."
+        },
+        {
+          "name": "Crew Indo",
+          "email": "contact@crewindo.com",
+          "website": "https://www.crewindo.com",
+          "city": "Surabaya",
+          "country": "Indonesia",
+          "source_url": "https://www.crewindo.com/",
+          "notes": "Official site describes a maritime crew manning agency and seafarer recruitment service; contact@ selected over info@ as primary."
+        },
+        {
+          "name": "AOM Indonesia",
+          "email": "crewing@aom.co.id",
+          "website": "https://www.aom.co.id",
+          "city": "Jakarta",
+          "country": "Indonesia",
+          "source_url": "https://www.aom.co.id/",
+          "notes": "Official site describes Indonesian crewing services and publishes this crewing inbox via Cloudflare email protection."
+        }
+      ]
+    }
+  ]
+}
