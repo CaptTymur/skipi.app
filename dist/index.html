@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.137';
+var APP_VERSION='0.4.138';
 var UI_LANG_KEY='skipi-ui-language';
 var UI_LANG_OPTIONS=[
     ['ru','Русский'],
@@ -238,6 +238,24 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .dispatch-kpi { min-width:104px; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 10px; }
 .dispatch-kpi .num { font-size:20px; font-weight:800; line-height:1; }
 .dispatch-kpi .lbl { font-size:10px; text-transform:uppercase; color:var(--text2); margin-top:4px; }
+.dispatch-wizard { border:1px solid var(--border); border-radius:8px; background:var(--bg); margin:12px 0 18px; overflow:hidden; }
+.dispatch-wizard-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:14px 16px; border-bottom:1px solid var(--border); background:var(--surface); }
+.dispatch-step { font-size:10px; color:var(--text2); text-transform:uppercase; letter-spacing:.06em; margin-bottom:4px; }
+.dispatch-choice-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; padding:14px; }
+.dispatch-choice { text-align:left; border:1px solid var(--border); border-radius:8px; background:var(--bg); padding:14px; cursor:pointer; min-height:156px; display:flex; flex-direction:column; gap:8px; }
+.dispatch-choice:hover { border-color:var(--accent); background:var(--accent-bg); }
+.dispatch-choice.disabled { opacity:.55; cursor:not-allowed; background:var(--surface); }
+.dispatch-choice.disabled:hover { border-color:var(--border); background:var(--surface); }
+.dispatch-choice-title { font-size:14px; font-weight:800; color:var(--text); }
+.dispatch-choice-desc { font-size:11px; color:var(--text2); line-height:1.4; }
+.dispatch-choice-count { margin-top:auto; display:flex; align-items:baseline; gap:6px; }
+.dispatch-choice-count .num { font-size:26px; font-weight:850; color:var(--accent); line-height:1; }
+.dispatch-choice-count .lbl { font-size:10px; color:var(--text2); text-transform:uppercase; letter-spacing:.04em; }
+.dispatch-choice-actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:4px; }
+.dispatch-preview { border-top:1px solid var(--border); padding:0 14px 14px; }
+.dispatch-preview-inner { border:1px solid var(--border); border-radius:8px; background:var(--surface); padding:12px; }
+.dispatch-compose-summary { border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin-bottom:12px; background:var(--surface); display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+@media (max-width: 920px) { .dispatch-choice-grid { grid-template-columns:1fr; } .dispatch-compose-summary { flex-direction:column; } }
 
 /* Ribbon (icon strip) */
 .ribbon { width:40px; background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; align-items:center; padding:8px 0; gap:4px; }
@@ -826,7 +844,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p id="welcome-subtitle">Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.137</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.138</span></p>
                 <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -9058,9 +9076,14 @@ function showNoSendableContent(){
 }
 
 var dispatchTab='manual';
+var dispatchWizardStep='choose';
+var dispatchWizardPreview='';
 var dispatchRecipientsDraft='';
 var lastAgencyDbRecipients=[];
 var lastAgencyDbResult=null;
+var agencyDbLoading=false;
+var dispatchMailingRequestsLoaded=false;
+var dispatchMailingRequestsLoading=false;
 
 function captureDispatchRecipients(){
     var ta=document.getElementById('disp-to');
@@ -9069,14 +9092,26 @@ function captureDispatchRecipients(){
 function setDispatchTab(tab){
     captureDispatchRecipients();
     dispatchTab=tab||'manual';
+    dispatchWizardStep='compose';
+    showDispatch();
+}
+function backToDispatchWizard(){
+    captureDispatchRecipients();
+    dispatchWizardStep='choose';
     showDispatch();
 }
 function dispatchTabButton(tab,label){
     return '<button type="button" class="dispatch-tab '+(dispatchTab===tab?'active':'')+'" onclick="setDispatchTab(\''+tab+'\')">'+esc(label)+'</button>';
 }
+function dispatchScenarioTitle(tab){
+    var ru=getUiLang()==='ru';
+    if(tab==='agency_db')return ru?'База адресов Skipi':'Skipi address database';
+    if(tab==='crewing_requests')return ru?'Запросы крюингов':'Crewing requests';
+    return ru?'Кастомные адреса':'Custom addresses';
+}
 function dispatchRecipientsLabel(){
     var ru=getUiLang()==='ru';
-    if(dispatchTab==='agency_db')return ru?'Получатели из базы агентств':'Selected agency database recipients';
+    if(dispatchTab==='agency_db')return ru?'Получатели из базы адресов Skipi':'Selected Skipi database recipients';
     if(dispatchTab==='crewing_requests')return ru?'Получатели из запросов крюингов':'Selected crewing request recipients';
     return ru?'Получатели: один email в строке или через запятую':'Recipients: one email per line or comma-separated';
 }
@@ -9099,6 +9134,8 @@ async function openAgencyDatabaseFile(){
     }
 }
 async function loadAgencyDatabaseRecipients(){
+    if(agencyDbLoading)return lastAgencyDbResult;
+    agencyDbLoading=true;
     var host=document.getElementById('disp-agency-db-host');
     if(host)host.innerHTML='<div style="font-size:12px;color:var(--text2);">Loading database...</div>';
     try{
@@ -9109,9 +9146,14 @@ async function loadAgencyDatabaseRecipients(){
         lastAgencyDbResult=data;
         lastAgencyDbRecipients=(data&&Array.isArray(data.agencies))?data.agencies:[];
         renderAgencyDatabasePanel(data);
+        if(dispatchWizardStep==='choose')renderDispatchWizardAsyncState();
+        return data;
     }catch(e){
         if(host)host.innerHTML='<div style="font-size:12px;color:var(--red);">Failed to load: '+esc(e)+'</div>';
         logError('loadAgencyDatabaseRecipients',e);
+        return null;
+    }finally{
+        agencyDbLoading=false;
     }
 }
 function renderAgencyDatabasePanel(data){
@@ -9156,7 +9198,8 @@ function renderAgencyDatabasePanel(data){
     }
     host.innerHTML=h;
 }
-function useAgencyDatabaseRecipients(){
+function useAgencyDatabaseRecipients(opts){
+    opts=opts||{};
     var emails=[];
     var seen={};
     (lastAgencyDbRecipients||[]).forEach(function(a){
@@ -9168,7 +9211,165 @@ function useAgencyDatabaseRecipients(){
     var ta=document.getElementById('disp-to');
     dispatchRecipientsDraft=emails.join('\n');
     if(ta)ta.value=dispatchRecipientsDraft;
-    showToast(emails.length+' agency recipient'+(emails.length>1?'s':'')+' loaded','success');
+    if(!opts.silent)showToast(emails.length+' agency recipient'+(emails.length>1?'s':'')+' loaded','success');
+    return emails.length;
+}
+
+function renderDispatchWizardAsyncState(){
+    if(dispatchWizardStep==='choose')setTimeout(function(){ if(dispatchWizardStep==='choose')showDispatch(); },0);
+}
+function toggleDispatchWizardPreview(tab){
+    dispatchWizardPreview=(dispatchWizardPreview===tab)?'':tab;
+    showDispatch();
+}
+function agencyDbStats(){
+    var data=lastAgencyDbResult||{};
+    return {
+        total:Number(data.total_addresses||0),
+        allowed:Number(data.allowed_addresses||lastAgencyDbRecipients.length||0),
+        locked:Number(data.locked_addresses||0),
+        pct:Number(data.profile_pct||lastProfileCompletenessPct||0),
+        label:data.nationality_label||data.nationality_code||'',
+        hasNationality:!!data.nationality_code
+    };
+}
+function agencyDbPreviewHtml(limit){
+    var ru=getUiLang()==='ru';
+    var stats=agencyDbStats();
+    if(!lastAgencyDbResult){
+        return '<div style="font-size:12px;color:var(--text2);">'+esc(agencyDbLoading?(ru?'Загружаю базу адресов...':'Loading address database...'):(ru?'База ещё не загружена.':'Database is not loaded yet.'))+'</div>';
+    }
+    if(!stats.hasNationality){
+        return '<div style="font-size:12px;color:var(--text2);">'+esc(ru?'Укажите национальность в профиле, чтобы Skipi выбрал правильную базу.':'Set nationality in the profile so Skipi can choose the right database.')+'</div>';
+    }
+    if(!stats.total){
+        return '<div style="font-size:12px;color:var(--text2);">'+esc(ru?'Для этой национальности база пока пустая.':'The database for this nationality is empty for now.')+'</div>';
+    }
+    if(!stats.allowed){
+        return '<div style="font-size:12px;color:var(--text2);">'+esc(ru?'В базе есть адреса, но текущая заполненность профиля пока открывает 0 адресов.':'The database has addresses, but current profile completeness unlocks 0 addresses.')+'</div>';
+    }
+    var h='<div style="font-size:12px;color:var(--text2);margin-bottom:8px;">'+esc(ru?('Открыто '+stats.allowed+' из '+stats.total+' адресов.'):('Unlocked '+stats.allowed+' of '+stats.total+' addresses.'))+'</div>';
+    lastAgencyDbRecipients.slice(0,limit||8).forEach(function(a){
+        h+='<div style="border-top:1px solid var(--border);padding:7px 0;">';
+        h+='<div style="font-size:12px;font-weight:700;">'+esc(a.name||a.email)+'</div>';
+        h+='<div style="font-size:11px;color:var(--text2);font-family:var(--font-mono);">'+esc(a.email||'')+'</div>';
+        h+='</div>';
+    });
+    if(stats.allowed>(limit||8))h+='<div style="font-size:11px;color:var(--text2);margin-top:4px;">'+esc(ru?('+'+(stats.allowed-(limit||8))+' адресов скрыто'):('+'+(stats.allowed-(limit||8))+' hidden'))+'</div>';
+    return h;
+}
+function mailingRequestsPreviewHtml(limit,selectable){
+    var ru=getUiLang()==='ru';
+    if(dispatchMailingRequestsLoading&&!dispatchMailingRequestsLoaded){
+        return '<div style="font-size:12px;color:var(--text2);">'+esc(ru?'Ищу активные запросы...':'Loading active requests...')+'</div>';
+    }
+    if(!dispatchMailingRequestsLoaded){
+        return '<div style="font-size:12px;color:var(--text2);">'+esc(ru?'Запросы ещё не загружены.':'Requests are not loaded yet.')+'</div>';
+    }
+    if(!lastDispatchMailingRequests.length){
+        return '<div style="font-size:12px;color:var(--text2);">'+esc(ru?'Активных запросов под текущий профиль нет.':'No active requests match the current profile.')+'</div>';
+    }
+    var h='';
+    lastDispatchMailingRequests.slice(0,limit||8).forEach(function(r){
+        var check=selectable?'<input type="checkbox" class="disp-mailing-check" value="'+escAttr(r.id)+'" checked style="margin-top:3px;width:15px;height:15px;accent-color:var(--accent);">':'';
+        h+='<label style="display:block;border-top:1px solid var(--border);padding:8px 0;'+(selectable?'cursor:pointer;':'')+'">';
+        h+='<div style="display:flex;gap:9px;align-items:flex-start;">'+check+'<div style="min-width:0;">';
+        h+='<div style="font-size:12px;font-weight:700;">'+esc(r.title||r.crewing_ref||r.reply_to)+'</div>';
+        h+='<div style="font-size:11px;color:var(--text2);">'+esc([r.crewing_ref,r.rank,r.vessel_type,r.reply_to].filter(Boolean).join(' · '))+'</div>';
+        h+='</div></div></label>';
+    });
+    if(lastDispatchMailingRequests.length>(limit||8))h+='<div style="font-size:11px;color:var(--text2);margin-top:4px;">'+esc(ru?('+'+(lastDispatchMailingRequests.length-(limit||8))+' запросов скрыто'):('+'+(lastDispatchMailingRequests.length-(limit||8))+' hidden'))+'</div>';
+    return h;
+}
+function uniqueMailingRequestCrewingCount(){
+    var seen={},count=0;
+    (lastDispatchMailingRequests||[]).forEach(function(r){
+        var key=String(r.crewing_ref||r.client_name||r.reply_to||r.id||'').trim().toLowerCase();
+        if(key&&!seen[key]){seen[key]=true;count++;}
+    });
+    return count;
+}
+function uniqueMailingRequestEmailCount(){
+    var seen={},count=0;
+    (lastDispatchMailingRequests||[]).forEach(function(r){
+        var key=String(r.reply_to||'').trim().toLowerCase();
+        if(key&&!seen[key]){seen[key]=true;count++;}
+    });
+    return count;
+}
+function dispatchRecentHistoryHtml(dispatches,ru){
+    var h='<h3 style="font-size:14px;margin-bottom:8px;">'+esc(ru?'Последние рассылки':'Recent dispatches')+'</h3>';
+    if(!dispatches.length){
+        h+='<p style="color:var(--text2);font-size:12px;">'+esc(ru?'Рассылок пока нет.':'No dispatches yet.')+'</p>';
+    }else{
+        h+='<table class="pkg-table"><thead><tr><th>'+esc(ru?'Дата':'Date')+'</th><th>'+esc(ru?'Пакет':'Package')+'</th><th>'+esc(ru?'Кому':'To')+'</th></tr></thead><tbody>';
+        dispatches.forEach(function(d){
+            var dt=new Date(d.created_at);
+            h+='<tr><td>'+dt.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})+' '+dt.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})+'</td>';
+            h+='<td>'+(d.package_title||'<span style="color:var(--text2)">(deleted)</span>')+'</td>';
+            h+='<td style="font-family:var(--font-mono);font-size:11px;color:var(--text2);">'+esc(d.recipients||'')+'</td></tr>';
+        });
+        h+='</tbody></table>';
+    }
+    return h;
+}
+function ensureDispatchWizardData(sendGate){
+    if(!lastAgencyDbResult&&!agencyDbLoading)setTimeout(loadAgencyDatabaseRecipients,0);
+    if(sendGate&&sendGate.ok&&!dispatchMailingRequestsLoaded&&!dispatchMailingRequestsLoading)setTimeout(loadDispatchMailingRequests,0);
+}
+function setDispatchRecipientsFromMailingRequests(items,opts){
+    opts=opts||{};
+    var seen={},emails=[];
+    (items||[]).forEach(function(r){
+        var e=(r.reply_to||'').trim();
+        var key=e.toLowerCase();
+        if(e&&!seen[key]){seen[key]=true;emails.push(e);}
+    });
+    if(!emails.length){ if(!opts.silent)showToast('No request recipients yet','warn'); return 0; }
+    var ta=document.getElementById('disp-to');
+    dispatchRecipientsDraft=emails.join('\n');
+    if(ta)ta.value=dispatchRecipientsDraft;
+    if(!opts.silent)showToast(emails.length+' recipient'+(emails.length>1?'s':'')+' loaded from crewing requests','success');
+    return emails.length;
+}
+async function selectDispatchScenario(tab){
+    captureDispatchRecipients();
+    var ru=getUiLang()==='ru';
+    if(tab==='agency_db'){
+        if(!lastAgencyDbResult)await loadAgencyDatabaseRecipients();
+        if(!agencyDbStats().allowed){
+            showToast(ru?'База Skipi пока не открыла адреса для этого профиля':'No Skipi database addresses are unlocked for this profile yet','warn');
+            return;
+        }
+        dispatchTab='agency_db';
+        useAgencyDatabaseRecipients({silent:true});
+    }else if(tab==='crewing_requests'){
+        if(!dispatchMailingRequestsLoaded)await loadDispatchMailingRequests();
+        if(!lastDispatchMailingRequests.length){
+            showToast(ru?'Нет активных запросов крюингов под этот профиль':'No active crewing requests match this profile','warn');
+            return;
+        }
+        dispatchTab='crewing_requests';
+        setDispatchRecipientsFromMailingRequests(lastDispatchMailingRequests,{silent:true});
+    }else{
+        dispatchTab='manual';
+    }
+    dispatchWizardStep='compose';
+    showDispatch();
+}
+function dispatchChoiceCard(tab,title,desc,count,label,enabled,loading){
+    var ru=getUiLang()==='ru';
+    var cls='dispatch-choice'+(enabled?'':' disabled');
+    var click=enabled?' onclick="selectDispatchScenario(\''+tab+'\')"':'';
+    var h='<div class="'+cls+'"'+click+'>';
+    h+='<div class="dispatch-choice-title">'+esc(title)+'</div>';
+    h+='<div class="dispatch-choice-desc">'+esc(desc)+'</div>';
+    h+='<div class="dispatch-choice-count"><span class="num">'+esc(loading?'...':String(count))+'</span><span class="lbl">'+esc(label)+'</span></div>';
+    h+='<div class="dispatch-choice-actions">';
+    if(tab!=='manual')h+='<button type="button" class="btn btn-outline btn-sm" onclick="event.stopPropagation();toggleDispatchWizardPreview(\''+tab+'\')">'+esc(dispatchWizardPreview===tab?(ru?'Скрыть':'Hide'):(ru?'Посмотреть':'View'))+'</button>';
+    h+='<button type="button" class="btn '+(enabled?'btn-accent':'btn-outline')+' btn-sm" '+(enabled?'onclick="event.stopPropagation();selectDispatchScenario(\''+tab+'\')"':'disabled')+'>'+esc(ru?'Выбрать':'Select')+'</button>';
+    h+='</div></div>';
+    return h;
 }
 
 async function showDispatch(){
@@ -9179,37 +9380,53 @@ async function showDispatch(){
     var ru=getUiLang()==='ru';
     if(['manual','agency_db','crewing_requests'].indexOf(dispatchTab)===-1)dispatchTab='manual';
     var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><h2 style="font-size:18px;">'+esc(ru?'Рассылки':'Mailings')+'</h2></div>';
-    h+='<p style="color:var(--text2);font-size:12px;margin-bottom:10px;">'+esc(ru?'Выберите сценарий, проверьте получателей и отправьте CV с документами.':'Choose a scenario, review recipients, then send your CV with documents.')+'</p>';
+    h+='<p style="color:var(--text2);font-size:12px;margin-bottom:10px;">'+esc(ru?'Сначала выберите сценарий рассылки, затем проверьте получателей и отправьте CV с документами.':'First choose a mailing scenario, then review recipients and send your CV with documents.')+'</p>';
     if(!sendGate.ok){
         h+='<div style="border:1px solid var(--orange);border-radius:8px;padding:14px 16px;margin-bottom:14px;background:var(--bg);">';
-        h+='<div style="font-weight:700;margin-bottom:6px;">'+esc(getUiLang()==='ru'?'Пока нечего рассылать':'Nothing to send yet')+'</div>';
-        h+='<div style="font-size:12px;color:var(--text2);line-height:1.45;">'+esc(getUiLang()==='ru'?'Заполните профиль/CV или загрузите документы. После этого здесь можно будет подготовить рассылку и пакеты для крюингов.':'Complete your profile/CV or upload documents. Then this module can prepare mailings and document packages for crewings.')+'</div>';
-        h+='<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-outline btn-sm" onclick="openSettings(\'seafarer\')">'+esc(getUiLang()==='ru'?'Профиль':'Profile')+'</button><button class="btn btn-outline btn-sm" onclick="showView(\'files\')">'+esc(getUiLang()==='ru'?'Документы':'Documents')+'</button></div>';
+        h+='<div style="font-weight:700;margin-bottom:6px;">'+esc(ru?'Пока нечего рассылать':'Nothing to send yet')+'</div>';
+        h+='<div style="font-size:12px;color:var(--text2);line-height:1.45;">'+esc(ru?'Заполните профиль/CV или загрузите документы. После этого здесь можно будет подготовить рассылку и пакеты для крюингов.':'Complete your profile/CV or upload documents. Then this module can prepare mailings and document packages for crewings.')+'</div>';
+        h+='<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-outline btn-sm" onclick="openSettings(\'seafarer\')">'+esc(ru?'Профиль':'Profile')+'</button><button class="btn btn-outline btn-sm" onclick="showView(\'files\')">'+esc(ru?'Документы':'Documents')+'</button></div>';
         h+='</div>';
     }
-    h+='<div class="dispatch-tabs">';
-    h+=dispatchTabButton('manual',ru?'Вручную':'Manual');
-    h+=dispatchTabButton('agency_db',ru?'База агентств':'Agency database');
-    h+=dispatchTabButton('crewing_requests',ru?'Запросы крюингов':'Crewing requests');
-    h+='</div>';
-    if(dispatchTab==='manual'){
-        h+='<div class="dispatch-panel">';
-        h+='<div style="font-size:13px;font-weight:700;">'+esc(ru?'Ручная рассылка':'Manual recipients')+'</div>';
-        h+='<div style="font-size:11px;color:var(--text2);margin-top:3px;">'+esc(ru?'Введите один или несколько email адресов.':'Enter one or more email addresses.')+'</div>';
+    if(dispatchWizardStep!=='compose'){
+        var stats=agencyDbStats();
+        var reqCount=lastDispatchMailingRequests.length;
+        var crewingCount=uniqueMailingRequestCrewingCount();
+        var requestEmailCount=uniqueMailingRequestEmailCount();
+        h+='<div class="dispatch-wizard">';
+        h+='<div class="dispatch-wizard-head"><div><div class="dispatch-step">'+esc(ru?'Шаг 1 из 2':'Step 1 of 2')+'</div><div style="font-size:15px;font-weight:800;">'+esc(ru?'Куда отправляем?':'Where do we send?')+'</div></div></div>';
+        h+='<div class="dispatch-choice-grid">';
+        h+=dispatchChoiceCard('manual',ru?'Кастомные адреса':'Custom addresses',ru?'Введите один или несколько email адресов вручную.':'Enter one or more email addresses manually.','1',ru?'сценарий':'scenario',sendGate.ok,false);
+        h+=dispatchChoiceCard('agency_db',ru?'База адресов Skipi':'Skipi address database',ru?'Skipi выбирает базу по национальности; количество адресов зависит от заполненности профиля.':'Skipi selects the database by nationality; unlocked address count depends on profile completeness.',stats.allowed,ru?'адресов':'addresses',sendGate.ok&&!!stats.allowed,!lastAgencyDbResult);
+        h+=dispatchChoiceCard('crewing_requests',ru?'Запросы крюингов':'Crewing requests',(ru?'Рассылка только крюингам, которые запросили CV под ваш профиль.':'Mail only to crewings that requested CVs matching your profile.')+(dispatchMailingRequestsLoaded?(' '+(ru?'Крюингов: ':'Crewings: ')+crewingCount):''),requestEmailCount,ru?'адресов':'addresses',sendGate.ok&&dispatchMailingRequestsLoaded&&reqCount>0&&requestEmailCount>0,!dispatchMailingRequestsLoaded);
         h+='</div>';
-    }else if(dispatchTab==='agency_db'){
-        h+='<div class="dispatch-panel">';
-        h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">';
-        h+='<div><div style="font-size:13px;font-weight:700;">'+esc(ru?'База агентств':'Agency database mailing')+'</div><div style="font-size:11px;color:var(--text2);margin-top:3px;">'+esc(ru?'База выбирается по национальности моряка; число адресов зависит от заполненности профиля.':'Skipi selects the database by nationality; the number of addresses depends on profile completeness.')+'</div></div>';
-        h+='<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-outline btn-sm" onclick="loadAgencyDatabaseRecipients()">'+esc(ru?'Загрузить базу':'Load database')+'</button><button class="btn btn-outline btn-sm" onclick="openAgencyDatabaseFile()">JSON</button></div>';
-        h+='</div><div id="disp-agency-db-host" style="margin-top:10px;"></div></div>';
-    }else{
-        h+='<div class="dispatch-panel">';
-        h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">';
-        h+='<div><div style="font-size:13px;font-weight:700;">'+esc(ru?'Запросы крюингов':'Crewing requests')+'</div><div style="font-size:11px;color:var(--text2);margin-top:3px;">'+esc(ru?'Крюинги могут публиковать запросы на CV под конкретную должность и тип судна.':'Crewings can publish requests to receive CVs for a rank and vessel profile.')+'</div></div>';
-        h+='<button class="btn btn-outline btn-sm" '+(sendGate.ok?'':'disabled title="Complete CV or upload documents first" ')+'onclick="loadDispatchMailingRequests()">'+esc(ru?'Загрузить запросы':'Load matching requests')+'</button>';
-        h+='</div><div id="disp-mailing-host" style="margin-top:10px;"></div></div>';
+        if(dispatchWizardPreview){
+            h+='<div class="dispatch-preview"><div class="dispatch-preview-inner">';
+            h+='<div style="font-size:13px;font-weight:800;margin-bottom:8px;">'+esc(dispatchScenarioTitle(dispatchWizardPreview))+'</div>';
+            h+=(dispatchWizardPreview==='agency_db')?agencyDbPreviewHtml(10):mailingRequestsPreviewHtml(10,false);
+            h+='</div></div>';
+        }
+        h+='</div>';
+        h+=dispatchRecentHistoryHtml(dispatches,ru);
+        document.getElementById('scr-content').innerHTML=h;show('scr-content');updateTabs(ru?'Рассылки':'Mailings');
+        ensureDispatchWizardData(sendGate);
+        return;
     }
+
+    h+='<div class="dispatch-wizard">';
+    h+='<div class="dispatch-wizard-head"><div><div class="dispatch-step">'+esc(ru?'Шаг 2 из 2':'Step 2 of 2')+'</div><div style="font-size:15px;font-weight:800;">'+esc(dispatchScenarioTitle(dispatchTab))+'</div></div><button class="btn btn-outline btn-sm" onclick="backToDispatchWizard()">'+esc(ru?'Назад':'Back')+'</button></div>';
+    h+='<div style="padding:14px;">';
+    h+='<div class="dispatch-compose-summary"><div><div style="font-size:13px;font-weight:800;">'+esc(dispatchScenarioTitle(dispatchTab))+'</div>';
+    if(dispatchTab==='manual')h+='<div style="font-size:11px;color:var(--text2);margin-top:3px;">'+esc(ru?'Введите адреса и отправьте CV.':'Enter recipients and send the CV.')+'</div>';
+    else if(dispatchTab==='agency_db')h+='<div style="font-size:11px;color:var(--text2);margin-top:3px;">'+esc(ru?('Выбрано '+agencyDbStats().allowed+' адресов из базы Skipi.'):('Selected '+agencyDbStats().allowed+' addresses from the Skipi database.'))+'</div>';
+    else h+='<div style="font-size:11px;color:var(--text2);margin-top:3px;">'+esc(ru?('Адресов: '+uniqueMailingRequestEmailCount()+' · крюингов: '+uniqueMailingRequestCrewingCount()+' · активных запросов: '+lastDispatchMailingRequests.length):('Addresses: '+uniqueMailingRequestEmailCount()+' · crewings: '+uniqueMailingRequestCrewingCount()+' · active requests: '+lastDispatchMailingRequests.length))+'</div>';
+    h+='</div><button class="btn btn-outline btn-sm" onclick="backToDispatchWizard()">'+esc(ru?'Изменить сценарий':'Change scenario')+'</button></div>';
+    if(dispatchTab==='agency_db'){
+        h+='<div class="dispatch-panel">'+agencyDbPreviewHtml(8)+'</div>';
+    }else if(dispatchTab==='crewing_requests'){
+        h+='<div class="dispatch-panel"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;"><div style="font-size:13px;font-weight:800;">'+esc(ru?'Запросы для рассылки':'Requests to mail')+'</div><button class="btn btn-outline btn-sm" onclick="useDispatchMailingRecipients()">'+esc(ru?'Обновить получателей':'Update recipients')+'</button></div>'+mailingRequestsPreviewHtml(12,true)+'</div>';
+    }
+    h+='</div></div>';
     h+='<div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:20px;background:var(--bg);">';
 
     // 1. Recipients
@@ -9249,20 +9466,7 @@ async function showDispatch(){
        '</div>';
     h+='</div>';
 
-    // History
-    h+='<h3 style="font-size:14px;margin-bottom:8px;">'+esc(ru?'Последние рассылки':'Recent dispatches')+'</h3>';
-    if(!dispatches.length){
-        h+='<p style="color:var(--text2);font-size:12px;">'+esc(ru?'Рассылок пока нет.':'No dispatches yet.')+'</p>';
-    }else{
-        h+='<table class="pkg-table"><thead><tr><th>'+esc(ru?'Дата':'Date')+'</th><th>'+esc(ru?'Пакет':'Package')+'</th><th>'+esc(ru?'Кому':'To')+'</th></tr></thead><tbody>';
-        dispatches.forEach(function(d){
-            var dt=new Date(d.created_at);
-            h+='<tr><td>'+dt.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})+' '+dt.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})+'</td>';
-            h+='<td>'+(d.package_title||'<span style="color:var(--text2)">(deleted)</span>')+'</td>';
-            h+='<td style="font-family:var(--font-mono);font-size:11px;color:var(--text2);">'+d.recipients+'</td></tr>';
-        });
-        h+='</tbody></table>';
-    }
+    h+=dispatchRecentHistoryHtml(dispatches,ru);
     document.getElementById('scr-content').innerHTML=h;show('scr-content');updateTabs(ru?'Рассылки':'Mailings');
     if(dispatchTab==='agency_db'&&lastAgencyDbResult)renderAgencyDatabasePanel(lastAgencyDbResult);
     if(dispatchTab==='agency_db'&&!lastAgencyDbResult)setTimeout(loadAgencyDatabaseRecipients,0);
@@ -9273,8 +9477,10 @@ var lastDispatchMailingRequests = [];
 var lastPreparedDispatchDir = '';
 
 async function loadDispatchMailingRequests(){
+    if(dispatchMailingRequestsLoading)return lastDispatchMailingRequests;
+    dispatchMailingRequestsLoading=true;
     var gate=await dispatchSendableGate();
-    if(!gate.ok){showNoSendableContent();return;}
+    if(!gate.ok){dispatchMailingRequestsLoading=false;showNoSendableContent();return [];}
     var host=document.getElementById('disp-mailing-host');
     if(host)host.innerHTML='<div style="font-size:12px;color:var(--text2);">Loading...</div>';
     try{
@@ -9284,9 +9490,18 @@ async function loadDispatchMailingRequests(){
         if(rank)rank=canonicalRank(rank);
         var items=await invoke('fetch_mailing_requests',{rank:rank,vesselType:null});
         lastDispatchMailingRequests=Array.isArray(items)?items:[];
+        dispatchMailingRequestsLoaded=true;
         renderDispatchMailingRequests(lastDispatchMailingRequests);
+        if(dispatchWizardStep==='choose')renderDispatchWizardAsyncState();
+        return lastDispatchMailingRequests;
     }catch(e){
         if(host)host.innerHTML='<div style="font-size:12px;color:var(--red);">Failed to load: '+esc(e)+'</div>';
+        dispatchMailingRequestsLoaded=true;
+        lastDispatchMailingRequests=[];
+        if(dispatchWizardStep==='choose')renderDispatchWizardAsyncState();
+        return [];
+    }finally{
+        dispatchMailingRequestsLoading=false;
     }
 }
 
@@ -9318,20 +9533,13 @@ function renderDispatchMailingRequests(items){
 
 async function useDispatchMailingRecipients(){
     var checks=Array.prototype.slice.call(document.querySelectorAll('.disp-mailing-check:checked'));
-    var selectedIds=checks.map(function(c){return c.value;});
+    var selectedIds=checks.length?checks.map(function(c){return c.value;}):lastDispatchMailingRequests.map(function(r){return r.id;});
     var selected=lastDispatchMailingRequests.filter(function(r){return selectedIds.indexOf(r.id)!==-1;});
     if(!selected.length){showToast('Select at least one mailing request','warn');return;}
-    var seen={},emails=[];
-    selected.forEach(function(r){
-        var e=(r.reply_to||'').trim();
-        var key=e.toLowerCase();
-        if(e&&!seen[key]){seen[key]=true;emails.push(e);}
-    });
-    var ta=document.getElementById('disp-to');
-    dispatchRecipientsDraft=emails.join('\n');
-    if(ta)ta.value=dispatchRecipientsDraft;
+    var count=setDispatchRecipientsFromMailingRequests(selected,{silent:true});
+    if(!count){showToast('No recipient emails on selected requests','warn');return;}
     selected.forEach(function(r){invoke('mailing_request_send_click',{requestId:r.id}).catch(function(){});});
-    showToast(emails.length+' recipient'+(emails.length>1?'s':'')+' loaded from agency requests','success');
+    showToast(count+' recipient'+(count>1?'s':'')+' loaded from crewing requests','success');
 }
 
 function onToggleDispatchDocs(){
@@ -9423,6 +9631,13 @@ async function doDispatchUnified(){
             +'Send this mailing?';
         if(!await uiConfirm(msg,{confirmLabel:'Send'}))return;
     }
+    if(dispatchTab==='crewing_requests'){
+        var checks=Array.prototype.slice.call(document.querySelectorAll('.disp-mailing-check:checked'));
+        var selectedIds=checks.length?checks.map(function(c){return c.value;}):lastDispatchMailingRequests.map(function(r){return r.id;});
+        lastDispatchMailingRequests.filter(function(r){return selectedIds.indexOf(r.id)!==-1;}).forEach(function(r){
+            invoke('mailing_request_send_click',{requestId:r.id}).catch(function(){});
+        });
+    }
 
     var draft=await buildDispatchDraft(includeDocs?'docs':'cv');
 
@@ -9462,6 +9677,7 @@ async function doDispatchUnified(){
                 });
             }catch(e){}
             showToast(msg||'Email sent.','success');
+            dispatchWizardStep='choose';
             await showDispatch();
             return;
         }catch(e){
@@ -9484,6 +9700,7 @@ async function doDispatchUnified(){
             mailClient:localStorage.getItem('skipi-preferred-mail-client')||null,
         });
         showToast('Dispatch draft opened. Attachments staged in ~/Downloads/Skipi/','success');
+        dispatchWizardStep='choose';
         await showDispatch();
     }catch(e){showToast('Dispatch error: '+e,'error');logError('Dispatch error',e);}
 }

@@ -7,6 +7,16 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.138] — 2026-05-24
+
+### Changed
+- Reworked Mailings from three tabs into a two-step wizard: choose scenario,
+  then review recipients and send.
+- Show unlocked Skipi database address counts and matching crewing request
+  counts before entering the send form.
+- Disable the crewing-request scenario when no matching requests with recipient
+  addresses are available.
+
 ## [0.4.137] — 2026-05-23
 
 ### Added
