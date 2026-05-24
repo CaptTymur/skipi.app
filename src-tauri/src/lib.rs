@@ -222,6 +222,7 @@ pub fn run() {
             jobs::fetch_mailing_requests,
             jobs::fetch_vessel_projection,
             jobs::fetch_recent_vessel_reviews,
+            jobs::fetch_skipi_info_index,
             jobs::job_apply_click,
             jobs::job_hide,
             jobs::mailing_request_send_click,

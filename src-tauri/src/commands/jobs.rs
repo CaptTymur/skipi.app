@@ -222,6 +222,29 @@ pub fn fetch_recent_vessel_reviews(limit: Option<i64>) -> Result<Vec<RecentVesse
     Ok(parsed.items)
 }
 
+/// Fetch the public Skipi.info Vacancy Index as an anonymous document.
+/// Matching to the local profile happens in the WebView; no rank, vessel,
+/// identity, or vault data is sent to skipi.info.
+#[tauri::command]
+pub fn fetch_skipi_info_index() -> Result<serde_json::Value, String> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(12))
+        .connect_timeout(std::time::Duration::from_secs(4))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client
+        .get("https://skipi.info/data/index_latest.json")
+        .header(reqwest::header::ACCEPT, "application/json")
+        .send()
+        .map_err(|e| format!("skipi.info network: {e}"))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().unwrap_or_default();
+        return Err(format!("skipi.info returned {status}: {body}"));
+    }
+    resp.json().map_err(|e| format!("bad Skipi.info JSON: {e}"))
+}
+
 #[tauri::command]
 pub fn mailing_request_send_click(request_id: String) -> Result<(), String> {
     let path = format!("/api/mailing-requests/{}/send-click", request_id);

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.138';
+var APP_VERSION='0.4.139';
 var UI_LANG_KEY='skipi-ui-language';
 var UI_LANG_OPTIONS=[
     ['ru','Русский'],
@@ -229,6 +229,11 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .profile-completion-chip:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .profile-completion-chip .pc-dot { width:8px; height:8px; border-radius:50%; background:var(--orange); box-shadow:0 0 0 2px rgba(255,255,255,.05); }
 .profile-completion-chip .pc-label { max-width:96px; overflow:hidden; text-overflow:ellipsis; }
+.salary-index-chip { display:none; align-items:center; gap:7px; height:26px; padding:0 10px; border-radius:5px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:12px; font-weight:600; cursor:pointer; margin-right:6px; white-space:nowrap; }
+.salary-index-chip:hover { border-color:var(--accent); background:var(--accent-bg); }
+.salary-index-chip:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.salary-index-chip .si-dot { width:8px; height:8px; border-radius:50%; background:var(--green); box-shadow:0 0 0 2px rgba(255,255,255,.05); }
+.salary-index-chip .si-label { max-width:128px; overflow:hidden; text-overflow:ellipsis; }
 .dispatch-tabs { display:flex; gap:6px; flex-wrap:wrap; margin:12px 0 14px; border-bottom:1px solid var(--border); }
 .dispatch-tab { border:1px solid transparent; border-bottom:none; background:transparent; color:var(--text2); padding:8px 12px; border-radius:6px 6px 0 0; cursor:pointer; font-size:12px; font-weight:700; }
 .dispatch-tab:hover { color:var(--text); background:var(--hover); }
@@ -587,6 +592,9 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .info-offer-result.good { border-color:var(--green); }
 .info-offer-result.warn { border-color:var(--orange); }
 .info-offer-result.strong { border-color:var(--accent); }
+.info-web-actions { display:flex; gap:8px; flex-wrap:wrap; margin:12px 0 14px; }
+.info-web-frame { height:calc(100vh - 175px); min-height:560px; border:1px solid var(--border); border-radius:8px; overflow:hidden; background:#fff; }
+.info-web-frame iframe { width:100%; height:100%; border:0; background:#fff; display:block; }
 .info-empty { border:1px dashed var(--border); border-radius:6px; padding:14px; color:var(--text2); font-size:12px; }
 @media(max-width:720px){
     .info-head{flex-direction:column;}
@@ -596,6 +604,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
     .info-country-row.head{display:none;}
     .info-country-num{text-align:left;}
     .info-country-num small{display:block;}
+    .info-web-frame{height:calc(100vh - 205px); min-height:420px;}
 }
 
 /* Buttons */
@@ -790,6 +799,10 @@ input, select, textarea, button { font-family:var(--font-ui); }
         <span class="pc-dot" id="pc-dot"></span>
         <span class="pc-label" id="pc-label">Profile --%</span>
     </div>
+    <div class="salary-index-chip" id="salary-index-chip" onclick="openSalaryIndexSource()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openSalaryIndexSource();}" role="button" tabindex="0" title="Salary index">
+        <span class="si-dot" id="si-dot"></span>
+        <span class="si-label" id="si-label">Salary --</span>
+    </div>
     <div class="mb-vault" id="mb-vault" onclick="openVaultSwitcher(event)" title="Switch vault">
         <span>&#128451;</span>
         <span class="mb-vault-name" id="pf-vault-name">Vault</span>
@@ -844,7 +857,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p id="welcome-subtitle">Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.138</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.139</span></p>
                 <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -1010,6 +1023,281 @@ function profileCompletenessHint(pct){
 function openProfileDashboard(){
     showView('dashboard');
 }
+var SKIPI_INFO_SITE_URL = 'https://skipi.info/';
+var SKIPI_INFO_INDEX_URL = 'https://skipi.info/data/index_latest.json';
+var SKIPI_INFO_INDEX_CACHE_KEY = 'skipi-info-vacancy-index-v1';
+var SKIPI_INFO_INDEX_TTL_MS = 24*60*60*1000;
+var _salaryIndexChipLoading=false;
+var _salaryIndexChipRefreshQueued=false;
+var lastSalaryIndexSourceUrl=SKIPI_INFO_SITE_URL;
+
+function salaryIndexConfidence(n){
+    n=Number(n)||0;
+    if(n>=20)return 'high';
+    if(n>=10)return 'medium';
+    return 'low';
+}
+function formatSalaryCompactUsd(v){
+    var n=Number(v);
+    if(!isFinite(n)||n<=0)return '$--';
+    if(n>=1000){
+        var k=n/1000;
+        var s=(k>=10?k.toFixed(0):k.toFixed(1)).replace(/\.0$/,'');
+        return '$'+s+'k';
+    }
+    return '$'+Math.round(n);
+}
+function formatSalaryFullUsd(v){
+    var n=Number(v);
+    if(!isFinite(n)||n<=0)return '$--';
+    return '$'+Math.round(n).toLocaleString('en-US');
+}
+function skipiInfoNormalizeToken(v){
+    return String(v||'').toLowerCase().trim()
+        .replace(/&/g,' and ')
+        .replace(/[^a-z0-9]+/g,'_')
+        .replace(/^_+|_+$/g,'');
+}
+function skipiInfoNormalizeRank(rank){
+    var key=skipiInfoNormalizeToken(rank);
+    var map={
+        captain:'master',
+        master:'master',
+        chief_mate:'chief_officer',
+        chief_officer:'chief_officer',
+        co:'chief_officer',
+        c_o:'chief_officer',
+        second_officer:'second_officer',
+        second_mate:'second_officer',
+        '2nd_officer':'second_officer',
+        '2_o':'second_officer',
+        third_officer:'third_officer',
+        third_mate:'third_officer',
+        '3rd_officer':'third_officer',
+        '3_o':'third_officer',
+        junior_officer:'third_officer',
+        chief_engineer:'chief_engineer',
+        ce:'chief_engineer',
+        c_e:'chief_engineer',
+        second_engineer:'second_engineer',
+        '2nd_engineer':'second_engineer',
+        '2_e':'second_engineer',
+        third_engineer:'third_engineer',
+        '3rd_engineer':'third_engineer',
+        '3_e':'third_engineer',
+        fourth_engineer:'fourth_engineer',
+        '4th_engineer':'fourth_engineer',
+        '4_e':'fourth_engineer',
+        junior_engineer:'fourth_engineer',
+        electro_technical_officer:'eto',
+        electrical_technical_officer:'eto',
+        eto:'eto',
+        electrician:'electrician',
+        bosun:'bosun',
+        boatswain:'bosun',
+        ab:'ab',
+        able_seaman:'ab',
+        os:'os',
+        ordinary_seaman:'os',
+        oiler:'oiler',
+        motorman:'oiler',
+        fitter:'fitter',
+        wiper:'wiper',
+        cook:'cook',
+        chief_cook:'cook',
+        engine_cadet:'engine_cadet',
+        cadet:'engine_cadet',
+        deck_cadet:'engine_cadet'
+    };
+    return map[key]||key||null;
+}
+function skipiInfoNormalizeVesselType(vesselType){
+    var key=skipiInfoNormalizeToken(vesselType);
+    var map={
+        bulk:'bulker',
+        bulk_carrier:'bulker',
+        bulker:'bulker',
+        container:'container',
+        container_ship:'container',
+        general_cargo:'general_cargo',
+        cargo:'general_cargo',
+        dry_cargo:'general_cargo',
+        multipurpose:'general_cargo',
+        multi_purpose:'general_cargo',
+        roro:'roro',
+        ro_ro:'roro',
+        reefer:'reefer',
+        passenger:'passenger',
+        cruise:'passenger',
+        ferry:'passenger',
+        offshore:'offshore',
+        offshore_energy:'offshore',
+        offshore_and_energy:'offshore',
+        osv:'offshore',
+        psv:'offshore',
+        ahts:'offshore',
+        tug:'tug',
+        tug_boat:'tug',
+        tugboat:'tug',
+        crude_tanker:'tanker_crude',
+        tanker_crude:'tanker_crude',
+        oil_tanker:'tanker_crude',
+        product_tanker:'tanker_product',
+        tanker_product:'tanker_product',
+        chemical_tanker:'tanker_chemical',
+        tanker_chemical:'tanker_chemical',
+        lng:'tanker_lng',
+        lng_tanker:'tanker_lng',
+        tanker_lng:'tanker_lng',
+        lpg:'tanker_lpg',
+        lpg_tanker:'tanker_lpg',
+        tanker_lpg:'tanker_lpg',
+        merchant_fleet:'',
+        merchant:'',
+        any:''
+    };
+    return Object.prototype.hasOwnProperty.call(map,key)?map[key]:(key||null);
+}
+function skipiInfoBucketToBand(bucket,rollup,payload){
+    if(!bucket)return null;
+    var n=Number(bucket.n)||0;
+    return {
+        rank: skipiInfoNormalizeRank(bucket.rank),
+        vessel_type: rollup?'any':skipiInfoNormalizeVesselType(bucket.vessel_type),
+        currency: payload&&payload.currency?payload.currency:'USD',
+        period: payload&&payload.period?payload.period:'month',
+        p25: Number(bucket.p25_usd_month)||0,
+        p50: Number(bucket.median_usd_month)||0,
+        p75: Number(bucket.p75_usd_month)||0,
+        sample_size: n,
+        confidence: salaryIndexConfidence(n),
+        source: 'Skipi Vacancy Index',
+        source_url: (payload&&payload.issue_url)||SKIPI_INFO_SITE_URL,
+        issue_label: payload&&payload.issue_label?payload.issue_label:'',
+        methodology_url: payload&&payload.methodology_url?payload.methodology_url:'',
+        data_collected_at: payload&&payload.data_collected_at?payload.data_collected_at:''
+    };
+}
+function skipiInfoIndexToBands(payload){
+    var bands=[];
+    var buckets=(payload&&Array.isArray(payload.buckets))?payload.buckets:[];
+    var rollups=(payload&&Array.isArray(payload.rank_rollup))?payload.rank_rollup:[];
+    buckets.forEach(function(b){
+        var band=skipiInfoBucketToBand(b,false,payload);
+        if(band&&band.rank&&band.p50>0)bands.push(band);
+    });
+    rollups.forEach(function(b){
+        var band=skipiInfoBucketToBand(b,true,payload);
+        if(band&&band.rank&&band.p50>0)bands.push(band);
+    });
+    return bands;
+}
+function readSkipiInfoIndexCache(){
+    try{
+        var raw=localStorage.getItem(SKIPI_INFO_INDEX_CACHE_KEY);
+        if(!raw)return null;
+        var cached=JSON.parse(raw);
+        if(!cached||!cached.payload)return null;
+        return cached;
+    }catch(e){return null;}
+}
+function writeSkipiInfoIndexCache(payload){
+    try{localStorage.setItem(SKIPI_INFO_INDEX_CACHE_KEY,JSON.stringify({ts:Date.now(),payload:payload}));}catch(e){}
+}
+async function loadSkipiInfoIndex(){
+    var cached=readSkipiInfoIndexCache();
+    if(cached&&cached.ts&&(Date.now()-Number(cached.ts)<SKIPI_INFO_INDEX_TTL_MS))return cached.payload;
+    try{
+        if(typeof invoke==='function'){
+            var viaTauri=await invoke('fetch_skipi_info_index');
+            if(viaTauri&&viaTauri.schema_version){
+                writeSkipiInfoIndexCache(viaTauri);
+                return viaTauri;
+            }
+        }
+    }catch(e){}
+    try{
+        var r=await fetchWithTimeout(SKIPI_INFO_INDEX_URL,{method:'GET',cache:'no-store'},8000);
+        if(!r.ok)throw new Error('skipi.info '+r.status);
+        var payload=await r.json();
+        writeSkipiInfoIndexCache(payload);
+        return payload;
+    }catch(e){
+        if(cached&&cached.payload)return cached.payload;
+        throw e;
+    }
+}
+function pickSkipiInfoSalaryBand(bands,sp,profile){
+    if(!Array.isArray(bands)||!bands.length)return null;
+    var rawRank=(sp&&sp.rank)||informationEffectiveRank(sp)||'';
+    var rank=skipiInfoNormalizeRank(rawRank);
+    if(!rank)return null;
+    var vessel=skipiInfoNormalizeVesselType(informationEffectiveVesselType(sp,profile));
+    var exact=null, rollup=null, rankOnly=null;
+    bands.forEach(function(b){
+        if(!b||b.rank!==rank)return;
+        if(vessel&&b.vessel_type===vessel&&!exact)exact=b;
+        if(b.vessel_type==='any'&&!rollup)rollup=b;
+        if(!rankOnly)rankOnly=b;
+    });
+    return exact||rollup||rankOnly||null;
+}
+function renderSalaryIndexChip(band){
+    var chip=document.getElementById('salary-index-chip');
+    if(!chip)return;
+    if(!band){
+        chip.style.display='none';
+        chip.setAttribute('aria-hidden','true');
+        return;
+    }
+    lastSalaryIndexSourceUrl=band.source_url||SKIPI_INFO_SITE_URL;
+    var label=document.getElementById('si-label');
+    var dot=document.getElementById('si-dot');
+    if(label)label.textContent='Salary '+formatSalaryCompactUsd(band.p50);
+    if(dot)dot.style.background=band.confidence==='high'?'var(--green)':band.confidence==='medium'?'var(--yellow)':'var(--orange)';
+    var title='Skipi Vacancy Index';
+    if(band.issue_label)title+=' '+band.issue_label;
+    title+=': median '+formatSalaryFullUsd(band.p50)+'/'+(band.period||'month');
+    title+='; range '+formatSalaryFullUsd(band.p25)+'-'+formatSalaryFullUsd(band.p75);
+    title+='; N='+String(band.sample_size||0)+'. Click to open skipi.info.';
+    chip.title=title;
+    chip.setAttribute('aria-label',title);
+    chip.setAttribute('aria-hidden','false');
+    chip.style.display='flex';
+}
+async function updateSalaryIndexChip(profileOverride){
+    var chip=document.getElementById('salary-index-chip');
+    if(!chip)return;
+    if(_salaryIndexChipLoading){
+        _salaryIndexChipRefreshQueued=true;
+        return;
+    }
+    _salaryIndexChipLoading=true;
+    try{
+        var profile=profileOverride||null;
+        var sp={};
+        if(!profile){try{profile=await invoke('get_profile_status');}catch(e){profile=null;}}
+        try{sp=await invoke('get_seafarer_personal');}catch(e){sp={};}
+        var payload=await loadSkipiInfoIndex();
+        var band=pickSkipiInfoSalaryBand(skipiInfoIndexToBands(payload),sp,profile);
+        renderSalaryIndexChip(band);
+    }catch(e){
+        logError('salary_index_chip',e);
+        renderSalaryIndexChip(null);
+    }finally{
+        _salaryIndexChipLoading=false;
+        if(_salaryIndexChipRefreshQueued){
+            _salaryIndexChipRefreshQueued=false;
+            setTimeout(function(){updateSalaryIndexChip(profileOverride);},250);
+        }
+    }
+}
+function queueSalaryIndexChipUpdate(profile){
+    setTimeout(function(){updateSalaryIndexChip(profile);},0);
+}
+function openSalaryIndexSource(){
+    openInformationSource(lastSalaryIndexSourceUrl||SKIPI_INFO_SITE_URL);
+}
 async function updateProfileCompletionChip(profileOverride){
     var chip=document.getElementById('profile-completion-chip');
     if(!chip)return;
@@ -1029,6 +1317,7 @@ async function updateProfileCompletionChip(profileOverride){
     if(dot)dot.style.background=profileCompletenessColor(pct);
     chip.title=profileCompletenessHint(pct);
     chip.setAttribute('aria-label',chip.title);
+    queueSalaryIndexChipUpdate(profile);
 }
 
 var _docContextMenuInstalled=false;
@@ -6794,20 +7083,15 @@ function renderInformationTrends(snapshot,seaServiceCount){
 
 async function showInformation(){
     var content=document.getElementById('scr-content');
-    content.innerHTML='<div class="info-wrap"><div class="info-empty">Loading Information snapshot...</div></div>';
     show('scr-content');updateTabs('Information');
-    var profile=null, sp={};
-    try{profile=await invoke('get_profile_status');}catch(e){}
-    try{sp=await invoke('get_seafarer_personal');}catch(e){}
-    informationPersonal=sp||{};
-    var snap=await loadInformationSnapshot(profile,sp);
-    var rank=informationEffectiveRank(sp)||'not set';
-    var vessel=informationEffectiveVesselType(sp,profile)||'not set';
     var h='<div class="info-wrap">';
-    h+='<div class="info-head"><div><h2>Information</h2><div class="info-sub">Country cost baseline for a USD seafarer salary between contracts.</div></div>';
-    h+='<div class="info-meta">'+informationSourceLabel(snap)+'<br>Updated '+esc(informationDate(snap.generated_at))+'<br>'+esc(rank)+' / '+esc(vessel)+'</div></div>';
-    h+='<h3 style="font-size:14px;margin:18px 0 8px;">Country baseline</h3>';
-    h+=renderInformationCountryBaselines(snap);
+    h+='<div class="info-head"><div><h2>Skipi.info</h2><div class="info-sub">Public seafarer market index, methodology, country baseline, and reference materials.</div></div>';
+    h+='<div class="info-meta">Public site<br>Opens independently from your private vault</div></div>';
+    h+='<div class="info-web-actions">';
+    h+='<button class="btn btn-outline" onclick="openInformationSource(\''+escAttr(SKIPI_INFO_SITE_URL)+'\')">Open in browser</button>';
+    h+='<button class="btn btn-outline" onclick="openInformationSource(\'https://skipi.info/methodology.html\')">Methodology</button>';
+    h+='</div>';
+    h+='<div class="info-web-frame"><iframe src="'+escAttr(SKIPI_INFO_SITE_URL)+'" title="Skipi.info"></iframe></div>';
     h+='</div>';
     content.innerHTML=h;
 }

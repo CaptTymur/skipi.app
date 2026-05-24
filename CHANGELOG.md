@@ -7,6 +7,18 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.139] — 2026-05-24
+
+### Added
+- Added a top-bar Salary Index chip next to profile completeness, using the
+  public Skipi.info Vacancy Index when a matching profile benchmark exists.
+- Added an anonymous Tauri bridge for fetching the public Skipi.info index
+  without sending profile, vessel, or vault data to the website.
+
+### Changed
+- Reworked the Information module into an embedded Skipi.info view with quick
+  access to the public site and methodology.
+
 ## [0.4.138] — 2026-05-24
 
 ### Changed
