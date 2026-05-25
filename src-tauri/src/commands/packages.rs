@@ -575,6 +575,7 @@ pub fn dispatch_package(
     subject: String,
     body: String,
     include_cv: Option<bool>,
+    redacted_cv: Option<bool>,
     // v0.4.51: frontend passes the user's preferred mail client id so the
     // Windows branch can route straight to the right integration instead of
     // always trying Outlook COM first. `None` keeps the legacy behaviour.
@@ -587,6 +588,7 @@ pub fn dispatch_package(
     // Default to true so older callers (e.g. /api or any pre-v0.4.21 clients)
     // keep the "CV + package" behaviour they used to see.
     let include_cv = include_cv.unwrap_or(true);
+    let redacted_cv = redacted_cv.unwrap_or(false);
     let pkg_id_opt: Option<String> =
         package_id.and_then(|s| if s.is_empty() { None } else { Some(s) });
 
@@ -625,15 +627,26 @@ pub fn dispatch_package(
         .chars()
         .map(|c| if c.is_alphanumeric() { c } else { '_' })
         .collect();
-    let cv_pdf_path = dispatch_dir.join(format!("{}_CV.pdf", name_safe));
+    let cv_pdf_path = dispatch_dir.join(format!(
+        "{}_{}.pdf",
+        name_safe,
+        if redacted_cv { "Privacy_CV" } else { "CV" }
+    ));
     if include_cv {
-        let photo_abs = cv_data
-            .personal
-            .photo_path
-            .as_ref()
-            .map(|rel| vault_path.join(rel))
-            .filter(|p| p.exists());
-        cv::render_cv_pdf(&cv_data, &cv_pdf_path, photo_abs.as_deref())?;
+        if redacted_cv {
+            let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+            let conn = conn_lock.as_ref().ok_or("No vault open")?;
+            let extras = cv::build_redacted_extras(conn);
+            cv::render_redacted_cv_pdf(&cv_data, &extras, &cv_pdf_path)?;
+        } else {
+            let photo_abs = cv_data
+                .personal
+                .photo_path
+                .as_ref()
+                .map(|rel| vault_path.join(rel))
+                .filter(|p| p.exists());
+            cv::render_cv_pdf(&cv_data, &cv_pdf_path, photo_abs.as_deref())?;
+        }
     }
 
     let zip_str = zip_path_opt
@@ -861,8 +874,10 @@ pub fn prepare_dispatch_attachments(
     state: State<AppState>,
     package_id: Option<String>,
     include_cv: Option<bool>,
+    redacted_cv: Option<bool>,
 ) -> Result<Vec<String>, String> {
     let include_cv = include_cv.unwrap_or(false);
+    let redacted_cv = redacted_cv.unwrap_or(false);
     let pkg_id_opt: Option<String> =
         package_id.and_then(|s| if s.is_empty() { None } else { Some(s) });
     if pkg_id_opt.is_none() && !include_cv {
@@ -899,14 +914,25 @@ pub fn prepare_dispatch_attachments(
             .chars()
             .map(|c| if c.is_alphanumeric() { c } else { '_' })
             .collect();
-        let cv_pdf_path = dispatch_dir.join(format!("{}_CV.pdf", name_safe));
-        let photo_abs = cv_data
-            .personal
-            .photo_path
-            .as_ref()
-            .map(|rel| vault_path.join(rel))
-            .filter(|p| p.exists());
-        cv::render_cv_pdf(&cv_data, &cv_pdf_path, photo_abs.as_deref())?;
+        let cv_pdf_path = dispatch_dir.join(format!(
+            "{}_{}.pdf",
+            name_safe,
+            if redacted_cv { "Privacy_CV" } else { "CV" }
+        ));
+        if redacted_cv {
+            let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+            let conn = conn_lock.as_ref().ok_or("No vault open")?;
+            let extras = cv::build_redacted_extras(conn);
+            cv::render_redacted_cv_pdf(&cv_data, &extras, &cv_pdf_path)?;
+        } else {
+            let photo_abs = cv_data
+                .personal
+                .photo_path
+                .as_ref()
+                .map(|rel| vault_path.join(rel))
+                .filter(|p| p.exists());
+            cv::render_cv_pdf(&cv_data, &cv_pdf_path, photo_abs.as_deref())?;
+        }
         out.push(cv_pdf_path.to_string_lossy().to_string());
     }
 

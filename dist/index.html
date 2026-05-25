@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.139';
+var APP_VERSION='0.4.140';
 var UI_LANG_KEY='skipi-ui-language';
 var UI_LANG_OPTIONS=[
     ['ru','Русский'],
@@ -246,21 +246,33 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .dispatch-wizard { border:1px solid var(--border); border-radius:8px; background:var(--bg); margin:12px 0 18px; overflow:hidden; }
 .dispatch-wizard-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:14px 16px; border-bottom:1px solid var(--border); background:var(--surface); }
 .dispatch-step { font-size:10px; color:var(--text2); text-transform:uppercase; letter-spacing:.06em; margin-bottom:4px; }
-.dispatch-choice-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; padding:14px; }
-.dispatch-choice { text-align:left; border:1px solid var(--border); border-radius:8px; background:var(--bg); padding:14px; cursor:pointer; min-height:156px; display:flex; flex-direction:column; gap:8px; }
-.dispatch-choice:hover { border-color:var(--accent); background:var(--accent-bg); }
-.dispatch-choice.disabled { opacity:.55; cursor:not-allowed; background:var(--surface); }
-.dispatch-choice.disabled:hover { border-color:var(--border); background:var(--surface); }
-.dispatch-choice-title { font-size:14px; font-weight:800; color:var(--text); }
-.dispatch-choice-desc { font-size:11px; color:var(--text2); line-height:1.4; }
-.dispatch-choice-count { margin-top:auto; display:flex; align-items:baseline; gap:6px; }
-.dispatch-choice-count .num { font-size:26px; font-weight:850; color:var(--accent); line-height:1; }
-.dispatch-choice-count .lbl { font-size:10px; color:var(--text2); text-transform:uppercase; letter-spacing:.04em; }
-.dispatch-choice-actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:4px; }
-.dispatch-preview { border-top:1px solid var(--border); padding:0 14px 14px; }
-.dispatch-preview-inner { border:1px solid var(--border); border-radius:8px; background:var(--surface); padding:12px; }
-.dispatch-compose-summary { border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin-bottom:12px; background:var(--surface); display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
-@media (max-width: 920px) { .dispatch-choice-grid { grid-template-columns:1fr; } .dispatch-compose-summary { flex-direction:column; } }
+	.dispatch-choice-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; padding:14px; }
+	.dispatch-choice { text-align:left; border:1px solid var(--border); border-radius:999px; background:var(--bg); padding:14px 18px; cursor:pointer; min-height:104px; display:flex; align-items:center; gap:14px; }
+	.dispatch-choice:hover { border-color:var(--accent); background:var(--accent-bg); }
+	.dispatch-choice.disabled { opacity:.55; cursor:not-allowed; background:var(--surface); }
+	.dispatch-choice.disabled:hover { border-color:var(--border); background:var(--surface); }
+	.dispatch-choice-main { flex:1; min-width:0; }
+	.dispatch-choice-title { font-size:14px; font-weight:800; color:var(--text); }
+	.dispatch-choice-desc { font-size:11px; color:var(--text2); line-height:1.4; }
+	.dispatch-choice-count { display:flex; flex-direction:column; align-items:flex-end; gap:2px; min-width:62px; }
+	.dispatch-choice-count .num { font-size:26px; font-weight:850; color:var(--accent); line-height:1; }
+	.dispatch-choice-count .lbl { font-size:10px; color:var(--text2); text-transform:uppercase; letter-spacing:.04em; }
+	.dispatch-choice-actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+	.dispatch-preview { border-top:1px solid var(--border); padding:0 14px 14px; }
+	.dispatch-preview-inner { border:1px solid var(--border); border-radius:8px; background:var(--surface); padding:12px; }
+	.dispatch-compose-summary { border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin-bottom:12px; background:var(--surface); display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+	.dispatch-option-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin:8px 0 14px; }
+	.dispatch-option { display:flex; gap:10px; align-items:flex-start; border:1px solid var(--border); border-radius:8px; background:var(--surface); padding:12px; cursor:pointer; min-height:74px; }
+	.dispatch-option:hover { border-color:var(--accent); background:var(--accent-bg); }
+	.dispatch-option.disabled { opacity:.55; cursor:not-allowed; background:var(--surface); }
+	.dispatch-option input { margin-top:2px; width:16px; height:16px; accent-color:var(--accent); flex:0 0 auto; }
+	.dispatch-option-title { font-size:13px; font-weight:800; }
+	.dispatch-option-desc { font-size:11px; color:var(--text2); line-height:1.4; margin-top:3px; }
+	.dispatch-review-list { border:1px solid var(--border); border-radius:8px; background:var(--surface); max-height:260px; overflow:auto; }
+	.dispatch-recipient-row { display:flex; align-items:center; gap:9px; padding:8px 10px; border-bottom:1px solid var(--border); font-family:var(--font-mono); font-size:12px; cursor:pointer; }
+	.dispatch-recipient-row:last-child { border-bottom:none; }
+	.dispatch-recipient-row input { width:15px; height:15px; accent-color:var(--accent); }
+	@media (max-width: 920px) { .dispatch-choice-grid,.dispatch-option-grid { grid-template-columns:1fr; } .dispatch-compose-summary { flex-direction:column; } .dispatch-choice { border-radius:18px; align-items:flex-start; } }
 
 /* Ribbon (icon strip) */
 .ribbon { width:40px; background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; align-items:center; padding:8px 0; gap:4px; }
@@ -857,7 +869,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p id="welcome-subtitle">Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.139</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.140</span></p>
                 <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -1556,7 +1568,7 @@ var SKIPI_REPO_URL='https://github.com/CaptTymur/skipi.app';
 // The "-- " separator (two dashes + space) is the traditional sig-delimiter;
 // mail clients that respect RFC 3676 strip everything below it as a signature
 // block, keeping replies clean.
-var SKIPI_EMAIL_FOOTER='\n\n-- \nCreated in Skipi application. Download: https://skipi.app';
+var SKIPI_EMAIL_FOOTER='\n\n-- \nSent from Skipi application. Download Skipi: https://skipi.app';
 
 function emailNumber(v){
     var raw=String(v||'').trim();
@@ -9363,6 +9375,9 @@ var dispatchTab='manual';
 var dispatchWizardStep='choose';
 var dispatchWizardPreview='';
 var dispatchRecipientsDraft='';
+var dispatchCvMode='redacted';
+var dispatchDocMode='none';
+var dispatchPackageId='';
 var lastAgencyDbRecipients=[];
 var lastAgencyDbResult=null;
 var agencyDbLoading=false;
@@ -9373,15 +9388,31 @@ function captureDispatchRecipients(){
     var ta=document.getElementById('disp-to');
     if(ta)dispatchRecipientsDraft=ta.value||'';
 }
+function captureDispatchContent(){
+    var cv=document.querySelector('input[name="disp-cv-mode"]:checked');
+    if(cv)dispatchCvMode=cv.value||'redacted';
+    var doc=document.querySelector('input[name="disp-doc-mode"]:checked');
+    if(doc)dispatchDocMode=doc.value||'none';
+    var pkg=document.getElementById('disp-pkg');
+    if(pkg)dispatchPackageId=pkg.value||dispatchPackageId;
+}
 function setDispatchTab(tab){
     captureDispatchRecipients();
+    captureDispatchContent();
     dispatchTab=tab||'manual';
-    dispatchWizardStep='compose';
+    dispatchWizardStep='contents';
     showDispatch();
 }
 function backToDispatchWizard(){
     captureDispatchRecipients();
+    captureDispatchContent();
     dispatchWizardStep='choose';
+    showDispatch();
+}
+function backToDispatchContents(){
+    captureDispatchRecipients();
+    captureDispatchContent();
+    dispatchWizardStep='contents';
     showDispatch();
 }
 function dispatchTabButton(tab,label){
@@ -9398,6 +9429,102 @@ function dispatchRecipientsLabel(){
     if(dispatchTab==='agency_db')return ru?'Получатели из базы адресов Skipi':'Selected Skipi database recipients';
     if(dispatchTab==='crewing_requests')return ru?'Получатели из запросов крюингов':'Selected crewing request recipients';
     return ru?'Получатели: один email в строке или через запятую':'Recipients: one email per line or comma-separated';
+}
+function parseDispatchRecipientText(raw){
+    var rawTokens=String(raw||'').split(/[\n,;]+/).map(function(s){return s.trim();}).filter(function(s){return s;});
+    var emailRe=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    var seen={},recipients=[],invalid=[],dupCount=0;
+    rawTokens.forEach(function(tok){
+        if(!emailRe.test(tok)){invalid.push(tok);return;}
+        var key=tok.toLowerCase();
+        if(seen[key]){dupCount++;return;}
+        seen[key]=true;recipients.push(tok);
+    });
+    return {recipients:recipients,invalid:invalid,dupCount:dupCount};
+}
+function currentDispatchRecipients(){
+    captureDispatchRecipients();
+    return parseDispatchRecipientText(dispatchRecipientsDraft);
+}
+function selectedDispatchReviewRecipients(){
+    var checks=Array.prototype.slice.call(document.querySelectorAll('.disp-recipient-check'));
+    if(checks.length){
+        return checks.filter(function(c){return c.checked;}).map(function(c){return c.value;});
+    }
+    return currentDispatchRecipients().recipients;
+}
+function updateDispatchReviewCount(){
+    var count=selectedDispatchReviewRecipients().length;
+    var el=document.getElementById('disp-review-count');
+    if(el)el.textContent=String(count);
+}
+function isDispatchPackageExpired(p){
+    if(!p||!p.expires_on)return false;
+    var t=new Date(p.expires_on).getTime();
+    return isFinite(t)&&t<new Date().getTime();
+}
+function validDispatchPackages(pkgs){
+    return (pkgs||[]).filter(function(p){return !isDispatchPackageExpired(p);});
+}
+function ensureDispatchPackageChoice(pkgs){
+    var valid=validDispatchPackages(pkgs);
+    if(dispatchPackageId&&valid.some(function(p){return String(p.id)===String(dispatchPackageId);}))return dispatchPackageId;
+    dispatchPackageId=valid.length?String(valid[0].id):'';
+    return dispatchPackageId;
+}
+function dispatchDocModeTitle(pkgs){
+    var ru=getUiLang()==='ru';
+    if(dispatchDocMode==='all')return ru?'Все загруженные документы':'All uploaded documents';
+    if(dispatchDocMode==='package'){
+        var p=(pkgs||[]).find(function(x){return String(x.id)===String(dispatchPackageId);});
+        return (ru?'Пакет: ':'Package: ')+(p?p.title:(ru?'не выбран':'not selected'));
+    }
+    return ru?'Только CV':'CV only';
+}
+async function ensureAllDocumentsDispatchPackage(gate){
+    gate=gate||await dispatchSendableGate();
+    var docs=(gate.docs||uploadedDocsForSharing()||[]).filter(function(d){return d&&d.file_name&&d.id;});
+    if(!docs.length)throw new Error(getUiLang()==='ru'?'Нет загруженных документов для пакета':'No uploaded documents to package');
+    var ids=docs.map(function(d){return d.id;});
+    var existing=validDispatchPackages(gate.packages||[]).find(function(p){
+        return String(p.title||'').toLowerCase()==='all documents'&&Number(p.file_count||0)===ids.length;
+    });
+    if(existing)return existing.id;
+    return await invoke('create_package',{title:'All Documents',docIds:ids,expiryDays:365,downloadLimit:999});
+}
+async function resolveDispatchPackageId(gate){
+    captureDispatchContent();
+    if(dispatchDocMode==='none')return null;
+    if(dispatchDocMode==='all')return await ensureAllDocumentsDispatchPackage(gate);
+    if(dispatchDocMode==='package'){
+        var pkgs=(gate&&gate.packages)||[];
+        ensureDispatchPackageChoice(pkgs);
+        if(!dispatchPackageId)throw new Error(getUiLang()==='ru'?'Выберите пакет документов':'Select a package');
+        return dispatchPackageId;
+    }
+    return null;
+}
+async function goDispatchReview(){
+    captureDispatchRecipients();
+    captureDispatchContent();
+    if(dispatchTab==='agency_db'&&!dispatchRecipientsDraft)useAgencyDatabaseRecipients({silent:true});
+    if(dispatchTab==='crewing_requests'&&!dispatchRecipientsDraft)setDispatchRecipientsFromMailingRequests(lastDispatchMailingRequests,{silent:true});
+    var parsed=currentDispatchRecipients();
+    var ru=getUiLang()==='ru';
+    if(!parsed.recipients.length){
+        alert(ru?'Укажите хотя бы один корректный email':'Enter at least one valid email');
+        return;
+    }
+    if(parsed.invalid.length){
+        showToast((ru?'Некорректные адреса будут пропущены: ':'Invalid addresses will be skipped: ')+parsed.invalid.slice(0,3).join(', '),'warn');
+    }
+    dispatchWizardStep='review';
+    showDispatch();
+}
+function onDispatchDocModeChange(mode){
+    dispatchDocMode=mode||'none';
+    var row=document.getElementById('disp-pkg-row');
+    if(row)row.style.display=dispatchDocMode==='package'?'block':'none';
 }
 async function getProfileCompletenessForDispatch(){
     try{
@@ -9618,6 +9745,7 @@ function setDispatchRecipientsFromMailingRequests(items,opts){
 }
 async function selectDispatchScenario(tab){
     captureDispatchRecipients();
+    captureDispatchContent();
     var ru=getUiLang()==='ru';
     if(tab==='agency_db'){
         if(!lastAgencyDbResult)await loadAgencyDatabaseRecipients();
@@ -9636,23 +9764,29 @@ async function selectDispatchScenario(tab){
         dispatchTab='crewing_requests';
         setDispatchRecipientsFromMailingRequests(lastDispatchMailingRequests,{silent:true});
     }else{
+        if(dispatchTab!=='manual')dispatchRecipientsDraft='';
         dispatchTab='manual';
     }
-    dispatchWizardStep='compose';
+    dispatchWizardStep='contents';
     showDispatch();
 }
-function dispatchChoiceCard(tab,title,desc,count,label,enabled,loading){
+function dispatchChoiceCard(tab,title,desc,count,label,enabled,loading,disabledReason){
     var ru=getUiLang()==='ru';
     var cls='dispatch-choice'+(enabled?'':' disabled');
     var click=enabled?' onclick="selectDispatchScenario(\''+tab+'\')"':'';
-    var h='<div class="'+cls+'"'+click+'>';
+    var titleAttr=(!enabled&&disabledReason)?' title="'+escAttr(disabledReason)+'"':'';
+    var h='<div class="'+cls+'"'+titleAttr+click+'>';
+    h+='<div class="dispatch-choice-main">';
     h+='<div class="dispatch-choice-title">'+esc(title)+'</div>';
     h+='<div class="dispatch-choice-desc">'+esc(desc)+'</div>';
+    if(tab!=='manual'){
+        h+='<div class="dispatch-choice-actions">';
+        h+='<button type="button" class="btn btn-outline btn-sm" onclick="event.stopPropagation();toggleDispatchWizardPreview(\''+tab+'\')">'+esc(dispatchWizardPreview===tab?(ru?'Скрыть':'Hide'):(ru?'Посмотреть':'View'))+'</button>';
+        h+='</div>';
+    }
+    h+='</div>';
     h+='<div class="dispatch-choice-count"><span class="num">'+esc(loading?'...':String(count))+'</span><span class="lbl">'+esc(label)+'</span></div>';
-    h+='<div class="dispatch-choice-actions">';
-    if(tab!=='manual')h+='<button type="button" class="btn btn-outline btn-sm" onclick="event.stopPropagation();toggleDispatchWizardPreview(\''+tab+'\')">'+esc(dispatchWizardPreview===tab?(ru?'Скрыть':'Hide'):(ru?'Посмотреть':'View'))+'</button>';
-    h+='<button type="button" class="btn '+(enabled?'btn-accent':'btn-outline')+' btn-sm" '+(enabled?'onclick="event.stopPropagation();selectDispatchScenario(\''+tab+'\')"':'disabled')+'>'+esc(ru?'Выбрать':'Select')+'</button>';
-    h+='</div></div>';
+    h+='</div>';
     return h;
 }
 
@@ -9664,7 +9798,7 @@ async function showDispatch(){
     var ru=getUiLang()==='ru';
     if(['manual','agency_db','crewing_requests'].indexOf(dispatchTab)===-1)dispatchTab='manual';
     var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><h2 style="font-size:18px;">'+esc(ru?'Рассылки':'Mailings')+'</h2></div>';
-    h+='<p style="color:var(--text2);font-size:12px;margin-bottom:10px;">'+esc(ru?'Сначала выберите сценарий рассылки, затем проверьте получателей и отправьте CV с документами.':'First choose a mailing scenario, then review recipients and send your CV with documents.')+'</p>';
+    h+='<p style="color:var(--text2);font-size:12px;margin-bottom:10px;">'+esc(ru?'Сначала выберите способ рассылки, затем содержимое письма и финальный список адресов.':'First choose how to send, then choose the contents and final recipient list.')+'</p>';
     if(!sendGate.ok){
         h+='<div style="border:1px solid var(--orange);border-radius:8px;padding:14px 16px;margin-bottom:14px;background:var(--bg);">';
         h+='<div style="font-weight:700;margin-bottom:6px;">'+esc(ru?'Пока нечего рассылать':'Nothing to send yet')+'</div>';
@@ -9672,17 +9806,19 @@ async function showDispatch(){
         h+='<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-outline btn-sm" onclick="openSettings(\'seafarer\')">'+esc(ru?'Профиль':'Profile')+'</button><button class="btn btn-outline btn-sm" onclick="showView(\'files\')">'+esc(ru?'Документы':'Documents')+'</button></div>';
         h+='</div>';
     }
-    if(dispatchWizardStep!=='compose'){
+    if(dispatchWizardStep==='choose'){
         var stats=agencyDbStats();
         var reqCount=lastDispatchMailingRequests.length;
         var crewingCount=uniqueMailingRequestCrewingCount();
         var requestEmailCount=uniqueMailingRequestEmailCount();
+        var agencyDisabled=!sendGate.ok?(ru?'Сначала заполните CV или загрузите документы':'Complete a CV or upload documents first'):(!stats.allowed?(ru?'Нет открытых адресов: проверьте национальность и заполненность профиля':'No unlocked addresses: check nationality and profile completeness'):'');
+        var requestDisabled=!sendGate.ok?(ru?'Сначала заполните CV или загрузите документы':'Complete a CV or upload documents first'):(!dispatchMailingRequestsLoaded?(ru?'Запросы ещё загружаются':'Requests are still loading'):(!requestEmailCount?(ru?'Пока нет запросов крюингов под текущий профиль':'No crewing requests match the current profile yet'):''));
         h+='<div class="dispatch-wizard">';
-        h+='<div class="dispatch-wizard-head"><div><div class="dispatch-step">'+esc(ru?'Шаг 1 из 2':'Step 1 of 2')+'</div><div style="font-size:15px;font-weight:800;">'+esc(ru?'Куда отправляем?':'Where do we send?')+'</div></div></div>';
+        h+='<div class="dispatch-wizard-head"><div><div class="dispatch-step">'+esc(ru?'Шаг 1 из 3':'Step 1 of 3')+'</div><div style="font-size:15px;font-weight:800;">'+esc(ru?'Как вы хотите разослать?':'How do you want to send?')+'</div></div></div>';
         h+='<div class="dispatch-choice-grid">';
-        h+=dispatchChoiceCard('manual',ru?'Кастомные адреса':'Custom addresses',ru?'Введите один или несколько email адресов вручную.':'Enter one or more email addresses manually.','1',ru?'сценарий':'scenario',sendGate.ok,false);
-        h+=dispatchChoiceCard('agency_db',ru?'База адресов Skipi':'Skipi address database',ru?'Skipi выбирает базу по национальности; количество адресов зависит от заполненности профиля.':'Skipi selects the database by nationality; unlocked address count depends on profile completeness.',stats.allowed,ru?'адресов':'addresses',sendGate.ok&&!!stats.allowed,!lastAgencyDbResult);
-        h+=dispatchChoiceCard('crewing_requests',ru?'Запросы крюингов':'Crewing requests',(ru?'Рассылка только крюингам, которые запросили CV под ваш профиль.':'Mail only to crewings that requested CVs matching your profile.')+(dispatchMailingRequestsLoaded?(' '+(ru?'Крюингов: ':'Crewings: ')+crewingCount):''),requestEmailCount,ru?'адресов':'addresses',sendGate.ok&&dispatchMailingRequestsLoaded&&reqCount>0&&requestEmailCount>0,!dispatchMailingRequestsLoaded);
+        h+=dispatchChoiceCard('manual',ru?'Кастомный адрес':'Custom address',ru?'Вручную ввести один или несколько email.':'Enter one or more emails manually.','1',ru?'сценарий':'scenario',sendGate.ok,false,'');
+        h+=dispatchChoiceCard('agency_db',ru?'База Skipi':'Skipi database',ru?'Адреса открываются пропорционально заполненности профиля.':'Unlocked address count depends on profile completeness.',stats.allowed,ru?'адресов':'addresses',sendGate.ok&&!!stats.allowed,!lastAgencyDbResult,agencyDisabled);
+        h+=dispatchChoiceCard('crewing_requests',ru?'Запросы крюингов':'Crewing requests',(ru?'Только крюингам, которые запросили CV под ваш профиль.':'Only crewings that requested CVs matching your profile.')+(dispatchMailingRequestsLoaded?(' '+(ru?'Крюингов: ':'Crewings: ')+crewingCount):''),requestEmailCount,ru?'адресов':'addresses',sendGate.ok&&dispatchMailingRequestsLoaded&&reqCount>0&&requestEmailCount>0,!dispatchMailingRequestsLoaded,requestDisabled);
         h+='</div>';
         if(dispatchWizardPreview){
             h+='<div class="dispatch-preview"><div class="dispatch-preview-inner">';
@@ -9698,63 +9834,69 @@ async function showDispatch(){
     }
 
     h+='<div class="dispatch-wizard">';
-    h+='<div class="dispatch-wizard-head"><div><div class="dispatch-step">'+esc(ru?'Шаг 2 из 2':'Step 2 of 2')+'</div><div style="font-size:15px;font-weight:800;">'+esc(dispatchScenarioTitle(dispatchTab))+'</div></div><button class="btn btn-outline btn-sm" onclick="backToDispatchWizard()">'+esc(ru?'Назад':'Back')+'</button></div>';
+    if(dispatchWizardStep==='contents'){
+        var validPkgs=validDispatchPackages(pkgs);
+        if(dispatchDocMode==='all'&&!sendGate.docs.length)dispatchDocMode='none';
+        if(dispatchDocMode==='package'&&!validPkgs.length)dispatchDocMode='none';
+        ensureDispatchPackageChoice(pkgs);
+        h+='<div class="dispatch-wizard-head"><div><div class="dispatch-step">'+esc(ru?'Шаг 2 из 3':'Step 2 of 3')+'</div><div style="font-size:15px;font-weight:800;">'+esc(ru?'Что отправляем?':'What do we send?')+'</div></div><button class="btn btn-outline btn-sm" onclick="backToDispatchWizard()">'+esc(ru?'Назад':'Back')+'</button></div>';
+        h+='<div style="padding:14px;">';
+        h+='<div class="dispatch-compose-summary"><div><div style="font-size:13px;font-weight:800;">'+esc(dispatchScenarioTitle(dispatchTab))+'</div>';
+        if(dispatchTab==='manual')h+='<div style="font-size:11px;color:var(--text2);margin-top:3px;">'+esc(ru?'Введите адреса, затем проверьте их на последнем шаге.':'Enter recipients, then review them on the last step.')+'</div>';
+        else if(dispatchTab==='agency_db')h+='<div style="font-size:11px;color:var(--text2);margin-top:3px;">'+esc(ru?('Выбрано '+agencyDbStats().allowed+' адресов из базы Skipi.'):('Selected '+agencyDbStats().allowed+' addresses from the Skipi database.'))+'</div>';
+        else h+='<div style="font-size:11px;color:var(--text2);margin-top:3px;">'+esc(ru?('Адресов: '+uniqueMailingRequestEmailCount()+' · крюингов: '+uniqueMailingRequestCrewingCount()+' · активных запросов: '+lastDispatchMailingRequests.length):('Addresses: '+uniqueMailingRequestEmailCount()+' · crewings: '+uniqueMailingRequestCrewingCount()+' · active requests: '+lastDispatchMailingRequests.length))+'</div>';
+        h+='</div><button class="btn btn-outline btn-sm" onclick="backToDispatchWizard()">'+esc(ru?'Изменить сценарий':'Change scenario')+'</button></div>';
+        if(dispatchTab==='manual'){
+            h+='<div class="field"><label>'+esc(dispatchRecipientsLabel())+'</label><textarea id="disp-to" rows="4" oninput="dispatchRecipientsDraft=this.value" style="width:100%;font-family:var(--font-mono);font-size:12px;" placeholder="crewing@example.com&#10;manager@example.com">'+esc(dispatchRecipientsDraft)+'</textarea></div>';
+        }
+        h+='<div style="font-size:13px;font-weight:800;margin:12px 0 6px;">'+esc(ru?'Резюме':'CV')+'</div>';
+        h+='<div class="dispatch-option-grid">';
+        h+='<label class="dispatch-option"><input type="radio" name="disp-cv-mode" value="redacted" '+(dispatchCvMode==='redacted'?'checked ':'')+'onchange="dispatchCvMode=this.value"><span><span class="dispatch-option-title">'+esc(ru?'Обрезанное CV':'Privacy-protected CV')+'</span><span style="color:var(--green);font-size:11px;margin-left:4px;">'+esc(ru?'рекомендуется':'recommended')+'</span><div class="dispatch-option-desc">'+esc(ru?'Без контактов, полного имени и чувствительных номеров документов.':'Contacts, full name and sensitive document numbers are hidden.')+'</div></span></label>';
+        h+='<label class="dispatch-option"><input type="radio" name="disp-cv-mode" value="full" '+(dispatchCvMode==='full'?'checked ':'')+'onchange="dispatchCvMode=this.value"><span><span class="dispatch-option-title">'+esc(ru?'Полное CV':'Full CV')+'</span><div class="dispatch-option-desc">'+esc(ru?'Все личные данные включены. Используйте только для доверенных адресатов.':'All personal details included. Use only for trusted recipients.')+'</div></span></label>';
+        h+='</div>';
+        h+='<div style="font-size:13px;font-weight:800;margin:12px 0 6px;">'+esc(ru?'Документы':'Documents')+'</div>';
+        h+='<div class="dispatch-option-grid">';
+        h+='<label class="dispatch-option"><input type="radio" name="disp-doc-mode" value="none" '+(dispatchDocMode==='none'?'checked ':'')+'onchange="onDispatchDocModeChange(this.value)"><span><span class="dispatch-option-title">'+esc(ru?'Только CV':'CV only')+'</span><div class="dispatch-option-desc">'+esc(ru?'Без ZIP-вложения документов.':'No document ZIP attached.')+'</div></span></label>';
+        h+='<label class="dispatch-option '+(sendGate.docs.length?'':'disabled')+'"><input type="radio" name="disp-doc-mode" value="all" '+(dispatchDocMode==='all'?'checked ':'')+(sendGate.docs.length?'onchange="onDispatchDocModeChange(this.value)"':'disabled')+'><span><span class="dispatch-option-title">'+esc(ru?'Все документы':'All documents')+'</span><div class="dispatch-option-desc">'+esc(sendGate.docs.length?(ru?(sendGate.docs.length+' файлов будут упакованы автоматически'):(sendGate.docs.length+' files will be packaged automatically')):(ru?'Нет загруженных файлов документов':'No uploaded document files'))+'</div></span></label>';
+        h+='<label class="dispatch-option '+(validPkgs.length?'':'disabled')+'"><input type="radio" name="disp-doc-mode" value="package" '+(dispatchDocMode==='package'?'checked ':'')+(validPkgs.length?'onchange="onDispatchDocModeChange(this.value)"':'disabled')+'><span><span class="dispatch-option-title">'+esc(ru?'Выбрать пакет':'Choose package')+'</span><div class="dispatch-option-desc">'+esc(validPkgs.length?(ru?'Отправить один из подготовленных пакетов.':'Send one prepared package.'):(ru?'Нет активных пакетов':'No active packages'))+'</div></span></label>';
+        h+='</div>';
+        if(pkgs.length){
+            h+='<div id="disp-pkg-row" style="display:'+(dispatchDocMode==='package'?'block':'none')+';margin:0 0 14px 28px;">';
+            h+='<label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">'+esc(ru?'Пакет':'Package')+'</label><select id="disp-pkg" onchange="dispatchPackageId=this.value" style="width:100%;">';
+            pkgs.forEach(function(p){
+                var dead=isDispatchPackageExpired(p);
+                var lbl=p.title+' ('+p.file_count+' files'+(dead?' - EXPIRED':'')+')';
+                h+='<option value="'+escAttr(p.id)+'" '+(String(p.id)===String(dispatchPackageId)?'selected ':'')+(dead?'disabled':'')+'>'+esc(lbl)+'</option>';
+            });
+            h+='</select></div>';
+        }
+        h+='<div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">';
+        h+='<button class="btn btn-outline" onclick="backToDispatchWizard()">'+esc(ru?'Назад':'Back')+'</button>';
+        h+='<button class="btn btn-accent" '+(sendGate.ok?'':'disabled ')+'onclick="goDispatchReview()">'+esc(ru?'Далее':'Next')+'</button>';
+        h+='</div></div></div>';
+        h+=dispatchRecentHistoryHtml(dispatches,ru);
+        document.getElementById('scr-content').innerHTML=h;show('scr-content');updateTabs(ru?'Рассылки':'Mailings');
+        return;
+    }
+
+    captureDispatchRecipients();
+    var parsed=currentDispatchRecipients();
+    h+='<div class="dispatch-wizard-head"><div><div class="dispatch-step">'+esc(ru?'Шаг 3 из 3':'Step 3 of 3')+'</div><div style="font-size:15px;font-weight:800;">'+esc(ru?'Проверка адресов':'Review recipients')+'</div></div><button class="btn btn-outline btn-sm" onclick="backToDispatchContents()">'+esc(ru?'Назад':'Back')+'</button></div>';
     h+='<div style="padding:14px;">';
-    h+='<div class="dispatch-compose-summary"><div><div style="font-size:13px;font-weight:800;">'+esc(dispatchScenarioTitle(dispatchTab))+'</div>';
-    if(dispatchTab==='manual')h+='<div style="font-size:11px;color:var(--text2);margin-top:3px;">'+esc(ru?'Введите адреса и отправьте CV.':'Enter recipients and send the CV.')+'</div>';
-    else if(dispatchTab==='agency_db')h+='<div style="font-size:11px;color:var(--text2);margin-top:3px;">'+esc(ru?('Выбрано '+agencyDbStats().allowed+' адресов из базы Skipi.'):('Selected '+agencyDbStats().allowed+' addresses from the Skipi database.'))+'</div>';
-    else h+='<div style="font-size:11px;color:var(--text2);margin-top:3px;">'+esc(ru?('Адресов: '+uniqueMailingRequestEmailCount()+' · крюингов: '+uniqueMailingRequestCrewingCount()+' · активных запросов: '+lastDispatchMailingRequests.length):('Addresses: '+uniqueMailingRequestEmailCount()+' · crewings: '+uniqueMailingRequestCrewingCount()+' · active requests: '+lastDispatchMailingRequests.length))+'</div>';
-    h+='</div><button class="btn btn-outline btn-sm" onclick="backToDispatchWizard()">'+esc(ru?'Изменить сценарий':'Change scenario')+'</button></div>';
-    if(dispatchTab==='agency_db'){
-        h+='<div class="dispatch-panel">'+agencyDbPreviewHtml(8)+'</div>';
-    }else if(dispatchTab==='crewing_requests'){
-        h+='<div class="dispatch-panel"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;"><div style="font-size:13px;font-weight:800;">'+esc(ru?'Запросы для рассылки':'Requests to mail')+'</div><button class="btn btn-outline btn-sm" onclick="useDispatchMailingRecipients()">'+esc(ru?'Обновить получателей':'Update recipients')+'</button></div>'+mailingRequestsPreviewHtml(12,true)+'</div>';
-    }
-    h+='</div></div>';
-    h+='<div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:20px;background:var(--bg);">';
-
-    // 1. Recipients
-    h+='<div class="field"><label>'+esc(dispatchRecipientsLabel())+'</label><textarea id="disp-to" rows="3" oninput="dispatchRecipientsDraft=this.value" style="width:100%;font-family:var(--font-mono);font-size:12px;" placeholder="crewing@example.com&#10;manager@example.com">'+esc(dispatchRecipientsDraft)+'</textarea></div>';
-
-    // 2. CV mode radio buttons
-    h+='<div style="margin:12px 0 6px;font-size:13px;"><b>'+esc(ru?'Тип CV':'CV mode')+'</b></div>';
-    h+='<div style="margin:4px 0 4px 4px;"><label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px;">'+
-       '<input type="radio" name="disp-cv-mode" value="redacted" checked style="margin-top:3px;width:16px;height:16px;accent-color:var(--accent);">'+
-       '<span><b>'+esc(ru?'CV с защитой приватности':'Privacy-protected CV')+'</b> <span style="color:var(--green);font-size:11px;">'+esc(ru?'рекомендуется':'recommended')+'</span><div style="font-size:11px;color:var(--text2);">'+esc(ru?'Инициалы вместо полного имени, контакты скрыты, номера сертификатов замаскированы.':'Initials only, contacts hidden, certificate numbers masked.')+'</div></span>'+
-       '</label></div>';
-    h+='<div style="margin:4px 0 4px 4px;"><label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px;">'+
-       '<input type="radio" name="disp-cv-mode" value="full" style="margin-top:3px;width:16px;height:16px;accent-color:var(--accent);">'+
-       '<span><b>'+esc(ru?'Полное CV':'Full CV')+'</b><div style="font-size:11px;color:var(--text2);">'+esc(ru?'Все личные данные включены. Используйте только для известных адресатов.':'All personal details included. Use only for recipients you already trust.')+'</div></span>'+
-       '</label></div>';
-
-    // 3. Send Documents checkbox + package dropdown
-    h+='<div style="margin:12px 0 6px;"><label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px;">'+
-       '<input type="checkbox" id="disp-include-docs" '+(pkgs.length?'':'disabled ')+'onchange="onToggleDispatchDocs()" style="margin-top:3px;width:16px;height:16px;accent-color:var(--accent);">'+
-       '<span><b>'+esc(ru?'Добавить пакет документов':'Include documents package')+'</b><div style="font-size:11px;color:var(--text2);">'+(pkgs.length?esc(ru?'ZIP с подготовленными документами.':'ZIP with your packaged documents.'):esc(ru?'Пакетов пока нет. Создайте пакет во вкладке Packages.':'No packages yet. Create one in Packages first.'))+'</div></span>'+
-       '</label></div>';
-    if(pkgs.length){
-        h+='<div id="disp-pkg-row" style="display:none;margin:6px 0 6px 28px;">';
-        h+='<label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Package</label><select id="disp-pkg" style="width:100%;">';
-        pkgs.forEach(function(p){
-            var exp=new Date(p.expires_on),dead=exp<new Date();
-            var lbl=p.title+' ('+p.file_count+' files'+(dead?' — EXPIRED':'')+')';
-            h+='<option value="'+p.id+'"'+(dead?' disabled':'')+'>'+lbl+'</option>';
-        });
-        h+='</select></div>';
-    }
-
-    // 4. Action buttons
-    h+='<div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">'+
-       '<button class="btn btn-outline" '+(sendGate.ok?'':'disabled ')+'onclick="doDispatchPrepare()">'+esc(ru?'Подготовить файлы':'Prepare files')+'</button>'+
-       '<button class="btn btn-accent" '+(sendGate.ok?'':'disabled ')+'onclick="doDispatchUnified()">'+esc(ru?'Отправить':'Send')+' &#128231;</button>'+
-       '</div>';
+    h+='<div class="dispatch-compose-summary"><div><div style="font-size:13px;font-weight:800;">'+esc(dispatchScenarioTitle(dispatchTab))+'</div><div style="font-size:11px;color:var(--text2);margin-top:3px;">'+esc((ru?'CV: ':'CV: ')+(dispatchCvMode==='redacted'?(ru?'обрезанное':'privacy-protected'):(ru?'полное':'full'))+' · '+dispatchDocModeTitle(pkgs))+'</div></div><div style="font-size:13px;font-weight:800;color:var(--accent);"><span id="disp-review-count">'+parsed.recipients.length+'</span> '+esc(ru?'адресов':'addresses')+'</div></div>';
+    if(parsed.invalid.length)h+='<div style="border:1px solid var(--orange);border-radius:8px;padding:10px 12px;margin-bottom:10px;color:var(--text2);font-size:12px;">'+esc(ru?'Некорректные адреса пропущены: ':'Invalid addresses skipped: ')+esc(parsed.invalid.slice(0,5).join(', '))+'</div>';
+    h+='<div class="dispatch-review-list">';
+    parsed.recipients.forEach(function(e){
+        h+='<label class="dispatch-recipient-row"><input type="checkbox" class="disp-recipient-check" value="'+escAttr(e)+'" checked onchange="updateDispatchReviewCount()"><span>'+esc(e)+'</span></label>';
+    });
     h+='</div>';
+    h+='<div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">';
+    h+='<button class="btn btn-outline" '+(sendGate.ok?'':'disabled ')+'onclick="doDispatchPrepare()">'+esc(ru?'Подготовить файлы':'Prepare files')+'</button>';
+    h+='<button class="btn btn-accent" '+(sendGate.ok?'':'disabled ')+'onclick="doDispatchUnified()">'+esc(ru?'Сформировать письмо':'Send')+'</button>';
+    h+='</div></div></div>';
 
     h+=dispatchRecentHistoryHtml(dispatches,ru);
     document.getElementById('scr-content').innerHTML=h;show('scr-content');updateTabs(ru?'Рассылки':'Mailings');
-    if(dispatchTab==='agency_db'&&lastAgencyDbResult)renderAgencyDatabasePanel(lastAgencyDbResult);
-    if(dispatchTab==='agency_db'&&!lastAgencyDbResult)setTimeout(loadAgencyDatabaseRecipients,0);
-    if(dispatchTab==='crewing_requests'&&lastDispatchMailingRequests.length)renderDispatchMailingRequests(lastDispatchMailingRequests);
 }
 
 var lastDispatchMailingRequests = [];
@@ -9838,7 +9980,8 @@ function onToggleDispatchDocs(){
 async function doDispatchPrepare(){
     var gate=await dispatchSendableGate();
     if(!gate.ok){showNoSendableContent();return;}
-    var cvMode=(document.querySelector('input[name="disp-cv-mode"]:checked')||{}).value||'redacted';
+    captureDispatchContent();
+    var cvMode=dispatchCvMode||'redacted';
     try{
         var dispDir=await invoke('get_dispatch_dir');
         lastPreparedDispatchDir=dispDir;
@@ -9847,12 +9990,9 @@ async function doDispatchPrepare(){
         }else{
             await invoke('export_cv_pdf',{outputPath:joinFolderPath(dispDir,'Skipi_Full_CV.pdf')});
         }
-        var includeDocs=!!(document.getElementById('disp-include-docs')||{}).checked;
         var files=[cvMode==='redacted'?'Skipi_Privacy_Protected_CV.pdf':'Skipi_Full_CV.pdf'];
-        if(includeDocs){
-            var pkgSel=document.getElementById('disp-pkg');
-            var pkgId=pkgSel?pkgSel.value:'';
-            if(!pkgId){alert('Select a package');return;}
+        if(dispatchDocMode!=='none'){
+            var pkgId=await resolveDispatchPackageId(gate);
             await invoke('export_package',{packageId:pkgId,destPath:joinFolderPath(dispDir,'documents.zip')});
             files.push('documents.zip');
         }
@@ -9878,27 +10018,19 @@ async function doDispatchUnified(){
     var gate=await dispatchSendableGate();
     if(!gate.ok){showNoSendableContent();return;}
     captureDispatchRecipients();
-    var toRaw=(document.getElementById('disp-to')||{}).value||'';
-    var cvMode=(document.querySelector('input[name="disp-cv-mode"]:checked')||{}).value||'redacted';
+    captureDispatchContent();
+    var cvMode=dispatchCvMode||'redacted';
     var includeCv=true; // CV is always sent (mode determines redacted vs full)
-    var includeDocs=!!(document.getElementById('disp-include-docs')||{}).checked;
 
     // Validate recipients once (same dedupe + invalid rules as old flow).
-    var rawTokens=toRaw.split(/[\n,;]+/).map(function(s){return s.trim();}).filter(function(s){return s;});
-    var emailRe=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    var seen={},recipients=[],invalid=[],dupCount=0;
-    rawTokens.forEach(function(tok){
-        if(!emailRe.test(tok)){invalid.push(tok);return;}
-        var key=tok.toLowerCase();
-        if(seen[key]){dupCount++;return;}
-        seen[key]=true;recipients.push(tok);
-    });
-    if(invalid.length){
-        if(!await uiConfirm('Skipping '+invalid.length+' invalid address(es):\n'+invalid.slice(0,5).join('\n')+(invalid.length>5?'\n…':'')+'\n\nContinue?', {confirmLabel:'Continue'}))return;
+    var parsed=currentDispatchRecipients();
+    var recipients=selectedDispatchReviewRecipients();
+    if(parsed.invalid.length){
+        if(!await uiConfirm('Skipping '+parsed.invalid.length+' invalid address(es):\n'+parsed.invalid.slice(0,5).join('\n')+(parsed.invalid.length>5?'\n...':'')+'\n\nContinue?', {confirmLabel:'Continue'}))return;
     }
     if(!recipients.length){alert('Enter at least one valid recipient');return;}
-    if(dupCount>0){
-        if(!await uiConfirm('Sending to '+recipients.length+' unique recipient(s); removed '+dupCount+' duplicate(s).\n\nContinue?', {confirmLabel:'Continue'}))return;
+    if(parsed.dupCount>0){
+        if(!await uiConfirm('Sending to '+recipients.length+' unique recipient(s); removed '+parsed.dupCount+' duplicate(s).\n\nContinue?', {confirmLabel:'Continue'}))return;
     }
     if(dispatchTab==='agency_db'){
         var db=lastAgencyDbResult||{};
@@ -9916,22 +10048,19 @@ async function doDispatchUnified(){
         if(!await uiConfirm(msg,{confirmLabel:'Send'}))return;
     }
     if(dispatchTab==='crewing_requests'){
-        var checks=Array.prototype.slice.call(document.querySelectorAll('.disp-mailing-check:checked'));
-        var selectedIds=checks.length?checks.map(function(c){return c.value;}):lastDispatchMailingRequests.map(function(r){return r.id;});
-        lastDispatchMailingRequests.filter(function(r){return selectedIds.indexOf(r.id)!==-1;}).forEach(function(r){
+        var selectedEmails={};
+        recipients.forEach(function(e){selectedEmails[String(e||'').toLowerCase()]=true;});
+        lastDispatchMailingRequests.filter(function(r){return selectedEmails[String(r.reply_to||'').toLowerCase()];}).forEach(function(r){
             invoke('mailing_request_send_click',{requestId:r.id}).catch(function(){});
         });
     }
 
-    var draft=await buildDispatchDraft(includeDocs?'docs':'cv');
+    var draft=await buildDispatchDraft(dispatchDocMode==='none'?'cv':'docs');
 
     // Figure out the package id when the user wants to include documents.
     var pkgId=null;
-    if(includeDocs){
-        var pkgSel=document.getElementById('disp-pkg');
-        pkgId=pkgSel?pkgSel.value:'';
-        if(!pkgId){alert('Select a package');return;}
-    }
+    try{pkgId=await resolveDispatchPackageId(gate);}
+    catch(e){showToast(String(e),'error');return;}
 
     // Primary path: SMTP direct send. Only triggers when the user has
     // configured Settings → Email sending AND saved a password. Works on
@@ -9944,6 +10073,7 @@ async function doDispatchUnified(){
             var atts=await invoke('prepare_dispatch_attachments',{
                 packageId:pkgId,
                 includeCv:includeCv,
+                redactedCv:cvMode==='redacted',
             });
             var msg=await invoke('send_email_smtp',{req:{
                 recipients:recipients,
@@ -9981,6 +10111,7 @@ async function doDispatchUnified(){
             subject:draft.subject,
             body:draft.body,
             includeCv:includeCv,
+            redactedCv:cvMode==='redacted',
             mailClient:localStorage.getItem('skipi-preferred-mail-client')||null,
         });
         showToast('Dispatch draft opened. Attachments staged in ~/Downloads/Skipi/','success');
@@ -9995,6 +10126,9 @@ async function doDispatchUnified(){
 async function buildDispatchDraft(kind){
     var sp;try{sp=await invoke('get_seafarer_personal');}catch(e){sp={};}
     var name=((sp.first_name||'')+' '+(sp.surname||'')).trim()||'Seafarer';
+    var initials=[sp.first_name,sp.surname].filter(function(x){return String(x||'').trim();}).map(function(x){return String(x).trim().charAt(0).toUpperCase()+'.';}).join(' ')||'Seafarer';
+    var privacy=(dispatchCvMode||'redacted')==='redacted';
+    var senderName=privacy?initials:name;
     var rank=sp.rank||'';
     var avail=sp.available_from||'';
     var phone=sp.phones||'';
@@ -10003,18 +10137,18 @@ async function buildDispatchDraft(kind){
     var lastSeaBlock=formatLastSeaServiceEmailBlock(sea.last);
     // Subject reflects what the recipient will actually see first — rank +
     // readiness date + name, so it doesn't get lost in a crewing inbox.
-    var subject='CV'+(rank?' - '+rank:'')+(avail?' - readiness '+avail:'')+' - '+name;
+    var subject='CV'+(rank?' - '+rank:'')+(avail?' - readiness '+avail:'')+' - '+senderName;
     var intro=kind==='cv'
         ? 'Please find attached my CV'+(rank?' for the position of '+rank:'')+' for your consideration.'
-        : 'Please find attached my documents package'+(rank?' for the position of '+rank:'')+'.';
+        : 'Please find attached my CV and documents package'+(rank?' for the position of '+rank:'')+'.';
     var body='Dear Sirs,\n\n'+intro+
         (lastSeaBlock?'\n\n'+lastSeaBlock:'')+
         (avail?'\n\nI am available for joining from '+avail+'.':'')+
         '\n\nI would appreciate the opportunity to discuss any suitable vacancies.\n\n'+
-        'Kind regards,\n'+name+
+        'Kind regards,\n'+senderName+
         (rank?'\n'+rank:'')+
-        (phone?'\nTel: '+phone:'')+
-        (email?'\nEmail: '+email:'')+
+        (!privacy&&phone?'\nTel: '+phone:'')+
+        (!privacy&&email?'\nEmail: '+email:'')+
         SKIPI_EMAIL_FOOTER;
     return {subject:subject,body:body};
 }
