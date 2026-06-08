@@ -142,6 +142,31 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-registry-
 
+      - name: Cache Tauri AppImage tools
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/tauri
+          key: ${{ runner.os }}-tauri-appimage-tools-v1
+
+      - name: Preload AppImage bundler tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.cache/tauri"
+          download_tool() {
+            local url="$1"
+            local out="$2"
+            if [ ! -s "$out" ]; then
+              curl -fL --retry 8 --retry-all-errors --retry-delay 5 --connect-timeout 30 --max-time 300 -o "$out" "$url"
+            fi
+            chmod +x "$out"
+          }
+          download_tool "https://github.com/tauri-apps/binary-releases/releases/download/apprun-old/AppRun-x86_64" "$HOME/.cache/tauri/AppRun-x86_64"
+          download_tool "https://github.com/tauri-apps/binary-releases/releases/download/linuxdeploy/linuxdeploy-x86_64.AppImage" "$HOME/.cache/tauri/linuxdeploy-x86_64.AppImage"
+          download_tool "https://raw.githubusercontent.com/tauri-apps/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh" "$HOME/.cache/tauri/linuxdeploy-plugin-gtk.sh"
+          download_tool "https://raw.githubusercontent.com/tauri-apps/linuxdeploy-plugin-gstreamer/master/linuxdeploy-plugin-gstreamer.sh" "$HOME/.cache/tauri/linuxdeploy-plugin-gstreamer.sh"
+          download_tool "https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage" "$HOME/.cache/tauri/linuxdeploy-plugin-appimage.AppImage"
+
       - name: Build Skipi (Linux)
         uses: tauri-apps/tauri-action@v0
         env:
