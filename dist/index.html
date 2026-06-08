@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.142';
+var APP_VERSION='0.4.143';
 var UI_LANG_KEY='skipi-ui-language';
 var UI_LANG_OPTIONS=[
     ['ru','Русский'],
@@ -568,6 +568,29 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .urgent-item { height:30px; display:flex; align-items:center; gap:8px; padding:0 4px; cursor:pointer; font-size:12px; }
 .urgent-item:hover { background:var(--hover); }
 
+/* Career compass */
+.compass-panel { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:14px; margin-bottom:18px; }
+.compass-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+.compass-title { font-size:16px; font-weight:800; color:var(--text); }
+.compass-sub { color:var(--text2); font-size:12px; line-height:1.45; max-width:760px; }
+.compass-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:10px; }
+.compass-card { background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:11px 12px; min-width:0; }
+.compass-card.action { cursor:pointer; }
+.compass-card.action:hover { border-color:var(--accent); }
+.compass-kicker { color:var(--accent); font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; margin-bottom:5px; }
+.compass-card h3 { font-size:13px; margin:0 0 6px; color:var(--text); }
+.compass-card p { color:var(--text2); font-size:12px; line-height:1.4; margin:0; }
+.compass-row { display:flex; justify-content:space-between; align-items:center; gap:8px; border-top:1px solid var(--border); margin-top:8px; padding-top:8px; font-size:11px; color:var(--text2); }
+.compass-pill { display:inline-flex; align-items:center; border:1px solid var(--border); border-radius:999px; padding:2px 8px; white-space:nowrap; font-size:10px; color:var(--text2); }
+.compass-pill.ok { border-color:var(--green); color:var(--green); }
+.compass-pill.warn { border-color:var(--orange); color:var(--orange); }
+.compass-pill.accent { border-color:var(--accent); color:var(--accent); }
+.compass-metric { font-size:22px; font-weight:800; color:var(--accent); margin-bottom:2px; }
+.compass-index-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:8px; margin-top:10px; }
+.compass-index { border:1px solid var(--border); border-radius:6px; padding:9px 10px; background:var(--surface); min-width:0; }
+.compass-index b { display:block; font-size:12px; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.compass-index span { display:block; color:var(--text2); font-size:11px; margin-top:3px; line-height:1.35; }
+
 /* Information */
 .info-wrap { max-width:1060px; margin:0 auto; padding-bottom:24px; }
 .info-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:14px; }
@@ -869,7 +892,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p id="welcome-subtitle">Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.142</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.143</span></p>
                 <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -1309,6 +1332,124 @@ function queueSalaryIndexChipUpdate(profile){
 }
 function openSalaryIndexSource(){
     openInformationSource(lastSalaryIndexSourceUrl||SKIPI_INFO_SITE_URL);
+}
+
+function compassText(en,ru){
+    return getUiLang()==='ru'?ru:en;
+}
+function compassPrettyLabel(value){
+    var s=String(value||'').trim();
+    if(!s)return '';
+    s=s.replace(/_/g,' ').replace(/\s+/g,' ');
+    return s.replace(/\b\w/g,function(c){return c.toUpperCase();});
+}
+function compassProfilePct(profile){
+    if(!profile||!isFinite(Number(profile.completeness_pct)))return 0;
+    return Math.max(0,Math.min(100,Math.round(Number(profile.completeness_pct))));
+}
+function compassRankLabel(sp){
+    var rank=(sp&&sp.rank)||informationEffectiveRank(sp)||'';
+    return compassPrettyLabel(rank)||compassText('Rank not set','Должность не указана');
+}
+function compassVesselLabel(sp,profile){
+    var vessel=informationEffectiveVesselType(sp,profile)||'';
+    return compassPrettyLabel(vessel)||compassText('Vessel type not set','Тип судна не указан');
+}
+function compassIndexIssue(payload){
+    if(!payload)return compassText('offline cache','локальный кеш');
+    return payload.issue_label||payload.issue||informationDate(payload.generated_at)||compassText('current issue','текущий выпуск');
+}
+function compassTotalVacancies(payload){
+    if(!payload)return 0;
+    var n=Number(payload.total_vacancies_aggregated);
+    if(isFinite(n)&&n>0)return n;
+    var buckets=Array.isArray(payload.rank_rollup)?payload.rank_rollup:[];
+    return buckets.reduce(function(sum,b){return sum+(Number(b&&b.n)||0);},0);
+}
+function compassRankDemand(payload,sp){
+    if(!payload)return null;
+    var rank=skipiInfoNormalizeRank((sp&&sp.rank)||informationEffectiveRank(sp)||'');
+    if(!rank)return null;
+    var rollups=Array.isArray(payload.rank_rollup)?payload.rank_rollup:[];
+    var found=null;
+    rollups.forEach(function(b){
+        if(!found&&skipiInfoNormalizeRank(b&&b.rank)===rank)found=b;
+    });
+    var n=found?Number(found.n)||0:0;
+    if(!n){
+        var buckets=Array.isArray(payload.buckets)?payload.buckets:[];
+        buckets.forEach(function(b){
+            if(skipiInfoNormalizeRank(b&&b.rank)===rank)n+=Number(b&&b.n)||0;
+        });
+    }
+    if(!n)return null;
+    var total=compassTotalVacancies(payload);
+    return {
+        n:n,
+        share:(total?Math.round((n/total)*100):null),
+        confidence:salaryIndexConfidence(n)
+    };
+}
+function renderCompassDataProducts(payload,sp,profile){
+    var bands=payload?skipiInfoIndexToBands(payload):[];
+    var band=pickSkipiInfoSalaryBand(bands,sp,profile);
+    var demand=compassRankDemand(payload,sp);
+    var issue=compassIndexIssue(payload);
+    var salaryText=band
+        ? formatSalaryFullUsd(band.p50)+' '+compassText('median','медиана')+' / '+String(band.sample_size||0)+' N'
+        : compassText('Waiting for enough matching observations','Ждём достаточно наблюдений по профилю');
+    var demandText=demand
+        ? String(demand.n)+' '+compassText('matching vacancies','подходящих вакансий')+(demand.share!==null?' / '+demand.share+'%':'')
+        : compassText('Add rank to calculate demand','Укажите должность для расчёта спроса');
+    var h='<div class="compass-index-grid">';
+    h+='<div class="compass-index"><b>'+esc(compassText('Salary Index','Salary Index'))+'</b><span>'+esc(salaryText)+'</span></div>';
+    h+='<div class="compass-index"><b>'+esc(compassText('Rank Demand','Спрос на должность'))+'</b><span>'+esc(demandText)+'</span></div>';
+    h+='<div class="compass-index"><b>'+esc(compassText('Cadet Program','Cadet Program'))+'</b><span>'+esc(compassText('Planned from agency and company signals','Запланирован по сигналам агентств и компаний'))+'</span></div>';
+    h+='<div class="compass-index"><b>'+esc(compassText('Benefits Index','Benefits Index'))+'</b><span>'+esc(compassText('Next layer: bonuses, travel, welfare, leave','Следующий слой: бонусы, перелёты, welfare, leave'))+'</span></div>';
+    h+='<div class="compass-index"><b>'+esc(compassText('Career Growth','Career Growth'))+'</b><span>'+esc(compassText('Next layer: promotion velocity plus retention','Следующий слой: скорость роста и удержание'))+'</span></div>';
+    h+='</div>';
+    h+='<div class="compass-row"><span>'+esc(compassText('Data issue','Выпуск данных'))+': '+esc(issue)+'</span><span class="compass-pill accent">'+esc(compassText('confidence-aware','confidence-aware'))+'</span></div>';
+    return h;
+}
+async function renderCareerCompassPanel(profile,uploadedDocs){
+    var sp={}, work=[], payload=null;
+    try{sp=await invoke('get_seafarer_personal');}catch(e){sp={};}
+    try{work=await invoke('get_work_history')||[];}catch(e){work=[];}
+    try{payload=await loadSkipiInfoIndex();}catch(e){payload=null;}
+    var pct=compassProfilePct(profile);
+    var docsCount=(uploadedDocs||[]).length;
+    var workCount=(work||[]).length;
+    var rank=compassRankLabel(sp);
+    var vessel=compassVesselLabel(sp,profile);
+    var verifiedReady=pct>=85&&docsCount>0&&workCount>0;
+    var verifiedLabel=verifiedReady?compassText('Verified-ready','Готов к верификации'):compassText('Build trust record','Соберите trust record');
+    var verifiedClass=verifiedReady?'ok':'warn';
+    var vesselConfidence=workCount?compassText('IMO confirmed where present','IMO подтверждается, если указан'):compassText('Add sea service with IMO','Добавьте Sea Service с IMO');
+    var h='<div class="compass-panel">';
+    h+='<div class="compass-head">';
+    h+='<div><div class="compass-title">'+esc(compassText('Career Compass','Career Compass'))+'</div><div class="compass-sub">'+esc(compassText('Your private vault, CV, applications, vessel context, and first market indexes in one decision layer.','Ваш приватный архив, CV, рассылки, контекст судов и первые рыночные индексы в одном decision layer.'))+'</div></div>';
+    h+='<div class="compass-pill accent">'+esc(compassText('crew-side maritime intelligence','crew-side maritime intelligence'))+'</div>';
+    h+='</div>';
+    h+='<div class="compass-grid">';
+    h+='<div class="compass-card action" onclick="openSettings(\'seafarer\')"><div class="compass-kicker">'+esc(compassText('Profile signal','Сигнал профиля'))+'</div><h3>'+esc(rank)+' / '+esc(vessel)+'</h3><p>'+esc(compassText('Documents, CV and application sender are connected locally. Profile quality controls how much Skipi can unlock.','Документы, CV и рассылка связаны локально. Качество профиля определяет, сколько возможностей открывает Skipi.'))+'</p><div class="compass-row"><span>'+esc(docsCount)+' '+esc(compassText('documents','документов'))+'</span><span class="compass-pill '+(pct>=85?'ok':'warn')+'">'+pct+'%</span></div></div>';
+    h+='<div class="compass-card action" onclick="showView(\'experience\')"><div class="compass-kicker">'+esc(compassText('Trust layer','Trust layer'))+'</div><h3>'+esc(verifiedLabel)+'</h3><p>'+esc(compassText('Verified identity stays internal; external intelligence is aggregated and source-protected.','Проверка личности остаётся внутри; наружу выходит только агрегированный и защищённый сигнал.'))+'</p><div class="compass-row"><span>'+esc(workCount)+' '+esc(compassText('sea service entries','записей Sea Service'))+'</span><span class="compass-pill '+verifiedClass+'">'+esc(verifiedReady?'likely':'pending')+'</span></div></div>';
+    h+='<div class="compass-card action" onclick="showView(\'vessels\')"><div class="compass-kicker">'+esc(compassText('Vessel context','Контекст судна'))+'</div><h3>'+esc(compassText('Entity confidence','Уверенность по сущностям'))+'</h3><p>'+esc(compassText('Vessel is the hard IMO entity. Managers, owners and fleet clusters are shown as confirmed, likely, inferred, or unknown.','Судно является жёсткой IMO-сущностью. Менеджеры, владельцы и fleet clusters показываются как confirmed, likely, inferred или unknown.'))+'</p><div class="compass-row"><span>'+esc(vesselConfidence)+'</span><span class="compass-pill accent">IMO</span></div></div>';
+    h+='</div>';
+    h+=renderCompassDataProducts(payload,sp,profile);
+    h+='</div>';
+    return h;
+}
+async function renderInformationCompassOverview(profile,sp,payload){
+    var h='<div class="compass-panel">';
+    h+='<div class="compass-head"><div><div class="compass-title">'+esc(compassText('Skipi Data Refinery','Skipi Data Refinery'))+'</div><div class="compass-sub">'+esc(compassText('Public data, vacancies and protected crew-side signals are cleaned, deduplicated, normalized, scored and connected into decision support.','Публичные данные, вакансии и защищённые crew-side signals очищаются, дедуплицируются, нормализуются, оцениваются и связываются в decision support.'))+'</div></div><span class="compass-pill accent">'+esc(compassText('no raw public accusations','без публичных raw accusations'))+'</span></div>';
+    h+='<div class="compass-grid">';
+    h+='<div class="compass-card"><div class="compass-kicker">'+esc(compassText('Input','Вход'))+'</div><h3>'+esc(compassText('Public + crew-side signals','Public + crew-side signals'))+'</h3><p>'+esc(compassText('Vacancies, vessel references, open sources, user vault context and aggregated seafarer feedback.','Вакансии, референсы судов, открытые источники, локальный профиль и агрегированный feedback моряков.'))+'</p></div>';
+    h+='<div class="compass-card"><div class="compass-kicker">'+esc(compassText('Processing','Обработка'))+'</div><h3>'+esc(compassText('Normalize and score','Нормализация и score'))+'</h3><p>'+esc(compassText('Deduplication, taxonomy, confidence labels and entity linking prevent false certainty.','Дедупликация, таксономия, confidence labels и entity linking не дают превращать гипотезы в ложную уверенность.'))+'</p></div>';
+    h+='<div class="compass-card"><div class="compass-kicker">'+esc(compassText('Output','Выход'))+'</div><h3>'+esc(compassText('Decision support','Decision support'))+'</h3><p>'+esc(compassText('Salary range, rank demand, vessel/company context and future offer guidance.','Зарплатный диапазон, спрос на должность, контекст судна/компании и будущая оценка оффера.'))+'</p></div>';
+    h+='</div>';
+    h+=renderCompassDataProducts(payload,sp,profile);
+    h+='</div>';
+    return h;
 }
 async function updateProfileCompletionChip(profileOverride){
     var chip=document.getElementById('profile-completion-chip');
@@ -3500,7 +3641,7 @@ async function browseExistingVault(){
 }
 
 async function loadVault(info){
-    hide('scr-welcome');hide('scr-setup');show('scr-content');show('left-panel');show('tabs');show('statusbar');
+    hide('scr-welcome');hide('scr-setup');show('scr-content');show('left-panel');hide('tabs');show('statusbar');
     var mb=document.getElementById('modules-bar');if(mb)mb.style.display='flex';
     currentAccountType=info.account_type||'';
     var prevPosition = currentWizardPosition;
@@ -3833,20 +3974,12 @@ function showView(v, opts){
         information:tr('title.information'),settings:tr('title.settings')
     }[v]||v;
     document.getElementById('left-panel').style.display=(v==='dashboard'||v==='cv'||v==='experience'||v==='vessels'||v==='dispatch'||v==='jobs'||v==='information')?'none':'';
-    // The second tabs row (breadcrumb-style tab with the current document name)
-    // is only useful in Files view — in the other panels the panel title above
-    // already says the same thing. Hide it everywhere else. We also clear the
-    // innerHTML so the stale "CV"/"Packages"/etc. chip doesn't flash when we
-    // come back to Files before a document is selected.
+    // The old second tabs row duplicated the selected document title.
+    // Keep it disabled; the document name is already visible in the tree and editor.
     var tabsEl=document.getElementById('tabs');
     if(tabsEl){
-        if(v==='files'){
-            tabsEl.style.display='';
-            if(!selectedDocId)tabsEl.innerHTML='';
-        }else{
-            tabsEl.style.display='none';
-            tabsEl.innerHTML='';
-        }
+        tabsEl.style.display='none';
+        tabsEl.innerHTML='';
     }
     var addBtn=document.getElementById('btn-add-custom');
     if(addBtn)addBtn.style.display=(v==='files')?'inline':'none';
@@ -4278,7 +4411,10 @@ async function deleteDocFromView(id){
 }
 
 function updateTabs(title){
-    document.getElementById('tabs').innerHTML='<div class="tab active"><span style="font-size:11px;">&#128196;</span> '+(title||'Dashboard')+'</div>';
+    var tabs=document.getElementById('tabs');
+    if(!tabs)return;
+    tabs.style.display='none';
+    tabs.innerHTML='';
 }
 
 var lastAiResult={};
@@ -4531,6 +4667,7 @@ async function showDashboard(){
         h+='<div style="margin-top:6px;font-size:11px;"><a href="#" onclick="showWorkHistory();return false;" style="color:var(--accent);">Work history</a> &middot; <a href="#" onclick="showView(\'vessels\');return false;" style="color:var(--accent);">База судов</a> &middot; <a href="#" onclick="showMissing();return false;" style="color:var(--accent);">Missing documents</a></div>';
         h+='</div>';
     }
+    h+=await renderCareerCompassPanel(profile,uploadedDocs);
     h+=renderDeveloperGroupInviteCard(developerInviteState);
 
     h+='<div class="dash-grid">';
@@ -7096,9 +7233,14 @@ function renderInformationTrends(snapshot,seaServiceCount){
 async function showInformation(){
     var content=document.getElementById('scr-content');
     show('scr-content');updateTabs('Information');
+    var profile=null, sp={}, payload=null;
+    try{profile=await invoke('get_profile_status');}catch(e){profile=null;}
+    try{sp=await invoke('get_seafarer_personal');}catch(e){sp={};}
+    try{payload=await loadSkipiInfoIndex();}catch(e){payload=null;}
     var h='<div class="info-wrap">';
     h+='<div class="info-head"><div><h2>Skipi.info</h2><div class="info-sub">Public seafarer market index, methodology, country baseline, and reference materials.</div></div>';
     h+='<div class="info-meta">Public site<br>Opens independently from your private vault</div></div>';
+    h+=await renderInformationCompassOverview(profile,sp,payload);
     h+='<div class="info-web-actions">';
     h+='<button class="btn btn-outline" onclick="openInformationSource(\''+escAttr(SKIPI_INFO_SITE_URL)+'\')">Open in browser</button>';
     h+='<button class="btn btn-outline" onclick="openInformationSource(\'https://skipi.info/methodology.html\')">Methodology</button>';
