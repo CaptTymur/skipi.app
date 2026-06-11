@@ -40,6 +40,82 @@ class MainActivity : TauriActivity() {
     }
   }
 
+  private fun guessMime(path: String): String {
+    val lower = path.lowercase()
+    return when {
+      lower.endsWith(".pdf") -> "application/pdf"
+      lower.endsWith(".zip") -> "application/zip"
+      lower.endsWith(".png") -> "image/png"
+      lower.endsWith(".jpg") || lower.endsWith(".jpeg") -> "image/jpeg"
+      lower.endsWith(".txt") -> "text/plain"
+      else -> "*/*"
+    }
+  }
+
+  fun shareSkipiDispatch(
+    subject: String,
+    body: String,
+    recipientsText: String,
+    pathsText: String,
+    mode: String
+  ): String? {
+    val emailMode = mode == "email"
+    val recipients = recipientsText
+      .split('\n')
+      .map { it.trim() }
+      .filter { it.isNotEmpty() }
+      .toTypedArray()
+    val files = pathsText
+      .split('\n')
+      .map { it.trim() }
+      .filter { it.isNotEmpty() }
+      .map { File(it) }
+
+    return try {
+      val uris = files.map { file ->
+        if (!file.exists()) return "File not found: ${file.absolutePath}"
+        FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+      }
+
+      val intent = if (uris.size > 1) {
+        Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+          putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+        }
+      } else {
+        Intent(Intent.ACTION_SEND).apply {
+          if (uris.size == 1) putExtra(Intent.EXTRA_STREAM, uris[0])
+        }
+      }
+
+      intent.apply {
+        type = when {
+          uris.isEmpty() -> "text/plain"
+          uris.size == 1 -> guessMime(files[0].absolutePath)
+          else -> "*/*"
+        }
+        if (emailMode && recipients.isNotEmpty()) putExtra(Intent.EXTRA_EMAIL, recipients)
+        putExtra(Intent.EXTRA_SUBJECT, subject)
+        putExtra(Intent.EXTRA_TEXT, body)
+        putExtra(Intent.EXTRA_TITLE, subject)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        if (uris.isNotEmpty()) {
+          clipData = ClipData.newUri(contentResolver, "Skipi attachment", uris[0]).apply {
+            for (idx in 1 until uris.size) {
+              addItem(ClipData.Item(uris[idx]))
+            }
+          }
+        }
+      }
+
+      startActivity(Intent.createChooser(intent, if (emailMode) "Email from Skipi" else "Share from Skipi"))
+      null
+    } catch (e: ActivityNotFoundException) {
+      "No app installed to share this dispatch."
+    } catch (e: Exception) {
+      e.localizedMessage ?: e.toString()
+    }
+  }
+
   fun renderSkipiPdfPage(path: String, maxWidth: Int): String {
     val file = File(path)
     if (!file.exists()) return "ERROR:File not found: $path"

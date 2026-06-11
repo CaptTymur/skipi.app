@@ -821,15 +821,73 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .mobile-brand-title { font-size:16px; font-weight:800; line-height:1.1; }
 .mobile-brand-sub { font-size:11px; color:var(--text2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:68vw; margin-top:2px; }
 .mobile-icon-btn { width:40px; height:40px; display:flex; align-items:center; justify-content:center; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:18px; }
-.mobile-main { flex:1; overflow:auto; -webkit-overflow-scrolling:touch; padding:14px; padding-bottom:92px; }
-.mobile-bottom-nav { min-height:64px; flex-shrink:0; display:flex; align-items:stretch; gap:6px; padding:7px 8px; border-top:1px solid var(--border); background:var(--surface); }
-.mobile-nav-btn { flex:1; border:1px solid transparent; border-radius:8px; background:transparent; color:var(--text2); font-size:11px; font-weight:700; display:flex; flex-direction:column; gap:3px; align-items:center; justify-content:center; }
-.mobile-nav-btn span { font-size:18px; line-height:1; }
+.mobile-main { flex:1; overflow:auto; -webkit-overflow-scrolling:touch; padding:14px; padding-bottom:16px; }
+.mobile-bottom-nav { min-height:104px; flex-shrink:0; display:flex; flex-direction:column; gap:7px; padding:7px 8px calc(7px + env(safe-area-inset-bottom,0px)); border-top:1px solid var(--border); background:var(--surface); }
+.mobile-profile-meter { width:100%; min-height:34px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); display:flex; align-items:center; gap:9px; padding:6px 9px; text-align:left; }
+.mobile-profile-meter.active { border-color:var(--accent-bg2); background:var(--accent-bg); }
+.mobile-profile-meter-dot { width:8px; height:8px; border-radius:50%; background:var(--green); flex:0 0 auto; }
+.mobile-profile-meter-label { font-size:11px; font-weight:800; white-space:nowrap; }
+.mobile-profile-meter-track { flex:1; min-width:54px; height:7px; border-radius:999px; background:rgba(39,174,96,.16); overflow:hidden; border:1px solid rgba(39,174,96,.18); }
+.mobile-profile-meter-fill { display:block; height:100%; width:0%; border-radius:999px; background:var(--green); transition:width .18s ease; }
+.mobile-profile-meter-value { font-size:12px; font-weight:900; color:var(--green); min-width:38px; text-align:right; }
+.mobile-module-rail-wrap { position:relative; }
+.mobile-module-rail-wrap::before,
+.mobile-module-rail-wrap::after { position:absolute; top:0; bottom:1px; width:30px; display:flex; align-items:center; justify-content:center; color:var(--accent); font-size:22px; font-weight:900; pointer-events:none; z-index:2; opacity:0; transition:opacity .16s ease; }
+.mobile-module-rail-wrap::before { content:'‹'; left:0; background:linear-gradient(to right,var(--surface) 25%,transparent); }
+.mobile-module-rail-wrap::after { content:'›'; right:0; background:linear-gradient(to left,var(--surface) 25%,transparent); }
+.mobile-module-rail-wrap.has-before::before,
+.mobile-module-rail-wrap.has-more::after { opacity:1; }
+.mobile-module-rail { display:flex; gap:6px; overflow-x:auto; overflow-y:hidden; padding:0 28px 1px 0; scrollbar-width:none; scroll-snap-type:x proximity; }
+.mobile-module-rail::-webkit-scrollbar { display:none; }
+.mobile-nav-btn { flex:0 0 76px; min-height:50px; border:1px solid transparent; border-radius:8px; background:transparent; color:var(--text2); font-size:10px; font-weight:800; display:flex; flex-direction:column; gap:3px; align-items:center; justify-content:center; scroll-snap-align:start; }
+.mobile-nav-btn span { font-size:17px; line-height:1; }
 .mobile-nav-btn.active { color:var(--accent); background:var(--accent-bg); border-color:var(--accent-bg2); }
+.mobile-home-btn { width:100%; min-height:42px; margin:0 0 10px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); display:flex; align-items:center; justify-content:center; gap:8px; font-size:14px; font-weight:900; }
+.mobile-home-btn:active { transform:translateY(1px); }
+.mobile-home-btn-icon { width:24px; height:24px; border-radius:7px; background:var(--accent-bg); color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:15px; line-height:1; }
 .mobile-card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:13px; margin-bottom:10px; }
 .mobile-card.action { cursor:pointer; }
 .mobile-card-title { font-size:15px; font-weight:800; line-height:1.25; }
 .mobile-card-sub { font-size:12px; color:var(--text2); line-height:1.35; margin-top:4px; }
+.mobile-ready-card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:13px; margin-bottom:10px; }
+.mobile-ready-card.on { border-color:rgba(39,174,96,.38); background:rgba(39,174,96,.07); }
+.mobile-ready-toggle { display:flex; align-items:center; gap:10px; font-size:15px; font-weight:900; line-height:1.25; color:var(--text); }
+.mobile-ready-toggle input { width:20px; height:20px; accent-color:var(--accent); flex:0 0 auto; }
+.mobile-ready-note { color:var(--text2); font-size:12px; line-height:1.4; margin-top:7px; }
+.mobile-cv-paper { background:#fff; color:#1e1e1e; border:1px solid #d7d7d7; border-radius:8px; padding:16px 14px; margin-bottom:12px; box-shadow:0 2px 10px rgba(0,0,0,.12); }
+.mobile-cv-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; border-bottom:2px solid #4a4a8a; padding-bottom:10px; margin-bottom:10px; }
+.mobile-cv-title { font-size:18px; font-weight:900; line-height:1.18; color:#1e1e1e; }
+.mobile-cv-sub { font-size:12px; color:#555; margin-top:4px; line-height:1.3; }
+.mobile-cv-photo { width:74px; height:92px; flex:0 0 74px; border:1px solid #d0d0d0; border-radius:4px; background:#f0f0f0; color:#777; display:flex; align-items:center; justify-content:center; font-size:11px; overflow:hidden; }
+.mobile-cv-section { font-size:12px; font-weight:900; color:#4a4a8a; text-transform:uppercase; border-bottom:1px solid #d0d0d0; padding:10px 0 4px; margin:0 0 6px; }
+.mobile-cv-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px 10px; }
+.mobile-cv-field { min-width:0; }
+.mobile-cv-label { font-size:9px; color:#666; text-transform:uppercase; font-weight:800; line-height:1.2; }
+.mobile-cv-value { font-size:12px; color:#1e1e1e; font-weight:700; line-height:1.25; word-break:break-word; margin-top:1px; }
+.mobile-cv-line { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; padding:7px 0; border-bottom:1px solid #ececec; align-items:flex-start; }
+.mobile-cv-line:last-child { border-bottom:0; }
+.mobile-cv-line-title { min-width:0; font-size:12px; color:#1e1e1e; font-weight:800; line-height:1.25; }
+.mobile-cv-line-meta { font-size:10px; color:#666; line-height:1.35; margin-top:2px; }
+.mobile-cv-line-side { font-size:10px; color:#555; text-align:right; white-space:nowrap; line-height:1.3; }
+.mobile-cv-category { font-size:10px; color:#4a4a8a; font-weight:900; text-transform:uppercase; margin:9px 0 2px; }
+.mobile-cv-empty { font-size:12px; color:#777; padding:7px 0; }
+.mobile-mailing-pills { display:flex; flex-direction:column; gap:10px; margin-bottom:12px; }
+.mobile-mailing-pill { width:100%; min-height:86px; border:1px solid var(--border); border-radius:999px; background:var(--surface); color:var(--text); padding:12px 14px 12px 16px; display:flex; align-items:center; gap:12px; text-align:left; }
+.mobile-mailing-pill.active { border-color:var(--accent); background:var(--accent-bg); box-shadow:0 0 0 1px var(--accent-bg2) inset; }
+.mobile-mailing-pill:disabled { opacity:.52; cursor:not-allowed; background:var(--bg); }
+.mobile-mailing-pill-icon { width:42px; height:42px; border-radius:50%; background:var(--accent-bg); color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:900; flex:0 0 auto; }
+.mobile-mailing-pill-main { min-width:0; flex:1; }
+.mobile-mailing-pill-title { font-size:15px; font-weight:900; line-height:1.18; color:var(--text); }
+.mobile-mailing-pill-desc { color:var(--text2); font-size:12px; line-height:1.35; margin-top:4px; }
+.mobile-mailing-pill-meta { display:flex; flex-direction:column; align-items:flex-end; gap:2px; min-width:56px; }
+.mobile-mailing-pill-meta strong { color:var(--accent); font-size:22px; line-height:1; }
+.mobile-mailing-pill-meta span { color:var(--text2); font-size:9px; font-weight:900; text-transform:uppercase; text-align:right; line-height:1.1; }
+.mobile-mailing-summary { border:1px solid var(--border); border-radius:8px; background:var(--bg); padding:12px; margin-bottom:10px; }
+.mobile-dispatch-track-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:12px 0; }
+.mobile-dispatch-track { min-height:76px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); padding:10px; text-align:left; display:flex; flex-direction:column; gap:4px; }
+.mobile-dispatch-track.active { border-color:var(--accent); background:var(--accent-bg); box-shadow:0 0 0 1px var(--accent-bg2) inset; }
+.mobile-dispatch-track-title { font-size:13px; font-weight:900; line-height:1.2; }
+.mobile-dispatch-track-sub { color:var(--text2); font-size:11px; line-height:1.25; }
 .mobile-primary-action { display:flex; align-items:center; gap:12px; text-align:left; width:100%; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); padding:14px; margin-bottom:10px; }
 .mobile-primary-action:active { transform:translateY(1px); }
 .mobile-action-icon { width:42px; height:42px; border-radius:8px; background:var(--accent-bg); color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:22px; flex:0 0 auto; }
@@ -896,7 +954,7 @@ body.mobile-mode .modules-bar,
 body.mobile-mode .app,
 body.mobile-mode .statusbar { display:none !important; }
 body.mobile-mode .mobile-shell { display:flex; }
-body.mobile-mode .skipi-toast-container { top:auto; left:12px; right:12px; bottom:calc(84px + env(safe-area-inset-bottom,0px)); align-items:stretch; }
+body.mobile-mode .skipi-toast-container { top:auto; left:12px; right:12px; bottom:calc(118px + env(safe-area-inset-bottom,0px)); align-items:stretch; }
 body.mobile-mode .skipi-toast-container > div { max-width:none !important; }
 body.mobile-mode .update-banner { top:calc(56px + env(safe-area-inset-top,0px)); left:8px; right:8px; border-radius:8px; }
 body.mobile-mode #err { top:calc(56px + env(safe-area-inset-top,0px)) !important; left:8px !important; right:8px !important; border-radius:8px; }
@@ -937,10 +995,23 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
     </div>
     <main class="mobile-main" id="mobile-main"></main>
     <nav class="mobile-bottom-nav" id="mobile-bottom-nav" style="display:none;">
-        <button class="mobile-nav-btn active" type="button" data-mview="home" onclick="mobileShow('home')"><span>&#9632;</span>Home</button>
-        <button class="mobile-nav-btn" type="button" data-mview="docs" onclick="mobileShow('docs')"><span>&#128196;</span>Docs</button>
-        <button class="mobile-nav-btn" type="button" data-mview="add" onclick="mobileShow('add')"><span>+</span>Add</button>
-        <button class="mobile-nav-btn" type="button" data-mview="profile" onclick="mobileShow('profile')"><span>&#9679;</span>Profile</button>
+        <button class="mobile-profile-meter" id="mobile-profile-meter" type="button" onclick="mobileShow('profile')" title="Profile completeness">
+            <span class="mobile-profile-meter-dot"></span>
+            <span class="mobile-profile-meter-label">Profile</span>
+            <span class="mobile-profile-meter-track"><span class="mobile-profile-meter-fill" id="mobile-profile-meter-fill"></span></span>
+            <span class="mobile-profile-meter-value" id="mobile-profile-meter-value">0%</span>
+        </button>
+        <div class="mobile-module-rail-wrap" id="mobile-module-rail-wrap">
+        <div class="mobile-module-rail" id="mobile-module-rail" onscroll="mobileUpdateModuleRailHint()">
+            <button class="mobile-nav-btn active" type="button" data-mview="docs" onclick="mobileShow('docs')"><span>&#128196;</span>Documents</button>
+            <button class="mobile-nav-btn" type="button" data-mview="experience" onclick="mobileShow('experience')"><span>&#9873;</span>Experience</button>
+            <button class="mobile-nav-btn" type="button" data-mview="cv" onclick="mobileShow('cv')"><span>CV</span>CV</button>
+            <button class="mobile-nav-btn" type="button" data-mview="dispatch" onclick="mobileShow('dispatch')"><span>&#9993;</span>Mailings</button>
+            <button class="mobile-nav-btn" type="button" data-mview="jobs" onclick="mobileShow('jobs')"><span>&#128188;</span>Jobs</button>
+            <button class="mobile-nav-btn" type="button" data-mview="information" onclick="mobileShow('information')"><span>i</span>Info</button>
+            <button class="mobile-nav-btn" type="button" data-mview="vessels" onclick="mobileShow('vessels')"><span>&#9872;</span>Vessel DB</button>
+        </div>
+        </div>
     </nav>
     <input id="mobile-file-input" type="file" accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png" style="display:none;" onchange="mobileHandleFilePicked(this.files)">
 </div>
@@ -2522,22 +2593,68 @@ function mobileSetSub(text){
     var el=document.getElementById('mobile-vault-sub');
     if(el)el.textContent=text||mobileVaultLabel();
 }
+function mobileCompletenessPercent(){
+    if(!Array.isArray(allDocs)||!allDocs.length)return 0;
+    var uploaded=allDocs.filter(function(d){return !!d.file_name;}).length;
+    return Math.round((uploaded/allDocs.length)*100);
+}
+function mobileUpdateModuleRailHint(){
+    var rail=document.getElementById('mobile-module-rail');
+    var wrap=document.getElementById('mobile-module-rail-wrap');
+    if(!rail||!wrap)return;
+    var max=Math.max(0,rail.scrollWidth-rail.clientWidth);
+    wrap.classList.toggle('has-before',max>2&&rail.scrollLeft>2);
+    wrap.classList.toggle('has-more',max>2&&rail.scrollLeft<max-2);
+}
+function mobileSyncModuleRail(){
+    var rail=document.getElementById('mobile-module-rail');
+    if(!rail)return;
+    var active=rail.querySelector('.mobile-nav-btn.active');
+    if(active&&active.scrollIntoView){
+        try{active.scrollIntoView({block:'nearest',inline:'nearest'});}catch(e){}
+    }
+    setTimeout(mobileUpdateModuleRailHint,60);
+}
 function mobileSetBottomNav(showNav){
     var nav=document.getElementById('mobile-bottom-nav');
     if(nav)nav.style.display=showNav?'flex':'none';
+    var pct=mobileCompletenessPercent();
+    var meter=document.getElementById('mobile-profile-meter');
+    var fill=document.getElementById('mobile-profile-meter-fill');
+    var value=document.getElementById('mobile-profile-meter-value');
+    if(fill)fill.style.width=Math.max(0,Math.min(100,pct))+'%';
+    if(value)value.textContent=pct+'%';
+    if(meter)meter.classList.toggle('active',mobileView==='home'||mobileView==='profile');
     document.querySelectorAll('.mobile-nav-btn').forEach(function(btn){
         var v=btn.getAttribute('data-mview');
-        var pdfNav=(mobileView==='pdf'&&mobilePdfBuilder&&mobilePdfBuilder.docId)?'docs':'add';
-        var active=(mobileView===v)||(mobileView==='doc'&&v==='docs')||(mobileView==='pdf'&&v===pdfNav);
+        var docViews=['docs','doc','add','pdf'];
+        var active=(mobileView===v)||(v==='docs'&&docViews.indexOf(mobileView)>=0);
         btn.classList.toggle('active',active);
     });
+    if(showNav)mobileSyncModuleRail();
 }
 function mobileMainHtml(html){
     var main=document.getElementById('mobile-main');
-    if(main)main.innerHTML=html;
+    if(main)main.innerHTML=mobileWithHomeButton(html);
+}
+function mobileShouldShowHomeButton(){
+    if(!shouldUseMobileShell())return false;
+    if(mobileView==='home')return false;
+    return ['docs','doc','add','pdf','profile','experience','cv','dispatch','jobs','information','vessels'].indexOf(mobileView)>=0;
+}
+function mobileHomeButtonHtml(){
+    var ru=getUiLang()==='ru';
+    return '<button class="mobile-home-btn" type="button" data-mobile-home-button="1" onclick="mobileShow(\'home\')"><span class="mobile-home-btn-icon">&#8962;</span><span>'+mobileEsc(ru?'Главная':'Home')+'</span></button>';
+}
+function mobileWithHomeButton(html){
+    html=html||'';
+    if(!mobileShouldShowHomeButton())return html;
+    if(String(html).indexOf('data-mobile-home-button')>=0)return html;
+    return mobileHomeButtonHtml()+html;
 }
 function renderMobileWelcome(){
     if(!shouldUseMobileShell())return;
+    mobileView='home';
     mobileSetSub('Mobile seafarer vault');
     mobileSetBottomNav(false);
     var h='<div class="mobile-hero">';
@@ -2725,6 +2842,489 @@ function mobileFilterChip(id,label,count){
     var active=mobileDocsFilter===id?' active':'';
     return '<button class="mobile-filter-chip'+active+'" type="button" onclick="mobileSetDocsFilter(\''+jsString(id)+'\')">'+mobileEsc(label)+(typeof count==='number'?' '+count:'')+'</button>';
 }
+function mobileModuleInfo(view){
+    var map={
+        experience:{title:'Experience',sub:'Sea service, vessels, contracts and onboard experience.',icon:'&#9873;',primary:'Add sea service',note:'Mobile sea service editing is the next layer. For now this module is connected in the navigation so the app structure matches desktop Skipi.'},
+        cv:{title:'CV',sub:'Generate and review your seafarer CV from this vault.',icon:'CV',primary:'Prepare CV',note:'CV generation is available on desktop. Mobile export/share will be connected after the document capture loop is stable.'},
+        dispatch:{title:'Mailings',sub:'Send CV and document packages to crewing contacts.',icon:'&#9993;',primary:'Prepare mailing',note:'Mailings need native mobile share/email flow. The module is placed here now so the final workflow is visible.'},
+        jobs:{title:'Jobs',sub:'Vacancies and offers matched to your profile.',icon:'&#128188;',primary:'View jobs',note:'The jobs feed will use the same profile completeness and salary index signals as desktop Skipi.'},
+        information:{title:'Information',sub:'Reference information and Skipi knowledge pages.',icon:'i',primary:'Open information',note:'This module will surface skipi.info content inside the mobile app.'},
+        vessels:{title:'Vessel DB',sub:'Vessel and company context for contract decisions.',icon:'&#9872;',primary:'Search vessels',note:'The mobile vessel database will use the shared vessel intelligence layer and local snapshots.'}
+    };
+    return map[view]||map.information;
+}
+function renderMobileModule(view){
+    var info=mobileModuleInfo(view);
+    var pct=mobileCompletenessPercent();
+    var h='<div class="mobile-card"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title">'+mobileEsc(info.title)+'</div><div class="mobile-card-sub">'+mobileEsc(info.sub)+'</div></div><span class="mobile-action-icon" style="width:38px;height:38px;font-size:18px;">'+info.icon+'</span></div></div>';
+    h+='<div class="mobile-card"><div class="mobile-row"><div><div class="mobile-card-title">Profile signal</div><div class="mobile-card-sub">This module will use your vault completeness.</div></div><span class="mobile-pill ok">'+pct+'%</span></div></div>';
+    h+='<button class="mobile-primary-action" type="button" onclick="showToast(\'Mobile '+mobileEsc(info.title)+' is coming next\',\'info\')"><span class="mobile-action-icon">'+info.icon+'</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(info.primary)+'</span><span class="mobile-action-sub">'+mobileEsc(info.note)+'</span></span></button>';
+    if(view==='experience'){
+        h+='<button class="mobile-primary-action" type="button" onclick="mobileShow(\'docs\')"><span class="mobile-action-icon">&#128196;</span><span class="mobile-action-copy"><span class="mobile-action-title">Check documents first</span><span class="mobile-action-sub">Sea service and CV quality depend on the document vault.</span></span></button>';
+    }else if(view==='cv'||view==='dispatch'){
+        h+='<button class="mobile-primary-action" type="button" onclick="mobileShow(\'docs\')"><span class="mobile-action-icon">&#128196;</span><span class="mobile-action-copy"><span class="mobile-action-title">Review documents</span><span class="mobile-action-sub">Make sure certificates and medical documents are attached before sharing.</span></span></button>';
+    }else if(view==='vessels'){
+        h+='<button class="mobile-primary-action" type="button" onclick="mobileShow(\'experience\')"><span class="mobile-action-icon">&#9873;</span><span class="mobile-action-copy"><span class="mobile-action-title">Connect sea service</span><span class="mobile-action-sub">Vessel context becomes useful when linked to experience records.</span></span></button>';
+    }
+    mobileMainHtml(h);
+}
+function mobileCvPersonName(p,sp){
+    var parts=[sp&&sp.surname,sp&&sp.first_name,sp&&sp.middle_name].filter(Boolean);
+    return parts.length?parts.join(' '):((p&&p.name)||mobileVaultLabel());
+}
+function mobileCvField(label,value){
+    return '<div class="mobile-cv-field"><div class="mobile-cv-label">'+mobileEsc(label)+'</div><div class="mobile-cv-value">'+mobileEsc(value||'--')+'</div></div>';
+}
+function mobileCvSeaExperience(days){
+    days=parseInt(days||0,10)||0;
+    var months=Math.floor(days/30);
+    if(!months)return '--';
+    var years=Math.floor(months/12);
+    var rest=months%12;
+    if(years&&rest)return months+' months ('+years+'y '+rest+'m)';
+    if(years)return months+' months ('+years+'y)';
+    return months+' months';
+}
+function mobileCvCertSide(c){
+    if(c.is_permanent)return 'Permanent';
+    return c.valid_to||'--';
+}
+function mobileCvCertificateRows(certs){
+    certs=certs||[];
+    if(!certs.length)return '<div class="mobile-cv-empty">No certificates on file.</div>';
+    var byCat={};
+    certs.forEach(function(c){
+        var cat=c.category||'Certificates';
+        if(!byCat[cat])byCat[cat]=[];
+        byCat[cat].push(c);
+    });
+    var h='';
+    Object.keys(byCat).sort().forEach(function(cat){
+        h+='<div class="mobile-cv-category">'+mobileEsc(cat)+'</div>';
+        byCat[cat].forEach(function(c){
+            var statusClass=c.status==='expired'?'bad':(c.status==='warning'?'warn':'ok');
+            h+='<div class="mobile-cv-line">';
+            h+='<div><div class="mobile-cv-line-title">'+mobileEsc(c.title||'Certificate')+'</div>';
+            h+='<div class="mobile-cv-line-meta">'+mobileEsc([c.doc_number,c.issued_by,c.valid_from].filter(Boolean).join(' / ')||'No details')+'</div></div>';
+            h+='<div class="mobile-cv-line-side"><span class="mobile-pill '+statusClass+'">'+mobileEsc(mobileCvCertSide(c))+'</span></div>';
+            h+='</div>';
+        });
+    });
+    return h;
+}
+function mobileCvWorkRows(work){
+    work=work||[];
+    if(!work.length)return '<div class="mobile-cv-empty">No sea service recorded.</div>';
+    var h='';
+    work.forEach(function(w){
+        h+='<div class="mobile-cv-line">';
+        h+='<div><div class="mobile-cv-line-title">'+mobileEsc(w.vessel_name||'Vessel')+'</div>';
+        h+='<div class="mobile-cv-line-meta">'+mobileEsc([w.position,w.vessel_type,w.flag,w.company].filter(Boolean).join(' / ')||'Sea service')+'</div>';
+        if(w.imo)h+='<div class="mobile-cv-line-meta">IMO '+mobileEsc(w.imo)+'</div>';
+        h+='</div>';
+        h+='<div class="mobile-cv-line-side">'+mobileEsc((w.sign_on||'?')+' - '+(w.sign_off||'present'))+'</div>';
+        h+='</div>';
+    });
+    return h;
+}
+var mobileDispatchAgencyAttempted=false;
+var mobileDispatchRecipientHint='';
+var mobileDispatchManualTrack='email';
+function mobileDispatchScenarioText(tab){
+    var ru=getUiLang()==='ru';
+    if(tab==='agency_db')return ru?'Skipi возьмет адреса из базы агентств для вашей национальности. Количество адресов зависит от заполненности профиля.':'Skipi uses agency addresses for your nationality. The unlocked count depends on profile completeness.';
+    if(tab==='crewing_requests')return ru?'Отправка только крюингам, которые сами запросили CV под такой профиль. Если запросов нет, опция закрыта.':'Send only to crewings that requested CVs matching this profile. If there are no requests, this option is locked.';
+    return ru?'Вы сами вводите один или несколько email-адресов. Подходит для конкретного крюинга или менеджера, которому вы доверяете.':'You enter one or more email addresses yourself. Use this for a specific crewing or manager you already trust.';
+}
+function mobileSelectDispatchScenario(tab){
+    if(['manual','agency_db','crewing_requests'].indexOf(tab)===-1)tab='manual';
+    dispatchTab=tab;
+    if(tab==='manual'){
+        if(dispatchRecipientsDraft&&currentDispatchRecipients().recipients.length)captureDispatchRecipients();
+    }else if(tab==='agency_db'){
+        useAgencyDatabaseRecipients({silent:true});
+    }else if(tab==='crewing_requests'){
+        setDispatchRecipientsFromMailingRequests(lastDispatchMailingRequests,{silent:true});
+    }
+    renderMobileDispatch();
+    if(tab==='manual'){
+        setTimeout(function(){
+            var panel=document.querySelector('.mobile-manual-share-panel');
+            if(panel&&panel.scrollIntoView){
+                try{panel.scrollIntoView({block:'start',behavior:'smooth'});}catch(e){panel.scrollIntoView();}
+            }
+        },80);
+    }
+}
+function mobileDispatchPill(tab,icon,title,desc,count,label,enabled,loading,disabledReason){
+    var active=dispatchTab===tab;
+    var disabled=!enabled;
+    var click=disabled?'':' onclick="mobileSelectDispatchScenario(\''+tab+'\')"';
+    var titleAttr=disabled&&disabledReason?' title="'+escAttr(disabledReason)+'"':'';
+    var h='<button class="mobile-mailing-pill '+(active?'active':'')+'" type="button"'+(disabled?' disabled':'')+titleAttr+click+'>';
+    h+='<span class="mobile-mailing-pill-icon">'+icon+'</span>';
+    h+='<span class="mobile-mailing-pill-main"><span class="mobile-mailing-pill-title">'+mobileEsc(title)+'</span><span class="mobile-mailing-pill-desc">'+mobileEsc(desc)+'</span>';
+    if(disabled&&disabledReason)h+='<span class="mobile-mailing-pill-desc" style="color:var(--orange);">'+mobileEsc(disabledReason)+'</span>';
+    h+='</span>';
+    h+='<span class="mobile-mailing-pill-meta"><strong>'+mobileEsc(loading?'...':String(count))+'</strong><span>'+mobileEsc(label)+'</span></span>';
+    h+='</button>';
+    return h;
+}
+function mobileWarmDispatchData(sendGate){
+    if(!mobileDispatchAgencyAttempted&&!lastAgencyDbResult&&!agencyDbLoading){
+        mobileDispatchAgencyAttempted=true;
+        loadAgencyDatabaseRecipients().then(function(){
+            if(mobileView==='dispatch')renderMobileDispatch();
+        }).catch(function(e){logError('mobile_dispatch_agency_load',e);});
+    }
+    if(sendGate&&sendGate.ok&&!dispatchMailingRequestsLoaded&&!dispatchMailingRequestsLoading){
+        loadDispatchMailingRequests().then(function(){
+            if(mobileView==='dispatch')renderMobileDispatch();
+        }).catch(function(e){logError('mobile_dispatch_requests_load',e);});
+    }
+}
+function mobileCaptureManualShareOptions(){
+    var to=document.getElementById('mobile-dispatch-to');
+    if(to)mobileDispatchRecipientHint=to.value||'';
+    var cv=document.querySelector('input[name="mobile-disp-cv-mode"]:checked');
+    if(cv)dispatchCvMode=cv.value||'redacted';
+    var docs=document.getElementById('mobile-disp-include-docs');
+    dispatchDocMode=(docs&&docs.checked)?'all':'none';
+}
+function mobileSetManualDispatchTrack(track){
+    mobileCaptureManualShareOptions();
+    mobileDispatchManualTrack=(track==='share')?'share':'email';
+    renderMobileDispatch();
+    setTimeout(function(){
+        var panel=document.querySelector('.mobile-manual-share-panel');
+        if(panel&&panel.scrollIntoView){
+            try{panel.scrollIntoView({block:'start',behavior:'smooth'});}catch(e){panel.scrollIntoView();}
+        }
+    },60);
+}
+function mobileDispatchTrackButton(track,icon,title,sub){
+    var active=mobileDispatchManualTrack===track;
+    return '<button class="mobile-dispatch-track '+(active?'active':'')+'" type="button" onclick="mobileSetManualDispatchTrack(\''+track+'\')"><span class="mobile-dispatch-track-title">'+icon+' '+mobileEsc(title)+'</span><span class="mobile-dispatch-track-sub">'+mobileEsc(sub)+'</span></button>';
+}
+function mobileManualSharePanel(sendGate){
+    var ru=getUiLang()==='ru';
+    var docsCount=(sendGate&&sendGate.docs)?sendGate.docs.length:0;
+    var includeDocs=dispatchDocMode==='all';
+    var disabled=!sendGate||!sendGate.ok;
+    var h='<div class="mobile-card mobile-manual-share-panel">';
+    h+='<div class="mobile-card-title">'+mobileEsc(ru?'Выберите трек отправки':'Choose sending track')+'</div>';
+    h+='<div class="mobile-card-sub">'+mobileEsc(ru?'Email и общее “поделиться” разделены, чтобы было понятно, что произойдет после нажатия.':'Email and general sharing are separate so the next action is clear.')+'</div>';
+    h+='<div class="mobile-dispatch-track-grid">';
+    h+=mobileDispatchTrackButton('email','@',ru?'Email':'Email',ru?'На конкретный email-адрес.':'To a specific email address.');
+    h+=mobileDispatchTrackButton('share','&#8645;',ru?'Поделиться':'Share',ru?'WhatsApp, Telegram, email client и другие приложения.':'WhatsApp, Telegram, mail client and other apps.');
+    h+='</div>';
+    if(mobileDispatchManualTrack==='email'){
+        h+='<div class="mobile-field" style="margin-top:12px;"><label>'+mobileEsc(ru?'Email получателя':'Recipient email')+'</label><input id="mobile-dispatch-to" type="email" placeholder="crew@example.com" value="'+mobileEsc(mobileDispatchRecipientHint)+'" oninput="mobileDispatchRecipientHint=this.value"></div>';
+        h+='<div class="mobile-card-sub">'+mobileEsc(ru?'Skipi подготовит CV/вложения и откроет email draft с адресом, темой и текстом.':'Skipi prepares the CV/attachments and opens an email draft with recipient, subject and body.')+'</div>';
+    }else{
+        h+='<div class="mobile-card-sub" style="margin-top:10px;">'+mobileEsc(ru?'Адрес не нужен. Выберите приложение связи на следующем системном экране телефона.':'No email address needed. Pick the communication app on the next phone system screen.')+'</div>';
+    }
+    h+='<div class="mobile-card-sub" style="font-weight:800;margin:10px 0 6px;color:var(--text);">'+mobileEsc(ru?'CV':'CV')+'</div>';
+    h+='<label class="mobile-ready-toggle" style="align-items:flex-start;margin-bottom:8px;"><input type="radio" name="mobile-disp-cv-mode" value="redacted" '+(dispatchCvMode==='redacted'?'checked ':'')+'onchange="dispatchCvMode=this.value"><span><span style="display:block;">'+mobileEsc(ru?'Обрезанное CV':'Privacy-protected CV')+'</span><span class="mobile-action-sub">'+mobileEsc(ru?'Рекомендуется: скрывает контакты и чувствительные номера документов.':'Recommended: hides contacts and sensitive document numbers.')+'</span></span></label>';
+    h+='<label class="mobile-ready-toggle" style="align-items:flex-start;margin-bottom:8px;"><input type="radio" name="mobile-disp-cv-mode" value="full" '+(dispatchCvMode==='full'?'checked ':'')+'onchange="dispatchCvMode=this.value"><span><span style="display:block;">'+mobileEsc(ru?'Полное CV':'Full CV')+'</span><span class="mobile-action-sub">'+mobileEsc(ru?'Используйте только для адресатов, которым доверяете.':'Use only for recipients you trust.')+'</span></span></label>';
+    h+='<label class="mobile-ready-toggle" style="align-items:flex-start;margin:10px 0 12px;'+(docsCount?'':'opacity:.55;')+'"><input id="mobile-disp-include-docs" type="checkbox" '+(includeDocs?'checked ':'')+(docsCount?'':'disabled ')+'><span><span style="display:block;">'+mobileEsc(ru?'Приложить документы ZIP':'Attach documents ZIP')+'</span><span class="mobile-action-sub">'+mobileEsc(docsCount?(ru?(docsCount+' файлов будут упакованы автоматически'):(docsCount+' files will be packaged automatically')):(ru?'Нет загруженных файлов документов':'No uploaded document files'))+'</span></span></label>';
+    if(mobileDispatchManualTrack==='email'){
+        h+='<button class="mobile-primary-action" type="button" '+(disabled?'disabled ':'')+'onclick="mobileOpenManualEmailDispatch()"><span class="mobile-action-icon">@</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(ru?'Открыть email draft':'Open email draft')+'</span><span class="mobile-action-sub">'+mobileEsc(ru?'Для Gmail, Mail, Outlook и других email-клиентов.':'For Gmail, Mail, Outlook and other email clients.')+'</span></span></button>';
+    }else{
+        h+='<button class="mobile-primary-action" type="button" '+(disabled?'disabled ':'')+'onclick="mobileShareManualDispatch()"><span class="mobile-action-icon">&#8645;</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(ru?'Поделиться через приложения':'Share via apps')+'</span><span class="mobile-action-sub">'+mobileEsc(ru?'WhatsApp, Telegram, email client и другие приложения.':'WhatsApp, Telegram, mail client and other apps.')+'</span></span></button>';
+    }
+    h+='</div>';
+    return h;
+}
+async function mobileOpenManualEmailDispatch(){return mobileRunManualDispatch('email');}
+async function mobileShareManualDispatch(){return mobileRunManualDispatch('share');}
+async function mobileRunManualDispatch(mode){
+    var ru=getUiLang()==='ru';
+    mode=(mode==='share')?'share':'email';
+    try{
+        mobileCaptureManualShareOptions();
+        var gate=await dispatchSendableGate();
+        if(!gate.ok){showNoSendableContent();return;}
+        var parsed=parseDispatchRecipientText(mobileDispatchRecipientHint);
+        if(mode==='email'&&parsed.invalid.length){
+            showToast((ru?'Некорректный email будет проигнорирован: ':'Invalid email ignored: ')+parsed.invalid.slice(0,2).join(', '),'warn');
+        }
+        if(mode==='email'&&!parsed.recipients.length){
+            showToast(ru?'Введите корректный email получателя':'Enter a valid recipient email','warn');
+            var to=document.getElementById('mobile-dispatch-to');
+            if(to)to.focus();
+            return;
+        }
+        var pkgId=null;
+        if(dispatchDocMode==='all'){
+            pkgId=await ensureAllDocumentsDispatchPackage(gate);
+        }
+        var draft=await buildDispatchDraft(dispatchDocMode==='all'?'docs':'cv');
+        showToast(mode==='email'?(ru?'Готовлю email draft...':'Preparing email draft...'):(ru?'Готовлю CV для отправки...':'Preparing CV for sharing...'),'info');
+        var attachments=await invoke('prepare_dispatch_attachments',{
+            packageId:pkgId,
+            includeCv:true,
+            redactedCv:dispatchCvMode==='redacted',
+        });
+        if(!attachments||!attachments.length){
+            showToast(ru?'Не удалось подготовить вложения':'Could not prepare attachments','error');
+            return;
+        }
+        if(hostPlatform==='android'){
+            await invoke('mobile_share_dispatch',{
+                recipients:mode==='email'?parsed.recipients:[],
+                subject:draft.subject,
+                body:draft.body,
+                attachments:attachments,
+                mode:mode,
+            });
+            showToast(mode==='email'?(ru?'Email draft открыт':'Email draft opened'):(ru?'Меню отправки открыто':'Share sheet opened'),'success');
+            return;
+        }
+        if(mode==='share'&&navigator.share){
+            await navigator.share({title:draft.subject,text:draft.body});
+            return;
+        }
+        showToast(ru?'Этот мобильный трек недоступен на этой платформе':'This mobile track is not available on this platform','error');
+    }catch(e){
+        showToast((ru?'Отправка не открылась: ':'Dispatch did not open: ')+e,'error');
+        logError('mobile_manual_dispatch_'+mode,e);
+    }
+}
+async function renderMobileDispatch(){
+    mobileMainHtml('<div class="mobile-card"><div class="mobile-card-title">Mailings</div><div class="mobile-card-sub">Loading mailing options...</div></div>');
+    try{
+        var sendGate=await dispatchSendableGate();
+        if(mobileView!=='dispatch')return;
+        if(['manual','agency_db','crewing_requests'].indexOf(dispatchTab)===-1)dispatchTab='manual';
+        var ru=getUiLang()==='ru';
+        var stats=agencyDbStats();
+        var requestEmailCount=uniqueMailingRequestEmailCount();
+        var crewingCount=uniqueMailingRequestCrewingCount();
+        var agencyDisabled=!sendGate.ok?(ru?'Сначала нужен CV или документы':'Complete a CV or upload documents first'):(!stats.allowed?(ru?'Нет открытых адресов':'No unlocked addresses'):'');
+        var requestDisabled=!sendGate.ok?(ru?'Сначала нужен CV или документы':'Complete a CV or upload documents first'):(!dispatchMailingRequestsLoaded?(ru?'Запросы загружаются':'Requests are loading'):(!requestEmailCount?(ru?'Запросов под профиль нет':'No matching requests yet'):''));
+        var h='<div class="mobile-card"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title">'+mobileEsc(ru?'Рассылки':'Mailings')+'</div><div class="mobile-card-sub">'+mobileEsc(ru?'Как вы хотите разослать CV и документы?':'How do you want to send your CV and documents?')+'</div></div><span class="mobile-action-icon" style="width:38px;height:38px;font-size:18px;">&#9993;</span></div></div>';
+        if(!sendGate.ok){
+            h+='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(ru?'Пока нечего отправлять':'Nothing to send yet')+'</div><div class="mobile-card-sub">'+mobileEsc(ru?'Заполните CV или загрузите документы, затем выберите один из трех способов рассылки.':'Complete a CV or upload documents, then choose one of the three mailing options.')+'</div></div>';
+        }
+        h+='<div class="mobile-mailing-pills">';
+        h+=mobileDispatchPill('manual','@',ru?'Кастомный адрес':'Custom address',ru?'Ввести email вручную. Для конкретного крюинга или менеджера.':'Type email manually. For a specific crewing or manager.','1',ru?'опция':'option',sendGate.ok,false,!sendGate.ok?(ru?'Нет CV/документов':'No CV/documents'):'');
+        h+=mobileDispatchPill('agency_db','DB',ru?'База Skipi':'Skipi database',ru?'Адреса из базы агентств Skipi. Чем полнее профиль, тем больше адресов открыто.':'Agency addresses from Skipi database. A fuller profile unlocks more addresses.',stats.allowed,ru?'адресов':'addresses',sendGate.ok&&!!stats.allowed,!lastAgencyDbResult&&agencyDbLoading,agencyDisabled);
+        h+=mobileDispatchPill('crewing_requests','?',ru?'Запросы крюингов':'Crewing requests',ru?'Только тем крюингам, которые запросили CV под ваш профиль.':'Only to crewings that requested a CV matching your profile.',requestEmailCount,ru?'адресов':'addresses',sendGate.ok&&dispatchMailingRequestsLoaded&&requestEmailCount>0,!dispatchMailingRequestsLoaded&&dispatchMailingRequestsLoading,requestDisabled);
+        h+='</div>';
+        h+='<div class="mobile-mailing-summary">';
+        h+='<div class="mobile-card-title">'+mobileEsc(dispatchScenarioTitle(dispatchTab))+'</div>';
+        h+='<div class="mobile-card-sub">'+mobileEsc(mobileDispatchScenarioText(dispatchTab))+'</div>';
+        if(dispatchTab==='agency_db'){
+            h+='<div class="mobile-card-sub" style="margin-top:8px;">'+mobileEsc(ru?('Открыто '+stats.allowed+' из '+stats.total+' адресов.'):('Unlocked '+stats.allowed+' of '+stats.total+' addresses.'))+'</div>';
+        }else if(dispatchTab==='crewing_requests'){
+            h+='<div class="mobile-card-sub" style="margin-top:8px;">'+mobileEsc(ru?('Крюингов: '+crewingCount+' · адресов: '+requestEmailCount):('Crewings: '+crewingCount+' · addresses: '+requestEmailCount))+'</div>';
+        }
+        h+='</div>';
+        if(dispatchTab==='manual')h+=mobileManualSharePanel(sendGate);
+        h+='<button class="mobile-primary-action" type="button" onclick="mobileShow(\'cv\')"><span class="mobile-action-icon">CV</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(ru?'Проверить CV перед отправкой':'Review CV before sending')+'</span><span class="mobile-action-sub">'+mobileEsc(ru?'Посмотрите, что увидит получатель.':'See what the recipient will receive.')+'</span></span></button>';
+        h+='<button class="mobile-primary-action" type="button" onclick="mobileShow(\'docs\')"><span class="mobile-action-icon">&#128196;</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(ru?'Проверить документы':'Review documents')+'</span><span class="mobile-action-sub">'+mobileEsc(ru?'Убедитесь, что нужные сертификаты прикреплены.':'Make sure required certificates are attached.')+'</span></span></button>';
+        mobileMainHtml(h);
+        mobileWarmDispatchData(sendGate);
+    }catch(e){
+        if(mobileView==='dispatch'){
+            mobileMainHtml('<div class="mobile-card"><div class="mobile-card-title">Mailings</div><div class="mobile-card-sub">Could not load mailing options.</div></div>');
+        }
+        logError('mobile_dispatch_render',e);
+    }
+}
+async function renderMobileCv(){
+    mobileMainHtml('<div class="mobile-card"><div class="mobile-card-title">CV</div><div class="mobile-card-sub">Loading CV preview...</div></div>');
+    try{
+        var data=await invoke('get_cv_data');
+        var sp={};
+        try{sp=await invoke('get_seafarer_personal');}catch(e){sp={};}
+        if(mobileView!=='cv')return;
+        var p=data.personal||{};
+        var certs=data.certificates||[];
+        var work=data.work_history||[];
+        var salary=[sp.min_salary,sp.currency||sp.min_salary_currency].filter(Boolean).join(' ');
+        var h='<div class="mobile-card"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title">CV</div><div class="mobile-card-sub">Seafarer application preview.</div></div><span class="mobile-action-icon" style="width:38px;height:38px;font-size:17px;">CV</span></div></div>';
+        h+='<div class="mobile-stats">';
+        h+='<div class="mobile-stat"><strong>'+certs.length+'</strong><span>Certificates</span></div>';
+        h+='<div class="mobile-stat"><strong>'+work.length+'</strong><span>Sea service</span></div>';
+        h+='<div class="mobile-stat"><strong>'+mobileCompletenessPercent()+'%</strong><span>Profile</span></div>';
+        h+='</div>';
+        h+='<div class="mobile-cv-paper">';
+        h+='<div class="mobile-cv-head">';
+        h+='<div style="min-width:0;"><div class="mobile-cv-title">Seafarer Application Form</div><div class="mobile-cv-sub">'+mobileEsc(mobileCvPersonName(p,sp))+'</div><div class="mobile-cv-sub">'+mobileEsc(p.rank||sp.rank||'Rank not set')+'</div></div>';
+        h+='<div class="mobile-cv-photo" id="mobile-cv-photo">Photo</div>';
+        h+='</div>';
+        h+='<div class="mobile-cv-section">Personal details</div>';
+        h+='<div class="mobile-cv-grid">';
+        h+=mobileCvField('Position',p.rank||sp.rank);
+        h+=mobileCvField('Available from',sp.available_from||p.available_from);
+        h+=mobileCvField('Experience',mobileCvSeaExperience(data.total_sea_days));
+        h+=mobileCvField('Citizenship',sp.nationality||p.nationality);
+        h+=mobileCvField('Phone',sp.phones||p.phones);
+        h+=mobileCvField('Email',sp.email||p.email);
+        h+=mobileCvField('Nearest airport',sp.nearest_airport||p.nearest_airport);
+        h+=mobileCvField('Minimum salary',salary);
+        h+='</div>';
+        h+='<div class="mobile-cv-section">Certificates</div>';
+        h+=mobileCvCertificateRows(certs);
+        h+='<div class="mobile-cv-section">Sea-going experience</div>';
+        h+=mobileCvWorkRows(work);
+        h+='</div>';
+        h+='<button class="mobile-primary-action" type="button" onclick="mobileShow(\'dispatch\')"><span class="mobile-action-icon">&#9993;</span><span class="mobile-action-copy"><span class="mobile-action-title">Use this CV in Mailings</span><span class="mobile-action-sub">Open the sending workflow with this vault data.</span></span></button>';
+        h+='<button class="mobile-primary-action" type="button" onclick="mobileShow(\'docs\')"><span class="mobile-action-icon">&#128196;</span><span class="mobile-action-copy"><span class="mobile-action-title">Review documents</span><span class="mobile-action-sub">Certificates shown in the CV come from the document vault.</span></span></button>';
+        mobileMainHtml(h);
+        try{
+            var durl=await invoke('get_profile_photo_data_url');
+            var box=document.getElementById('mobile-cv-photo');
+            if(durl&&box)box.innerHTML='<img src="'+durl+'" style="width:100%;height:100%;object-fit:cover;">';
+        }catch(photoErr){logError('mobile_cv_photo',photoErr);}
+    }catch(e){
+        if(mobileView==='cv'){
+            mobileMainHtml('<div class="mobile-card"><div class="mobile-card-title">CV</div><div class="mobile-card-sub">Could not load CV preview.</div></div>');
+        }
+        logError('mobile_cv_render',e);
+    }
+}
+function mobileJobsStatusText(on){
+    var ru=getUiLang()==='ru';
+    return on
+        ? (ru?'Вы готовы принимать предложения. Skipi может использовать профиль для подбора вакансий и уведомлений.':'You are ready for offers. Skipi can use this profile for matching and vacancy notifications.')
+        : (ru?'Вы не принимаете предложения. Подбор вакансий и offer-уведомления выключены.':'You are off market. Vacancy matching and offer notifications are off.');
+}
+function mobileRenderJobsContent(sp,gate,on){
+    var ru=getUiLang()==='ru';
+    var pct=mobileCompletenessPercent();
+    var info=mobileModuleInfo('jobs');
+    var rank=sp.rank||sp.position||'';
+    var salary=[sp.min_salary,sp.min_salary_currency||sp.currency].filter(Boolean).join(' ');
+    var h='<div class="mobile-card"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title">'+mobileEsc(info.title)+'</div><div class="mobile-card-sub">'+mobileEsc(info.sub)+'</div></div><span class="mobile-action-icon" style="width:38px;height:38px;font-size:18px;">'+info.icon+'</span></div></div>';
+    h+='<div class="mobile-ready-card '+(on?'on':'')+'">';
+    h+='<label class="mobile-ready-toggle"><input id="mobile-jobs-ready-toggle" type="checkbox" '+(on?'checked ':'')+'onchange="mobileSetJobsReady(this.checked)"><span>'+mobileEsc(ru?'Готов принимать предложения':'Ready for offers')+'</span></label>';
+    h+='<div class="mobile-ready-note">'+mobileEsc(mobileJobsStatusText(on))+'</div>';
+    h+='</div>';
+    h+='<div class="mobile-card"><div class="mobile-row"><div><div class="mobile-card-title">'+mobileEsc(ru?'Сигнал профиля':'Profile signal')+'</div><div class="mobile-card-sub">'+mobileEsc(ru?'Готовность профиля влияет на подбор вакансий и рассылки.':'Profile completeness drives matching and mailing limits.')+'</div></div><span class="mobile-pill ok">'+pct+'%</span></div></div>';
+    h+='<div class="mobile-card">';
+    h+='<div class="mobile-card-title">'+mobileEsc(ru?'Параметры подбора':'Matching fields')+'</div>';
+    h+='<div class="mobile-card-sub">'+mobileEsc(rank||(ru?'Должность не указана':'Rank not set'))+'</div>';
+    h+='<div class="mobile-card-sub">'+mobileEsc(salary||(ru?'Минимальная зарплата не указана':'Minimum salary not set'))+'</div>';
+    h+='<div class="mobile-card-sub">'+mobileEsc(sp.available_from?(ru?'Готов с ':'Available from ')+sp.available_from:(ru?'Дата готовности не указана':'Availability date not set'))+'</div>';
+    h+='</div>';
+    if(gate&&!gate.ok){
+        h+='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(ru?'Нужно до включения':'Needed before matching')+'</div>';
+        h+='<div class="mobile-card-sub">'+mobileEsc(readyProfileInstructionText())+'</div>';
+        h+=readyProfileMissingListHtml(gate.missing);
+        h+='<div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-outline" onclick="openSettings(\'seafarer\')">'+mobileEsc(ru?'Профиль':'Profile')+'</button><button class="btn btn-outline" onclick="mobileShow(\'docs\')">'+mobileEsc(ru?'Документы':'Documents')+'</button><button class="btn btn-outline" onclick="mobileShow(\'experience\')">'+mobileEsc(ru?'Опыт':'Experience')+'</button></div>';
+        h+='</div>';
+    }
+    h+='<button class="mobile-primary-action" type="button" onclick="openSettings(\'seafarer\')"><span class="mobile-action-icon">&#9881;</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(ru?'Настроить профиль':'Edit profile')+'</span><span class="mobile-action-sub">'+mobileEsc(ru?'Должность, зарплата, аэропорты, телефоны и дата готовности.':'Rank, salary, airports, phone and availability date.')+'</span></span></button>';
+    mobileMainHtml(h);
+}
+function mobileWorkPeriod(e){
+    return (e.sign_on||'?')+' -> '+(e.sign_off||'present');
+}
+function mobileWorkDuration(e){
+    var months=monthsBetween(e.sign_on,e.sign_off);
+    if(months==null)months=workEntryMonths(e);
+    if(!months)return '';
+    var years=Math.floor(months/12);
+    var rest=months%12;
+    if(years&&rest)return years+'y '+rest+'m';
+    if(years)return years+'y';
+    return months+'m';
+}
+function mobileWorkEntryCard(e){
+    var imo=normalizeImo(e.imo);
+    var cap=formatSeaServiceCapacity(e);
+    var duration=mobileWorkDuration(e);
+    var h='<div class="mobile-card">';
+    h+='<div class="mobile-row" style="align-items:flex-start;">';
+    h+='<div style="min-width:0;flex:1;">';
+    h+='<div class="mobile-card-title">'+mobileEsc(e.vessel_name||'Vessel')+'</div>';
+    h+='<div class="mobile-card-sub">'+mobileEsc([e.position,e.vessel_type,e.flag].filter(Boolean).join(' · ')||'Sea service entry')+'</div>';
+    if(e.company)h+='<div class="mobile-card-sub">'+mobileEsc(e.company)+'</div>';
+    h+='</div>';
+    if(duration)h+='<span class="mobile-pill ok">'+mobileEsc(duration)+'</span>';
+    h+='</div>';
+    h+='<div class="mobile-card-sub" style="margin-top:8px;">'+mobileEsc(mobileWorkPeriod(e))+'</div>';
+    if(imo)h+='<div class="mobile-card-sub">IMO '+mobileEsc(imo)+'</div>';
+    if(cap)h+='<div class="mobile-card-sub">'+mobileEsc(cap)+'</div>';
+    if(e.notes)h+='<div class="mobile-card-sub">'+mobileEsc(e.notes)+'</div>';
+    return h+'</div>';
+}
+async function renderMobileExperience(){
+    mobileMainHtml('<div class="mobile-card"><div class="mobile-card-title">Experience</div><div class="mobile-card-sub">Loading sea service...</div></div>');
+    try{
+        var entries=await invoke('get_work_history')||[];
+        if(mobileView!=='experience')return;
+        var h='<div class="mobile-card"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title">Experience</div><div class="mobile-card-sub">Sea service, vessels, contracts and onboard experience.</div></div><span class="mobile-action-icon" style="width:38px;height:38px;font-size:18px;">&#9873;</span></div></div>';
+        h+='<div class="mobile-card"><div class="mobile-row"><div><div class="mobile-card-title">Sea service records</div><div class="mobile-card-sub">Entries stored in this vault.</div></div><span class="mobile-pill ok">'+entries.length+'</span></div></div>';
+        if(!entries.length){
+            h+='<div class="mobile-card"><div class="mobile-card-title">No sea service yet</div><div class="mobile-card-sub">Add contracts and vessel details on desktop or in the next mobile editing layer.</div></div>';
+        }else{
+            entries.forEach(function(e){h+=mobileWorkEntryCard(e);});
+        }
+        h+='<button class="mobile-primary-action" type="button" onclick="mobileShow(\'docs\')"><span class="mobile-action-icon">&#128196;</span><span class="mobile-action-copy"><span class="mobile-action-title">Check documents</span><span class="mobile-action-sub">Sea service and CV quality depend on the document vault.</span></span></button>';
+        mobileMainHtml(h);
+    }catch(e){
+        if(mobileView==='experience'){
+            mobileMainHtml('<div class="mobile-card"><div class="mobile-card-title">Experience</div><div class="mobile-card-sub">Could not load sea service.</div></div>');
+        }
+        logError('mobile_experience_render',e);
+    }
+}
+async function renderMobileJobs(){
+    mobileMainHtml('<div class="mobile-card"><div class="mobile-card-title">Jobs</div><div class="mobile-card-sub">Loading readiness...</div></div>');
+    try{
+        var sp={};
+        try{sp=await invoke('get_seafarer_personal');}catch(e){sp={};}
+        var on=sp.ready_for_offers==='true';
+        var gate=await jobsReadinessGate(sp);
+        if(on&&!gate.ok){
+            on=false;
+            sp.ready_for_offers='false';
+            try{await invoke('set_seafarer_personal',{fields:{ready_for_offers:'false'}});}catch(e){}
+        }
+        if(mobileView!=='jobs')return;
+        mobileRenderJobsContent(sp,gate,on);
+    }catch(e){
+        if(mobileView==='jobs'){
+            mobileMainHtml('<div class="mobile-card"><div class="mobile-card-title">Jobs</div><div class="mobile-card-sub">Could not load jobs readiness.</div></div>');
+        }
+        logError('mobile_jobs_render',e);
+    }
+}
+async function mobileSetJobsReady(on){
+    var toggle=document.getElementById('mobile-jobs-ready-toggle');
+    if(toggle)toggle.disabled=true;
+    try{
+        var sp={};
+        try{sp=await invoke('get_seafarer_personal');}catch(e){sp={};}
+        if(on){
+            var gate=await jobsReadinessGate(sp);
+            if(!gate.ok){
+                if(toggle){toggle.checked=false;toggle.disabled=false;}
+                showReadyProfileRequired(gate.missing);
+                showToast(getUiLang()==='ru'?'Сначала подготовьте профиль, документы и опыт':'Complete profile, documents, and experience first','warn');
+                renderMobileJobs();
+                return;
+            }
+        }
+        await invoke('set_seafarer_personal',{fields:{ready_for_offers:on?'true':'false'}});
+        ['mobile-jobs-ready-toggle','jobs-master-toggle','sp-ready_for_offers','fp-ready_for_offers'].forEach(function(id){
+            var el=document.getElementById(id);
+            if(el)el.checked=!!on;
+        });
+        if(on&&typeof startJobsPolling==='function')startJobsPolling();
+        if(!on&&typeof clearJobsBadge==='function')clearJobsBadge();
+        showToast(getUiLang()==='ru'?(on?'Готовность к предложениям включена':'Готовность к предложениям выключена'):(on?'Ready for offers enabled':'Ready for offers disabled'),'info');
+        renderMobileJobs();
+    }catch(e){
+        showToast('Error: '+e,'error');
+        logError('mobile_jobs_toggle',e);
+        renderMobileJobs();
+    }
+}
 function renderMobileShell(){
     if(!shouldUseMobileShell())return;
     mobileSetSub(mobileVaultLabel());
@@ -2732,6 +3332,11 @@ function renderMobileShell(){
     if(mobileView==='docs')return renderMobileDocs();
     if(mobileView==='add')return renderMobileAdd();
     if(mobileView==='profile')return renderMobileProfile();
+    if(mobileView==='experience')return renderMobileExperience();
+    if(mobileView==='cv')return renderMobileCv();
+    if(mobileView==='dispatch')return renderMobileDispatch();
+    if(mobileView==='jobs')return renderMobileJobs();
+    if(['information','vessels'].indexOf(mobileView)>=0)return renderMobileModule(mobileView);
     if(mobileView==='doc')return renderMobileDoc();
     if(mobileView==='pdf')return renderMobilePdfBuilder();
     return renderMobileHome();

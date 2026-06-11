@@ -233,6 +233,7 @@ pub fn run() {
             jobs::open_mail_with_attachment,
             jobs::get_downloads_dir,
             mail_intent::create_email_file,
+            mail_intent::mobile_share_dispatch,
             feedback::init_app_diagnostics,
             feedback::app_heartbeat,
             feedback::mark_app_shutdown,
