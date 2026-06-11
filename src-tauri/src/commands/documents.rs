@@ -2,13 +2,17 @@ use super::{messaging, work_history};
 use crate::db::{self, DocRecord};
 use crate::AppState;
 use crate::{frameworks, profiles};
+use printpdf::{Image, ImageTransform, Mm, PdfDocument};
 use rusqlite::params;
+use serde::Deserialize;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::State;
 
 const HIDDEN_TEMPLATE_IDS_KEY: &str = "hidden_template_ids";
+const MOBILE_ATTACHMENT_LIMIT_BYTES: usize = 25 * 1024 * 1024;
+const MOBILE_PDF_INPUT_LIMIT_BYTES: usize = 140 * 1024 * 1024;
 
 fn doc_has_user_payload(doc: &DocRecord) -> bool {
     doc.file_name.is_some()
@@ -539,8 +543,7 @@ pub fn delete_doc(state: State<AppState>, id: String) -> Result<(), String> {
 /// Resolve a vault document to its absolute path on disk so the chat
 /// attachment uploader can read+encrypt it. Returns Err if the doc has
 /// no file attached or no vault is open.
-#[tauri::command]
-pub fn get_document_file_path(state: State<AppState>, doc_id: String) -> Result<String, String> {
+fn resolve_document_file(state: &AppState, doc_id: &str) -> Result<(PathBuf, String), String> {
     let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
     let vault_path = vault_lock.as_ref().ok_or("No vault open")?;
     let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
@@ -552,7 +555,259 @@ pub fn get_document_file_path(state: State<AppState>, doc_id: String) -> Result<
         .ok_or("Document not found")?;
     let file_name = doc.file_name.as_ref().ok_or("No file attached")?;
     let p = vault_path.join(&doc.category).join(file_name);
+    if !p.is_file() {
+        return Err("File missing on disk".to_string());
+    }
+    Ok((p, file_name.clone()))
+}
+
+#[tauri::command]
+pub fn get_document_file_path(state: State<AppState>, doc_id: String) -> Result<String, String> {
+    let (p, _) = resolve_document_file(&state, &doc_id)?;
     Ok(p.to_string_lossy().to_string())
+}
+
+#[cfg(target_os = "android")]
+fn mime_for_file_name(file_name: &str) -> &'static str {
+    let lower = file_name.to_ascii_lowercase();
+    if lower.ends_with(".pdf") {
+        "application/pdf"
+    } else if lower.ends_with(".jpg") || lower.ends_with(".jpeg") {
+        "image/jpeg"
+    } else if lower.ends_with(".png") {
+        "image/png"
+    } else if lower.ends_with(".webp") {
+        "image/webp"
+    } else {
+        "application/octet-stream"
+    }
+}
+
+#[cfg(target_os = "android")]
+fn preview_file_name(doc_id: &str, file_name: &str) -> String {
+    let clean_name: String = file_name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let clean_name = clean_name.trim_matches('_');
+    if clean_name.is_empty() {
+        format!("{}-document", doc_id)
+    } else {
+        format!("{}-{}", doc_id, clean_name)
+    }
+}
+
+#[cfg(target_os = "android")]
+fn copy_document_to_preview_cache(
+    app: &tauri::AppHandle,
+    source: &Path,
+    doc_id: &str,
+    file_name: &str,
+) -> Result<PathBuf, String> {
+    use tauri::Manager;
+
+    let cache_dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| format!("Resolve cache dir: {}", e))?
+        .join("skipi-preview");
+    fs::create_dir_all(&cache_dir).map_err(|e| format!("Create preview cache: {}", e))?;
+    let target = cache_dir.join(preview_file_name(doc_id, file_name));
+    fs::copy(source, &target).map_err(|e| format!("Prepare preview file: {}", e))?;
+    Ok(target)
+}
+
+#[cfg(target_os = "android")]
+fn open_path_android(window: tauri::WebviewWindow, path: &Path, mime: &str) -> Result<(), String> {
+    use jni::objects::{JObject, JString, JValue};
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let path = path.to_string_lossy().to_string();
+    let mime = mime.to_string();
+    let (tx, rx) = mpsc::channel();
+
+    window
+        .with_webview(move |webview| {
+            webview.jni_handle().exec(move |env, activity, _webview| {
+                let result = (|| -> Result<(), String> {
+                    let path_string = env
+                        .new_string(path)
+                        .map_err(|e| format!("Android path string: {}", e))?;
+                    let mime_string = env
+                        .new_string(mime)
+                        .map_err(|e| format!("Android mime string: {}", e))?;
+                    let path_object = JObject::from(path_string);
+                    let mime_object = JObject::from(mime_string);
+                    let value = env
+                        .call_method(
+                            activity,
+                            "openSkipiFile",
+                            "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+                            &[JValue::Object(&path_object), JValue::Object(&mime_object)],
+                        )
+                        .map_err(|e| format!("Open file on Android: {}", e))?
+                        .l()
+                        .map_err(|e| format!("Open file result: {}", e))?;
+                    if value.is_null() {
+                        return Ok(());
+                    }
+                    let message: String = env
+                        .get_string(&JString::from(value))
+                        .map_err(|e| format!("Open file error string: {}", e))?
+                        .into();
+                    Err(message)
+                })();
+                let _ = tx.send(result);
+            });
+        })
+        .map_err(|e| e.to_string())?;
+
+    rx.recv_timeout(Duration::from_secs(5))
+        .map_err(|_| "Timed out while opening file".to_string())?
+}
+
+#[cfg(target_os = "android")]
+fn render_pdf_page_android(
+    window: tauri::WebviewWindow,
+    path: &Path,
+    max_width: i32,
+) -> Result<PathBuf, String> {
+    use jni::objects::{JObject, JString, JValue};
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let path = path.to_string_lossy().to_string();
+    let (tx, rx) = mpsc::channel();
+
+    window
+        .with_webview(move |webview| {
+            webview.jni_handle().exec(move |env, activity, _webview| {
+                let result = (|| -> Result<PathBuf, String> {
+                    let path_string = env
+                        .new_string(path)
+                        .map_err(|e| format!("Android PDF path string: {}", e))?;
+                    let path_object = JObject::from(path_string);
+                    let value = env
+                        .call_method(
+                            activity,
+                            "renderSkipiPdfPage",
+                            "(Ljava/lang/String;I)Ljava/lang/String;",
+                            &[JValue::Object(&path_object), JValue::Int(max_width)],
+                        )
+                        .map_err(|e| format!("Render PDF on Android: {}", e))?
+                        .l()
+                        .map_err(|e| format!("Render PDF result: {}", e))?;
+                    if value.is_null() {
+                        return Err("Android PDF renderer returned no preview path".to_string());
+                    }
+                    let rendered_path: String = env
+                        .get_string(&JString::from(value))
+                        .map_err(|e| format!("Render PDF result string: {}", e))?
+                        .into();
+                    if let Some(message) = rendered_path.strip_prefix("ERROR:") {
+                        return Err(message.to_string());
+                    }
+                    Ok(PathBuf::from(rendered_path))
+                })();
+                let _ = tx.send(result);
+            });
+        })
+        .map_err(|e| e.to_string())?;
+
+    rx.recv_timeout(Duration::from_secs(10))
+        .map_err(|_| "Timed out while rendering PDF preview".to_string())?
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn open_path_desktop(path: &Path) -> Result<(), String> {
+    let path = path.to_string_lossy().to_string();
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        std::process::Command::new("cmd")
+            .creation_flags(CREATE_NO_WINDOW)
+            .args(["/C", "start", "", &path])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn open_document_file(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    state: State<AppState>,
+    doc_id: String,
+) -> Result<(), String> {
+    let (path, file_name) = resolve_document_file(&state, &doc_id)?;
+
+    #[cfg(target_os = "android")]
+    {
+        let mime = mime_for_file_name(&file_name);
+        let preview_path = copy_document_to_preview_cache(&app, &path, &doc_id, &file_name)?;
+        return open_path_android(window, &preview_path, mime);
+    }
+
+    #[cfg(target_os = "ios")]
+    {
+        let _ = (app, window, file_name);
+        return Err("Opening attached files is not wired for iOS yet.".to_string());
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let _ = (app, window, file_name);
+        open_path_desktop(&path)
+    }
+}
+
+#[tauri::command]
+pub fn render_document_pdf_preview(
+    window: tauri::WebviewWindow,
+    state: State<AppState>,
+    doc_id: String,
+) -> Result<(String, String), String> {
+    let (path, file_name) = resolve_document_file(&state, &doc_id)?;
+    if !file_name.to_lowercase().ends_with(".pdf") {
+        return Err("Attached file is not a PDF.".to_string());
+    }
+    let _ = &path;
+
+    #[cfg(target_os = "android")]
+    {
+        let preview_path = render_pdf_page_android(window, &path, 1000)?;
+        let data = fs::read(&preview_path).map_err(|e| format!("Read PDF preview: {}", e))?;
+        return Ok((crate::base64_encode(&data), "image/png".to_string()));
+    }
+
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = window;
+        Err("Built-in PDF preview is only wired for Android for now.".to_string())
+    }
 }
 
 #[tauri::command]
@@ -666,6 +921,13 @@ fn content_type_for_ext(ext: &str) -> &'static str {
     }
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PdfPageImage {
+    pub file_name: Option<String>,
+    pub data_base64: String,
+}
+
 fn remove_unreferenced_old_attachment(
     vault_path: &Path,
     docs: &[DocRecord],
@@ -757,6 +1019,227 @@ fn attach_file_to_vault(
     Ok(dest_name)
 }
 
+fn attach_bytes_to_vault(
+    conn: &rusqlite::Connection,
+    vault_path: &Path,
+    doc_id: &str,
+    original_file_name: &str,
+    bytes: &[u8],
+) -> Result<String, String> {
+    if bytes.is_empty() {
+        return Err("File is empty".to_string());
+    }
+    if bytes.len() > MOBILE_ATTACHMENT_LIMIT_BYTES {
+        return Err("File is too large for mobile upload (25 MB max).".to_string());
+    }
+
+    let docs = db::get_all_docs(conn).map_err(|e| e.to_string())?;
+    let doc = docs
+        .iter()
+        .find(|d| d.id == doc_id)
+        .ok_or("Document not found")?;
+
+    let ext = Path::new(original_file_name)
+        .extension()
+        .map(|e| e.to_string_lossy().to_string())
+        .unwrap_or_else(|| "jpg".to_string());
+    let dest_name = attachment_file_name(doc, &ext);
+
+    let cat_dir = vault_path.join(&doc.category);
+    fs::create_dir_all(&cat_dir).map_err(|e| e.to_string())?;
+
+    let dest = cat_dir.join(&dest_name);
+    fs::write(&dest, bytes).map_err(|e| e.to_string())?;
+
+    let old_file_name = doc.file_name.as_deref();
+    db::update_doc_file(conn, doc_id, &dest_name).map_err(|e| e.to_string())?;
+    remove_unreferenced_old_attachment(vault_path, &docs, doc, old_file_name, &dest_name);
+
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    let hash = hex::encode(hasher.finalize());
+    let size = bytes.len() as i64;
+    let content_type = content_type_for_ext(&ext);
+    let _ = db::update_doc_content_hash(conn, doc_id, &hash, size, content_type);
+    let payload = serde_json::json!({
+        "sha256": hash,
+        "file_size": size,
+        "content_type": content_type,
+        "source": "mobile_bytes",
+    })
+    .to_string();
+    let _ = db::log_event(
+        conn,
+        "file_attached",
+        "document",
+        Some(doc_id),
+        Some(&payload),
+    );
+
+    Ok(dest_name)
+}
+
+fn decode_pdf_page_images(pages: &[PdfPageImage]) -> Result<Vec<image::DynamicImage>, String> {
+    let mut decoded = Vec::with_capacity(pages.len());
+    let mut total_input_bytes = 0usize;
+    for (idx, page) in pages.iter().enumerate() {
+        let label = page
+            .file_name
+            .as_deref()
+            .filter(|name| !name.trim().is_empty())
+            .map(|name| format!("page {} ({})", idx + 1, name))
+            .unwrap_or_else(|| format!("page {}", idx + 1));
+        if page.data_base64.trim().is_empty() {
+            return Err(format!("{} is empty.", label));
+        }
+        let bytes = data_encoding::BASE64
+            .decode(page.data_base64.as_bytes())
+            .map_err(|e| format!("Invalid image encoding on {}: {}", label, e))?;
+        total_input_bytes += bytes.len();
+        if total_input_bytes > MOBILE_PDF_INPUT_LIMIT_BYTES {
+            return Err("Selected pages are too large for one mobile PDF.".to_string());
+        }
+        let img = image::load_from_memory(&bytes)
+            .map_err(|e| format!("Cannot decode image {}: {}", label, e))?;
+        if img.width() == 0 || img.height() == 0 {
+            return Err(format!("Image {} has invalid dimensions.", label));
+        }
+        decoded.push(img);
+    }
+    Ok(decoded)
+}
+
+fn normalize_scan_page(img: &image::DynamicImage, max_long_edge: u32) -> image::DynamicImage {
+    let long_edge = img.width().max(img.height());
+    let resized = if long_edge > max_long_edge {
+        let scale = max_long_edge as f64 / long_edge as f64;
+        let next_w = ((img.width() as f64 * scale).round() as u32).max(1);
+        let next_h = ((img.height() as f64 * scale).round() as u32).max(1);
+        img.resize_exact(next_w, next_h, image::imageops::FilterType::Lanczos3)
+    } else {
+        img.clone()
+    };
+    image::DynamicImage::ImageLuma8(resized.to_luma8())
+}
+
+fn render_decoded_images_pdf(
+    decoded: &[image::DynamicImage],
+    max_long_edge: u32,
+) -> Result<Vec<u8>, String> {
+    let page_w = 210.0_f64;
+    let page_h = 297.0_f64;
+    let margin = 8.0_f64;
+    let box_w = page_w - margin * 2.0;
+    let box_h = page_h - margin * 2.0;
+    let dpi = 220.0_f64;
+    let mm_per_px = 25.4 / dpi;
+
+    let (doc, page1, layer1) = PdfDocument::new(
+        "Skipi document scan",
+        Mm(page_w as f32),
+        Mm(page_h as f32),
+        "Page 1",
+    );
+
+    for (idx, raw_img) in decoded.iter().enumerate() {
+        let dyn_img = normalize_scan_page(raw_img, max_long_edge);
+        let layer = if idx == 0 {
+            doc.get_page(page1).get_layer(layer1)
+        } else {
+            let (page, layer) = doc.add_page(
+                Mm(page_w as f32),
+                Mm(page_h as f32),
+                &format!("Page {}", idx + 1),
+            );
+            doc.get_page(page).get_layer(layer)
+        };
+
+        let px_w = dyn_img.width() as f64;
+        let px_h = dyn_img.height() as f64;
+        let native_w_mm = px_w * mm_per_px;
+        let native_h_mm = px_h * mm_per_px;
+        let scale = (box_w / native_w_mm).min(box_h / native_h_mm);
+        let final_w_mm = native_w_mm * scale;
+        let final_h_mm = native_h_mm * scale;
+        let tx = margin + (box_w - final_w_mm) / 2.0;
+        let ty = margin + (box_h - final_h_mm) / 2.0;
+
+        let image = Image::from_dynamic_image(&dyn_img);
+        image.add_to_layer(
+            layer,
+            ImageTransform {
+                translate_x: Some(Mm(tx as f32)),
+                translate_y: Some(Mm(ty as f32)),
+                scale_x: Some(scale as f32),
+                scale_y: Some(scale as f32),
+                dpi: Some(dpi as f32),
+                ..Default::default()
+            },
+        );
+    }
+
+    let mut pdf = Vec::new();
+    {
+        let mut writer = std::io::BufWriter::new(&mut pdf);
+        doc.save(&mut writer).map_err(|e| e.to_string())?;
+    }
+    Ok(pdf)
+}
+
+fn render_image_pages_pdf(pages: &[PdfPageImage]) -> Result<Vec<u8>, String> {
+    if pages.is_empty() {
+        return Err("Add at least one page before creating PDF.".to_string());
+    }
+    if pages.len() > 40 {
+        return Err("Too many pages for one mobile PDF (40 pages max).".to_string());
+    }
+
+    let decoded = decode_pdf_page_images(pages)?;
+    let quality_steps: &[u32] = if pages.len() <= 3 {
+        &[2200, 1800, 1400, 1100]
+    } else if pages.len() <= 8 {
+        &[1800, 1400, 1100, 900]
+    } else {
+        &[1400, 1100, 900, 760]
+    };
+
+    let mut last_size = 0usize;
+    for max_long_edge in quality_steps {
+        let pdf = render_decoded_images_pdf(&decoded, *max_long_edge)?;
+        last_size = pdf.len();
+        if pdf.len() <= MOBILE_ATTACHMENT_LIMIT_BYTES {
+            return Ok(pdf);
+        }
+    }
+
+    Err(format!(
+        "PDF is still too large after compression ({} MB). Split it into fewer pages.",
+        (last_size + 1024 * 1024 - 1) / (1024 * 1024)
+    ))
+}
+
+fn attach_pdf_pages_to_vault(
+    conn: &rusqlite::Connection,
+    vault_path: &Path,
+    doc_id: &str,
+    file_name: &str,
+    pages: &[PdfPageImage],
+) -> Result<String, String> {
+    let pdf = render_image_pages_pdf(pages)?;
+    let safe_file_name = if file_name.trim().is_empty() {
+        "document.pdf"
+    } else {
+        file_name.trim()
+    };
+    let pdf_file_name = if safe_file_name.to_lowercase().ends_with(".pdf") {
+        safe_file_name.to_string()
+    } else {
+        format!("{}.pdf", safe_file_name)
+    };
+    attach_bytes_to_vault(conn, vault_path, doc_id, &pdf_file_name, &pdf)
+}
+
 #[tauri::command]
 pub fn attach_file(
     state: State<AppState>,
@@ -771,6 +1254,41 @@ pub fn attach_file(
 
     let src = PathBuf::from(source_path);
     attach_file_to_vault(conn, vault_path, &doc_id, &src)
+}
+
+#[tauri::command]
+pub fn attach_file_bytes(
+    state: State<AppState>,
+    doc_id: String,
+    file_name: String,
+    data_base64: String,
+) -> Result<String, String> {
+    let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
+    let vault_path = vault_lock.as_ref().ok_or("No vault open")?;
+
+    let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = conn_lock.as_ref().ok_or("No vault open")?;
+
+    let bytes = data_encoding::BASE64
+        .decode(data_base64.as_bytes())
+        .map_err(|e| format!("Invalid file encoding: {}", e))?;
+    attach_bytes_to_vault(conn, vault_path, &doc_id, &file_name, &bytes)
+}
+
+#[tauri::command]
+pub fn attach_pdf_pages(
+    state: State<AppState>,
+    doc_id: String,
+    file_name: String,
+    pages: Vec<PdfPageImage>,
+) -> Result<String, String> {
+    let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
+    let vault_path = vault_lock.as_ref().ok_or("No vault open")?;
+
+    let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = conn_lock.as_ref().ok_or("No vault open")?;
+
+    attach_pdf_pages_to_vault(conn, vault_path, &doc_id, &file_name, &pages)
 }
 
 #[cfg(test)]
@@ -879,6 +1397,65 @@ mod tests {
         assert!(std::fs::read_to_string(vault_copy)
             .unwrap()
             .contains("DOC_ID=passport"));
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(vault_path);
+    }
+
+    fn tiny_png_base64(rgb: [u8; 3]) -> String {
+        let img = image::RgbImage::from_pixel(4, 4, image::Rgb(rgb));
+        let dyn_img = image::DynamicImage::ImageRgb8(img);
+        let mut bytes = Vec::new();
+        dyn_img
+            .write_to(
+                &mut std::io::Cursor::new(&mut bytes),
+                image::ImageOutputFormat::Png,
+            )
+            .unwrap();
+        crate::base64_encode(&bytes)
+    }
+
+    #[test]
+    fn attach_pdf_pages_creates_single_pdf_attachment() {
+        let (vault_path, conn) = create_temp_vault("skipi-pdf-pages");
+        let doc = test_doc(
+            "multi_page_cert",
+            "STCW Mandatory",
+            "Multi Page Certificate",
+        );
+        db::insert_doc(&conn, &doc).unwrap();
+
+        let pages = vec![
+            PdfPageImage {
+                file_name: Some("page-1.png".to_string()),
+                data_base64: tiny_png_base64([220, 230, 255]),
+            },
+            PdfPageImage {
+                file_name: Some("page-2.png".to_string()),
+                data_base64: tiny_png_base64([235, 255, 230]),
+            },
+        ];
+
+        let dest_name = attach_pdf_pages_to_vault(
+            &conn,
+            &vault_path,
+            &doc.id,
+            "Multi Page Certificate.pdf",
+            &pages,
+        )
+        .unwrap();
+        assert!(dest_name.ends_with(".pdf"));
+
+        let pdf_path = vault_path.join(&doc.category).join(&dest_name);
+        let pdf = std::fs::read(pdf_path).unwrap();
+        assert!(pdf.starts_with(b"%PDF"));
+        assert!(pdf.len() > 1000);
+
+        let docs = db::get_all_docs(&conn).unwrap();
+        let attached = docs.iter().find(|d| d.id == doc.id).unwrap();
+        assert_eq!(attached.file_name.as_deref(), Some(dest_name.as_str()));
+        assert_eq!(attached.content_type.as_deref(), Some("application/pdf"));
+        assert_eq!(attached.file_size, Some(pdf.len() as i64));
 
         drop(conn);
         let _ = std::fs::remove_dir_all(vault_path);

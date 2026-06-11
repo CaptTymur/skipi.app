@@ -897,13 +897,36 @@ pub fn create_demo_vault(state: State<AppState>, path: String) -> Result<VaultIn
     Ok(info)
 }
 
-/// Auto-create a demo vault in ~/Documents/Skipi Demo (no folder picker).
+fn demo_vault_auto_path(_app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        use tauri::Manager;
+        let base = _app
+            .path()
+            .app_data_dir()
+            .map_err(|e| format!("Could not resolve app data folder: {}", e))?
+            .join("vaults");
+        fs::create_dir_all(&base)
+            .map_err(|e| format!("Could not create mobile Skipi vault folder: {}", e))?;
+        return Ok(base.join("Skipi Demo"));
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let base = dirs::document_dir()
+            .or_else(dirs::home_dir)
+            .unwrap_or_else(|| PathBuf::from("."));
+        Ok(base.join("Skipi Demo"))
+    }
+}
+
+/// Auto-create a demo vault in the platform default location (no folder picker).
 #[tauri::command]
-pub fn create_demo_vault_auto(state: State<AppState>) -> Result<VaultInfo, String> {
-    let base = dirs::document_dir()
-        .or_else(dirs::home_dir)
-        .unwrap_or_else(|| PathBuf::from("."));
-    let vault_path = base.join("Skipi Demo");
+pub fn create_demo_vault_auto(
+    state: State<AppState>,
+    app: tauri::AppHandle,
+) -> Result<VaultInfo, String> {
+    let vault_path = demo_vault_auto_path(&app)?;
     let conn = demo::populate_demo_vault(&vault_path)?;
     let info = db::get_vault_info(&conn).map_err(|e| e.to_string())?;
     let path_str = vault_path.to_string_lossy().to_string();

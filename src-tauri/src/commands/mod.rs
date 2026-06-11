@@ -2,6 +2,10 @@ pub mod agency_mailing;
 pub mod ai;
 pub mod cv_commands;
 pub mod documents;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub mod email;
+#[cfg(any(target_os = "android", target_os = "ios"))]
+#[path = "email_mobile.rs"]
 pub mod email;
 pub mod jobs;
 pub mod mail_intent;

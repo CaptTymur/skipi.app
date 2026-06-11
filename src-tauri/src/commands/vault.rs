@@ -22,7 +22,11 @@ pub fn get_app_version() -> String {
 /// Used by the feedback template so beta reports always include the platform.
 #[tauri::command]
 pub fn get_platform() -> String {
-    if cfg!(target_os = "macos") {
+    if cfg!(target_os = "android") {
+        "android".to_string()
+    } else if cfg!(target_os = "ios") {
+        "ios".to_string()
+    } else if cfg!(target_os = "macos") {
         "macos".to_string()
     } else if cfg!(target_os = "windows") {
         "windows".to_string()
@@ -36,13 +40,30 @@ pub fn get_platform() -> String {
 /// Default parent folder for new vaults. Used by the frontend to pre-fill
 /// "where this vault will be saved" before any native picker opens.
 #[tauri::command]
-pub fn get_default_vault_parent() -> Result<String, String> {
-    let p = dirs::document_dir()
-        .or_else(dirs::home_dir)
-        .ok_or_else(|| "Could not resolve user Documents / home folder".to_string())?
-        .join("Skipi");
-    fs::create_dir_all(&p).map_err(|e| format!("Could not create default Skipi folder: {}", e))?;
-    Ok(p.to_string_lossy().to_string())
+pub fn get_default_vault_parent(_app: tauri::AppHandle) -> Result<String, String> {
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        use tauri::Manager;
+        let p = _app
+            .path()
+            .app_data_dir()
+            .map_err(|e| format!("Could not resolve app data folder: {}", e))?
+            .join("vaults");
+        fs::create_dir_all(&p)
+            .map_err(|e| format!("Could not create mobile Skipi vault folder: {}", e))?;
+        return Ok(p.to_string_lossy().to_string());
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let p = dirs::document_dir()
+            .or_else(dirs::home_dir)
+            .ok_or_else(|| "Could not resolve user Documents / home folder".to_string())?
+            .join("Skipi");
+        fs::create_dir_all(&p)
+            .map_err(|e| format!("Could not create default Skipi folder: {}", e))?;
+        Ok(p.to_string_lossy().to_string())
+    }
 }
 
 /// Detects how Skipi is installed on Linux so the frontend can choose
@@ -77,6 +98,14 @@ pub fn get_linux_install_type() -> String {
 /// Receives the current `WebviewWindow` directly (Tauri injects it) — that
 /// way we don't depend on a specific label or on extra window-plugin
 /// capabilities on the JS side.
+#[cfg(any(target_os = "android", target_os = "ios"))]
+#[tauri::command]
+pub fn set_window_title(window: tauri::WebviewWindow, title: String) -> Result<(), String> {
+    let _ = (window, title);
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[tauri::command]
 pub fn set_window_title(window: tauri::WebviewWindow, title: String) -> Result<(), String> {
     window.set_title(&title).map_err(|e| e.to_string())
@@ -86,6 +115,17 @@ pub fn set_window_title(window: tauri::WebviewWindow, title: String) -> Result<(
 /// `open` / `start` so we don't need the tauri_plugin_shell dep. Used to
 /// redirect Linux `.deb` users to the release page when auto-update isn't
 /// applicable to their install type.
+#[cfg(any(target_os = "android", target_os = "ios"))]
+#[tauri::command]
+pub fn open_external_url(url: String) -> Result<(), String> {
+    let allowed = ["https://", "http://", "mailto:", "tel:"];
+    if !allowed.iter().any(|p| url.starts_with(p)) {
+        return Err("Only http(s)/mailto/tel URLs are allowed".to_string());
+    }
+    Err("Opening external URLs is not wired for mobile yet.".to_string())
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[tauri::command]
 pub fn open_external_url(url: String) -> Result<(), String> {
     // Sanity check — limit to scheme://-style URLs so this command can't be
@@ -556,11 +596,38 @@ pub fn import_vault_backup(
 }
 
 #[tauri::command]
-pub fn get_recent_vaults() -> Vec<String> {
-    crate::load_recent_vaults()
+pub fn get_recent_vaults(_app: tauri::AppHandle) -> Vec<String> {
+    let recent: Vec<String> = crate::load_recent_vaults()
         .into_iter()
         .filter(|p| std::path::Path::new(p).is_dir())
-        .collect()
+        .collect();
+    if !recent.is_empty() {
+        return recent;
+    }
+
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        use tauri::Manager;
+        let Ok(base) = _app.path().app_data_dir() else {
+            return vec![];
+        };
+        let vaults = base.join("vaults");
+        let Ok(entries) = fs::read_dir(vaults) else {
+            return vec![];
+        };
+        let mut found: Vec<String> = entries
+            .filter_map(|entry| entry.ok().map(|e| e.path()))
+            .filter(|path| path.join("skipi.db").is_file())
+            .map(|path| path.to_string_lossy().to_string())
+            .collect();
+        found.sort();
+        return found;
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        recent
+    }
 }
 
 #[tauri::command]

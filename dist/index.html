@@ -133,7 +133,7 @@ document.addEventListener('DOMContentLoaded',function(){updateTitlebar();applyI1
             if(!d){
                 d=document.createElement('div');
                 d.id='__early_err__';
-                d.style.cssText='position:fixed;top:0;left:0;right:0;background:#c53030;color:#fff;padding:6px 12px;font:11px/1.4 monospace;z-index:999999;white-space:pre-wrap;';
+                d.style.cssText='position:fixed;top:calc(56px + env(safe-area-inset-top,0px));left:8px;right:8px;background:#c53030;color:#fff;padding:6px 12px;font:11px/1.4 monospace;z-index:999999;white-space:pre-wrap;border-radius:8px;';
                 (document.body||document.documentElement).appendChild(d);
             }
             d.textContent='[Skipi v'+APP_VERSION+'] '+msg;
@@ -662,6 +662,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .update-banner button:hover { background:rgba(255,255,255,.15); }
 .update-banner .ub-close { cursor:pointer; opacity:.6; font-size:16px; }
 .update-banner .ub-close:hover { opacity:1; }
+.skipi-toast-container { position:fixed; top:12px; right:12px; z-index:99999; display:flex; flex-direction:column; gap:6px; pointer-events:none; }
 
 /* Generic centered modal */
 .modal-overlay { position:fixed; inset:0; z-index:120; background:rgba(0,0,0,0.55); align-items:center; justify-content:center; display:none; }
@@ -812,9 +813,137 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .chat-status { font-size: 10px; color: var(--text2); padding: 4px 12px 0; display: flex; justify-content: space-between; align-items: center; }
 .chat-day-sep { display: flex; justify-content: center; margin: 8px 0; }
 .chat-day-sep span { background: var(--surface2); color: var(--text2); font-size: 11px; padding: 3px 10px; border-radius: 10px; }
+
+/* Mobile app shell */
+.mobile-shell { display:none; min-height:100dvh; background:var(--bg); color:var(--text); flex-direction:column; overflow:hidden; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); }
+.mobile-top { min-height:56px; flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 14px; border-bottom:1px solid var(--border); background:var(--surface); }
+.mobile-brand { min-width:0; }
+.mobile-brand-title { font-size:16px; font-weight:800; line-height:1.1; }
+.mobile-brand-sub { font-size:11px; color:var(--text2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:68vw; margin-top:2px; }
+.mobile-icon-btn { width:40px; height:40px; display:flex; align-items:center; justify-content:center; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:18px; }
+.mobile-main { flex:1; overflow:auto; -webkit-overflow-scrolling:touch; padding:14px; padding-bottom:92px; }
+.mobile-bottom-nav { min-height:64px; flex-shrink:0; display:flex; align-items:stretch; gap:6px; padding:7px 8px; border-top:1px solid var(--border); background:var(--surface); }
+.mobile-nav-btn { flex:1; border:1px solid transparent; border-radius:8px; background:transparent; color:var(--text2); font-size:11px; font-weight:700; display:flex; flex-direction:column; gap:3px; align-items:center; justify-content:center; }
+.mobile-nav-btn span { font-size:18px; line-height:1; }
+.mobile-nav-btn.active { color:var(--accent); background:var(--accent-bg); border-color:var(--accent-bg2); }
+.mobile-card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:13px; margin-bottom:10px; }
+.mobile-card.action { cursor:pointer; }
+.mobile-card-title { font-size:15px; font-weight:800; line-height:1.25; }
+.mobile-card-sub { font-size:12px; color:var(--text2); line-height:1.35; margin-top:4px; }
+.mobile-primary-action { display:flex; align-items:center; gap:12px; text-align:left; width:100%; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); padding:14px; margin-bottom:10px; }
+.mobile-primary-action:active { transform:translateY(1px); }
+.mobile-action-icon { width:42px; height:42px; border-radius:8px; background:var(--accent-bg); color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:22px; flex:0 0 auto; }
+.mobile-action-copy { min-width:0; flex:1; }
+.mobile-action-title { display:block; font-size:15px; font-weight:800; line-height:1.2; }
+.mobile-action-sub { display:block; color:var(--text2); font-size:12px; line-height:1.35; margin-top:3px; }
+.mobile-hero { padding:24px 16px; text-align:left; }
+.mobile-hero h1 { font-size:28px; margin:0 0 6px; }
+.mobile-hero p { color:var(--text2); font-size:14px; line-height:1.45; margin:0 0 18px; }
+.mobile-stack { display:flex; flex-direction:column; gap:10px; }
+.mobile-row { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.mobile-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-bottom:12px; }
+.mobile-stat { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:10px; min-width:0; }
+.mobile-stat strong { display:block; font-size:20px; line-height:1; color:var(--accent); }
+.mobile-stat span { display:block; color:var(--text2); font-size:10px; font-weight:700; text-transform:uppercase; margin-top:5px; }
+.mobile-pill { display:inline-flex; align-items:center; border:1px solid var(--border); border-radius:999px; padding:3px 8px; font-size:11px; color:var(--text2); background:var(--bg); white-space:nowrap; }
+.mobile-pill.ok { color:var(--green); border-color:rgba(39,174,96,.35); }
+.mobile-pill.warn { color:var(--orange); border-color:rgba(230,126,34,.45); }
+.mobile-pill.bad { color:var(--red); border-color:rgba(231,76,60,.45); }
+.mobile-doc-row { width:100%; text-align:left; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); padding:10px 11px; margin-bottom:8px; display:block; }
+.mobile-doc-row:active { transform:translateY(1px); }
+.mobile-doc-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+.mobile-doc-title { font-size:14px; font-weight:800; line-height:1.25; min-width:0; }
+.mobile-doc-meta { color:var(--text2); font-size:11px; line-height:1.35; margin-top:4px; }
+.mobile-doc-main { display:flex; align-items:flex-start; gap:10px; }
+.mobile-doc-icon { width:34px; height:34px; border-radius:7px; display:flex; align-items:center; justify-content:center; background:var(--bg); border:1px solid var(--border); color:var(--text2); font-size:16px; flex:0 0 auto; margin-top:1px; }
+.mobile-doc-icon.pdf { color:#c0392b; background:rgba(192,57,43,.08); border-color:rgba(192,57,43,.18); }
+.mobile-doc-icon.image { color:var(--green); background:rgba(39,174,96,.08); border-color:rgba(39,174,96,.18); }
+.mobile-doc-content { min-width:0; flex:1; }
+.mobile-doc-file { color:var(--green); font-size:11px; line-height:1.35; margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mobile-section-title { font-size:12px; color:var(--text2); font-weight:800; text-transform:uppercase; margin:14px 0 8px; }
+.mobile-search { width:100%; height:42px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); padding:0 12px; font-size:15px; margin-bottom:8px; }
+.mobile-filter-row { display:flex; gap:7px; overflow-x:auto; padding-bottom:8px; margin-bottom:2px; }
+.mobile-filter-chip { flex:0 0 auto; border:1px solid var(--border); border-radius:999px; background:var(--surface); color:var(--text2); min-height:34px; padding:0 12px; font-size:12px; font-weight:800; }
+.mobile-filter-chip.active { color:var(--accent); border-color:var(--accent-bg2); background:var(--accent-bg); }
+.mobile-field { margin-bottom:10px; }
+.mobile-field label { display:block; color:var(--text2); font-size:10px; font-weight:800; text-transform:uppercase; margin-bottom:5px; }
+.mobile-field input { width:100%; height:42px; border:1px solid var(--border); border-radius:7px; background:var(--bg); color:var(--text); padding:0 10px; font-size:15px; }
+.mobile-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.mobile-actions .btn { min-height:40px; }
+.mobile-preview { margin-top:10px; border:1px solid var(--border); border-radius:8px; overflow:hidden; background:#111; min-height:160px; display:flex; align-items:center; justify-content:center; color:var(--text2); }
+.mobile-preview img { display:block; width:100%; height:auto; max-height:58vh; object-fit:contain; }
+.mobile-preview iframe { width:100%; height:58vh; border:0; background:#fff; }
+.mobile-preview-file { background:var(--surface); color:var(--text); padding:18px; text-align:center; flex-direction:column; gap:10px; }
+.mobile-preview-file .file-type { font-size:30px; line-height:1; }
+.mobile-preview-file .file-name { font-size:13px; font-weight:800; word-break:break-word; }
+.mobile-preview-file .file-note { font-size:12px; color:var(--text2); line-height:1.35; }
+.mobile-pdf-preview { width:100%; background:#fff; color:#111; }
+.mobile-pdf-preview-actions { padding:10px; background:var(--surface); border-top:1px solid var(--border); text-align:center; }
+.mobile-preview-overlay { position:fixed; inset:0; z-index:130; display:flex; flex-direction:column; background:#0b0b0b; color:#fff; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); }
+.mobile-preview-overlay-head { min-height:54px; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 12px; border-bottom:1px solid rgba(255,255,255,.12); }
+.mobile-preview-overlay-title { font-size:14px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mobile-preview-overlay-head .btn { color:#fff; border-color:rgba(255,255,255,.72); background:rgba(255,255,255,.08); }
+.mobile-preview-overlay-head .btn:active { background:rgba(255,255,255,.18); }
+.mobile-preview-overlay-body { flex:1; overflow:auto; display:flex; align-items:flex-start; justify-content:center; padding:10px; }
+.mobile-preview-overlay-body img { max-width:100%; height:auto; background:#fff; }
+.mobile-page-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:10px; }
+.mobile-page-card { border:1px solid var(--border); border-radius:8px; overflow:hidden; background:var(--surface); }
+.mobile-page-card img { width:100%; aspect-ratio:3/4; object-fit:cover; display:block; background:#111; }
+.mobile-page-card-footer { display:flex; align-items:center; justify-content:space-between; gap:6px; padding:7px; font-size:12px; color:var(--text2); }
+.mobile-page-card-footer button { min-height:30px; padding:4px 8px; }
+body.mobile-mode { height:100dvh; overflow:hidden; }
+body.mobile-mode .modules-bar,
+body.mobile-mode .app,
+body.mobile-mode .statusbar { display:none !important; }
+body.mobile-mode .mobile-shell { display:flex; }
+body.mobile-mode .skipi-toast-container { top:auto; left:12px; right:12px; bottom:calc(84px + env(safe-area-inset-bottom,0px)); align-items:stretch; }
+body.mobile-mode .skipi-toast-container > div { max-width:none !important; }
+body.mobile-mode .update-banner { top:calc(56px + env(safe-area-inset-top,0px)); left:8px; right:8px; border-radius:8px; }
+body.mobile-mode #err { top:calc(56px + env(safe-area-inset-top,0px)) !important; left:8px !important; right:8px !important; border-radius:8px; }
+body.mobile-mode .settings-overlay { align-items:stretch; justify-content:stretch; padding:56px 0 0; box-sizing:border-box; }
+body.mobile-mode .settings-modal { width:100vw; height:calc(100dvh - 56px); max-height:none; border-radius:0; flex-direction:column; }
+body.mobile-mode .settings-nav { width:100%; display:flex; gap:4px; overflow-x:auto; overflow-y:hidden; border-right:none; border-bottom:1px solid var(--border); padding:8px 10px; }
+body.mobile-mode .settings-nav-title { display:none; }
+body.mobile-mode .settings-nav-item { flex:0 0 auto; border-radius:8px; padding:9px 11px; white-space:nowrap; font-size:13px; }
+body.mobile-mode .settings-nav-item .nav-icon { width:auto; }
+body.mobile-mode .settings-body { flex:1; padding:18px 14px calc(24px + env(safe-area-inset-bottom,0px)); }
+body.mobile-mode .settings-close { top:10px; right:10px; width:40px; height:40px; border:1px solid var(--border); border-radius:8px; background:var(--surface); font-size:22px; }
+body.mobile-mode .settings-section h3 { padding-right:48px; }
+body.mobile-mode .setting-row { flex-direction:column; align-items:stretch; gap:10px; padding:12px; }
+body.mobile-mode .setting-info { margin-right:0; }
+body.mobile-mode .setting-control { width:100%; display:flex; justify-content:flex-start; }
+body.mobile-mode .setting-control select,
+body.mobile-mode .setting-control input[type="text"],
+body.mobile-mode .setting-control input[type="password"] { width:100%; max-width:100%; }
+body.mobile-mode .field-grid { grid-template-columns:1fr; }
+body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][style*="gap:20px"] { flex-direction:column; gap:12px !important; }
+@media (max-width: 720px) {
+    body:not(.desktop-forced) .modules-bar,
+    body:not(.desktop-forced) .app,
+    body:not(.desktop-forced) .statusbar { display:none !important; }
+    body:not(.desktop-forced) .mobile-shell { display:flex; }
+}
 </style>
 </head>
 <body>
+
+<div class="mobile-shell" id="mobile-shell">
+    <div class="mobile-top">
+        <div class="mobile-brand">
+            <div class="mobile-brand-title">Skipi</div>
+            <div class="mobile-brand-sub" id="mobile-vault-sub">Mobile seafarer vault</div>
+        </div>
+        <button class="mobile-icon-btn" type="button" onclick="openSettings()" title="Settings">&#9881;</button>
+    </div>
+    <main class="mobile-main" id="mobile-main"></main>
+    <nav class="mobile-bottom-nav" id="mobile-bottom-nav" style="display:none;">
+        <button class="mobile-nav-btn active" type="button" data-mview="home" onclick="mobileShow('home')"><span>&#9632;</span>Home</button>
+        <button class="mobile-nav-btn" type="button" data-mview="docs" onclick="mobileShow('docs')"><span>&#128196;</span>Docs</button>
+        <button class="mobile-nav-btn" type="button" data-mview="add" onclick="mobileShow('add')"><span>+</span>Add</button>
+        <button class="mobile-nav-btn" type="button" data-mview="profile" onclick="mobileShow('profile')"><span>&#9679;</span>Profile</button>
+    </nav>
+    <input id="mobile-file-input" type="file" accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png" style="display:none;" onchange="mobileHandleFilePicked(this.files)">
+</div>
 
 <!-- Top horizontal modules bar. The OS titlebar now carries the vault
      label (via set_window_title), so the old inline "Skipi vX.Y.Z — …"
@@ -981,6 +1110,17 @@ var pkgMode = false, pkgSelected = [];
 var currentAccountType = '';
 var currentWizardPosition = '';
 var currentWizardVesselCategory = '';
+var hostPlatform = 'unknown';
+var mobileView = 'home';
+var mobilePendingAttachDocId = null;
+var mobilePendingCapture = false;
+var mobilePendingFileMode = 'single';
+var mobilePdfBuilder = null;
+var mobileAddMode = 'choose';
+var mobilePendingPickedFile = null;
+var mobileDocsFilter = 'all';
+var mobileDocsSearch = '';
+var mobileDocActionsExpanded = false;
 
 // Wizard slug → canonical rank string used by crewings when posting vacancies.
 // When seafarer hasn't filled the "Personal details → Rank" form, this is
@@ -1030,7 +1170,7 @@ function err(m) { var e=document.getElementById('err'); e.textContent=m; e.style
 /* ── Toast notification system ── */
 var _toastContainer=null;
 function showToast(msg,type){
-    if(!_toastContainer){_toastContainer=document.createElement('div');_toastContainer.style.cssText='position:fixed;top:12px;right:12px;z-index:99999;display:flex;flex-direction:column;gap:6px;pointer-events:none;';document.body.appendChild(_toastContainer);}
+    if(!_toastContainer){_toastContainer=document.createElement('div');_toastContainer.className='skipi-toast-container';document.body.appendChild(_toastContainer);}
     var t=document.createElement('div');
     var bg=type==='error'?'var(--red)':type==='success'?'var(--green)':'var(--yellow)';
     t.style.cssText='padding:8px 14px;border-radius:6px;font-size:12px;color:#fff;background:'+bg+';pointer-events:auto;cursor:pointer;max-width:360px;word-break:break-word;box-shadow:0 2px 8px rgba(0,0,0,0.3);opacity:0;transition:opacity .2s;';
@@ -1809,6 +1949,10 @@ function _withTimeout(p,ms,label){
 }
 async function checkForUpdate(silent){
     try{
+        if(hostPlatform==='android'||hostPlatform==='ios'){
+            if(!silent)showToast('Updates are handled by the mobile store build.','info');
+            return;
+        }
         if(!window.__TAURI__){
             if(!silent)showToast('Tauri API unavailable','error');
             return;
@@ -2010,6 +2154,8 @@ async function init() {
     if(window.__TAURI__.dialog){open=window.__TAURI__.dialog.open;saveDlg=window.__TAURI__.dialog.save;}
     var wv=document.getElementById('welcome-version');if(wv)wv.textContent=APP_VERSION;
     convertFileSrc=window.__TAURI__.core.convertFileSrc||function(p){return p;};
+    try{hostPlatform=await invoke('get_platform');}catch(e){hostPlatform='unknown';}
+    applyMobileMode();
     await initApiBaseOverride();
     startAppDiagnostics();
     // Wire up native drag-and-drop (runs once, independent of vault state)
@@ -2351,7 +2497,797 @@ async function onType(v){
     // All other entity types are disabled in v0.4.11; no-op.
     showToast('This entity type is coming soon — only Seafarer is available right now.','info');
 }
-function showWelcome(){show('scr-welcome');hide('scr-setup');hide('scr-content');hide('ribbon');hide('left-panel');hide('tabs');hide('statusbar');var mb=document.getElementById('modules-bar');if(mb)mb.style.display='none';renderWelcomeRecent();}
+function showWelcome(){show('scr-welcome');hide('scr-setup');hide('scr-content');hide('ribbon');hide('left-panel');hide('tabs');hide('statusbar');var mb=document.getElementById('modules-bar');if(mb)mb.style.display='none';renderWelcomeRecent();renderMobileWelcome();}
+
+function mobileViewportLikely(){return window.matchMedia&&window.matchMedia('(max-width: 720px)').matches;}
+function shouldUseMobileShell(){return hostPlatform==='android'||hostPlatform==='ios'||mobileViewportLikely();}
+function isMobileMode(){return document.body&&document.body.classList.contains('mobile-mode');}
+function applyMobileMode(){
+    var on=shouldUseMobileShell();
+    if(document.body)document.body.classList.toggle('mobile-mode',on);
+    if(on){
+        if(allDocs&&allDocs.length)renderMobileShell();
+        else renderMobileWelcome();
+    }
+}
+window.addEventListener('resize',function(){applyMobileMode();});
+
+function mobileEsc(s){return esc(s);}
+function mobileVaultLabel(){
+    var el=document.getElementById('pf-vault-name');
+    var txt=el&&el.textContent?el.textContent.trim():'';
+    return txt&&txt!=='Vault'?txt:'Mobile seafarer vault';
+}
+function mobileSetSub(text){
+    var el=document.getElementById('mobile-vault-sub');
+    if(el)el.textContent=text||mobileVaultLabel();
+}
+function mobileSetBottomNav(showNav){
+    var nav=document.getElementById('mobile-bottom-nav');
+    if(nav)nav.style.display=showNav?'flex':'none';
+    document.querySelectorAll('.mobile-nav-btn').forEach(function(btn){
+        var v=btn.getAttribute('data-mview');
+        var pdfNav=(mobileView==='pdf'&&mobilePdfBuilder&&mobilePdfBuilder.docId)?'docs':'add';
+        var active=(mobileView===v)||(mobileView==='doc'&&v==='docs')||(mobileView==='pdf'&&v===pdfNav);
+        btn.classList.toggle('active',active);
+    });
+}
+function mobileMainHtml(html){
+    var main=document.getElementById('mobile-main');
+    if(main)main.innerHTML=html;
+}
+function renderMobileWelcome(){
+    if(!shouldUseMobileShell())return;
+    mobileSetSub('Mobile seafarer vault');
+    mobileSetBottomNav(false);
+    var h='<div class="mobile-hero">';
+    h+='<h1>Skipi</h1>';
+    h+='<p>Create or open your seafarer vault, then add certificates from your phone camera or files.</p>';
+    h+='<div class="mobile-stack">';
+    h+='<div class="mobile-card"><div class="mobile-field"><label>Seafarer name</label><input id="mobile-new-name" placeholder="Your name"></div><button class="btn btn-accent" style="width:100%;" onclick="mobileQuickCreateVault()">Create mobile vault</button></div>';
+    h+='<button class="btn btn-outline" onclick="mobileOpenExistingVault()">Open existing vault</button>';
+    h+='<button class="btn btn-outline" onclick="loadDemoVault()">Open demo vault</button>';
+    h+='</div></div>';
+    mobileMainHtml(h);
+}
+async function mobileQuickCreateVault(){
+    var nameEl=document.getElementById('mobile-new-name');
+    var name=(nameEl&&nameEl.value?nameEl.value.trim():'')||'Mobile Seafarer';
+    var folder=vaultFolderName('Seafarer',name);
+    var path=await defaultVaultPath(folder);
+    try{
+        var info=await invoke('create_vault',{path:path,accountType:'seafarer',name:name,rank:null,vesselType:null});
+        await loadVault(info);
+        showToast('Mobile vault created','success');
+    }catch(e){
+        showToast('Could not create vault: '+e,'error');
+        logError('mobile_create_vault',e);
+    }
+}
+async function mobileOpenExistingVault(forcePicker){
+    if(hostPlatform==='android'||hostPlatform==='ios'){
+        try{
+            var recent=await invoke('get_recent_vaults')||[];
+            var currentPath='';
+            try{currentPath=await invoke('get_current_vault_path')||'';}catch(_){}
+            if(forcePicker){
+                mobileRenderVaultPicker(recent,currentPath);
+                return;
+            }
+            if(!recent.length){
+                showToast('No recent vaults on this device yet. Create a vault or open demo.','info');
+                return;
+            }
+            if(recent.length>1){
+                mobileRenderVaultPicker(recent,currentPath);
+                return;
+            }
+            var info=await invoke('open_vault',{path:recent[0]});
+            mobileView='home';
+            selectedDocId=null;
+            await loadVault(info);
+        }catch(e){
+            showToast('Could not open recent vault: '+e,'error');
+            logError('mobile_open_recent_vault',e);
+        }
+        return;
+    }
+    await browseExistingVault();
+}
+function mobileVaultNameFromPath(path){
+    return String(path||'').split(/[\\/]/).filter(Boolean).pop()||'Vault';
+}
+function mobileRenderVaultPicker(paths,currentPath){
+    mobileSetSub('Choose vault');
+    mobileSetBottomNav(false);
+    paths = Array.isArray(paths) ? paths : [];
+    var unique = [];
+    paths.forEach(function(p){ if(p && unique.indexOf(p)<0) unique.push(p); });
+    var h='<div class="mobile-card"><div class="mobile-card-title">Choose vault</div><div class="mobile-card-sub">Switch the active seafarer profile on this phone.</div></div>';
+    h+='<button class="mobile-primary-action" type="button" onclick="loadDemoVault()"><span class="mobile-action-icon">&#9679;</span><span class="mobile-action-copy"><span class="mobile-action-title">Open demo vault</span><span class="mobile-action-sub">Use sample data for testing.</span></span></button>';
+    h+='<button class="mobile-primary-action" type="button" onclick="renderMobileWelcome()"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">Create new vault</span><span class="mobile-action-sub">Start a clean mobile seafarer vault.</span></span></button>';
+    if(!unique.length){
+        h+='<div class="mobile-card"><div class="mobile-card-title">No recent vaults yet</div><div class="mobile-card-sub">Open or create a vault once and it will appear here.</div></div>';
+        h+='<button class="btn btn-outline" style="width:100%;margin-top:6px;" onclick="mobileReturnFromVaultPicker()">Back</button>';
+        mobileMainHtml(h);
+        return;
+    }
+    h+='<div class="mobile-section-title">Recent vaults</div>';
+    unique.forEach(function(path){
+        var name=mobileVaultNameFromPath(path);
+        var isCurrent=currentPath&&path===currentPath;
+        h+='<button class="mobile-doc-row" type="button" onclick="mobileOpenVaultPath(\''+jsString(path)+'\')">'
+            +'<div class="mobile-doc-main"><div class="mobile-doc-icon">'+(isCurrent?'&#9679;':'&#128451;')+'</div><div class="mobile-doc-content">'
+            +'<div class="mobile-doc-top"><div class="mobile-doc-title">'+mobileEsc(name)+'</div><span class="mobile-pill '+(isCurrent?'ok':'')+'">'+(isCurrent?'Current':'Open')+'</span></div>'
+            +'<div class="mobile-doc-meta">'+(isCurrent?'This vault is open now.':'Tap to switch to this vault.')+'</div>'
+            +'</div></div>'
+            +'</button>';
+    });
+    h+='<button class="btn btn-outline" style="width:100%;margin-top:6px;" onclick="mobileReturnFromVaultPicker()">Back</button>';
+    mobileMainHtml(h);
+}
+function mobileReturnFromVaultPicker(){
+    if(Array.isArray(allDocs)&&allDocs.length){
+        mobileView='profile';
+        renderMobileShell();
+    }else{
+        renderMobileWelcome();
+    }
+}
+async function mobileOpenVaultPath(path){
+    try{
+        var info=await invoke('open_vault',{path:path});
+        mobileView='home';
+        selectedDocId=null;
+        await loadVault(info);
+    }catch(e){
+        showToast('Could not open vault: '+e,'error');
+        logError('mobile_open_vault_path',e);
+    }
+}
+function mobileShow(view){
+    mobileView=view||'home';
+    if(mobileView==='add'&&mobileAddMode!=='attach_single'&&mobileAddMode!=='attach_pdf')mobileAddMode='choose';
+    renderMobileShell();
+}
+function mobileStats(){
+    var uploaded=allDocs.filter(function(d){return !!d.file_name;}).length;
+    var missing=allDocs.filter(function(d){return !d.file_name&&isActiveRequiredDoc(d);}).length;
+    var expiring=allDocs.filter(function(d){return d.file_name&&(classify(d)==='critical'||classify(d)==='warning');}).length;
+    return {uploaded:uploaded,missing:missing,expiring:expiring,total:allDocs.length};
+}
+function mobileStatusPill(d){
+    if(!d.file_name&&isActiveRequiredDoc(d))return '<span class="mobile-pill bad">Missing</span>';
+    if(!d.file_name)return '<span class="mobile-pill">No file</span>';
+    if(d.is_permanent)return '<span class="mobile-pill ok">Permanent</span>';
+    var s=classify(d),dl=days(d);
+    if(s==='expired')return '<span class="mobile-pill bad">Expired</span>';
+    if(s==='critical')return '<span class="mobile-pill warn">&lt;30 days</span>';
+    if(s==='warning')return '<span class="mobile-pill warn">&lt;90 days</span>';
+    if(s==='valid')return '<span class="mobile-pill ok">'+(dl!==null?dl+'d':'Valid')+'</span>';
+    return '<span class="mobile-pill">No expiry</span>';
+}
+function mobileFileKind(fileName){
+    var ext=String(fileName||'').split('.').pop().toLowerCase();
+    if(['jpg','jpeg','png','gif','webp','bmp'].indexOf(ext)>=0)return 'image';
+    if(ext==='pdf')return 'pdf';
+    return ext?'file':'';
+}
+function mobileFileIcon(fileName){
+    var kind=mobileFileKind(fileName);
+    if(kind==='pdf')return '<span class="mobile-doc-icon pdf">PDF</span>';
+    if(kind==='image')return '<span class="mobile-doc-icon image">&#9635;</span>';
+    if(kind)return '<span class="mobile-doc-icon">&#128196;</span>';
+    return '<span class="mobile-doc-icon">+</span>';
+}
+function mobileDocRow(d, extraAction){
+    var action=extraAction||'mobileOpenDoc(\''+jsString(d.id)+'\')';
+    var kind=mobileFileKind(d.file_name);
+    var fileLine=d.file_name?'<div class="mobile-doc-file">'+(kind==='pdf'?'PDF':kind==='image'?'Image':'File')+' attached</div>':'';
+    return '<button class="mobile-doc-row" type="button" onclick="'+action+'">'
+        + '<div class="mobile-doc-main">'+mobileFileIcon(d.file_name)+'<div class="mobile-doc-content">'
+        + '<div class="mobile-doc-top"><div class="mobile-doc-title">'+mobileEsc(d.title)+'</div>'+mobileStatusPill(d)+'</div>'
+        + '<div class="mobile-doc-meta">'+mobileEsc(d.category)+(d.file_name?' · '+mobileEsc(d.file_name):'')+'</div>'
+        + fileLine+'</div></div>'
+        + '</button>';
+}
+function mobileFilteredDocs(kind){
+    var docs=allDocs.slice();
+    if(kind==='missing')docs=docs.filter(function(d){return !d.file_name&&isActiveRequiredDoc(d);});
+    else if(kind==='nofile')docs=docs.filter(function(d){return !d.file_name;});
+    else if(kind==='uploaded')docs=docs.filter(function(d){return !!d.file_name;});
+    else if(kind==='expiring')docs=docs.filter(function(d){return d.file_name&&(classify(d)==='expired'||classify(d)==='critical'||classify(d)==='warning');});
+    if(kind&&kind.indexOf('cat:')===0){
+        var cat=kind.slice(4);
+        docs=docs.filter(function(d){return d.category===cat;});
+    }
+    var q=String(mobileDocsSearch||'').trim().toLowerCase();
+    if(q){
+        docs=docs.filter(function(d){
+            return [d.title,d.category,d.file_name,d.doc_number,d.issued_by].some(function(v){return String(v||'').toLowerCase().indexOf(q)>=0;});
+        });
+    }
+    docs.sort(function(a,b){
+        if(!!a.file_name!==!!b.file_name)return a.file_name?1:-1;
+        return docStatusRank(b)-docStatusRank(a);
+    });
+    return docs;
+}
+function mobileSetDocsFilter(filter){
+    mobileDocsFilter=filter||'all';
+    renderMobileDocs();
+}
+function mobileSetDocsSearch(value){
+    mobileDocsSearch=value||'';
+    renderMobileDocs();
+}
+function mobileFilterChip(id,label,count){
+    var active=mobileDocsFilter===id?' active':'';
+    return '<button class="mobile-filter-chip'+active+'" type="button" onclick="mobileSetDocsFilter(\''+jsString(id)+'\')">'+mobileEsc(label)+(typeof count==='number'?' '+count:'')+'</button>';
+}
+function renderMobileShell(){
+    if(!shouldUseMobileShell())return;
+    mobileSetSub(mobileVaultLabel());
+    mobileSetBottomNav(true);
+    if(mobileView==='docs')return renderMobileDocs();
+    if(mobileView==='add')return renderMobileAdd();
+    if(mobileView==='profile')return renderMobileProfile();
+    if(mobileView==='doc')return renderMobileDoc();
+    if(mobileView==='pdf')return renderMobilePdfBuilder();
+    return renderMobileHome();
+}
+function renderMobileHome(){
+    var st=mobileStats();
+    var h='<button class="mobile-primary-action" type="button" onclick="mobileBeginAdd(\'pdf\')"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">Scan document</span><span class="mobile-action-sub">Take pages, create PDF, then attach it to the right certificate.</span></span></button>';
+    h+='<div class="mobile-stats">'
+        + '<div class="mobile-stat"><strong>'+st.uploaded+'</strong><span>Uploaded</span></div>'
+        + '<div class="mobile-stat"><strong>'+st.missing+'</strong><span>Missing</span></div>'
+        + '<div class="mobile-stat"><strong>'+st.expiring+'</strong><span>Expiring</span></div>'
+        + '</div>';
+    h+='<div class="mobile-actions" style="margin-bottom:10px;"><button class="btn btn-outline" onclick="mobileShow(\'add\')">Other add options</button><button class="btn btn-outline" onclick="mobileShow(\'docs\')">Browse documents</button></div>';
+    var missing=mobileFilteredDocs('missing').slice(0,5);
+    h+='<div class="mobile-section-title">Needs attention</div>';
+    if(missing.length)missing.forEach(function(d){h+=mobileDocRow(d);});
+    else h+='<div class="mobile-card"><div class="mobile-card-title">No required documents missing</div><div class="mobile-card-sub">Open Documents to review optional certificates and expiry dates.</div></div>';
+    var loaded=allDocs.filter(function(d){return !!d.file_name;}).slice(0,6);
+    if(loaded.length){
+        h+='<div class="mobile-section-title">Loaded documents</div>';
+        loaded.forEach(function(d){h+=mobileDocRow(d);});
+        if(allDocs.filter(function(d){return !!d.file_name;}).length>loaded.length){
+            h+='<button class="btn btn-outline" style="width:100%;margin-top:2px;" onclick="mobileShow(\'docs\')">View all documents</button>';
+        }
+    }
+    mobileMainHtml(h);
+}
+function renderMobileDocs(){
+    var missing=mobileFilteredDocs('missing').length;
+    var nofile=allDocs.filter(function(d){return !d.file_name;}).length;
+    var uploaded=allDocs.filter(function(d){return !!d.file_name;}).length;
+    var expiring=mobileFilteredDocs('expiring').length;
+    var h='<input class="mobile-search" type="search" placeholder="Search documents" value="'+mobileEsc(mobileDocsSearch)+'" oninput="mobileSetDocsSearch(this.value)">';
+    h+='<div class="mobile-filter-row">'
+        +mobileFilterChip('all','All',allDocs.length)
+        +mobileFilterChip('missing','Missing',missing)
+        +mobileFilterChip('nofile','No file',nofile)
+        +mobileFilterChip('expiring','Expiring',expiring)
+        +mobileFilterChip('uploaded','Uploaded',uploaded)
+        +'</div>';
+    var docs=mobileFilteredDocs(mobileDocsFilter);
+    h+='<div class="mobile-section-title">Documents</div>';
+    if(!docs.length)h+='<div class="mobile-card">No documents in this vault.</div>';
+    docs.forEach(function(d){h+=mobileDocRow(d);});
+    mobileMainHtml(h);
+}
+function mobileBeginAdd(mode){
+    if(mode==='pdf'){
+        mobileAddMode='choose';
+        mobileStartPdfBuilder(null);
+        return;
+    }
+    if(mode==='photo'||mode==='file'){
+        mobileAddMode=mode;
+        mobilePendingAttachDocId=null;
+        mobilePendingPickedFile=null;
+        mobilePendingFileMode='pending_single';
+        var input=document.getElementById('mobile-file-input');
+        if(!input)return;
+        input.value='';
+        if(mode==='photo'){
+            input.setAttribute('accept','image/*');
+            input.setAttribute('capture','environment');
+        }else{
+            input.setAttribute('accept','image/*,application/pdf,.pdf,.jpg,.jpeg,.png');
+            input.removeAttribute('capture');
+        }
+        input.removeAttribute('multiple');
+        input.click();
+    }
+}
+function mobileCancelAddIntent(){
+    mobileAddMode='choose';
+    mobilePendingPickedFile=null;
+    if(mobilePdfBuilder&&!mobilePdfBuilder.docId)mobilePdfBuilder=null;
+    renderMobileAdd();
+}
+function mobileAttachCandidateDocs(){
+    var docs=allDocs.slice();
+    docs.sort(function(a,b){
+        if(!!a.file_name!==!!b.file_name)return a.file_name?1:-1;
+        if(isActiveRequiredDoc(a)!==isActiveRequiredDoc(b))return isActiveRequiredDoc(a)?-1:1;
+        return String(a.category||'').localeCompare(String(b.category||''))||String(a.title||'').localeCompare(String(b.title||''));
+    });
+    return docs;
+}
+async function mobileAttachPendingFileToDoc(docId){
+    var file=mobilePendingPickedFile;
+    if(!file){showToast('Choose a file first.','error');mobileAddMode='choose';renderMobileAdd();return;}
+    if(file.size>25*1024*1024){showToast('File is too large for mobile upload (25 MB max).','error');return;}
+    try{
+        showToast('Attaching file...','info');
+        var dataBase64=await mobileReadFileAsBase64(file);
+        await invoke('attach_file_bytes',{docId:docId,fileName:file.name||'document',dataBase64:dataBase64});
+        mobilePendingPickedFile=null;
+        mobileAddMode='choose';
+        await mobileReloadDocs();
+        selectedDocId=docId;
+        mobileView='doc';
+        renderMobileShell();
+        showToast('File attached','success');
+    }catch(e){
+        showToast('Attach failed: '+e,'error');
+        logError('mobile_attach_pending_file',e);
+    }
+}
+function mobileAddPickDoc(docId){
+    if(mobileAddMode==='attach_single'){
+        mobileAttachPendingFileToDoc(docId);
+        return;
+    }
+    if(mobileAddMode==='attach_pdf'){
+        if(!mobilePdfBuilder||!mobilePdfBuilder.pages.length){showToast('No PDF pages to attach.','error');mobileAddMode='choose';return renderMobileAdd();}
+        mobilePdfBuilder.docId=docId;
+        selectedDocId=docId;
+        mobileSavePdfBuilder();
+        return;
+    }
+    mobileOpenDoc(docId);
+}
+function renderMobileAttachSlotPicker(title,sub){
+    var docs=mobileAttachCandidateDocs();
+    var h='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(title)+'</div><div class="mobile-card-sub">'+mobileEsc(sub)+'</div><div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-outline" onclick="mobileCancelAddIntent()">Cancel</button><button class="btn btn-outline" onclick="showAddCustomDoc()">Add custom certificate</button></div></div>';
+    h+='<div class="mobile-section-title">Attach to</div>';
+    docs.forEach(function(d){
+        var action="mobileAddPickDoc('"+jsString(d.id)+"')";
+        h+=mobileDocRow(d,action);
+    });
+    mobileMainHtml(h);
+}
+function renderMobileAdd(){
+    if(mobileAddMode==='attach_single'){
+        var name=mobilePendingPickedFile?mobilePendingPickedFile.name:'selected file';
+        return renderMobileAttachSlotPicker('Choose certificate for file','Selected: '+name);
+    }
+    if(mobileAddMode==='attach_pdf'){
+        var pages=mobilePdfBuilder&&mobilePdfBuilder.pages?mobilePdfBuilder.pages.length:0;
+        return renderMobileAttachSlotPicker('Choose certificate for PDF scan',pages+' page'+(pages===1?'':'s')+' ready.');
+    }
+    var h='<div class="mobile-card"><div class="mobile-card-title">Add document</div><div class="mobile-card-sub">Choose how you want to add the file first. Skipi will ask where to attach it next.</div></div>';
+    h+='<button class="mobile-primary-action" type="button" onclick="mobileBeginAdd(\'pdf\')"><span class="mobile-action-icon">&#128196;</span><span class="mobile-action-copy"><span class="mobile-action-title">Scan certificate to PDF</span><span class="mobile-action-sub">Take several pages and create one PDF document.</span></span></button>';
+    h+='<button class="mobile-primary-action" type="button" onclick="mobileBeginAdd(\'photo\')"><span class="mobile-action-icon">&#9635;</span><span class="mobile-action-copy"><span class="mobile-action-title">Take one photo</span><span class="mobile-action-sub">Use the camera for a single-page certificate or ID.</span></span></button>';
+    h+='<button class="mobile-primary-action" type="button" onclick="mobileBeginAdd(\'file\')"><span class="mobile-action-icon">&#8682;</span><span class="mobile-action-copy"><span class="mobile-action-title">Choose existing file</span><span class="mobile-action-sub">Attach a PDF or image already saved on the phone.</span></span></button>';
+    h+='<button class="btn btn-outline" style="width:100%;margin-top:4px;" onclick="showAddCustomDoc()">Add custom certificate</button>';
+    var missing=mobileFilteredDocs('missing').slice(0,3);
+    if(missing.length){
+        h+='<div class="mobile-section-title">Missing required</div>';
+        missing.forEach(function(d){h+=mobileDocRow(d);});
+    }
+    mobileMainHtml(h);
+}
+function renderMobileProfile(){
+    var st=mobileStats();
+    var pct=st.total?Math.round((st.uploaded/st.total)*100):0;
+    var h='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(mobileVaultLabel())+'</div><div class="mobile-card-sub">Local-first seafarer vault on this device.</div></div>';
+    h+='<div class="mobile-stats"><div class="mobile-stat"><strong>'+st.total+'</strong><span>Total</span></div><div class="mobile-stat"><strong>'+st.uploaded+'</strong><span>Files</span></div><div class="mobile-stat"><strong>'+st.missing+'</strong><span>Missing</span></div></div>';
+    h+='<div class="mobile-card"><div class="mobile-row"><div><div class="mobile-card-title">Profile completeness</div><div class="mobile-card-sub">Documents uploaded in this vault.</div></div><span class="mobile-pill ok">'+pct+'%</span></div></div>';
+    h+='<button class="mobile-primary-action" type="button" onclick="mobileShow(\'add\')"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">Add more documents</span><span class="mobile-action-sub">Scan or attach files from this phone.</span></span></button>';
+    h+='<div class="mobile-card"><div class="mobile-card-title">Vault</div><div class="mobile-card-sub">Stored locally on this phone. Desktop sync and backup controls will live here.</div><div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-outline" onclick="mobileOpenExistingVault()">Switch vault</button><button class="btn btn-outline" onclick="openSettings()">Settings</button></div></div>';
+    mobileMainHtml(h);
+}
+function mobileOpenDoc(id){
+    selectedDocId=id;
+    mobileView='doc';
+    renderMobileShell();
+}
+function renderMobileDoc(){
+    var d=allDocs.find(function(x){return x.id===selectedDocId;});
+    if(!d){mobileView='docs';return renderMobileDocs();}
+    mobileSetBottomNav(true);
+    var h='<button class="btn btn-outline btn-sm" onclick="mobileShow(\'docs\')" style="margin-bottom:10px;">Back</button>';
+    h+='<div class="mobile-card"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title">'+mobileEsc(d.title)+'</div><div class="mobile-card-sub">'+mobileEsc(d.category)+'</div></div>'+mobileStatusPill(d)+'</div>';
+    h+='<div class="mobile-actions" style="margin-top:12px;">';
+    h+='<button class="btn btn-accent" onclick="mobileStartPdfBuilder(\''+jsString(d.id)+'\')">'+(d.file_name?'Replace scan':'Scan to PDF')+'</button>';
+    if(d.file_name)h+='<button class="btn btn-outline" onclick="mobileOpenDocumentFile(\''+jsString(d.id)+'\')">Open</button>';
+    h+='<button class="btn btn-outline" onclick="mobileToggleDocActions()">More</button></div>';
+    if(mobileDocActionsExpanded){
+        h+='<div class="mobile-actions" style="margin-top:8px;"><button class="btn btn-outline" onclick="mobilePickFile(\''+jsString(d.id)+'\',true)">Take one photo</button><button class="btn btn-outline" onclick="mobilePickFile(\''+jsString(d.id)+'\',false)">Choose file</button></div>';
+    }
+    h+='</div>';
+    if(d.file_name)h+='<div id="mobile-preview" class="mobile-preview">Loading preview...</div>';
+    h+='<div class="mobile-card">';
+    h+='<div class="mobile-field"><label>Document No.</label><input value="'+mobileEsc(d.doc_number||'')+'" onchange="mobileSaveField(\''+jsString(d.id)+'\',\'doc_number\',this.value)"></div>';
+    h+='<div class="mobile-field"><label>Issued By</label><input value="'+mobileEsc(d.issued_by||'')+'" onchange="mobileSaveField(\''+jsString(d.id)+'\',\'issued_by\',this.value)"></div>';
+    h+='<div class="mobile-field"><label>Issue Date</label><input inputmode="numeric" maxlength="10" placeholder="YYYY-MM-DD" value="'+mobileEsc(d.valid_from||'')+'" oninput="autoFormatDate(this)" onchange="mobileSaveField(\''+jsString(d.id)+'\',\'valid_from\',this.value)"></div>';
+    h+='<div class="mobile-field"><label>Expiry Date</label><input id="mobile-expiry" inputmode="numeric" maxlength="10" placeholder="'+(d.is_permanent?'Permanent':'YYYY-MM-DD')+'" value="'+(d.is_permanent?'':mobileEsc(d.valid_to||''))+'" '+(d.is_permanent?'disabled':'')+' oninput="autoFormatDate(this)" onchange="mobileSaveExpiry(\''+jsString(d.id)+'\',this.value)"></div>';
+    h+='<label style="display:flex;align-items:center;gap:8px;font-size:13px;"><input type="checkbox" '+(d.is_permanent?'checked':'')+' onchange="mobileSetPermanent(\''+jsString(d.id)+'\',this.checked)"> Permanent certificate</label>';
+    h+='</div>';
+    mobileMainHtml(h);
+    if(d.file_name)mobileRenderPreview(d);
+}
+function mobileToggleDocActions(){
+    mobileDocActionsExpanded=!mobileDocActionsExpanded;
+    renderMobileDoc();
+}
+async function mobileSaveField(id,field,value){
+    await saveF(id,field,value);
+    await mobileReloadDocs();
+    selectedDocId=id;
+    renderMobileDoc();
+}
+async function mobileSaveExpiry(id,value){
+    if(!value)return;
+    await updExp(id,value);
+    await mobileReloadDocs();
+    selectedDocId=id;
+    renderMobileDoc();
+}
+async function mobileSetPermanent(id,checked){
+    await setPermanent(id,checked);
+    await mobileReloadDocs();
+    selectedDocId=id;
+    renderMobileDoc();
+}
+function mobileStartPdfBuilder(docId){
+    var d=docId?allDocs.find(function(x){return x.id===docId;}):null;
+    if(docId&&!d){showToast('Document slot not found','error');return;}
+    mobilePdfBuilder={docId:docId||null,pages:[]};
+    if(docId)selectedDocId=docId;
+    mobileView='pdf';
+    renderMobileShell();
+}
+function mobilePdfPageUrl(page){
+    return 'data:'+(page.mime||'image/jpeg')+';base64,'+page.dataBase64;
+}
+function renderMobilePdfBuilder(){
+    var b=mobilePdfBuilder;
+    var d=b&&b.docId?allDocs.find(function(x){return x.id===b.docId;}):null;
+    if(!b){mobileView='add';return renderMobileAdd();}
+    var busy=!!b.busy;
+    mobileSetBottomNav(true);
+    var h='<button class="btn btn-outline btn-sm" '+(busy?'disabled':'')+' onclick="mobileCancelPdfBuilder()" style="margin-bottom:10px;">Back</button>';
+    h+='<div class="mobile-card"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title">'+mobileEsc(d?d.title:'New PDF scan')+'</div><div class="mobile-card-sub">'+mobileEsc(d?d.category:'Choose the certificate slot after scanning.')+'</div></div><span class="mobile-pill">'+b.pages.length+' pages</span></div>';
+    h+='<div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-accent" '+(busy?'disabled':'')+' onclick="mobilePdfTakePage()">Take next page</button><button class="btn btn-outline" '+(busy?'disabled':'')+' onclick="mobilePdfAddFromGallery()">Add from gallery</button></div></div>';
+    if(b.pages.length){
+        h+='<div class="mobile-section-title">Pages</div><div class="mobile-page-grid">';
+        b.pages.forEach(function(page,idx){
+            h+='<div class="mobile-page-card"><img src="'+mobilePdfPageUrl(page)+'" alt="Page '+(idx+1)+'"><div class="mobile-page-card-footer"><span>Page '+(idx+1)+'</span><button class="btn btn-outline btn-sm" '+(busy?'disabled':'')+' onclick="mobileRemovePdfPage('+idx+')">Remove</button></div></div>';
+        });
+        h+='</div>';
+    }else{
+        h+='<div class="mobile-card"><div class="mobile-card-title">No pages yet</div></div>';
+    }
+    if(busy)h+='<div class="mobile-card"><div class="mobile-card-title">Working...</div></div>';
+    h+='<div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-accent" '+((!b.pages.length||busy)?'disabled':'')+' onclick="mobileSavePdfBuilder()">'+(busy?'Creating...':'Create PDF')+'</button><button class="btn btn-outline" '+((!b.pages.length||busy)?'disabled':'')+' onclick="mobileClearPdfPages()">Clear pages</button></div>';
+    mobileMainHtml(h);
+}
+function mobileCancelPdfBuilder(){
+    mobilePdfBuilder=null;
+    mobileAddMode='choose';
+    mobileView=selectedDocId?'doc':'add';
+    renderMobileShell();
+}
+function mobileRemovePdfPage(idx){
+    if(!mobilePdfBuilder)return;
+    mobilePdfBuilder.pages.splice(idx,1);
+    renderMobilePdfBuilder();
+}
+function mobileClearPdfPages(){
+    if(!mobilePdfBuilder)return;
+    mobilePdfBuilder.pages=[];
+    renderMobilePdfBuilder();
+}
+function mobilePdfTakePage(){
+    if(!mobilePdfBuilder)return;
+    mobilePendingAttachDocId=mobilePdfBuilder.docId;
+    mobilePendingCapture=true;
+    mobilePendingFileMode='pdf_camera';
+    var input=document.getElementById('mobile-file-input');
+    if(!input)return;
+    input.value='';
+    input.setAttribute('accept','image/*');
+    input.setAttribute('capture','environment');
+    input.removeAttribute('multiple');
+    input.click();
+}
+function mobilePdfAddFromGallery(){
+    if(!mobilePdfBuilder)return;
+    mobilePendingAttachDocId=mobilePdfBuilder.docId;
+    mobilePendingCapture=false;
+    mobilePendingFileMode='pdf_gallery';
+    var input=document.getElementById('mobile-file-input');
+    if(!input)return;
+    input.value='';
+    input.setAttribute('accept','image/*,.jpg,.jpeg,.png');
+    input.setAttribute('multiple','multiple');
+    input.removeAttribute('capture');
+    input.click();
+}
+function mobileReadFileAsDataUrl(file){
+    return new Promise(function(resolve,reject){
+        var reader=new FileReader();
+        reader.onerror=function(){reject(reader.error||new Error('Cannot read file'));};
+        reader.onload=function(){resolve(String(reader.result||''));};
+        reader.readAsDataURL(file);
+    });
+}
+function mobileBlobToBase64(blob){
+    return new Promise(function(resolve,reject){
+        var reader=new FileReader();
+        reader.onerror=function(){reject(reader.error||new Error('Cannot read compressed page'));};
+        reader.onload=function(){
+            var result=String(reader.result||'');
+            var idx=result.indexOf(',');
+            resolve(idx>=0?result.slice(idx+1):result);
+        };
+        reader.readAsDataURL(blob);
+    });
+}
+async function mobileCompressImageForPdf(file){
+    var dataUrl=await mobileReadFileAsDataUrl(file);
+    var img=await new Promise(function(resolve,reject){
+        var image=new Image();
+        image.onload=function(){resolve(image);};
+        image.onerror=function(){reject(new Error('Cannot load selected image'));};
+        image.src=dataUrl;
+    });
+    var maxLong=1400;
+    var w=img.naturalWidth||img.width;
+    var h=img.naturalHeight||img.height;
+    if(!w||!h)throw new Error('Image has invalid dimensions');
+    var scale=Math.min(1,maxLong/Math.max(w,h));
+    var cw=Math.max(1,Math.round(w*scale));
+    var ch=Math.max(1,Math.round(h*scale));
+    var canvas=document.createElement('canvas');
+    canvas.width=cw;
+    canvas.height=ch;
+    var ctx=canvas.getContext('2d',{alpha:false});
+    ctx.fillStyle='#fff';
+    ctx.fillRect(0,0,cw,ch);
+    ctx.drawImage(img,0,0,cw,ch);
+    var blob=await new Promise(function(resolve,reject){
+        if(canvas.toBlob){
+            canvas.toBlob(function(b){b?resolve(b):reject(new Error('Cannot compress image'));},'image/jpeg',0.72);
+        }else{
+            try{
+                var data=canvas.toDataURL('image/jpeg',0.72);
+                var raw=atob(data.split(',')[1]||'');
+                var arr=new Uint8Array(raw.length);
+                for(var i=0;i<raw.length;i++)arr[i]=raw.charCodeAt(i);
+                resolve(new Blob([arr],{type:'image/jpeg'}));
+            }catch(e){reject(e);}
+        }
+    });
+    return {
+        fileName:String(file.name||'page.jpg').replace(/\.[^.]+$/,'')+'.jpg',
+        dataBase64:await mobileBlobToBase64(blob),
+        mime:'image/jpeg',
+        size:blob.size||0
+    };
+}
+async function mobileAddPdfPages(files){
+    if(!mobilePdfBuilder)return;
+    if(mobilePdfBuilder.busy)return;
+    var list=Array.prototype.slice.call(files||[]);
+    if(!list.length)return;
+    if(mobilePdfBuilder.pages.length+list.length>40){showToast('One PDF can contain up to 40 pages.','error');return;}
+    var added=0;
+    mobilePdfBuilder.busy=true;
+    renderMobilePdfBuilder();
+    showToast('Preparing page images...','info');
+    try{
+        for(var i=0;i<list.length;i++){
+            var file=list[i];
+            var type=String(file.type||'');
+            var name=String(file.name||('page-'+(mobilePdfBuilder.pages.length+1)+'.jpg'));
+            if(type.indexOf('image/')!==0&&!/\.(jpg|jpeg|png|webp|bmp)$/i.test(name))continue;
+            if(file.size>35*1024*1024){showToast('Page skipped: image is larger than 35 MB.','error');continue;}
+            var page=await mobileCompressImageForPdf(file);
+            page.fileName=name.replace(/\.[^.]+$/,'')+'.jpg';
+            mobilePdfBuilder.pages.push(page);
+            added++;
+        }
+    }catch(e){
+        showToast('Could not prepare page: '+e,'error');
+        logError('mobile_pdf_prepare_page',e);
+    }finally{
+        mobilePdfBuilder.busy=false;
+        mobilePendingFileMode='single';
+        renderMobilePdfBuilder();
+    }
+    if(added)showToast(added+' page'+(added===1?'':'s')+' added','success');
+    else showToast('No image pages selected','error');
+}
+async function mobileSavePdfBuilder(){
+    var b=mobilePdfBuilder;
+    var d=b&&b.docId?allDocs.find(function(x){return x.id===b.docId;}):null;
+    if(!b)return;
+    if(b.busy)return;
+    if(!b.pages.length){showToast('Add at least one page.','error');return;}
+    if(!d){
+        mobileAddMode='attach_pdf';
+        mobileView='add';
+        renderMobileShell();
+        return;
+    }
+    b.busy=true;
+    renderMobilePdfBuilder();
+    try{
+        showToast('Creating PDF...','info');
+        await new Promise(function(resolve){setTimeout(resolve,30);});
+        var fileName=(d.title||'Document')+'.pdf';
+        await invoke('attach_pdf_pages',{docId:b.docId,fileName:fileName,pages:b.pages.map(function(p){return {fileName:p.fileName,dataBase64:p.dataBase64};})});
+        mobilePdfBuilder=null;
+        await mobileReloadDocs();
+        selectedDocId=d.id;
+        mobileView='doc';
+        renderMobileShell();
+        showToast('PDF attached','success');
+    }catch(e){
+        if(mobilePdfBuilder)mobilePdfBuilder.busy=false;
+        renderMobilePdfBuilder();
+        showToast('PDF creation failed: '+e,'error');
+        logError('mobile_pdf_pages',e);
+    }
+}
+async function mobileReloadDocs(){
+    try{allDocs=await invoke('get_documents');}catch(e){showToast('Could not reload documents: '+e,'error');}
+    try{renderTree();}catch(e){}
+    try{updateStatus();}catch(e){}
+}
+function mobilePickFile(docId,capture){
+    mobilePendingAttachDocId=docId;
+    mobilePendingCapture=!!capture;
+    mobilePendingFileMode='single';
+    var input=document.getElementById('mobile-file-input');
+    if(!input)return;
+    input.value='';
+    if(capture){
+        input.setAttribute('accept','image/*');
+        input.setAttribute('capture','environment');
+        input.removeAttribute('multiple');
+    }else{
+        input.setAttribute('accept','image/*,application/pdf,.pdf,.jpg,.jpeg,.png');
+        input.removeAttribute('capture');
+        input.removeAttribute('multiple');
+    }
+    input.click();
+}
+function mobileReadFileAsBase64(file){
+    return new Promise(function(resolve,reject){
+        var reader=new FileReader();
+        reader.onerror=function(){reject(reader.error||new Error('Cannot read file'));};
+        reader.onload=function(){
+            var result=String(reader.result||'');
+            var idx=result.indexOf(',');
+            resolve(idx>=0?result.slice(idx+1):result);
+        };
+        reader.readAsDataURL(file);
+    });
+}
+async function mobileHandleFilePicked(files){
+    if(mobilePendingFileMode==='pdf_camera'||mobilePendingFileMode==='pdf_gallery'){
+        await mobileAddPdfPages(files);
+        return;
+    }
+    var file=files&&files[0];
+    var docId=mobilePendingAttachDocId;
+    mobilePendingAttachDocId=null;
+    if(!file)return;
+    if(!docId&&mobilePendingFileMode==='pending_single'){
+        mobilePendingPickedFile=file;
+        mobileAddMode='attach_single';
+        mobileView='add';
+        renderMobileShell();
+        return;
+    }
+    if(!docId)return;
+    if(file.size>25*1024*1024){showToast('File is too large for mobile upload (25 MB max).','error');return;}
+    try{
+        showToast('Attaching file...','info');
+        var dataBase64=await mobileReadFileAsBase64(file);
+        var fallback=mobilePendingCapture?'camera.jpg':'document';
+        await invoke('attach_file_bytes',{docId:docId,fileName:file.name||fallback,dataBase64:dataBase64});
+        await mobileReloadDocs();
+        selectedDocId=docId;
+        mobileView='doc';
+        renderMobileShell();
+        showToast('File attached','success');
+    }catch(e){
+        showToast('Attach failed: '+e,'error');
+        logError('mobile_attach_file',e);
+    }
+}
+async function mobileOpenDocumentFile(docId){
+    try{
+        await invoke('open_document_file',{docId:docId});
+    }catch(e){
+        showToast('Open failed: '+e,'error');
+        logError('mobile_open_document_file',e);
+    }
+}
+function mobileOpenPreview(src,title){
+    var old=document.getElementById('mobile-preview-overlay');
+    if(old)old.remove();
+    var overlay=document.createElement('div');
+    overlay.id='mobile-preview-overlay';
+    overlay.className='mobile-preview-overlay';
+    overlay.innerHTML='<div class="mobile-preview-overlay-head"><div class="mobile-preview-overlay-title">'+mobileEsc(title||'Preview')+'</div><button class="btn btn-outline" onclick="mobileClosePreview()">Close</button></div><div class="mobile-preview-overlay-body"><img src="'+escAttr(src)+'" alt="'+mobileEsc(title||'Preview')+'"></div>';
+    document.body.appendChild(overlay);
+}
+function mobileClosePreview(){
+    var overlay=document.getElementById('mobile-preview-overlay');
+    if(overlay)overlay.remove();
+}
+async function mobileRenderPreview(d){
+    var el=document.getElementById('mobile-preview');
+    if(!el)return;
+    try{
+        if(isMobileMode()&&/\.pdf$/i.test(d.file_name||'')){
+            el.classList.add('mobile-preview-file');
+            el.innerHTML='<div class="file-type">PDF</div><div class="file-name">'+mobileEsc(d.file_name||'Document.pdf')+'</div><div class="file-note">Rendering preview...</div>';
+            try{
+                var preview=await invoke('render_document_pdf_preview',{docId:d.id});
+                el=document.getElementById('mobile-preview');
+                if(!el)return;
+                el.classList.remove('mobile-preview-file');
+                el.innerHTML='<div class="mobile-pdf-preview"><img src="data:'+escAttr(preview[1])+';base64,'+preview[0]+'" alt="'+mobileEsc(d.file_name||'PDF preview')+'"><div class="mobile-pdf-preview-actions"><button class="btn btn-accent" onclick="mobileOpenDocumentFile(\''+jsString(d.id)+'\')">Open PDF</button></div></div>';
+                var pdfImg=el.querySelector('img');
+                if(pdfImg){pdfImg.style.cursor='zoom-in';pdfImg.onclick=function(){mobileOpenPreview(pdfImg.src,d.file_name||d.title);};}
+            }catch(renderErr){
+                el=document.getElementById('mobile-preview');
+                if(!el)return;
+                el.classList.add('mobile-preview-file');
+                el.innerHTML='<div class="file-type">PDF</div><div class="file-name">'+mobileEsc(d.file_name||'Document.pdf')+'</div><div class="file-note">Preview failed: '+mobileEsc(String(renderErr))+'</div><button class="btn btn-accent" onclick="mobileOpenDocumentFile(\''+jsString(d.id)+'\')">Open PDF</button>';
+            }
+            return;
+        }
+        var r=await invoke('read_file_base64',{docId:d.id});
+        el=document.getElementById('mobile-preview');
+        if(!el)return;
+        var b64=r[0],mime=r[1];
+        if(mime.indexOf('image/')===0){
+            el.innerHTML='<img src="data:'+escAttr(mime)+';base64,'+b64+'" alt="'+mobileEsc(d.file_name||'Document')+'">';
+            var img=el.querySelector('img');
+            if(img){img.style.cursor='zoom-in';img.onclick=function(){mobileOpenPreview(img.src,d.file_name||d.title);};}
+        }
+        else if(mime==='application/pdf'){
+            var bin=atob(b64),arr=new Uint8Array(bin.length);
+            for(var i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
+            var blob=new Blob([arr],{type:'application/pdf'});
+            var url=URL.createObjectURL(blob);
+            if(isMobileMode()){
+                el.classList.add('mobile-preview-file');
+                el.innerHTML='<div class="file-type">PDF</div><div class="file-name">'+mobileEsc(d.file_name||'Document.pdf')+'</div><div class="file-note">Open with your phone PDF viewer.</div><button class="btn btn-accent" onclick="mobileOpenDocumentFile(\''+jsString(d.id)+'\')">Open PDF</button>';
+            }else{
+                el.innerHTML='<iframe src="'+url+'" title="'+mobileEsc(d.file_name||'PDF')+'"></iframe>';
+            }
+        }else el.innerHTML='<div>Preview not available</div>';
+    }catch(e){
+        if(el){
+            el.classList.add('mobile-preview-file');
+            el.innerHTML='<div class="file-type">File</div><div class="file-name">'+mobileEsc(d.file_name||'Document')+'</div><div class="file-note">'+mobileEsc(String(e))+'</div>';
+        }
+    }
+}
 
 async function renderWelcomeRecent(){
     var host=document.getElementById('welcome-recent');
@@ -3683,6 +4619,7 @@ async function loadVault(info){
     await loadActiveTemplateIds();
     allDocs=await invoke('get_documents');
     renderTree();showDashboard();updateStatus();
+    renderMobileShell();
     // Check for updates silently after vault loads
     setTimeout(function(){checkForUpdate(true);},3000);
 	    if(isSeafarer){
@@ -3692,7 +4629,7 @@ async function loadVault(info){
 	    }
 	    maybePromptForFeedback(isSeafarer?'seafarer-vault':'vault');
 	    // If this is a Seafarer vault with an incomplete profile, force completion.
-	    if(isSeafarer){ setTimeout(function(){ openForcedProfile(false); },400); }
+	    if(isSeafarer&&!isMobileMode()){ setTimeout(function(){ openForcedProfile(false); },400); }
 	}
 
 // ========== App feedback gate ==========
@@ -10419,6 +11356,10 @@ var vaultIdentityVisible = false;
 
 function openSettings(tab){
     if(tab) settingsTab = tab;
+    if(isMobileMode()){
+        if(!tab) settingsTab = 'vaults';
+        if(settingsTab==='general' || settingsTab==='email') settingsTab = 'vaults';
+    }
     // Guard: Seafarer tab only makes sense for seafarer vaults
     if(settingsTab==='seafarer' && currentAccountType!=='' && currentAccountType && currentAccountType!=='seafarer'){
         settingsTab='general';
@@ -10438,6 +11379,18 @@ function closeSettings(){
 
 function renderSettingsNav(){
     var h = '';
+    if(isMobileMode()){
+        if(['vaults','seafarer','appearance','about'].indexOf(settingsTab)<0) settingsTab='vaults';
+        h += '<div class="settings-nav-title">'+tr('settings.nav_title')+'</div>';
+        h += '<div class="settings-nav-item'+(settingsTab==='vaults'?' active':'')+'" onclick="openSettings(\'vaults\')"><span class="nav-icon">&#128451;</span> Vault</div>';
+        if(currentAccountType==='seafarer'||currentAccountType===''||!currentAccountType){
+            h += '<div class="settings-nav-item'+(settingsTab==='seafarer'?' active':'')+'" onclick="openSettings(\'seafarer\')"><span class="nav-icon">&#128100;</span> Profile</div>';
+        }
+        h += '<div class="settings-nav-item'+(settingsTab==='appearance'?' active':'')+'" onclick="openSettings(\'appearance\')"><span class="nav-icon">&#127912;</span> Look</div>';
+        h += '<div class="settings-nav-item'+(settingsTab==='about'?' active':'')+'" onclick="openSettings(\'about\')"><span class="nav-icon">&#9432;</span> About</div>';
+        document.getElementById('settings-nav').innerHTML = h;
+        return;
+    }
     h += '<div class="settings-nav-title">'+tr('settings.nav_title')+'</div>';
     h += '<div class="settings-nav-item'+(settingsTab==='general'?' active':'')+'" onclick="openSettings(\'general\')"><span class="nav-icon">&#9881;</span> '+tr('settings.general')+'</div>';
     h += '<div class="settings-nav-item'+(settingsTab==='vaults'?' active':'')+'" onclick="openSettings(\'vaults\')"><span class="nav-icon">&#128451;</span> '+tr('settings.vaults')+'</div>';
@@ -10450,6 +11403,47 @@ function renderSettingsNav(){
     h += '<div class="settings-nav-title" style="margin-top:12px;">'+tr('settings.about_group')+'</div>';
     h += '<div class="settings-nav-item'+(settingsTab==='about'?' active':'')+'" onclick="openSettings(\'about\')"><span class="nav-icon">&#9432;</span> '+tr('settings.about')+'</div>';
     document.getElementById('settings-nav').innerHTML = h;
+}
+
+async function loadMobileSettingsVaultSummary(){
+    var currentPath = '';
+    var recent = [];
+    try{ currentPath = await invoke('get_current_vault_path') || ''; }catch(e){}
+    try{ recent = await invoke('get_recent_vaults') || []; }catch(e){}
+    var nameEl = document.getElementById('mobile-settings-vault-name');
+    var subEl = document.getElementById('mobile-settings-vault-sub');
+    if(nameEl) nameEl.textContent = currentPath ? mobileVaultNameFromPath(currentPath) : 'No vault open';
+    if(subEl) subEl.textContent = currentPath ? 'Stored locally on this phone.' : 'Create or open a vault to begin.';
+    mobileRenderSettingsRecentVaults(recent, currentPath);
+}
+
+function mobileRenderSettingsRecentVaults(paths, currentPath){
+    var host = document.getElementById('mobile-settings-recent-vaults');
+    if(!host) return;
+    paths = Array.isArray(paths) ? paths : [];
+    var unique = [];
+    paths.forEach(function(p){
+        if(p && unique.indexOf(p) < 0) unique.push(p);
+    });
+    if(!unique.length){
+        host.innerHTML = '<div class="mobile-card" style="margin-top:12px;"><div class="mobile-card-title">No recent vaults yet</div><div class="mobile-card-sub">After you open another vault, it will appear here.</div></div>';
+        return;
+    }
+    var h = '<div class="mobile-section-title" style="margin-top:14px;">Recent vaults</div>';
+    unique.slice(0,6).forEach(function(path){
+        var isCurrent = currentPath && path === currentPath;
+        h += '<button class="mobile-doc-row" type="button" '+(isCurrent?'disabled':'onclick="mobileSettingsOpenVaultPath(\''+jsString(path)+'\')"')+'>';
+        h += '<div class="mobile-doc-main"><div class="mobile-doc-icon">'+(isCurrent?'&#9679;':'&#128451;')+'</div><div class="mobile-doc-content">';
+        h += '<div class="mobile-doc-top"><div class="mobile-doc-title">'+mobileEsc(mobileVaultNameFromPath(path))+'</div><span class="mobile-pill '+(isCurrent?'ok':'')+'">'+(isCurrent?'Current':'Open')+'</span></div>';
+        h += '<div class="mobile-doc-meta">'+(isCurrent?'This vault is open now.':'Tap to switch to this vault.')+'</div>';
+        h += '</div></div></button>';
+    });
+    host.innerHTML = h;
+}
+
+async function mobileSettingsOpenVaultPath(path){
+    closeSettings();
+    await mobileOpenVaultPath(path);
 }
 
 function renderSettingsBody(){
@@ -10466,6 +11460,23 @@ function renderSettingsBody(){
     }
 
     if(settingsTab === 'vaults'){
+        if(isMobileMode()){
+            h += '<div class="settings-section"><h3>Vault</h3><div class="section-desc">Choose which seafarer vault is open on this phone.</div>';
+            h += '<div class="mobile-card" style="margin:12px 0;"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title" id="mobile-settings-vault-name">Current vault</div><div class="mobile-card-sub" id="mobile-settings-vault-sub">Loading...</div></div><span class="mobile-pill ok">Open</span></div></div>';
+            h += '<button class="mobile-primary-action" type="button" onclick="closeSettings();mobileOpenExistingVault(true)"><span class="mobile-action-icon">&#128451;</span><span class="mobile-action-copy"><span class="mobile-action-title">Switch vault</span><span class="mobile-action-sub">Choose from vaults already opened on this phone.</span></span></button>';
+            h += '<button class="mobile-primary-action" type="button" onclick="closeSettings();renderMobileWelcome()"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">Create new vault</span><span class="mobile-action-sub">Start a clean mobile seafarer vault.</span></span></button>';
+            h += '<button class="mobile-primary-action" type="button" onclick="closeSettings();loadDemoVault()"><span class="mobile-action-icon">&#9679;</span><span class="mobile-action-copy"><span class="mobile-action-title">Open demo vault</span><span class="mobile-action-sub">Use sample data for testing.</span></span></button>';
+            h += '<div id="mobile-settings-recent-vaults"></div>';
+            h += '<details style="margin-top:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);padding:10px 12px;"><summary style="font-weight:800;cursor:pointer;">Advanced vault tools</summary>';
+            h += '<div class="setting-row" style="margin-top:10px;"><div class="setting-info"><div class="setting-label">Recovery key</div><div class="setting-desc" id="vault-identity-user">'+tr('settings.loading_identity')+'</div><div id="vault-identity-key" class="setting-desc" style="margin-top:6px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-family:var(--font-mono);font-size:11px;word-break:break-all;">'+tr('settings.key_hidden')+'</div></div><div class="setting-control" style="display:flex;gap:6px;flex-wrap:wrap;"><button id="vault-identity-show-btn" class="btn btn-outline btn-sm" onclick="toggleVaultRecoveryKey()">'+tr('settings.show')+'</button><button class="btn btn-outline btn-sm" onclick="copyVaultRecoveryKey()">'+tr('settings.copy')+'</button></div></div>';
+            h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Backup</div><div class="setting-desc">Export or import a vault ZIP.</div></div><div class="setting-control" style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn btn-outline btn-sm" onclick="exportVaultBackup()">Export</button><button class="btn btn-outline btn-sm" onclick="importVaultBackup()">Import</button></div></div>';
+            h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Forget last vault</div><div class="setting-desc">Return to the start screen without deleting vault files.</div></div><div class="setting-control"><button class="btn btn-outline btn-sm" onclick="closeCurrentVault(true)">Forget</button></div></div>';
+            h += '</details></div>';
+            document.getElementById('settings-body').innerHTML = h;
+            loadMobileSettingsVaultSummary();
+            loadVaultIdentityKey();
+            return;
+        }
         h += '<div class="settings-section"><h3>Vaults</h3><div class="section-desc">Manage your Skipi vaults. Each vault is a separate folder on your computer containing documents and metadata.</div>';
         h += '<div id="vault-current-row" class="setting-row"><div class="setting-info"><div class="setting-label">Current vault</div><div class="setting-desc" id="vault-current-path" style="font-family:var(--font-mono);font-size:11px;word-break:break-all;">Loading…</div></div>';
         h += '<div class="setting-control"><button class="btn btn-outline btn-sm" onclick="closeCurrentVault(false)">Close</button></div></div>';

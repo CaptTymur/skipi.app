@@ -429,6 +429,19 @@ pub fn open_file_in_default(path: String) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(any(target_os = "android", target_os = "ios"))]
+#[tauri::command]
+pub fn open_email_with_attachment(
+    _state: State<AppState>,
+    _package_id: String,
+    _to: String,
+    _subject: String,
+    _body: Option<String>,
+) -> Result<String, String> {
+    Err("Package email composition is not wired for mobile yet.".to_string())
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[tauri::command]
 pub fn open_email_with_attachment(
     state: State<AppState>,

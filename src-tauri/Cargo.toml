@@ -23,13 +23,10 @@ tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-process = "2"
-
-[target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
-tauri-plugin-updater = "2"
 rusqlite = { version = "0.32", features = ["bundled", "backup"] }
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
-reqwest = { version = "0.12", features = ["blocking", "json"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 dirs = "6"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 printpdf = { version = "0.7", default-features = false, features = ["embedded_images"] }
@@ -53,6 +50,12 @@ data-encoding = "2"
 # Phase-2 E2E messaging — X25519 + XSalsa20-Poly1305 via crypto_box.
 crypto_box = { version = "0.9", features = ["std"] }
 base64 = "0.22"
+
+[target."cfg(target_os = \"android\")".dependencies]
+jni = "0.21"
+
+[target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
+tauri-plugin-updater = "2"
 # SMTP sending + OS credential store. lettre handles MIME multipart with
 # attachments and TLS/STARTTLS; keyring wraps gnome-keyring / macOS Keychain
 # / Windows Credential Manager so we never store passwords in plaintext.
