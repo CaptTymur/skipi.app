@@ -877,12 +877,22 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .mobile-mailing-pill:disabled { opacity:.52; cursor:not-allowed; background:var(--bg); }
 .mobile-mailing-pill-icon { width:42px; height:42px; border-radius:50%; background:var(--accent-bg); color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:900; flex:0 0 auto; }
 .mobile-mailing-pill-main { min-width:0; flex:1; }
-.mobile-mailing-pill-title { font-size:15px; font-weight:900; line-height:1.18; color:var(--text); }
-.mobile-mailing-pill-desc { color:var(--text2); font-size:12px; line-height:1.35; margin-top:4px; }
+.mobile-mailing-pill-title { display:block; font-size:15px; font-weight:900; line-height:1.18; color:var(--text); }
+.mobile-mailing-pill-desc { display:block; color:var(--text2); font-size:12px; line-height:1.35; margin-top:4px; }
 .mobile-mailing-pill-meta { display:flex; flex-direction:column; align-items:flex-end; gap:2px; min-width:56px; }
 .mobile-mailing-pill-meta strong { color:var(--accent); font-size:22px; line-height:1; }
 .mobile-mailing-pill-meta span { color:var(--text2); font-size:9px; font-weight:900; text-transform:uppercase; text-align:right; line-height:1.1; }
 .mobile-mailing-summary { border:1px solid var(--border); border-radius:8px; background:var(--bg); padding:12px; margin-bottom:10px; }
+.mobile-dispatch-trust { border-color:rgba(39,174,96,.3); background:linear-gradient(180deg,rgba(39,174,96,.08),var(--surface)); }
+.mobile-dispatch-trust-head { display:flex; align-items:flex-start; gap:10px; }
+.mobile-dispatch-lock { width:34px; height:34px; border-radius:8px; background:rgba(39,174,96,.12); color:var(--green); display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:900; flex:0 0 auto; }
+.mobile-dispatch-privacy-row { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+.mobile-dispatch-privacy-row .mobile-pill { background:rgba(39,174,96,.08); }
+.mobile-signature-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:11px; }
+.mobile-signature-chip { border:1px solid var(--border); border-radius:8px; background:var(--bg); padding:8px 9px; min-width:0; }
+.mobile-signature-chip span { display:block; color:var(--text2); font-size:9px; font-weight:900; text-transform:uppercase; line-height:1.1; }
+.mobile-signature-chip strong { display:block; color:var(--text); font-size:13px; line-height:1.2; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.mobile-signature-chip.missing strong { color:var(--orange); }
 .mobile-dispatch-track-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:12px 0; }
 .mobile-dispatch-track { min-height:76px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); padding:10px; text-align:left; display:flex; flex-direction:column; gap:4px; }
 .mobile-dispatch-track.active { border-color:var(--accent); background:var(--accent-bg); box-shadow:0 0 0 1px var(--accent-bg2) inset; }
@@ -2573,9 +2583,16 @@ function showWelcome(){show('scr-welcome');hide('scr-setup');hide('scr-content')
 function mobileViewportLikely(){return window.matchMedia&&window.matchMedia('(max-width: 720px)').matches;}
 function shouldUseMobileShell(){return hostPlatform==='android'||hostPlatform==='ios'||mobileViewportLikely();}
 function isMobileMode(){return document.body&&document.body.classList.contains('mobile-mode');}
+var mobileModeApplied=null;
 function applyMobileMode(){
     var on=shouldUseMobileShell();
+    var changed=mobileModeApplied!==on;
+    mobileModeApplied=on;
     if(document.body)document.body.classList.toggle('mobile-mode',on);
+    if(!changed){
+        if(on)setTimeout(mobileUpdateModuleRailHint,60);
+        return;
+    }
     if(on){
         if(allDocs&&allDocs.length)renderMobileShell();
         else renderMobileWelcome();
@@ -2762,10 +2779,17 @@ async function mobileOpenVaultPath(path){
         logError('mobile_open_vault_path',e);
     }
 }
+function mobileScrollMainTop(){
+    var main=document.getElementById('mobile-main');
+    if(main)main.scrollTop=0;
+    try{window.scrollTo(0,0);}catch(e){}
+}
 function mobileShow(view){
     mobileView=view||'home';
     if(mobileView==='add'&&mobileAddMode!=='attach_single'&&mobileAddMode!=='attach_pdf')mobileAddMode='choose';
     renderMobileShell();
+    setTimeout(mobileScrollMainTop,0);
+    setTimeout(mobileScrollMainTop,140);
 }
 function mobileStats(){
     var uploaded=allDocs.filter(function(d){return !!d.file_name;}).length;
@@ -2928,12 +2952,65 @@ function mobileCvWorkRows(work){
     return h;
 }
 var mobileDispatchAgencyAttempted=false;
-var mobileDispatchRecipientHint='';
+var mobileDispatchRecipientSessionKey='skipi-mobile-dispatch-recipient';
+var mobileDispatchRecipientHint=(function(){
+    try{return sessionStorage.getItem(mobileDispatchRecipientSessionKey)||'';}catch(e){return '';}
+})();
 var mobileDispatchManualTrack='email';
+function mobileDispatchFormatSalary(sp){
+    sp=sp||{};
+    var raw=String(sp.min_salary||localStorage.getItem('skipi-sp-min_salary')||'').trim();
+    if(!raw)return '';
+    var num=parseFloat(raw.replace(/[^\d.]/g,''));
+    var cur=String(sp.min_salary_currency||sp.currency||localStorage.getItem('skipi-sp-min_salary_currency')||'USD').trim()||'USD';
+    var prefix=cur==='USD'?'$':(cur+' ');
+    if(isFinite(num)&&num>0){
+        var value=num>=1000?((Math.round(num/100)/10).toString().replace(/\.0$/,'')+'k'):String(Math.round(num));
+        return prefix+value;
+    }
+    return raw+(cur?' '+cur:'');
+}
+function mobileDispatchProfileSignature(sp){
+    sp=sp||{};
+    var vessel=String(sp.preferred_vessel_types||sp.vessel_category||sp.vessel_type||currentWizardVesselCategory||'').split(',')[0].trim();
+    return {
+        rank:String(sp.rank||currentWizardPosition||'').trim(),
+        vessel:vessel,
+        nationality:String(sp.nationality||'').trim(),
+        salary:mobileDispatchFormatSalary(sp)
+    };
+}
+function mobileSignatureChip(label,value,missingText){
+    var missing=!value;
+    return '<div class="mobile-signature-chip '+(missing?'missing':'')+'"><span>'+mobileEsc(label)+'</span><strong>'+mobileEsc(value||missingText)+'</strong></div>';
+}
+function mobileDispatchSignatureHtml(sp){
+    var ru=getUiLang()==='ru';
+    var sig=mobileDispatchProfileSignature(sp);
+    var missing=[sig.rank,sig.vessel,sig.nationality].filter(function(v){return !v;}).length;
+    var h='<div class="mobile-card mobile-dispatch-trust">';
+    h+='<div class="mobile-dispatch-trust-head"><span class="mobile-dispatch-lock">&#9888;</span><div style="min-width:0;flex:1;">';
+    h+='<div class="mobile-card-title">'+mobileEsc(ru?'Файлы остаются локально':'Files stay local')+'</div>';
+    h+='<div class="mobile-card-sub">'+mobileEsc(ru?'Для проверки запросов крюингов Skipi использует только profile signature: без паспортов, сертификатов, телефона и email.':'To check crewing requests, Skipi uses only your profile signature: no passports, certificates, phone, or email.')+'</div>';
+    h+='</div></div>';
+    h+='<div class="mobile-dispatch-privacy-row"><span class="mobile-pill ok">'+mobileEsc(ru?'Без публичного интерфейса':'No public interface')+'</span><span class="mobile-pill ok">'+mobileEsc(ru?'Без персональных файлов':'No personal files')+'</span></div>';
+    h+='<div class="mobile-card-sub" style="font-weight:900;color:var(--text);margin-top:11px;">Profile signature</div>';
+    h+='<div class="mobile-signature-grid">';
+    h+=mobileSignatureChip(ru?'Должность':'Rank',sig.rank,ru?'Не указана':'Not set');
+    h+=mobileSignatureChip(ru?'Тип судна':'Vessel type',sig.vessel,ru?'Не указан':'Not set');
+    h+=mobileSignatureChip(ru?'Гражданство':'Nationality',sig.nationality,ru?'Не указано':'Not set');
+    h+=mobileSignatureChip(ru?'Зарплата':'Wage',sig.salary,ru?'Не указана':'Not set');
+    h+='</div>';
+    if(missing){
+        h+='<div class="mobile-card-sub" style="color:var(--orange);margin-top:9px;">'+mobileEsc(ru?'Заполните должность, тип судна и гражданство, чтобы Skipi точнее нашел запросы крюингов.':'Set rank, vessel type, and nationality so Skipi can match crewing requests more accurately.')+'</div>';
+    }
+    h+='</div>';
+    return h;
+}
 function mobileDispatchScenarioText(tab){
     var ru=getUiLang()==='ru';
     if(tab==='agency_db')return ru?'Skipi возьмет адреса из базы агентств для вашей национальности. Количество адресов зависит от заполненности профиля.':'Skipi uses agency addresses for your nationality. The unlocked count depends on profile completeness.';
-    if(tab==='crewing_requests')return ru?'Отправка только крюингам, которые сами запросили CV под такой профиль. Если запросов нет, опция закрыта.':'Send only to crewings that requested CVs matching this profile. If there are no requests, this option is locked.';
+    if(tab==='crewing_requests')return ru?'Skipi сравнивает ваш profile signature с запросами крюингов. Если совпадений нет, опция закрыта.':'Skipi compares your profile signature with crewing requests. If there are no matches, this option is locked.';
     return ru?'Вы сами вводите один или несколько email-адресов. Подходит для конкретного крюинга или менеджера, которому вы доверяете.':'You enter one or more email addresses yourself. Use this for a specific crewing or manager you already trust.';
 }
 function mobileSelectDispatchScenario(tab){
@@ -2974,18 +3051,28 @@ function mobileWarmDispatchData(sendGate){
     if(!mobileDispatchAgencyAttempted&&!lastAgencyDbResult&&!agencyDbLoading){
         mobileDispatchAgencyAttempted=true;
         loadAgencyDatabaseRecipients().then(function(){
-            if(mobileView==='dispatch')renderMobileDispatch();
+            if(mobileView==='dispatch'&&dispatchTab!=='manual')renderMobileDispatch();
         }).catch(function(e){logError('mobile_dispatch_agency_load',e);});
     }
     if(sendGate&&sendGate.ok&&!dispatchMailingRequestsLoaded&&!dispatchMailingRequestsLoading){
         loadDispatchMailingRequests().then(function(){
-            if(mobileView==='dispatch')renderMobileDispatch();
+            if(mobileView==='dispatch'&&dispatchTab!=='manual')renderMobileDispatch();
         }).catch(function(e){logError('mobile_dispatch_requests_load',e);});
     }
 }
-function mobileCaptureManualShareOptions(){
+function mobileRememberDispatchRecipient(el){
+    mobileDispatchRecipientHint=(el&&typeof el.value==='string')?el.value:'';
+    try{
+        if(mobileDispatchRecipientHint)sessionStorage.setItem(mobileDispatchRecipientSessionKey,mobileDispatchRecipientHint);
+        else sessionStorage.removeItem(mobileDispatchRecipientSessionKey);
+    }catch(e){}
+}
+function mobileCaptureManualRecipientHint(){
     var to=document.getElementById('mobile-dispatch-to');
-    if(to)mobileDispatchRecipientHint=to.value||'';
+    if(to)mobileRememberDispatchRecipient(to);
+}
+function mobileCaptureManualShareOptions(){
+    mobileCaptureManualRecipientHint();
     var cv=document.querySelector('input[name="mobile-disp-cv-mode"]:checked');
     if(cv)dispatchCvMode=cv.value||'redacted';
     var docs=document.getElementById('mobile-disp-include-docs');
@@ -3019,7 +3106,7 @@ function mobileManualSharePanel(sendGate){
     h+=mobileDispatchTrackButton('share','&#8645;',ru?'Поделиться':'Share',ru?'WhatsApp, Telegram, email client и другие приложения.':'WhatsApp, Telegram, mail client and other apps.');
     h+='</div>';
     if(mobileDispatchManualTrack==='email'){
-        h+='<div class="mobile-field" style="margin-top:12px;"><label>'+mobileEsc(ru?'Email получателя':'Recipient email')+'</label><input id="mobile-dispatch-to" type="email" placeholder="crew@example.com" value="'+mobileEsc(mobileDispatchRecipientHint)+'" oninput="mobileDispatchRecipientHint=this.value"></div>';
+        h+='<div class="mobile-field" style="margin-top:12px;"><label>'+mobileEsc(ru?'Email получателя':'Recipient email')+'</label><input id="mobile-dispatch-to" type="text" inputmode="email" autocomplete="email" autocapitalize="none" spellcheck="false" placeholder="crew@example.com" value="'+mobileEsc(mobileDispatchRecipientHint)+'" oninput="mobileRememberDispatchRecipient(this)" onchange="mobileRememberDispatchRecipient(this)" onkeyup="mobileRememberDispatchRecipient(this)" onblur="mobileRememberDispatchRecipient(this)"></div>';
         h+='<div class="mobile-card-sub">'+mobileEsc(ru?'Skipi подготовит CV/вложения и откроет email draft с адресом, темой и текстом.':'Skipi prepares the CV/attachments and opens an email draft with recipient, subject and body.')+'</div>';
     }else{
         h+='<div class="mobile-card-sub" style="margin-top:10px;">'+mobileEsc(ru?'Адрес не нужен. Выберите приложение связи на следующем системном экране телефона.':'No email address needed. Pick the communication app on the next phone system screen.')+'</div>';
@@ -3092,25 +3179,30 @@ async function mobileRunManualDispatch(mode){
     }
 }
 async function renderMobileDispatch(){
-    mobileMainHtml('<div class="mobile-card"><div class="mobile-card-title">Mailings</div><div class="mobile-card-sub">Loading mailing options...</div></div>');
+    mobileCaptureManualRecipientHint();
+    var main=document.getElementById('mobile-main');
+    var hasDispatchDom=main&&main.querySelector&&main.querySelector('[data-mobile-dispatch-root="1"]');
+    if(!hasDispatchDom)mobileMainHtml('<div class="mobile-card"><div class="mobile-card-title">Mailings</div><div class="mobile-card-sub">Loading mailing options...</div></div>');
     try{
         var sendGate=await dispatchSendableGate();
         if(mobileView!=='dispatch')return;
         if(['manual','agency_db','crewing_requests'].indexOf(dispatchTab)===-1)dispatchTab='manual';
         var ru=getUiLang()==='ru';
+        var sp={};try{sp=await invoke('get_seafarer_personal');}catch(e){sp={};}
         var stats=agencyDbStats();
         var requestEmailCount=uniqueMailingRequestEmailCount();
         var crewingCount=uniqueMailingRequestCrewingCount();
         var agencyDisabled=!sendGate.ok?(ru?'Сначала нужен CV или документы':'Complete a CV or upload documents first'):(!stats.allowed?(ru?'Нет открытых адресов':'No unlocked addresses'):'');
         var requestDisabled=!sendGate.ok?(ru?'Сначала нужен CV или документы':'Complete a CV or upload documents first'):(!dispatchMailingRequestsLoaded?(ru?'Запросы загружаются':'Requests are loading'):(!requestEmailCount?(ru?'Запросов под профиль нет':'No matching requests yet'):''));
-        var h='<div class="mobile-card"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title">'+mobileEsc(ru?'Рассылки':'Mailings')+'</div><div class="mobile-card-sub">'+mobileEsc(ru?'Как вы хотите разослать CV и документы?':'How do you want to send your CV and documents?')+'</div></div><span class="mobile-action-icon" style="width:38px;height:38px;font-size:18px;">&#9993;</span></div></div>';
+        var h='<div data-mobile-dispatch-root="1"><div class="mobile-card"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title">'+mobileEsc(ru?'Рассылки':'Mailings')+'</div><div class="mobile-card-sub">'+mobileEsc(ru?'Как вы хотите разослать CV и документы?':'How do you want to send your CV and documents?')+'</div></div><span class="mobile-action-icon" style="width:38px;height:38px;font-size:18px;">&#9993;</span></div></div>';
+        h+=mobileDispatchSignatureHtml(sp);
         if(!sendGate.ok){
             h+='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(ru?'Пока нечего отправлять':'Nothing to send yet')+'</div><div class="mobile-card-sub">'+mobileEsc(ru?'Заполните CV или загрузите документы, затем выберите один из трех способов рассылки.':'Complete a CV or upload documents, then choose one of the three mailing options.')+'</div></div>';
         }
         h+='<div class="mobile-mailing-pills">';
         h+=mobileDispatchPill('manual','@',ru?'Кастомный адрес':'Custom address',ru?'Ввести email вручную. Для конкретного крюинга или менеджера.':'Type email manually. For a specific crewing or manager.','1',ru?'опция':'option',sendGate.ok,false,!sendGate.ok?(ru?'Нет CV/документов':'No CV/documents'):'');
         h+=mobileDispatchPill('agency_db','DB',ru?'База Skipi':'Skipi database',ru?'Адреса из базы агентств Skipi. Чем полнее профиль, тем больше адресов открыто.':'Agency addresses from Skipi database. A fuller profile unlocks more addresses.',stats.allowed,ru?'адресов':'addresses',sendGate.ok&&!!stats.allowed,!lastAgencyDbResult&&agencyDbLoading,agencyDisabled);
-        h+=mobileDispatchPill('crewing_requests','?',ru?'Запросы крюингов':'Crewing requests',ru?'Только тем крюингам, которые запросили CV под ваш профиль.':'Only to crewings that requested a CV matching your profile.',requestEmailCount,ru?'адресов':'addresses',sendGate.ok&&dispatchMailingRequestsLoaded&&requestEmailCount>0,!dispatchMailingRequestsLoaded&&dispatchMailingRequestsLoading,requestDisabled);
+        h+=mobileDispatchPill('crewing_requests','?',ru?'Запросы крюингов':'Crewing requests',ru?'Только совпадения по profile signature. Решение отправить CV остается за вами.':'Only matches by profile signature. You still decide whether to send the CV.',requestEmailCount,ru?'адресов':'addresses',sendGate.ok&&dispatchMailingRequestsLoaded&&requestEmailCount>0,!dispatchMailingRequestsLoaded&&dispatchMailingRequestsLoading,requestDisabled);
         h+='</div>';
         h+='<div class="mobile-mailing-summary">';
         h+='<div class="mobile-card-title">'+mobileEsc(dispatchScenarioTitle(dispatchTab))+'</div>';
@@ -3124,6 +3216,7 @@ async function renderMobileDispatch(){
         if(dispatchTab==='manual')h+=mobileManualSharePanel(sendGate);
         h+='<button class="mobile-primary-action" type="button" onclick="mobileShow(\'cv\')"><span class="mobile-action-icon">CV</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(ru?'Проверить CV перед отправкой':'Review CV before sending')+'</span><span class="mobile-action-sub">'+mobileEsc(ru?'Посмотрите, что увидит получатель.':'See what the recipient will receive.')+'</span></span></button>';
         h+='<button class="mobile-primary-action" type="button" onclick="mobileShow(\'docs\')"><span class="mobile-action-icon">&#128196;</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(ru?'Проверить документы':'Review documents')+'</span><span class="mobile-action-sub">'+mobileEsc(ru?'Убедитесь, что нужные сертификаты прикреплены.':'Make sure required certificates are attached.')+'</span></span></button>';
+        h+='</div>';
         mobileMainHtml(h);
         mobileWarmDispatchData(sendGate);
     }catch(e){
