@@ -18,6 +18,8 @@ pub struct VesselRatingSummary {
     pub signals_available: bool,
     #[serde(default)]
     pub min_reviews: i64,
+    #[serde(default)]
+    pub low_sample: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,6 +132,10 @@ pub struct RecentVesselReview {
     pub signals_available: bool,
     #[serde(default)]
     pub average_overall: Option<f64>,
+    #[serde(default)]
+    pub low_sample: bool,
+    #[serde(default)]
+    pub min_reviews: i64,
 }
 
 #[derive(Debug, Clone, Deserialize)]

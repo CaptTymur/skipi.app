@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.144';
+var APP_VERSION='0.4.146';
 var UI_LANG_KEY='skipi-ui-language';
 var UI_LANG_OPTIONS=[
     ['ru','Русский'],
@@ -384,6 +384,11 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .vrev-head { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
 .vrev-title { color:var(--text2); font-weight:600; }
 .vrev-rating { color:var(--text); font-weight:700; }
+.rating-starline.low-sample,
+.exp-vessel-rating-link.low-sample .stars,
+.vdb-stars.low-sample .vdb-starline,
+.job-vessel-rating.low-sample .stars { color:#aeb4bc; }
+.rating-sample-note { display:inline-flex; align-items:center; border:1px solid rgba(230,126,34,.45); color:var(--orange); background:rgba(230,126,34,.08); border-radius:999px; padding:1px 6px; font-size:10px; font-weight:700; white-space:nowrap; }
 .vrev-metrics { display:flex; flex-wrap:wrap; gap:6px; margin-top:7px; }
 .vrev-chip { display:inline-flex; align-items:center; gap:4px; border:1px solid var(--border); border-radius:4px; padding:2px 7px; color:var(--text2); }
 .vrev-chip strong { color:var(--text); font-weight:700; }
@@ -817,6 +822,10 @@ input, select, textarea, button { font-family:var(--font-ui); }
 /* Mobile app shell */
 .mobile-shell { display:none; min-height:100dvh; background:var(--bg); color:var(--text); flex-direction:column; overflow:hidden; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); }
 .mobile-top { min-height:56px; flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 14px; border-bottom:1px solid var(--border); background:var(--surface); }
+.mobile-brand-wrap { min-width:0; flex:1; display:flex; align-items:center; gap:9px; }
+.mobile-top-home { width:40px; height:40px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:20px; line-height:1; }
+.mobile-top-home.active { border-color:var(--accent-bg2); background:var(--accent-bg); color:var(--accent); }
+.mobile-top-home:active { transform:translateY(1px); }
 .mobile-brand { min-width:0; }
 .mobile-brand-title { font-size:16px; font-weight:800; line-height:1.1; }
 .mobile-brand-sub { font-size:11px; color:var(--text2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:68vw; margin-top:2px; }
@@ -898,6 +907,24 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .mobile-dispatch-track.active { border-color:var(--accent); background:var(--accent-bg); box-shadow:0 0 0 1px var(--accent-bg2) inset; }
 .mobile-dispatch-track-title { font-size:13px; font-weight:900; line-height:1.2; }
 .mobile-dispatch-track-sub { color:var(--text2); font-size:11px; line-height:1.25; }
+.mobile-dispatch-step { font-size:10px; font-weight:900; letter-spacing:.08em; text-transform:uppercase; color:var(--text2); margin-bottom:3px; }
+.mobile-focus-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+.mobile-choice-button { width:100%; min-height:70px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); padding:13px; margin-bottom:10px; display:flex; align-items:center; justify-content:space-between; gap:12px; text-align:left; }
+.mobile-choice-button.active { border-color:var(--accent); background:var(--accent-bg); box-shadow:0 0 0 1px var(--accent-bg2) inset; }
+.mobile-choice-main { min-width:0; flex:1; }
+.mobile-choice-title { display:block; font-size:15px; font-weight:900; line-height:1.2; }
+.mobile-choice-sub { display:block; color:var(--text2); font-size:12px; line-height:1.35; margin-top:4px; }
+.mobile-choice-side { color:var(--accent); font-size:20px; font-weight:900; flex:0 0 auto; }
+.mobile-summary-row { border:1px solid var(--border); border-radius:8px; background:var(--surface); padding:12px; margin-bottom:10px; display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.mobile-summary-row strong { display:block; font-size:15px; line-height:1.2; }
+.mobile-summary-row span { display:block; color:var(--text2); font-size:12px; line-height:1.35; margin-top:3px; }
+.mobile-wizard-actions { display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; margin-top:12px; }
+.mobile-review-list { border:1px solid var(--border); border-radius:8px; overflow:hidden; background:var(--surface); margin-bottom:10px; }
+.mobile-review-row { display:flex; gap:9px; align-items:flex-start; padding:10px 12px; border-bottom:1px solid var(--border); }
+.mobile-review-row:last-child { border-bottom:none; }
+.mobile-review-row input { width:18px; height:18px; margin-top:2px; accent-color:var(--accent); }
+.mobile-review-email { display:block; font-family:var(--font-mono); font-size:12px; color:var(--text); word-break:break-all; }
+.mobile-review-meta { display:block; font-size:11px; color:var(--text2); line-height:1.35; margin-top:2px; }
 .mobile-primary-action { display:flex; align-items:center; gap:12px; text-align:left; width:100%; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); padding:14px; margin-bottom:10px; }
 .mobile-primary-action:active { transform:translateY(1px); }
 .mobile-action-icon { width:42px; height:42px; border-radius:8px; background:var(--accent-bg); color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:22px; flex:0 0 auto; }
@@ -913,6 +940,18 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .mobile-stat { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:10px; min-width:0; }
 .mobile-stat strong { display:block; font-size:20px; line-height:1; color:var(--accent); }
 .mobile-stat span { display:block; color:var(--text2); font-size:10px; font-weight:700; text-transform:uppercase; margin-top:5px; }
+.mobile-salary-index-card { border-color:rgba(39,174,96,.34); background:linear-gradient(180deg,rgba(39,174,96,.07),var(--surface)); }
+.mobile-salary-hero { display:flex; align-items:baseline; gap:7px; margin:10px 0 4px; }
+.mobile-salary-hero strong { color:var(--green); font-size:34px; line-height:1; font-weight:900; letter-spacing:0; }
+.mobile-salary-hero span { color:var(--text2); font-size:12px; font-weight:800; }
+.mobile-salary-range { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; margin-top:12px; }
+.mobile-salary-range div { border:1px solid var(--border); border-radius:8px; background:var(--bg); padding:9px 7px; text-align:center; min-width:0; }
+.mobile-salary-range b { display:block; color:var(--text); font-size:14px; line-height:1.1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mobile-salary-range span { display:block; color:var(--text2); font-size:9px; font-weight:900; text-transform:uppercase; margin-top:5px; }
+.mobile-info-key { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
+.mobile-info-key div { border:1px solid var(--border); border-radius:8px; background:var(--bg); padding:9px; min-width:0; }
+.mobile-info-key span { display:block; color:var(--text2); font-size:9px; font-weight:900; text-transform:uppercase; line-height:1.15; }
+.mobile-info-key strong { display:block; color:var(--text); font-size:13px; line-height:1.2; margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .mobile-pill { display:inline-flex; align-items:center; border:1px solid var(--border); border-radius:999px; padding:3px 8px; font-size:11px; color:var(--text2); background:var(--bg); white-space:nowrap; }
 .mobile-pill.ok { color:var(--green); border-color:rgba(39,174,96,.35); }
 .mobile-pill.warn { color:var(--orange); border-color:rgba(230,126,34,.45); }
@@ -935,9 +974,27 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .mobile-filter-chip.active { color:var(--accent); border-color:var(--accent-bg2); background:var(--accent-bg); }
 .mobile-field { margin-bottom:10px; }
 .mobile-field label { display:block; color:var(--text2); font-size:10px; font-weight:800; text-transform:uppercase; margin-bottom:5px; }
-.mobile-field input { width:100%; height:42px; border:1px solid var(--border); border-radius:7px; background:var(--bg); color:var(--text); padding:0 10px; font-size:15px; }
+.mobile-field input,
+.mobile-field select,
+.mobile-field textarea { width:100%; border:1px solid var(--border); border-radius:7px; background:var(--bg); color:var(--text); font-size:15px; }
+.mobile-field input,
+.mobile-field select { height:42px; padding:0 10px; }
+.mobile-field textarea { min-height:86px; padding:10px; resize:vertical; line-height:1.35; }
 .mobile-actions { display:flex; gap:8px; flex-wrap:wrap; }
 .mobile-actions .btn { min-height:40px; }
+.mobile-actions .btn.mobile-grow { flex:1; min-width:118px; }
+.mobile-form-grid { display:grid; grid-template-columns:1fr; gap:10px; }
+.mobile-assessment-stars { display:flex; gap:6px; margin:10px 0 12px; }
+.mobile-assessment-stars button { flex:1; min-height:48px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text2); font-size:24px; line-height:1; }
+.mobile-assessment-stars button.on { color:var(--yellow); border-color:rgba(226,185,61,.55); background:rgba(226,185,61,.10); }
+.mobile-tag-grid { display:flex; flex-wrap:wrap; gap:7px; margin:8px 0 12px; }
+.mobile-tag-grid button { border:1px solid var(--border); border-radius:999px; background:var(--bg); color:var(--text2); padding:7px 10px; font-size:12px; font-weight:800; }
+.mobile-tag-grid button.on { border-color:var(--accent); background:var(--accent); color:#fff; }
+.mobile-vessel-search { display:flex; gap:8px; align-items:center; }
+.mobile-vessel-search input { flex:1; min-width:0; height:42px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); padding:0 10px; font-size:16px; }
+.mobile-db-result { overflow:hidden; }
+.mobile-db-result .vdb-hero,
+.mobile-db-result .vdb-section { background:var(--bg); border-radius:8px; margin-bottom:10px; }
 .mobile-preview { margin-top:10px; border:1px solid var(--border); border-radius:8px; overflow:hidden; background:#111; min-height:160px; display:flex; align-items:center; justify-content:center; color:var(--text2); }
 .mobile-preview img { display:block; width:100%; height:auto; max-height:58vh; object-fit:contain; }
 .mobile-preview iframe { width:100%; height:58vh; border:0; background:#fff; }
@@ -997,9 +1054,12 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
 
 <div class="mobile-shell" id="mobile-shell">
     <div class="mobile-top">
-        <div class="mobile-brand">
-            <div class="mobile-brand-title">Skipi</div>
-            <div class="mobile-brand-sub" id="mobile-vault-sub">Mobile seafarer vault</div>
+        <div class="mobile-brand-wrap">
+            <button class="mobile-top-home" id="mobile-top-home" type="button" onclick="mobileShow('home')" title="Home" aria-label="Home">&#8962;</button>
+            <div class="mobile-brand">
+                <div class="mobile-brand-title">Skipi</div>
+                <div class="mobile-brand-sub" id="mobile-vault-sub">Mobile seafarer vault</div>
+            </div>
         </div>
         <button class="mobile-icon-btn" type="button" onclick="openSettings()" title="Settings">&#9881;</button>
     </div>
@@ -1102,7 +1162,7 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p id="welcome-subtitle">Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.144</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.146</span></p>
                 <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -2635,6 +2695,11 @@ function mobileSyncModuleRail(){
 function mobileSetBottomNav(showNav){
     var nav=document.getElementById('mobile-bottom-nav');
     if(nav)nav.style.display=showNav?'flex':'none';
+    var topHome=document.getElementById('mobile-top-home');
+    if(topHome){
+        topHome.classList.toggle('active',mobileView==='home');
+        topHome.setAttribute('aria-current',mobileView==='home'?'page':'false');
+    }
     var pct=mobileCompletenessPercent();
     var meter=document.getElementById('mobile-profile-meter');
     var fill=document.getElementById('mobile-profile-meter-fill');
@@ -2652,12 +2717,13 @@ function mobileSetBottomNav(showNav){
 }
 function mobileMainHtml(html){
     var main=document.getElementById('mobile-main');
-    if(main)main.innerHTML=mobileWithHomeButton(html);
+    if(main)main.innerHTML=html||'';
 }
 function mobileShouldShowHomeButton(){
     if(!shouldUseMobileShell())return false;
     if(mobileView==='home')return false;
-    return ['docs','doc','add','pdf','profile','experience','cv','dispatch','jobs','information','vessels'].indexOf(mobileView)>=0;
+    if(mobileView==='dispatch')return false;
+    return ['docs','doc','add','pdf','profile','experience','cv','jobs','information','vessels'].indexOf(mobileView)>=0;
 }
 function mobileHomeButtonHtml(){
     var ru=getUiLang()==='ru';
@@ -2787,6 +2853,7 @@ function mobileScrollMainTop(){
 function mobileShow(view){
     mobileView=view||'home';
     if(mobileView==='add'&&mobileAddMode!=='attach_single'&&mobileAddMode!=='attach_pdf')mobileAddMode='choose';
+    if(mobileView==='dispatch')mobileDispatchStep='choose';
     renderMobileShell();
     setTimeout(mobileScrollMainTop,0);
     setTimeout(mobileScrollMainTop,140);
@@ -2872,7 +2939,7 @@ function mobileModuleInfo(view){
         cv:{title:'CV',sub:'Generate and review your seafarer CV from this vault.',icon:'CV',primary:'Prepare CV',note:'CV generation is available on desktop. Mobile export/share will be connected after the document capture loop is stable.'},
         dispatch:{title:'Mailings',sub:'Send CV and document packages to crewing contacts.',icon:'&#9993;',primary:'Prepare mailing',note:'Mailings need native mobile share/email flow. The module is placed here now so the final workflow is visible.'},
         jobs:{title:'Jobs',sub:'Vacancies and offers matched to your profile.',icon:'&#128188;',primary:'View jobs',note:'The jobs feed will use the same profile completeness and salary index signals as desktop Skipi.'},
-        information:{title:'Information',sub:'Reference information and Skipi knowledge pages.',icon:'i',primary:'Open information',note:'This module will surface skipi.info content inside the mobile app.'},
+        information:{title:'Information',sub:'Salary index and market signals for this profile.',icon:'i',primary:'Open salary index',note:'Skipi compares your rank and vessel type with aggregated vacancy data from skipi.info.'},
         vessels:{title:'Vessel DB',sub:'Vessel and company context for contract decisions.',icon:'&#9872;',primary:'Search vessels',note:'The mobile vessel database will use the shared vessel intelligence layer and local snapshots.'}
     };
     return map[view]||map.information;
@@ -2891,6 +2958,87 @@ function renderMobileModule(view){
         h+='<button class="mobile-primary-action" type="button" onclick="mobileShow(\'experience\')"><span class="mobile-action-icon">&#9873;</span><span class="mobile-action-copy"><span class="mobile-action-title">Connect sea service</span><span class="mobile-action-sub">Vessel context becomes useful when linked to experience records.</span></span></button>';
     }
     mobileMainHtml(h);
+}
+function mobileInfoProfileKeyHtml(sp,profile,payload){
+    var ru=getUiLang()==='ru';
+    var rank=compassRankLabel(sp);
+    var vessel=compassVesselLabel(sp,profile);
+    var issue=payload?compassIndexIssue(payload):(ru?'нет данных':'no data');
+    var h='<div class="mobile-info-key">';
+    h+='<div><span>'+mobileEsc(ru?'Должность':'Rank')+'</span><strong>'+mobileEsc(rank)+'</strong></div>';
+    h+='<div><span>'+mobileEsc(ru?'Тип судна':'Vessel type')+'</span><strong>'+mobileEsc(vessel)+'</strong></div>';
+    h+='<div><span>'+mobileEsc(ru?'Выпуск данных':'Data issue')+'</span><strong>'+mobileEsc(issue)+'</strong></div>';
+    h+='<div><span>'+mobileEsc(ru?'Источник':'Source')+'</span><strong>skipi.info</strong></div>';
+    h+='</div>';
+    return h;
+}
+function mobileInfoExpectedSalary(sp){
+    sp=sp||{};
+    var raw=String(sp.min_salary||localStorage.getItem('skipi-sp-min_salary')||'').trim();
+    if(!raw)return '';
+    var num=parseFloat(raw.replace(/[^\d.]/g,''));
+    var cur=String(sp.min_salary_currency||sp.currency||localStorage.getItem('skipi-sp-min_salary_currency')||'USD').trim()||'USD';
+    if(cur==='USD'&&isFinite(num)&&num>0)return formatSalaryFullUsd(num);
+    return raw+(cur?' '+cur:'');
+}
+function mobileInfoSalaryCard(band,sp,profile,payload){
+    var ru=getUiLang()==='ru';
+    var target=mobileInfoExpectedSalary(sp);
+    if(!band){
+        var h='<div class="mobile-card">';
+        h+='<div class="mobile-card-title">'+mobileEsc(ru?'Salary Index пока недоступен':'Salary Index not available yet')+'</div>';
+        h+='<div class="mobile-card-sub">'+mobileEsc(ru?'Skipi не нашёл достаточную агрегированную выборку для текущей должности и типа судна. Проверьте, что профиль заполнен, или откройте skipi.info.':'Skipi could not find enough aggregate observations for the current rank and vessel type. Check the profile fields or open skipi.info.')+'</div>';
+        h+=mobileInfoProfileKeyHtml(sp,profile,payload);
+        h+='<div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-outline" type="button" onclick="openSettings(\'seafarer\')">'+mobileEsc(ru?'Профиль':'Profile')+'</button><button class="btn btn-outline" type="button" onclick="openInformationSource(SKIPI_INFO_SITE_URL)">skipi.info</button></div>';
+        h+='</div>';
+        return h;
+    }
+    var confidence=band.confidence||salaryIndexConfidence(band.sample_size);
+    var h='<div class="mobile-card mobile-salary-index-card">';
+    h+='<div class="mobile-row"><div style="min-width:0;"><div class="mobile-dispatch-step">Salary Index</div><div class="mobile-card-title">'+mobileEsc(ru?'Медианная зарплата для профиля':'Median salary for this profile')+'</div></div><span class="mobile-pill '+(confidence==='high'?'ok':(confidence==='medium'?'warn':''))+'">'+mobileEsc(confidence)+'</span></div>';
+    h+='<div class="mobile-salary-hero"><strong>'+mobileEsc(formatSalaryFullUsd(band.p50))+'</strong><span>'+mobileEsc(ru?'в месяц':'/ month')+'</span></div>';
+    h+='<div class="mobile-card-sub">'+mobileEsc(compassRankLabel(sp)+' / '+compassVesselLabel(sp,profile))+'</div>';
+    h+='<div class="mobile-salary-range">';
+    h+='<div><b>'+mobileEsc(formatSalaryFullUsd(band.p25))+'</b><span>p25</span></div>';
+    h+='<div><b>'+mobileEsc(formatSalaryFullUsd(band.p50))+'</b><span>median</span></div>';
+    h+='<div><b>'+mobileEsc(formatSalaryFullUsd(band.p75))+'</b><span>p75</span></div>';
+    h+='</div>';
+    h+='<div class="mobile-card-sub" style="margin-top:10px;">'+mobileEsc((ru?'Выборка: ':'Sample: ')+String(band.sample_size||0)+' · '+(band.source||'Skipi Vacancy Index'))+'</div>';
+    if(target){
+        h+='<div class="mobile-card-sub">'+mobileEsc((ru?'Ваш минимум в профиле: ':'Your profile minimum: ')+target)+'</div>';
+    }
+    h+=mobileInfoProfileKeyHtml(sp,profile,payload);
+    h+='<button class="mobile-primary-action" type="button" onclick="openInformationSource(\''+jsString(band.source_url||SKIPI_INFO_SITE_URL)+'\')"><span class="mobile-action-icon">i</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(ru?'Открыть источник':'Open source')+'</span><span class="mobile-action-sub">'+mobileEsc(ru?'Перейти на skipi.info с методологией и выпуском данных.':'Open skipi.info methodology and data issue.')+'</span></span></button>';
+    h+='</div>';
+    return h;
+}
+async function renderMobileInformation(){
+    var ru=getUiLang()==='ru';
+    var info=mobileModuleInfo('information');
+    mobileMainHtml('<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(info.title)+'</div><div class="mobile-card-sub">'+mobileEsc(ru?'Загружаю salary index...':'Loading salary index...')+'</div></div>');
+    try{
+        var sp={}, profile=null, payload=null, band=null;
+        try{sp=await invoke('get_seafarer_personal');}catch(e){sp={};}
+        try{profile=await invoke('get_profile_status');}catch(e){profile=null;}
+        try{
+            payload=await loadSkipiInfoIndex();
+            band=pickSkipiInfoSalaryBand(skipiInfoIndexToBands(payload),sp,profile);
+        }catch(e){
+            logError('mobile_information_salary_index',e);
+        }
+        if(mobileView!=='information')return;
+        var h='<div class="mobile-card"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title">'+mobileEsc(info.title)+'</div><div class="mobile-card-sub">'+mobileEsc(info.sub)+'</div></div><span class="mobile-action-icon" style="width:38px;height:38px;font-size:18px;">'+info.icon+'</span></div></div>';
+        h+=mobileInfoSalaryCard(band,sp,profile,payload);
+        if(!band&&payload){
+            h+='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(ru?'Что нужно для точности':'What improves accuracy')+'</div><div class="mobile-card-sub">'+mobileEsc(ru?'Укажите должность, тип судна и минимальную зарплату в профиле. Когда в индексе будет достаточно наблюдений, Skipi покажет медиану автоматически.':'Set rank, vessel type, and minimum salary in the profile. When the index has enough observations, Skipi will show the median automatically.')+'</div></div>';
+        }
+        mobileMainHtml(h);
+    }catch(e){
+        if(mobileView==='information'){
+            mobileMainHtml('<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(info.title)+'</div><div class="mobile-card-sub">'+mobileEsc(ru?'Не удалось загрузить salary index.':'Could not load salary index.')+'</div></div>');
+        }
+        logError('mobile_information_render',e);
+    }
 }
 function mobileCvPersonName(p,sp){
     var parts=[sp&&sp.surname,sp&&sp.first_name,sp&&sp.middle_name].filter(Boolean);
@@ -2957,6 +3105,9 @@ var mobileDispatchRecipientHint=(function(){
     try{return sessionStorage.getItem(mobileDispatchRecipientSessionKey)||'';}catch(e){return '';}
 })();
 var mobileDispatchManualTrack='email';
+var mobileDispatchStep='choose';
+var mobileDispatchDoneMode='email';
+var mobileDispatchDoneRecipients=0;
 function mobileDispatchFormatSalary(sp){
     sp=sp||{};
     var raw=String(sp.min_salary||localStorage.getItem('skipi-sp-min_salary')||'').trim();
@@ -3013,28 +3164,8 @@ function mobileDispatchScenarioText(tab){
     if(tab==='crewing_requests')return ru?'Skipi сравнивает ваш profile signature с запросами крюингов. Если совпадений нет, опция закрыта.':'Skipi compares your profile signature with crewing requests. If there are no matches, this option is locked.';
     return ru?'Вы сами вводите один или несколько email-адресов. Подходит для конкретного крюинга или менеджера, которому вы доверяете.':'You enter one or more email addresses yourself. Use this for a specific crewing or manager you already trust.';
 }
-function mobileSelectDispatchScenario(tab){
-    if(['manual','agency_db','crewing_requests'].indexOf(tab)===-1)tab='manual';
-    dispatchTab=tab;
-    if(tab==='manual'){
-        if(dispatchRecipientsDraft&&currentDispatchRecipients().recipients.length)captureDispatchRecipients();
-    }else if(tab==='agency_db'){
-        useAgencyDatabaseRecipients({silent:true});
-    }else if(tab==='crewing_requests'){
-        setDispatchRecipientsFromMailingRequests(lastDispatchMailingRequests,{silent:true});
-    }
-    renderMobileDispatch();
-    if(tab==='manual'){
-        setTimeout(function(){
-            var panel=document.querySelector('.mobile-manual-share-panel');
-            if(panel&&panel.scrollIntoView){
-                try{panel.scrollIntoView({block:'start',behavior:'smooth'});}catch(e){panel.scrollIntoView();}
-            }
-        },80);
-    }
-}
 function mobileDispatchPill(tab,icon,title,desc,count,label,enabled,loading,disabledReason){
-    var active=dispatchTab===tab;
+    var active=mobileDispatchStep!=='choose'&&dispatchTab===tab;
     var disabled=!enabled;
     var click=disabled?'':' onclick="mobileSelectDispatchScenario(\''+tab+'\')"';
     var titleAttr=disabled&&disabledReason?' title="'+escAttr(disabledReason)+'"':'';
@@ -3047,19 +3178,6 @@ function mobileDispatchPill(tab,icon,title,desc,count,label,enabled,loading,disa
     h+='</button>';
     return h;
 }
-function mobileWarmDispatchData(sendGate){
-    if(!mobileDispatchAgencyAttempted&&!lastAgencyDbResult&&!agencyDbLoading){
-        mobileDispatchAgencyAttempted=true;
-        loadAgencyDatabaseRecipients().then(function(){
-            if(mobileView==='dispatch'&&dispatchTab!=='manual')renderMobileDispatch();
-        }).catch(function(e){logError('mobile_dispatch_agency_load',e);});
-    }
-    if(sendGate&&sendGate.ok&&!dispatchMailingRequestsLoaded&&!dispatchMailingRequestsLoading){
-        loadDispatchMailingRequests().then(function(){
-            if(mobileView==='dispatch'&&dispatchTab!=='manual')renderMobileDispatch();
-        }).catch(function(e){logError('mobile_dispatch_requests_load',e);});
-    }
-}
 function mobileRememberDispatchRecipient(el){
     mobileDispatchRecipientHint=(el&&typeof el.value==='string')?el.value:'';
     try{
@@ -3071,115 +3189,438 @@ function mobileCaptureManualRecipientHint(){
     var to=document.getElementById('mobile-dispatch-to');
     if(to)mobileRememberDispatchRecipient(to);
 }
-function mobileCaptureManualShareOptions(){
+/* Mobile Mailings v2: keep the first screen as a clean three-choice wizard. */
+function mobileCaptureDispatchWizardInputs(){
     mobileCaptureManualRecipientHint();
     var cv=document.querySelector('input[name="mobile-disp-cv-mode"]:checked');
     if(cv)dispatchCvMode=cv.value||'redacted';
+    var doc=document.querySelector('input[name="mobile-disp-doc-mode"]:checked');
+    if(doc)dispatchDocMode=doc.value||'none';
     var docs=document.getElementById('mobile-disp-include-docs');
-    dispatchDocMode=(docs&&docs.checked)?'all':'none';
+    if(docs)dispatchDocMode=docs.checked?'all':'none';
+    var pkg=document.getElementById('mobile-disp-pkg');
+    if(pkg){dispatchPackageId=pkg.value||dispatchPackageId;}
 }
-function mobileSetManualDispatchTrack(track){
-    mobileCaptureManualShareOptions();
-    mobileDispatchManualTrack=(track==='share')?'share':'email';
+function mobileCaptureManualShareOptions(){
+    mobileCaptureDispatchWizardInputs();
+}
+function mobileDispatchScrollTopSoon(){
+    setTimeout(mobileScrollMainTop,0);
+    setTimeout(mobileScrollMainTop,90);
+}
+function mobileDispatchSetStep(step){
+    mobileCaptureDispatchWizardInputs();
+    mobileDispatchStep=step||'choose';
     renderMobileDispatch();
-    setTimeout(function(){
-        var panel=document.querySelector('.mobile-manual-share-panel');
-        if(panel&&panel.scrollIntoView){
-            try{panel.scrollIntoView({block:'start',behavior:'smooth'});}catch(e){panel.scrollIntoView();}
-        }
-    },60);
+    mobileDispatchScrollTopSoon();
 }
 function mobileDispatchTrackButton(track,icon,title,sub){
     var active=mobileDispatchManualTrack===track;
     return '<button class="mobile-dispatch-track '+(active?'active':'')+'" type="button" onclick="mobileSetManualDispatchTrack(\''+track+'\')"><span class="mobile-dispatch-track-title">'+icon+' '+mobileEsc(title)+'</span><span class="mobile-dispatch-track-sub">'+mobileEsc(sub)+'</span></button>';
 }
-function mobileManualSharePanel(sendGate){
+function mobileSetManualDispatchTrack(track){
+    mobileCaptureDispatchWizardInputs();
+    mobileDispatchManualTrack=(track==='share')?'share':'email';
+    renderMobileDispatch();
+}
+function mobileWarmDispatchData(sendGate){
+    if(!mobileDispatchAgencyAttempted&&!lastAgencyDbResult&&!agencyDbLoading){
+        mobileDispatchAgencyAttempted=true;
+        loadAgencyDatabaseRecipients().then(function(){
+            if(mobileView==='dispatch'&&mobileDispatchStep==='choose')renderMobileDispatch();
+        }).catch(function(e){logError('mobile_dispatch_agency_load',e);});
+    }
+    if(sendGate&&sendGate.ok&&!dispatchMailingRequestsLoaded&&!dispatchMailingRequestsLoading){
+        loadDispatchMailingRequests().then(function(){
+            if(mobileView==='dispatch'&&mobileDispatchStep==='choose')renderMobileDispatch();
+        }).catch(function(e){logError('mobile_dispatch_requests_load',e);});
+    }
+}
+function mobileDispatchRecipientsFor(tab){
+    var seen={},items=[];
+    function add(email,title,meta,id){
+        email=String(email||'').trim();
+        var key=email.toLowerCase();
+        if(!email||seen[key])return;
+        seen[key]=true;
+        items.push({email:email,title:title||email,meta:meta||'',id:id||email});
+    }
+    if(tab==='agency_db'){
+        (lastAgencyDbRecipients||[]).forEach(function(a){
+            add(a.email,a.name,[a.city,a.country,a.website].filter(Boolean).join(' / '),a.id||a.email);
+        });
+    }else if(tab==='crewing_requests'){
+        (lastDispatchMailingRequests||[]).forEach(function(r){
+            add(r.reply_to,r.title||r.crewing_ref,[r.crewing_ref,r.rank,r.vessel_type].filter(Boolean).join(' / '),r.id||r.reply_to);
+        });
+    }else if(mobileDispatchManualTrack==='email'){
+        parseDispatchRecipientText(mobileDispatchRecipientHint).recipients.forEach(function(e){add(e,e,'','manual-'+e);});
+    }
+    return items;
+}
+function mobileDispatchSelectedRecipients(){
+    var checks=Array.prototype.slice.call(document.querySelectorAll('.mobile-review-recipient-check'));
+    if(checks.length){
+        return checks.filter(function(c){return c.checked;}).map(function(c){return c.value;});
+    }
+    return mobileDispatchRecipientsFor(dispatchTab).map(function(x){return x.email;});
+}
+function mobileUpdateDispatchReviewCount(){
+    var el=document.getElementById('mobile-dispatch-review-count');
+    if(el)el.textContent=String(mobileDispatchSelectedRecipients().length);
+}
+function mobileDispatchDocModeTitle(pkgs){
     var ru=getUiLang()==='ru';
-    var docsCount=(sendGate&&sendGate.docs)?sendGate.docs.length:0;
-    var includeDocs=dispatchDocMode==='all';
-    var disabled=!sendGate||!sendGate.ok;
-    var h='<div class="mobile-card mobile-manual-share-panel">';
-    h+='<div class="mobile-card-title">'+mobileEsc(ru?'Выберите трек отправки':'Choose sending track')+'</div>';
-    h+='<div class="mobile-card-sub">'+mobileEsc(ru?'Email и общее “поделиться” разделены, чтобы было понятно, что произойдет после нажатия.':'Email and general sharing are separate so the next action is clear.')+'</div>';
-    h+='<div class="mobile-dispatch-track-grid">';
-    h+=mobileDispatchTrackButton('email','@',ru?'Email':'Email',ru?'На конкретный email-адрес.':'To a specific email address.');
-    h+=mobileDispatchTrackButton('share','&#8645;',ru?'Поделиться':'Share',ru?'WhatsApp, Telegram, email client и другие приложения.':'WhatsApp, Telegram, mail client and other apps.');
-    h+='</div>';
-    if(mobileDispatchManualTrack==='email'){
-        h+='<div class="mobile-field" style="margin-top:12px;"><label>'+mobileEsc(ru?'Email получателя':'Recipient email')+'</label><input id="mobile-dispatch-to" type="text" inputmode="email" autocomplete="email" autocapitalize="none" spellcheck="false" placeholder="crew@example.com" value="'+mobileEsc(mobileDispatchRecipientHint)+'" oninput="mobileRememberDispatchRecipient(this)" onchange="mobileRememberDispatchRecipient(this)" onkeyup="mobileRememberDispatchRecipient(this)" onblur="mobileRememberDispatchRecipient(this)"></div>';
-        h+='<div class="mobile-card-sub">'+mobileEsc(ru?'Skipi подготовит CV/вложения и откроет email draft с адресом, темой и текстом.':'Skipi prepares the CV/attachments and opens an email draft with recipient, subject and body.')+'</div>';
-    }else{
-        h+='<div class="mobile-card-sub" style="margin-top:10px;">'+mobileEsc(ru?'Адрес не нужен. Выберите приложение связи на следующем системном экране телефона.':'No email address needed. Pick the communication app on the next phone system screen.')+'</div>';
+    if(dispatchDocMode==='all')return ru?'все документы':'all documents';
+    if(dispatchDocMode==='package'){
+        var p=(pkgs||[]).find(function(x){return String(x.id)===String(dispatchPackageId);});
+        return (ru?'пакет: ':'package: ')+(p?p.title:(ru?'не выбран':'not selected'));
     }
-    h+='<div class="mobile-card-sub" style="font-weight:800;margin:10px 0 6px;color:var(--text);">'+mobileEsc(ru?'CV':'CV')+'</div>';
-    h+='<label class="mobile-ready-toggle" style="align-items:flex-start;margin-bottom:8px;"><input type="radio" name="mobile-disp-cv-mode" value="redacted" '+(dispatchCvMode==='redacted'?'checked ':'')+'onchange="dispatchCvMode=this.value"><span><span style="display:block;">'+mobileEsc(ru?'Обрезанное CV':'Privacy-protected CV')+'</span><span class="mobile-action-sub">'+mobileEsc(ru?'Рекомендуется: скрывает контакты и чувствительные номера документов.':'Recommended: hides contacts and sensitive document numbers.')+'</span></span></label>';
-    h+='<label class="mobile-ready-toggle" style="align-items:flex-start;margin-bottom:8px;"><input type="radio" name="mobile-disp-cv-mode" value="full" '+(dispatchCvMode==='full'?'checked ':'')+'onchange="dispatchCvMode=this.value"><span><span style="display:block;">'+mobileEsc(ru?'Полное CV':'Full CV')+'</span><span class="mobile-action-sub">'+mobileEsc(ru?'Используйте только для адресатов, которым доверяете.':'Use only for recipients you trust.')+'</span></span></label>';
-    h+='<label class="mobile-ready-toggle" style="align-items:flex-start;margin:10px 0 12px;'+(docsCount?'':'opacity:.55;')+'"><input id="mobile-disp-include-docs" type="checkbox" '+(includeDocs?'checked ':'')+(docsCount?'':'disabled ')+'><span><span style="display:block;">'+mobileEsc(ru?'Приложить документы ZIP':'Attach documents ZIP')+'</span><span class="mobile-action-sub">'+mobileEsc(docsCount?(ru?(docsCount+' файлов будут упакованы автоматически'):(docsCount+' files will be packaged automatically')):(ru?'Нет загруженных файлов документов':'No uploaded document files'))+'</span></span></label>';
-    if(mobileDispatchManualTrack==='email'){
-        h+='<button class="mobile-primary-action" type="button" '+(disabled?'disabled ':'')+'onclick="mobileOpenManualEmailDispatch()"><span class="mobile-action-icon">@</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(ru?'Открыть email draft':'Open email draft')+'</span><span class="mobile-action-sub">'+mobileEsc(ru?'Для Gmail, Mail, Outlook и других email-клиентов.':'For Gmail, Mail, Outlook and other email clients.')+'</span></span></button>';
-    }else{
-        h+='<button class="mobile-primary-action" type="button" '+(disabled?'disabled ':'')+'onclick="mobileShareManualDispatch()"><span class="mobile-action-icon">&#8645;</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(ru?'Поделиться через приложения':'Share via apps')+'</span><span class="mobile-action-sub">'+mobileEsc(ru?'WhatsApp, Telegram, email client и другие приложения.':'WhatsApp, Telegram, mail client and other apps.')+'</span></span></button>';
+    return ru?'только CV':'CV only';
+}
+function mobileDispatchScenarioTitle(tab){
+    var ru=getUiLang()==='ru';
+    if(tab==='agency_db')return ru?'База Skipi':'Skipi database';
+    if(tab==='crewing_requests')return ru?'Крюинг запросил CV':'Crewing requested CV';
+    return ru?'Я знаю адрес':'I know the address';
+}
+function mobileDispatchCvTitle(){
+    var ru=getUiLang()==='ru';
+    return dispatchCvMode==='full'?(ru?'Полное CV':'Full CV'):(ru?'Безопасное CV':'Safe CV');
+}
+function mobileDispatchCvSub(){
+    var ru=getUiLang()==='ru';
+    return dispatchCvMode==='full'
+        ? (ru?'С контактами и личными данными.':'Includes contacts and personal details.')
+        : (ru?'Рекомендуется: контакты и чувствительные номера скрыты.':'Recommended: contacts and sensitive numbers are hidden.');
+}
+function mobileDispatchDocsTitle(pkgs){
+    var ru=getUiLang()==='ru';
+    if(dispatchDocMode==='all')return ru?'Приложить все документы':'Attach all documents';
+    if(dispatchDocMode==='package'){
+        var p=(pkgs||[]).find(function(x){return String(x.id)===String(dispatchPackageId);});
+        return (ru?'Пакет: ':'Package: ')+(p?p.title:(ru?'не выбран':'not selected'));
     }
+    return ru?'Документы не прикладывать':'Do not attach documents';
+}
+function mobileDispatchDocsSub(sendGate,pkgs){
+    var ru=getUiLang()==='ru';
+    if(dispatchDocMode==='all')return ru?((sendGate.docs||[]).length+' файлов будут упакованы автоматически'):((sendGate.docs||[]).length+' files will be packaged automatically');
+    if(dispatchDocMode==='package')return mobileDispatchDocModeTitle(pkgs);
+    return ru?'Сначала отправляем только CV.':'Send CV only first.';
+}
+function mobileDispatchOptionSummary(pkgs){
+    var ru=getUiLang()==='ru';
+    var cv=dispatchCvMode==='full'?(ru?'полное CV':'full CV'):(ru?'безопасное CV':'safe CV');
+    return cv+' / '+mobileDispatchDocModeTitle(pkgs||[]);
+}
+function mobileDispatchStepLabel(){
+    var ru=getUiLang()==='ru';
+    if(mobileDispatchStep==='done')return ru?'Готово':'Done';
+    var order={choose:1,method:2,address:3,content:4,cv_mode:5,docs:5,review:5};
+    var n=order[mobileDispatchStep]||1;
+    return ru?('Шаг '+n):('Step '+n);
+}
+function mobileDispatchHeader(title,sub){
+    var h='<div class="mobile-card"><div class="mobile-focus-head"><div style="min-width:0;">';
+    h+='<div class="mobile-dispatch-step">'+mobileEsc(mobileDispatchStepLabel())+'</div>';
+    h+='<div class="mobile-card-title">'+mobileEsc(title)+'</div>';
+    if(sub)h+='<div class="mobile-card-sub">'+mobileEsc(sub)+'</div>';
+    h+='</div></div></div>';
+    return h;
+}
+function mobileDispatchBackStep(){
+    if(mobileDispatchStep==='method')return 'choose';
+    if(mobileDispatchStep==='address')return 'method';
+    if(mobileDispatchStep==='content'){
+        if(dispatchTab==='manual')return mobileDispatchManualTrack==='email'?'address':'method';
+        return 'choose';
+    }
+    if(mobileDispatchStep==='cv_mode'||mobileDispatchStep==='docs'||mobileDispatchStep==='review')return 'content';
+    return 'choose';
+}
+function mobileDispatchBack(){
+    mobileDispatchSetStep(mobileDispatchBackStep());
+}
+function mobileDispatchChooseButton(active,title,sub,onClick,side){
+    return '<button class="mobile-choice-button '+(active?'active':'')+'" type="button" onclick="'+onClick+'"><span class="mobile-choice-main"><span class="mobile-choice-title">'+mobileEsc(title)+'</span><span class="mobile-choice-sub">'+mobileEsc(sub)+'</span></span><span class="mobile-choice-side">'+mobileEsc(side||'›')+'</span></button>';
+}
+async function mobileSelectDispatchScenario(tab){
+    var ru=getUiLang()==='ru';
+    tab=['manual','agency_db','crewing_requests'].indexOf(tab)===-1?'manual':tab;
+    var gate=await dispatchSendableGate();
+    if(!gate.ok){showNoSendableContent();return;}
+    if(tab==='agency_db'){
+        if(!lastAgencyDbResult&&!agencyDbLoading)await loadAgencyDatabaseRecipients();
+        if(!agencyDbStats().allowed){
+            showToast(ru?'База Skipi пока не открыла адреса для этого профиля':'No Skipi database addresses are unlocked for this profile yet','warn');
+            renderMobileDispatch();
+            return;
+        }
+        dispatchTab='agency_db';
+        useAgencyDatabaseRecipients({silent:true});
+    }else if(tab==='crewing_requests'){
+        if(!dispatchMailingRequestsLoaded&&!dispatchMailingRequestsLoading)await loadDispatchMailingRequests();
+        if(!uniqueMailingRequestEmailCount()){
+            showToast(ru?'Запросов крюингов под текущий профиль пока нет':'No crewing requests match this profile yet','warn');
+            renderMobileDispatch();
+            return;
+        }
+        dispatchTab='crewing_requests';
+        setDispatchRecipientsFromMailingRequests(lastDispatchMailingRequests,{silent:true});
+    }else{
+        dispatchTab='manual';
+    }
+    mobileDispatchStep=dispatchTab==='manual'?'method':'content';
+    renderMobileDispatch();
+    mobileDispatchScrollTopSoon();
+}
+function mobileDispatchChooseHtml(sendGate){
+    var ru=getUiLang()==='ru';
+    var stats=agencyDbStats();
+    var requestEmailCount=uniqueMailingRequestEmailCount();
+    var crewingCount=uniqueMailingRequestCrewingCount();
+    var agencyReady=sendGate.ok&&!!stats.allowed;
+    var agencyLoading=!lastAgencyDbResult&&agencyDbLoading;
+    var requestReady=sendGate.ok&&dispatchMailingRequestsLoaded&&requestEmailCount>0;
+    var requestLoading=!dispatchMailingRequestsLoaded&&dispatchMailingRequestsLoading;
+    var agencyReason=!sendGate.ok?(ru?'Сначала нужен CV или документы':'Complete a CV or upload documents first'):(!stats.allowed&&lastAgencyDbResult?(ru?'Нет открытых адресов':'No unlocked addresses'):'');
+    var requestReason=!sendGate.ok?(ru?'Сначала нужен CV или документы':'Complete a CV or upload documents first'):(dispatchMailingRequestsLoaded&&!requestEmailCount?(ru?'Запросов под профиль нет':'No matching requests yet'):(requestLoading?(ru?'Проверяю запросы':'Checking requests'):''));
+    var h=mobileDispatchHeader(ru?'Куда отправить?':'Where do we send it?','');
+    if(!sendGate.ok){
+        h+='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(ru?'Пока нечего отправлять':'Nothing to send yet')+'</div><div class="mobile-card-sub">'+mobileEsc(ru?'Заполните CV или загрузите документы. После этого выберите один из трех способов рассылки.':'Complete a CV or upload documents. Then choose one of the three mailing options.')+'</div></div>';
+    }
+    h+='<div class="mobile-mailing-pills">';
+    h+=mobileDispatchPill('manual','@',ru?'Я знаю адрес':'I know the address',ru?'Ввести email или поделиться через приложение телефона.':'Type an email or share through a phone app.','1',ru?'вариант':'option',sendGate.ok,false,!sendGate.ok?(ru?'Нет CV/документов':'No CV/documents'):'');
+    h+=mobileDispatchPill('agency_db','DB',ru?'База Skipi':'Skipi database',ru?'Отправить в агентства из базы Skipi.':'Send to agencies from the Skipi database.',stats.allowed,ru?'адресов':'addresses',agencyReady,agencyLoading,agencyReason);
+    h+=mobileDispatchPill('crewing_requests','?',ru?'Крюинг запросил CV':'Crewing requested CV',(ru?'Ответить тем, кто уже ищет похожий профиль.':'Reply to crewings already looking for a similar profile.')+(crewingCount?(' '+(ru?'Крюингов: ':'Crewings: ')+crewingCount):''),requestEmailCount,ru?'адресов':'addresses',requestReady,requestLoading,requestReason);
     h+='</div>';
     return h;
 }
-async function mobileOpenManualEmailDispatch(){return mobileRunManualDispatch('email');}
-async function mobileShareManualDispatch(){return mobileRunManualDispatch('share');}
-async function mobileRunManualDispatch(mode){
+function mobileDispatchMethodHtml(){
     var ru=getUiLang()==='ru';
-    mode=(mode==='share')?'share':'email';
-    try{
-        mobileCaptureManualShareOptions();
-        var gate=await dispatchSendableGate();
-        if(!gate.ok){showNoSendableContent();return;}
+    var h=mobileDispatchHeader(ru?'Как отправить?':'How do we send it?','');
+    h+=mobileDispatchChooseButton(false,ru?'Письмом':'By email',ru?'Откроется почтовое приложение с готовым письмом.':'Opens the mail app with a prepared message.',"mobileDispatchChooseMethod('email')",'@');
+    h+=mobileDispatchChooseButton(false,ru?'Через приложение':'Through an app',ru?'WhatsApp, Telegram, почта или другое приложение.':'WhatsApp, Telegram, mail client or another app.',"mobileDispatchChooseMethod('share')",'↕');
+    h+='<div class="mobile-wizard-actions"><button class="btn btn-outline" type="button" onclick="mobileDispatchBack()">'+mobileEsc(ru?'Назад':'Back')+'</button></div>';
+    return h;
+}
+function mobileDispatchChooseMethod(track){
+    mobileDispatchManualTrack=(track==='share')?'share':'email';
+    mobileDispatchSetStep(mobileDispatchManualTrack==='email'?'address':'content');
+}
+function mobileDispatchAddressHtml(){
+    var ru=getUiLang()==='ru';
+    var h=mobileDispatchHeader(ru?'Введите email':'Enter email','');
+    h+='<div class="mobile-card"><div class="mobile-field"><label>'+mobileEsc(ru?'Email получателя':'Recipient email')+'</label><input id="mobile-dispatch-to" type="text" inputmode="email" autocomplete="email" autocapitalize="none" spellcheck="false" placeholder="crew@example.com" value="'+mobileEsc(mobileDispatchRecipientHint)+'" oninput="mobileRememberDispatchRecipient(this)" onchange="mobileRememberDispatchRecipient(this)" onkeyup="mobileRememberDispatchRecipient(this)" onblur="mobileRememberDispatchRecipient(this)"></div></div>';
+    h+='<div class="mobile-wizard-actions"><button class="btn btn-outline" type="button" onclick="mobileDispatchBack()">'+mobileEsc(ru?'Назад':'Back')+'</button><button class="btn btn-accent" type="button" onclick="mobileDispatchAddressNext()">'+mobileEsc(ru?'Далее':'Next')+'</button></div>';
+    return h;
+}
+function mobileDispatchAddressNext(){
+    var ru=getUiLang()==='ru';
+    mobileCaptureDispatchWizardInputs();
+    var parsed=parseDispatchRecipientText(mobileDispatchRecipientHint);
+    if(parsed.invalid.length){
+        showToast((ru?'Некорректный email будет пропущен: ':'Invalid email ignored: ')+parsed.invalid.slice(0,2).join(', '),'warn');
+    }
+    if(!parsed.recipients.length){
+        showToast(ru?'Введите корректный email':'Enter a valid email','warn');
+        var to=document.getElementById('mobile-dispatch-to');
+        if(to)to.focus();
+        return;
+    }
+    mobileDispatchSetStep('content');
+}
+function mobileDispatchSourceInfoHtml(sp){
+    var ru=getUiLang()==='ru';
+    if(dispatchTab==='agency_db'){
+        var stats=agencyDbStats();
+        return '<div class="mobile-summary-row"><div><strong>'+mobileEsc(ru?'Получатели из базы Skipi':'Skipi database recipients')+'</strong><span>'+mobileEsc((ru?'Доступно: ':'Unlocked: ')+stats.allowed+' / '+stats.total)+'</span></div><span class="mobile-pill ok">'+mobileEsc(stats.pct+'%')+'</span></div>';
+    }
+    if(dispatchTab==='crewing_requests'){
+        return '<div class="mobile-summary-row"><div><strong>'+mobileEsc(ru?'Файлы остаются у вас':'Files stay on your device')+'</strong><span>'+mobileEsc(ru?'Для поиска запросов используется только краткий профиль.':'Only a short profile is used to find requests.')+'</span></div><span class="mobile-pill ok">'+mobileEsc(ru?'OK':'OK')+'</span></div>'
+            + '<div class="mobile-summary-row"><div><strong>'+mobileEsc(ru?'Запросы крюингов':'Crewing requests')+'</strong><span>'+mobileEsc((ru?'Крюингов: ':'Crewings: ')+uniqueMailingRequestCrewingCount()+' · '+(ru?'адресов: ':'addresses: ')+uniqueMailingRequestEmailCount())+'</span></div><span class="mobile-pill ok">'+mobileEsc(String(lastDispatchMailingRequests.length))+'</span></div>';
+    }
+    return '';
+}
+function mobileDispatchContentHtml(sendGate,sp,pkgs){
+    var ru=getUiLang()==='ru';
+    pkgs=pkgs||[];
+    if(dispatchDocMode==='all'&&!sendGate.docs.length)dispatchDocMode='none';
+    if(dispatchDocMode==='package'&&!validDispatchPackages(pkgs).length)dispatchDocMode='none';
+    ensureDispatchPackageChoice(pkgs);
+    var h=mobileDispatchHeader(ru?'Что отправить?':'What do we send?','');
+    h+=mobileDispatchSourceInfoHtml(sp);
+    h+='<div class="mobile-summary-row"><div><strong>'+mobileEsc(mobileDispatchCvTitle())+'</strong><span>'+mobileEsc(mobileDispatchCvSub())+'</span></div><button class="btn btn-outline btn-sm" type="button" onclick="mobileDispatchSetStep(\'cv_mode\')">'+mobileEsc(ru?'Изменить':'Change')+'</button></div>';
+    h+='<div class="mobile-summary-row"><div><strong>'+mobileEsc(mobileDispatchDocsTitle(pkgs))+'</strong><span>'+mobileEsc(mobileDispatchDocsSub(sendGate,pkgs))+'</span></div><button class="btn btn-outline btn-sm" type="button" onclick="mobileDispatchSetStep(\'docs\')">'+mobileEsc(ru?'Изменить':'Change')+'</button></div>';
+    h+='<div class="mobile-wizard-actions"><button class="btn btn-outline" type="button" onclick="mobileDispatchBack()">'+mobileEsc(ru?'Назад':'Back')+'</button><button class="btn btn-accent" type="button" onclick="mobileGoDispatchReview()">'+mobileEsc(ru?'Далее':'Next')+'</button></div>';
+    return h;
+}
+function mobileDispatchCvModeHtml(){
+    var ru=getUiLang()==='ru';
+    var h=mobileDispatchHeader(ru?'Какое CV отправить?':'Which CV do we send?','');
+    h+=mobileDispatchChooseButton(dispatchCvMode==='redacted',ru?'Безопасное CV':'Safe CV',ru?'Рекомендуется. Скрывает контакты и чувствительные номера.':'Recommended. Hides contacts and sensitive numbers.',"mobileSetDispatchCvMode('redacted')",'✓');
+    h+=mobileDispatchChooseButton(dispatchCvMode==='full',ru?'Полное CV':'Full CV',ru?'Только для адресатов, которым вы доверяете.':'Only for recipients you trust.',"mobileSetDispatchCvMode('full')",'');
+    h+='<div class="mobile-wizard-actions"><button class="btn btn-outline" type="button" onclick="mobileDispatchSetStep(\'content\')">'+mobileEsc(ru?'Назад':'Back')+'</button></div>';
+    return h;
+}
+function mobileSetDispatchCvMode(mode){
+    dispatchCvMode=mode==='full'?'full':'redacted';
+    mobileDispatchSetStep('content');
+}
+function mobileDispatchDocsHtml(sendGate,pkgs){
+    var ru=getUiLang()==='ru';
+    pkgs=pkgs||[];
+    var validPkgs=validDispatchPackages(pkgs);
+    var h=mobileDispatchHeader(ru?'Приложить документы?':'Attach documents?','');
+    h+=mobileDispatchChooseButton(dispatchDocMode==='none',ru?'Нет, только CV':'No, CV only',ru?'Самый быстрый вариант.':'Fastest option.',"mobileSetDispatchDocMode('none')",'✓');
+    h+=mobileDispatchChooseButton(dispatchDocMode==='all',ru?'Все документы':'All documents',sendGate.docs.length?(ru?(sendGate.docs.length+' файлов будут упакованы'):(sendGate.docs.length+' files will be packaged')):(ru?'Нет загруженных файлов':'No uploaded files'),sendGate.docs.length?"mobileSetDispatchDocMode('all')":"showToast('"+(ru?'Нет загруженных файлов':'No uploaded files')+"','warn')",'');
+    h+=mobileDispatchChooseButton(dispatchDocMode==='package',ru?'Выбрать пакет':'Choose package',validPkgs.length?(ru?'Отправить подготовленный пакет.':'Send a prepared package.'):(ru?'Нет активных пакетов':'No active packages'),validPkgs.length?"mobileSetDispatchDocMode('package')":"showToast('"+(ru?'Нет активных пакетов':'No active packages')+"','warn')",'');
+    if(validPkgs.length&&dispatchDocMode==='package'){
+        h+='<div class="mobile-card"><div class="mobile-field"><label>'+mobileEsc(ru?'Пакет':'Package')+'</label><select id="mobile-disp-pkg" onchange="dispatchPackageId=this.value" style="width:100%;">';
+        validPkgs.forEach(function(p){
+            h+='<option value="'+escAttr(p.id)+'" '+(String(p.id)===String(dispatchPackageId)?'selected ':'')+'>'+mobileEsc(p.title+' ('+(p.file_count||0)+' files)')+'</option>';
+        });
+        h+='</select></div></div>';
+    }
+    h+='<div class="mobile-wizard-actions"><button class="btn btn-outline" type="button" onclick="mobileDispatchSetStep(\'content\')">'+mobileEsc(ru?'Назад':'Back')+'</button><button class="btn btn-accent" type="button" onclick="mobileDispatchSetStep(\'content\')">'+mobileEsc(ru?'Готово':'Done')+'</button></div>';
+    return h;
+}
+function mobileSetDispatchDocMode(mode){
+    dispatchDocMode=mode||'none';
+    if(dispatchDocMode==='package')renderMobileDispatch();
+    else mobileDispatchSetStep('content');
+}
+async function mobileGoDispatchReview(){
+    var ru=getUiLang()==='ru';
+    mobileCaptureDispatchWizardInputs();
+    if(dispatchTab==='manual'&&mobileDispatchManualTrack==='email'){
         var parsed=parseDispatchRecipientText(mobileDispatchRecipientHint);
-        if(mode==='email'&&parsed.invalid.length){
-            showToast((ru?'Некорректный email будет проигнорирован: ':'Invalid email ignored: ')+parsed.invalid.slice(0,2).join(', '),'warn');
+        if(parsed.invalid.length){
+            showToast((ru?'Некорректный email будет пропущен: ':'Invalid email ignored: ')+parsed.invalid.slice(0,2).join(', '),'warn');
         }
-        if(mode==='email'&&!parsed.recipients.length){
+        if(!parsed.recipients.length){
             showToast(ru?'Введите корректный email получателя':'Enter a valid recipient email','warn');
             var to=document.getElementById('mobile-dispatch-to');
             if(to)to.focus();
             return;
         }
+    }else if(dispatchTab==='agency_db'){
+        if(!mobileDispatchRecipientsFor('agency_db').length){showToast(ru?'Нет доступных адресов из базы Skipi':'No available Skipi database addresses','warn');return;}
+    }else if(dispatchTab==='crewing_requests'){
+        if(!mobileDispatchRecipientsFor('crewing_requests').length){showToast(ru?'Нет адресов из запросов крюингов':'No crewing request addresses','warn');return;}
+    }
+    mobileDispatchStep='review';
+    renderMobileDispatch();
+    mobileDispatchScrollTopSoon();
+}
+function mobileDispatchReviewHtml(sendGate,pkgs){
+    var ru=getUiLang()==='ru';
+    var isShare=dispatchTab==='manual'&&mobileDispatchManualTrack==='share';
+    var items=mobileDispatchRecipientsFor(dispatchTab);
+    var h=mobileDispatchHeader(isShare?(ru?'Проверить отправку':'Review sharing'):(ru?'Проверить адреса':'Review recipients'),mobileDispatchScenarioTitle(dispatchTab)+' / '+mobileDispatchOptionSummary(pkgs));
+    if(isShare){
+        h+='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(ru?'Выберите приложение на следующем экране':'Choose an app on the next screen')+'</div><div class="mobile-card-sub">'+mobileEsc(ru?'Skipi подготовит CV и откроет меню телефона.':'Skipi prepares the CV and opens the phone share sheet.')+'</div></div>';
+    }else{
+        h+='<div class="mobile-card"><div class="mobile-row"><div><div class="mobile-card-title">'+mobileEsc(ru?'Получатели':'Recipients')+'</div><div class="mobile-card-sub">'+mobileEsc(ru?'Снимите галочку с адресов, которые нужно исключить.':'Uncheck addresses you want to exclude.')+'</div></div><span class="mobile-pill ok"><span id="mobile-dispatch-review-count">'+items.length+'</span></span></div></div>';
+        h+='<div class="mobile-review-list">';
+        items.forEach(function(item){
+            h+='<label class="mobile-review-row"><input type="checkbox" class="mobile-review-recipient-check" value="'+escAttr(item.email)+'" checked onchange="mobileUpdateDispatchReviewCount()"><span style="min-width:0;"><span class="mobile-review-email">'+mobileEsc(item.email)+'</span>';
+            if(item.title&&item.title!==item.email)h+='<span class="mobile-review-meta">'+mobileEsc(item.title)+'</span>';
+            if(item.meta)h+='<span class="mobile-review-meta">'+mobileEsc(item.meta)+'</span>';
+            h+='</span></label>';
+        });
+        h+='</div>';
+    }
+    h+='<div class="mobile-wizard-actions">';
+    h+='<button class="btn btn-outline" type="button" onclick="mobileDispatchBack()">'+mobileEsc(ru?'Назад':'Back')+'</button>';
+    h+='<button class="btn btn-accent" type="button" '+(sendGate.ok?'':'disabled ')+'onclick="mobileRunDispatchWizard()">'+mobileEsc(isShare?(ru?'Поделиться':'Share'):(ru?'Открыть письмо':'Open email'))+'</button>';
+    h+='</div>';
+    return h;
+}
+function mobileDispatchDoneHtml(){
+    var ru=getUiLang()==='ru';
+    var isShare=mobileDispatchDoneMode==='share';
+    var title=isShare?(ru?'Меню отправки открыто':'Share sheet opened'):(ru?'Письмо подготовлено':'Email prepared');
+    var sub=isShare
+        ? (ru?'Выберите приложение и отправьте CV там.':'Choose an app and send the CV there.')
+        : (ru?'Почтовое приложение открыто с готовым письмом.':'The mail app was opened with a prepared message.');
+    var h=mobileDispatchHeader(title,sub);
+    h+='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(ru?'Что дальше?':'What next?')+'</div>';
+    h+='<div class="mobile-card-sub">'+mobileEsc(isShare?(ru?'Если вы уже отправили сообщение, вернитесь на главный экран.':'If you have sent the message, return to the main screen.'):(ru?'Проверьте письмо в почтовом приложении и нажмите Send.':'Review the email in your mail app and press Send.'))+'</div>';
+    if(!isShare)h+='<div class="mobile-card-sub">'+mobileEsc((ru?'Получателей: ':'Recipients: ')+mobileDispatchDoneRecipients)+'</div>';
+    h+='</div>';
+    h+='<button class="mobile-primary-action" type="button" onclick="mobileShow(\'home\')"><span class="mobile-action-icon">&#8962;</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(ru?'На главную':'Home')+'</span><span class="mobile-action-sub">'+mobileEsc(ru?'Вернуться в главное меню Skipi.':'Return to the Skipi main menu.')+'</span></span></button>';
+    h+='<button class="mobile-primary-action" type="button" onclick="mobileDispatchStep=\'choose\';renderMobileDispatch();mobileDispatchScrollTopSoon();"><span class="mobile-action-icon">&#9993;</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(ru?'Новая рассылка':'New mailing')+'</span><span class="mobile-action-sub">'+mobileEsc(ru?'Подготовить ещё одно письмо или отправку.':'Prepare another email or share.')+'</span></span></button>';
+    return h;
+}
+async function mobileRunDispatchWizard(){
+    var ru=getUiLang()==='ru';
+    try{
+        mobileCaptureDispatchWizardInputs();
+        var gate=await dispatchSendableGate();
+        if(!gate.ok){showNoSendableContent();return;}
+        var isShare=dispatchTab==='manual'&&mobileDispatchManualTrack==='share';
+        var recipients=isShare?[]:mobileDispatchSelectedRecipients();
+        if(!isShare&&!recipients.length){showToast(ru?'Оставьте хотя бы один адрес':'Keep at least one recipient','warn');return;}
         var pkgId=null;
         if(dispatchDocMode==='all'){
             pkgId=await ensureAllDocumentsDispatchPackage(gate);
+        }else if(dispatchDocMode==='package'){
+            if(!dispatchPackageId){showToast(ru?'Выберите пакет документов':'Choose a document package','warn');return;}
+            pkgId=dispatchPackageId;
         }
-        var draft=await buildDispatchDraft(dispatchDocMode==='all'?'docs':'cv');
-        showToast(mode==='email'?(ru?'Готовлю email draft...':'Preparing email draft...'):(ru?'Готовлю CV для отправки...':'Preparing CV for sharing...'),'info');
+        if(dispatchTab==='crewing_requests'&&!isShare){
+            var selected={};
+            recipients.forEach(function(e){selected[String(e||'').toLowerCase()]=true;});
+            (lastDispatchMailingRequests||[]).filter(function(r){return selected[String(r.reply_to||'').toLowerCase()];}).forEach(function(r){
+                invoke('mailing_request_send_click',{requestId:r.id}).catch(function(){});
+            });
+        }
+        var draft=await buildDispatchDraft(dispatchDocMode==='none'?'cv':'docs');
+        showToast(isShare?(ru?'Готовлю меню отправки...':'Preparing share sheet...'):(ru?'Готовлю email draft...':'Preparing email draft...'),'info');
         var attachments=await invoke('prepare_dispatch_attachments',{
             packageId:pkgId,
             includeCv:true,
             redactedCv:dispatchCvMode==='redacted',
         });
-        if(!attachments||!attachments.length){
-            showToast(ru?'Не удалось подготовить вложения':'Could not prepare attachments','error');
-            return;
-        }
+        if(!attachments||!attachments.length){showToast(ru?'Не удалось подготовить вложения':'Could not prepare attachments','error');return;}
         if(hostPlatform==='android'){
             await invoke('mobile_share_dispatch',{
-                recipients:mode==='email'?parsed.recipients:[],
+                recipients:recipients,
                 subject:draft.subject,
                 body:draft.body,
                 attachments:attachments,
-                mode:mode,
+                mode:isShare?'share':'email',
             });
-            showToast(mode==='email'?(ru?'Email draft открыт':'Email draft opened'):(ru?'Меню отправки открыто':'Share sheet opened'),'success');
+            showToast(isShare?(ru?'Меню отправки открыто':'Share sheet opened'):(ru?'Письмо подготовлено':'Email prepared'),'success');
+            mobileDispatchDoneMode=isShare?'share':'email';
+            mobileDispatchDoneRecipients=recipients.length;
+            mobileDispatchStep='done';
+            renderMobileDispatch();
             return;
         }
-        if(mode==='share'&&navigator.share){
+        if(isShare&&navigator.share){
             await navigator.share({title:draft.subject,text:draft.body});
+            mobileDispatchDoneMode='share';
+            mobileDispatchDoneRecipients=0;
+            mobileDispatchStep='done';
+            renderMobileDispatch();
             return;
         }
         showToast(ru?'Этот мобильный трек недоступен на этой платформе':'This mobile track is not available on this platform','error');
     }catch(e){
         showToast((ru?'Отправка не открылась: ':'Dispatch did not open: ')+e,'error');
-        logError('mobile_manual_dispatch_'+mode,e);
+        logError('mobile_dispatch_wizard_send',e);
     }
 }
+async function mobileOpenManualEmailDispatch(){return mobileRunDispatchWizard();}
+async function mobileShareManualDispatch(){return mobileRunDispatchWizard();}
+async function mobileRunManualDispatch(mode){
+    mobileDispatchManualTrack=(mode==='share')?'share':'email';
+    return mobileRunDispatchWizard();
+}
 async function renderMobileDispatch(){
-    mobileCaptureManualRecipientHint();
     var main=document.getElementById('mobile-main');
     var hasDispatchDom=main&&main.querySelector&&main.querySelector('[data-mobile-dispatch-root="1"]');
     if(!hasDispatchDom)mobileMainHtml('<div class="mobile-card"><div class="mobile-card-title">Mailings</div><div class="mobile-card-sub">Loading mailing options...</div></div>');
@@ -3187,35 +3628,29 @@ async function renderMobileDispatch(){
         var sendGate=await dispatchSendableGate();
         if(mobileView!=='dispatch')return;
         if(['manual','agency_db','crewing_requests'].indexOf(dispatchTab)===-1)dispatchTab='manual';
+        if(['choose','method','address','content','cv_mode','docs','review','done'].indexOf(mobileDispatchStep)===-1)mobileDispatchStep='choose';
         var ru=getUiLang()==='ru';
         var sp={};try{sp=await invoke('get_seafarer_personal');}catch(e){sp={};}
-        var stats=agencyDbStats();
-        var requestEmailCount=uniqueMailingRequestEmailCount();
-        var crewingCount=uniqueMailingRequestCrewingCount();
-        var agencyDisabled=!sendGate.ok?(ru?'Сначала нужен CV или документы':'Complete a CV or upload documents first'):(!stats.allowed?(ru?'Нет открытых адресов':'No unlocked addresses'):'');
-        var requestDisabled=!sendGate.ok?(ru?'Сначала нужен CV или документы':'Complete a CV or upload documents first'):(!dispatchMailingRequestsLoaded?(ru?'Запросы загружаются':'Requests are loading'):(!requestEmailCount?(ru?'Запросов под профиль нет':'No matching requests yet'):''));
-        var h='<div data-mobile-dispatch-root="1"><div class="mobile-card"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title">'+mobileEsc(ru?'Рассылки':'Mailings')+'</div><div class="mobile-card-sub">'+mobileEsc(ru?'Как вы хотите разослать CV и документы?':'How do you want to send your CV and documents?')+'</div></div><span class="mobile-action-icon" style="width:38px;height:38px;font-size:18px;">&#9993;</span></div></div>';
-        h+=mobileDispatchSignatureHtml(sp);
-        if(!sendGate.ok){
-            h+='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(ru?'Пока нечего отправлять':'Nothing to send yet')+'</div><div class="mobile-card-sub">'+mobileEsc(ru?'Заполните CV или загрузите документы, затем выберите один из трех способов рассылки.':'Complete a CV or upload documents, then choose one of the three mailing options.')+'</div></div>';
+        var pkgs=[];try{pkgs=await invoke('get_packages');}catch(e){pkgs=[];}
+        if(mobileDispatchStep==='choose')mobileWarmDispatchData(sendGate);
+        var h='<div data-mobile-dispatch-root="1">';
+        if(mobileDispatchStep==='choose'){
+            h+=mobileDispatchChooseHtml(sendGate);
+        }else if(mobileDispatchStep==='method'){
+            h+=mobileDispatchMethodHtml();
+        }else if(mobileDispatchStep==='address'){
+            h+=mobileDispatchAddressHtml();
+        }else if(mobileDispatchStep==='content'){
+            h+=mobileDispatchContentHtml(sendGate,sp,pkgs);
+        }else if(mobileDispatchStep==='cv_mode'){
+            h+=mobileDispatchCvModeHtml();
+        }else if(mobileDispatchStep==='docs'){
+            h+=mobileDispatchDocsHtml(sendGate,pkgs);
+        }else if(mobileDispatchStep==='done'){
+            h+=mobileDispatchDoneHtml();
+        }else{
+            h+=mobileDispatchReviewHtml(sendGate,pkgs);
         }
-        h+='<div class="mobile-mailing-pills">';
-        h+=mobileDispatchPill('manual','@',ru?'Кастомный адрес':'Custom address',ru?'Ввести email вручную. Для конкретного крюинга или менеджера.':'Type email manually. For a specific crewing or manager.','1',ru?'опция':'option',sendGate.ok,false,!sendGate.ok?(ru?'Нет CV/документов':'No CV/documents'):'');
-        h+=mobileDispatchPill('agency_db','DB',ru?'База Skipi':'Skipi database',ru?'Адреса из базы агентств Skipi. Чем полнее профиль, тем больше адресов открыто.':'Agency addresses from Skipi database. A fuller profile unlocks more addresses.',stats.allowed,ru?'адресов':'addresses',sendGate.ok&&!!stats.allowed,!lastAgencyDbResult&&agencyDbLoading,agencyDisabled);
-        h+=mobileDispatchPill('crewing_requests','?',ru?'Запросы крюингов':'Crewing requests',ru?'Только совпадения по profile signature. Решение отправить CV остается за вами.':'Only matches by profile signature. You still decide whether to send the CV.',requestEmailCount,ru?'адресов':'addresses',sendGate.ok&&dispatchMailingRequestsLoaded&&requestEmailCount>0,!dispatchMailingRequestsLoaded&&dispatchMailingRequestsLoading,requestDisabled);
-        h+='</div>';
-        h+='<div class="mobile-mailing-summary">';
-        h+='<div class="mobile-card-title">'+mobileEsc(dispatchScenarioTitle(dispatchTab))+'</div>';
-        h+='<div class="mobile-card-sub">'+mobileEsc(mobileDispatchScenarioText(dispatchTab))+'</div>';
-        if(dispatchTab==='agency_db'){
-            h+='<div class="mobile-card-sub" style="margin-top:8px;">'+mobileEsc(ru?('Открыто '+stats.allowed+' из '+stats.total+' адресов.'):('Unlocked '+stats.allowed+' of '+stats.total+' addresses.'))+'</div>';
-        }else if(dispatchTab==='crewing_requests'){
-            h+='<div class="mobile-card-sub" style="margin-top:8px;">'+mobileEsc(ru?('Крюингов: '+crewingCount+' · адресов: '+requestEmailCount):('Crewings: '+crewingCount+' · addresses: '+requestEmailCount))+'</div>';
-        }
-        h+='</div>';
-        if(dispatchTab==='manual')h+=mobileManualSharePanel(sendGate);
-        h+='<button class="mobile-primary-action" type="button" onclick="mobileShow(\'cv\')"><span class="mobile-action-icon">CV</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(ru?'Проверить CV перед отправкой':'Review CV before sending')+'</span><span class="mobile-action-sub">'+mobileEsc(ru?'Посмотрите, что увидит получатель.':'See what the recipient will receive.')+'</span></span></button>';
-        h+='<button class="mobile-primary-action" type="button" onclick="mobileShow(\'docs\')"><span class="mobile-action-icon">&#128196;</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(ru?'Проверить документы':'Review documents')+'</span><span class="mobile-action-sub">'+mobileEsc(ru?'Убедитесь, что нужные сертификаты прикреплены.':'Make sure required certificates are attached.')+'</span></span></button>';
         h+='</div>';
         mobileMainHtml(h);
         mobileWarmDispatchData(sendGate);
@@ -3223,7 +3658,7 @@ async function renderMobileDispatch(){
         if(mobileView==='dispatch'){
             mobileMainHtml('<div class="mobile-card"><div class="mobile-card-title">Mailings</div><div class="mobile-card-sub">Could not load mailing options.</div></div>');
         }
-        logError('mobile_dispatch_render',e);
+        logError('mobile_dispatch_render_v2',e);
     }
 }
 async function renderMobileCv(){
@@ -3330,6 +3765,7 @@ function mobileWorkEntryCard(e){
     var imo=normalizeImo(e.imo);
     var cap=formatSeaServiceCapacity(e);
     var duration=mobileWorkDuration(e);
+    var hasReview=vesselReviewHasLocal(e);
     var h='<div class="mobile-card">';
     h+='<div class="mobile-row" style="align-items:flex-start;">';
     h+='<div style="min-width:0;flex:1;">';
@@ -3343,27 +3779,395 @@ function mobileWorkEntryCard(e){
     if(imo)h+='<div class="mobile-card-sub">IMO '+mobileEsc(imo)+'</div>';
     if(cap)h+='<div class="mobile-card-sub">'+mobileEsc(cap)+'</div>';
     if(e.notes)h+='<div class="mobile-card-sub">'+mobileEsc(e.notes)+'</div>';
+    if(hasReview){
+        h+='<div class="mobile-card-sub" style="color:var(--green);font-weight:800;">'+mobileEsc(localReviewStars(e.local_review.overall_rating)+' Your assessment '+localReviewRatingText(e.local_review.overall_rating))+'</div>';
+    }
+    h+='<div class="mobile-actions" style="margin-top:11px;">';
+    if(imo){
+        h+='<button class="btn btn-outline mobile-grow" type="button" onclick="mobileOpenVesselFromExperience(\''+jsString(e.id)+'\',\''+jsString(imo)+'\',\''+jsString(e.vessel_name||'')+'\')">Vessel DB</button>';
+        h+='<button class="btn btn-accent mobile-grow" type="button" onclick="mobileStartAssessment(\''+jsString(e.id)+'\')">'+(hasReview?'View / update':'Assess')+'</button>';
+    }
+    h+='<button class="btn btn-outline mobile-grow" type="button" onclick="mobileShowExperienceForm(\''+jsString(e.id)+'\')">Edit</button>';
+    h+='</div>';
     return h+'</div>';
+}
+function mobileWorkEntryById(entries,id){
+    return (entries||[]).find(function(row){return row&&row.id===id;})||null;
+}
+function mobileLatestEntryForImo(entries,imo){
+    var norm=normalizeImo(imo);
+    if(!norm)return null;
+    var matches=(entries||[]).filter(function(row){return normalizeImo(row&&row.imo)===norm;});
+    matches.sort(function(a,b){return String(b.sign_off||b.sign_on||b.created_at||'').localeCompare(String(a.sign_off||a.sign_on||a.created_at||''));});
+    return matches[0]||null;
+}
+function mobileExperienceInput(id,label,value,attrs){
+    attrs=attrs||'';
+    return '<div class="mobile-field"><label>'+mobileEsc(label)+'</label><input id="'+id+'" value="'+escAttr(value||'')+'" '+attrs+'></div>';
+}
+function mobileExperienceFormHtml(entry,prefill){
+    entry=entry||{};
+    prefill=prefill||{};
+    var v=function(key){return entry[key]!=null?entry[key]:(prefill[key]!=null?prefill[key]:'');};
+    var title=entry.id?'Edit sea service':'Add sea service';
+    var h='<div class="mobile-card"><div class="mobile-dispatch-step">Sea Service</div><div class="mobile-card-title">'+mobileEsc(title)+'</div><div class="mobile-card-sub">Add the contract first. After saving, Skipi can assess the vessel through the linked IMO.</div></div>';
+    h+='<div class="mobile-card"><div class="mobile-form-grid">';
+    h+=mobileExperienceInput('mwh-vessel','Vessel name',v('vessel_name'),'placeholder="MV Example" autocomplete="off"');
+    h+=mobileExperienceInput('mwh-imo','IMO number',v('imo'),'inputmode="numeric" maxlength="7" placeholder="1234567"');
+    h+=mobileExperienceInput('mwh-position','Position',v('position'),'placeholder="Deck Cadet, AB, 3/O..." autocomplete="off"');
+    h+=mobileExperienceInput('mwh-type','Vessel type',v('vessel_type'),'placeholder="Bulk Carrier, Container..." autocomplete="off"');
+    h+=mobileExperienceInput('mwh-flag','Flag',v('flag'),'placeholder="Panama, Liberia..." autocomplete="off"');
+    h+=mobileExperienceInput('mwh-company','Company / manager',v('company'),'placeholder="Company name" autocomplete="off"');
+    h+=mobileExperienceInput('mwh-on','Sign on',v('sign_on'),'inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" oninput="autoFormatDate(this)"');
+    h+=mobileExperienceInput('mwh-off','Sign off',v('sign_off'),'inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" oninput="autoFormatDate(this)"');
+    h+=mobileExperienceInput('mwh-dwt','DWT',v('dwt'),'inputmode="numeric" placeholder="optional"');
+    h+=mobileExperienceInput('mwh-teu','TEU',v('teu'),'inputmode="numeric" placeholder="container ships"');
+    h+='<div class="mobile-field"><label>Notes</label><textarea id="mwh-notes" placeholder="Contract notes, route, onboard context...">'+mobileEsc(v('notes'))+'</textarea></div>';
+    h+='</div><div class="mobile-actions" style="margin-top:12px;">';
+    h+='<button class="btn btn-accent mobile-grow" type="button" onclick="mobileSaveExperience(\''+jsString(entry.id||'')+'\')">Save</button>';
+    h+='<button class="btn btn-outline mobile-grow" type="button" onclick="renderMobileExperience()">Cancel</button>';
+    h+='</div></div>';
+    return h;
+}
+async function mobileShowExperienceForm(entryId,prefill){
+    mobileView='experience';
+    var entry=null;
+    if(entryId){
+        try{entry=mobileWorkEntryById(await invoke('get_work_history')||[],entryId);}catch(e){entry=null;}
+        if(!entry){showToast('Sea Service entry not found','warn');return renderMobileExperience();}
+    }
+    mobileMainHtml(mobileExperienceFormHtml(entry,prefill));
+}
+function mobileReadExperiencePayload(){
+    var g=function(id){var el=document.getElementById(id);return el?String(el.value||'').trim():'';};
+    var vessel=g('mwh-vessel'), position=g('mwh-position'), imo=normalizeImo(g('mwh-imo'));
+    if(!vessel){showToast('Vessel name is required','warn');return null;}
+    if(!imo){showToast('IMO number must contain exactly 7 digits','warn');return null;}
+    if(!position){showToast('Position is required','warn');return null;}
+    return {
+        vesselName:vessel,
+        vesselType:g('mwh-type')||null,
+        imo:imo,
+        flag:g('mwh-flag')||null,
+        company:g('mwh-company')||null,
+        position:position,
+        signOn:g('mwh-on')||null,
+        signOff:g('mwh-off')||null,
+        dwt:g('mwh-dwt')||null,
+        teu:g('mwh-teu')||null,
+        notes:g('mwh-notes')||null
+    };
+}
+async function mobileSaveExperience(entryId){
+    var payload=mobileReadExperiencePayload();
+    if(!payload)return;
+    try{
+        if(entryId){
+            payload.id=entryId;
+            await invoke('update_work_history',payload);
+            showToast('Sea Service updated','success');
+            await renderMobileExperience();
+        }else{
+            var newId=await invoke('add_work_history',payload);
+            showToast('Sea Service saved. Now assess the vessel.','success');
+            await renderMobileExperience();
+            if(newId)setTimeout(function(){mobileStartAssessment(newId);},250);
+        }
+    }catch(e){
+        showToast('Could not save Sea Service: '+e,'error');
+        logError('mobile_save_experience',e);
+    }
 }
 async function renderMobileExperience(){
     mobileMainHtml('<div class="mobile-card"><div class="mobile-card-title">Experience</div><div class="mobile-card-sub">Loading sea service...</div></div>');
     try{
         var entries=await invoke('get_work_history')||[];
         if(mobileView!=='experience')return;
+        var withImo=entries.filter(function(e){return !!normalizeImo(e&&e.imo);}).length;
+        var reviewed=entries.filter(vesselReviewHasLocal).length;
         var h='<div class="mobile-card"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title">Experience</div><div class="mobile-card-sub">Sea service, vessels, contracts and onboard experience.</div></div><span class="mobile-action-icon" style="width:38px;height:38px;font-size:18px;">&#9873;</span></div></div>';
-        h+='<div class="mobile-card"><div class="mobile-row"><div><div class="mobile-card-title">Sea service records</div><div class="mobile-card-sub">Entries stored in this vault.</div></div><span class="mobile-pill ok">'+entries.length+'</span></div></div>';
+        h+='<button class="mobile-primary-action" type="button" onclick="mobileShowExperienceForm(\'\')"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">Add sea service</span><span class="mobile-action-sub">Enter vessel, IMO, rank and dates. Then assess the vessel.</span></span></button>';
+        h+='<div class="mobile-stats"><div class="mobile-stat"><strong>'+entries.length+'</strong><span>Records</span></div><div class="mobile-stat"><strong>'+withImo+'</strong><span>With IMO</span></div><div class="mobile-stat"><strong>'+reviewed+'</strong><span>Assessed</span></div></div>';
         if(!entries.length){
-            h+='<div class="mobile-card"><div class="mobile-card-title">No sea service yet</div><div class="mobile-card-sub">Add contracts and vessel details on desktop or in the next mobile editing layer.</div></div>';
+            h+='<div class="mobile-card"><div class="mobile-card-title">No sea service yet</div><div class="mobile-card-sub">Start with your latest contract. The IMO number links your experience to the vessel database.</div></div>';
         }else{
             entries.forEach(function(e){h+=mobileWorkEntryCard(e);});
         }
-        h+='<button class="mobile-primary-action" type="button" onclick="mobileShow(\'docs\')"><span class="mobile-action-icon">&#128196;</span><span class="mobile-action-copy"><span class="mobile-action-title">Check documents</span><span class="mobile-action-sub">Sea service and CV quality depend on the document vault.</span></span></button>';
         mobileMainHtml(h);
     }catch(e){
         if(mobileView==='experience'){
             mobileMainHtml('<div class="mobile-card"><div class="mobile-card-title">Experience</div><div class="mobile-card-sub">Could not load sea service.</div></div>');
         }
         logError('mobile_experience_render',e);
+    }
+}
+var mobileAssessmentState=null;
+function mobileAssessmentTagLabel(tag){return quickTagLabel(tag);}
+function mobileAssessmentSetRating(n){
+    if(!mobileAssessmentState)return;
+    mobileAssessmentState.rating=n;
+    mobileRenderAssessment();
+}
+function mobileAssessmentToggleTag(id){
+    if(!mobileAssessmentState)return;
+    var arr=mobileAssessmentState.tags||[];
+    var i=arr.indexOf(id);
+    if(i>=0)arr.splice(i,1);else arr.push(id);
+    mobileAssessmentState.tags=arr;
+    mobileRenderAssessment();
+}
+function mobileAssessmentCommentChanged(value){
+    if(mobileAssessmentState)mobileAssessmentState.comment=String(value||'').slice(0,600);
+}
+async function mobileStartAssessment(entryId){
+    try{
+        var entries=await invoke('get_work_history')||[];
+        var entry=mobileWorkEntryById(entries,entryId);
+        if(!entry){showToast('Sea Service entry not found','warn');return;}
+        var imo=normalizeImo(entry.imo);
+        if(!imo){showToast('Assessment needs a valid IMO number','warn');return;}
+        if(localReviewLocked(entry.local_review)){
+            showToast('This assessment is locked until '+formatLocalReviewDate(entry.local_review.lock_until),'warn');
+        }
+        mobileView='experience';
+        mobileAssessmentState={
+            entry:entry,
+            rating:entry.local_review&&entry.local_review.overall_rating?Math.round(Number(entry.local_review.overall_rating)):0,
+            tags:[],
+            comment:''
+        };
+        mobileRenderAssessment();
+    }catch(e){
+        showToast('Could not open assessment: '+e,'error');
+        logError('mobile_start_assessment',e);
+    }
+}
+function mobileRenderAssessment(){
+    var s=mobileAssessmentState;
+    if(!s||!s.entry)return renderMobileExperience();
+    var e=s.entry;
+    var existing=e.local_review&&e.local_review.overall_rating!==undefined&&e.local_review.overall_rating!==null;
+    var h='<div class="mobile-card"><div class="mobile-dispatch-step">Vessel assessment</div><div class="mobile-card-title">'+mobileEsc(e.vessel_name||'Vessel')+'</div><div class="mobile-card-sub">IMO '+mobileEsc(normalizeImo(e.imo)||'')+(e.position?' · '+mobileEsc(e.position):'')+'</div>';
+    if(existing)h+='<div class="mobile-card-sub" style="color:var(--green);font-weight:800;">Existing assessment: '+mobileEsc(localReviewRatingText(e.local_review.overall_rating))+'</div>';
+    h+='</div>';
+    h+='<div class="mobile-card"><div class="mobile-card-title">Overall experience</div><div class="mobile-card-sub">One clear score is enough for the first assessment. You can add tags below.</div>';
+    h+='<div class="mobile-assessment-stars">';
+    for(var i=1;i<=5;i++){
+        h+='<button type="button" class="'+(s.rating>=i?'on':'')+'" onclick="mobileAssessmentSetRating('+i+')" aria-label="'+i+' stars">&#9733;</button>';
+    }
+    h+='</div>';
+    h+='<div class="mobile-card-title" style="font-size:13px;">What should the next crew know?</div>';
+    h+='<div class="mobile-tag-grid">';
+    QUICK_REVIEW_TAGS.forEach(function(tag){
+        var on=(s.tags||[]).indexOf(tag.id)>=0;
+        h+='<button type="button" class="'+(on?'on':'')+'" onclick="mobileAssessmentToggleTag(\''+jsString(tag.id)+'\')">'+mobileEsc(mobileAssessmentTagLabel(tag))+'</button>';
+    });
+    h+='</div>';
+    h+='<div class="mobile-field"><label>Short comment</label><textarea placeholder="Short note for your vault and anonymous vessel signal" oninput="mobileAssessmentCommentChanged(this.value)">'+mobileEsc(s.comment||'')+'</textarea></div>';
+    h+='<div class="mobile-actions" style="margin-top:12px;">';
+    h+='<button class="btn btn-accent mobile-grow" type="button" onclick="mobileSubmitAssessment()">Save assessment</button>';
+    h+='<button class="btn btn-outline mobile-grow" type="button" onclick="renderMobileExperience()">Cancel</button>';
+    h+='</div></div>';
+    mobileMainHtml(h);
+}
+function mobileAssessmentWarningFlags(schema,tags){
+    var allowed={};
+    ((((schema||{}).definition||{}).warning_flags)||[]).forEach(function(fl){
+        var id=(typeof fl==='string')?fl:fl.id;
+        if(id)allowed[id]=true;
+    });
+    return (tags||[]).filter(function(id){
+        var tag=quickTagsByIds([id])[0];
+        return tag&&tag.kind==='warning'&&(!Object.keys(allowed).length||allowed[id]);
+    });
+}
+function mobileBuildAssessmentSummary(schema,state){
+    var tags=quickTagsByIds(state.tags||[]).map(function(tag){return {id:tag.id,title:mobileAssessmentTagLabel(tag),kind:tag.kind||'note'};});
+    var warnings=mobileAssessmentWarningFlags(schema,state.tags||[]).map(function(id){return {id:id,title:String(id).replace(/_/g,' ')};});
+    return {
+        schema_version:schema&&schema.version_id||null,
+        overall_rating:Number(state.rating),
+        sections:[{id:'mobile_quick_assessment',title:'Mobile quick assessment',mode:'rough',rating:Number(state.rating),comment:(state.comment||'').trim()||null,items:[]}],
+        warning_flags:warnings,
+        quick_tags:tags,
+        quick_comment:(state.comment||'').trim()||null,
+        best_thing:Number(state.rating)>=4?((state.comment||'').trim()||'Overall experience was positive.'):'Some parts of the contract were acceptable.',
+        worst_thing:Number(state.rating)<4?((state.comment||'').trim()||'Overall experience needs caution.'):'No critical issue marked in the quick assessment.',
+        advice:(state.comment||'').trim()||null
+    };
+}
+function mobileSectionRatingsForSchema(schema,rating,comment){
+    var sections=((((schema||{}).definition||{}).sections)||[]).filter(function(sec){return sec&&sec.id;});
+    if(!sections.length)return [];
+    return sections.map(function(sec){
+        return {section_id:sec.id,rating_mode:'rough',section_rating:Number(rating),comment:(comment||'').trim()||null};
+    });
+}
+async function mobileTryPublishAssessment(schema,state,summary){
+    if(!schema||!schema.version_id)return {ok:false,reason:'schema unavailable'};
+    var e=state.entry;
+    var tags=state.tags||[];
+    var warnings=mobileAssessmentWarningFlags(schema,tags);
+    var comment=(state.comment||'').trim();
+    var rating=Number(state.rating);
+    var pubkey=await invoke('get_or_create_review_pubkey');
+    var leh=await invoke('compute_local_experience_hash',{workHistoryId:e.id});
+    var payload={
+        review_pubkey:pubkey,
+        local_experience_hash:leh,
+        vessel_imo:parseInt(normalizeImo(e.imo),10),
+        schema_version:schema.version_id||null,
+        evidence_level:'vault_experience',
+        rank_at_time:e.position||null,
+        company_at_time:e.company||null,
+        sign_on_bucket:bucketForDate(e.sign_on),
+        sign_off_bucket:bucketForDate(e.sign_off),
+        contract_months:monthsBetween(e.sign_on,e.sign_off)||1,
+        retro:false,
+        best_thing:rating>=4?(comment||'Overall experience was positive.'):'Some parts of the contract were acceptable.',
+        worst_thing:rating<4?(comment||'Overall experience needs caution.'):'No critical issue marked in the quick assessment.',
+        advice:comment||null,
+        warning_flags:warnings,
+        section_ratings:mobileSectionRatingsForSchema(schema,rating,comment),
+        item_ratings:[]
+    };
+    var r=await apiFetch('/api/reviews',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)},15000);
+    if(!r.ok)throw new Error('HTTP '+r.status+': '+(await r.text()).slice(0,180));
+    return {ok:true};
+}
+async function mobileSubmitAssessment(){
+    var s=mobileAssessmentState;
+    if(!s||!s.entry)return;
+    var rating=Number(s.rating);
+    if(!isFinite(rating)||rating<1||rating>5){showToast('Choose stars first','warn');return;}
+    var schema=null,published=false,publishError='';
+    try{schema=await fetchReviewSchema();}catch(e){publishError=String(e);logError('mobile_assessment_schema',e);}
+    var summary=mobileBuildAssessmentSummary(schema,s);
+    try{
+        if(schema){
+            await mobileTryPublishAssessment(schema,s,summary);
+            published=true;
+        }
+    }catch(e){
+        publishError=String(e);
+        logError('mobile_assessment_publish',e);
+    }
+    try{
+        await invoke('record_local_vessel_review',{
+            workHistoryId:s.entry.id,
+            vesselImo:normalizeImo(s.entry.imo),
+            vesselName:s.entry.vessel_name||null,
+            overallRating:rating,
+            summaryJson:summary
+        });
+        mobileAssessmentState=null;
+        showToast(published?'Assessment saved and published':'Assessment saved locally'+(publishError?': server unavailable':''),published?'success':'warn');
+        await renderMobileExperience();
+    }catch(e){
+        showToast('Could not save local assessment: '+e,'error');
+        logError('mobile_assessment_local',e);
+    }
+}
+var mobileVesselPendingImo=null;
+var mobileVesselPendingEntryId=null;
+function mobileOpenVesselFromExperience(entryId,imo,vesselName){
+    mobileVesselPendingImo=normalizeImo(imo);
+    mobileVesselPendingEntryId=entryId||null;
+    vesselDbPendingImo=mobileVesselPendingImo;
+    vesselDbJobContext={source:'experience',entryId:entryId||'',imo:mobileVesselPendingImo,vessel_name:vesselName||''};
+    mobileShow('vessels');
+}
+function mobileVesselListCard(v,entry){
+    var meta=[v.type,v.flag,v.company].filter(Boolean).join(' · ');
+    var h='<div class="mobile-card">';
+    h+='<div class="mobile-row" style="align-items:flex-start;"><div style="min-width:0;flex:1;">';
+    h+='<div class="mobile-card-title">'+mobileEsc(v.name||('IMO '+v.imo))+'</div>';
+    h+='<div class="mobile-card-sub">IMO '+mobileEsc(v.imo)+(meta?' · '+mobileEsc(meta):'')+'</div>';
+    h+='<div class="mobile-card-sub">'+mobileEsc(v.contracts+' sea service record'+(v.contracts===1?'':'s'))+'</div>';
+    h+='</div>';
+    if(entry&&vesselReviewHasLocal(entry))h+='<span class="mobile-pill ok">'+mobileEsc(localReviewRatingText(entry.local_review.overall_rating))+'</span>';
+    h+='</div>';
+    h+='<div class="mobile-actions" style="margin-top:11px;">';
+    h+='<button class="btn btn-outline mobile-grow" type="button" onclick="mobileLookupSpecificVessel(\''+jsString(v.imo)+'\')">Open</button>';
+    if(entry)h+='<button class="btn btn-accent mobile-grow" type="button" onclick="mobileStartAssessment(\''+jsString(entry.id)+'\')">Assess</button>';
+    h+='</div></div>';
+    return h;
+}
+function mobileVesselResultActions(imo,entries,payload){
+    var entry=mobileLatestEntryForImo(entries,imo);
+    var vesselName=(payload&&payload.name_current)||((entry&&entry.vessel_name)||'');
+    var h='<div class="mobile-actions" style="margin:0 0 10px;">';
+    if(entry){
+        h+='<button class="btn btn-accent mobile-grow" type="button" onclick="mobileStartAssessment(\''+jsString(entry.id)+'\')">Assess this vessel</button>';
+        h+='<button class="btn btn-outline mobile-grow" type="button" onclick="mobileShow(\'experience\')">Sea Service</button>';
+    }else{
+        h+='<button class="btn btn-accent mobile-grow" type="button" onclick="mobileShowExperienceForm(\'\',{imo:\''+jsString(imo)+'\',vessel_name:\''+jsString(vesselName)+'\'})">Add to Sea Service</button>';
+    }
+    h+='</div>';
+    return h;
+}
+function mobileRenderVesselLookupResult(entry,imo,entries){
+    entries=entries||[];
+    if(!entry||entry.status==='error'){
+        return '<div class="mobile-card"><div class="mobile-card-title">Vessel database unavailable</div><div class="mobile-card-sub">'+mobileEsc(entry&&entry.error?entry.error:'Network error')+'</div></div>'+mobileVesselResultActions(imo,entries,null);
+    }
+    if(entry.status==='not_found'||!entry.payload){
+        return '<div class="mobile-card"><div class="mobile-card-title">No vessel found</div><div class="mobile-card-sub">Skipi does not have a public record for IMO '+mobileEsc(imo)+' yet. You can still add the vessel to Sea Service and assess your contract.</div></div>'+mobileVesselResultActions(imo,entries,null);
+    }
+    return mobileVesselResultActions(imo,entries,entry.payload)+'<div class="mobile-card mobile-db-result">'+renderVesselDbSummary(entry.payload)+'</div>';
+}
+async function mobileLookupVesselByImo(force){
+    var input=document.getElementById('mobile-vdb-imo');
+    var host=document.getElementById('mobile-vdb-result');
+    if(!input||!host)return;
+    var imo=normalizeImo(input.value);
+    if(!imo){showToast('IMO must contain exactly 7 digits','warn');input.focus();return;}
+    input.value=imo;
+    mobileVesselPendingImo=imo;
+    host.innerHTML='<div class="mobile-card"><div class="mobile-card-title">Searching IMO '+mobileEsc(imo)+'</div><div class="mobile-card-sub">Reading Skipi vessel intelligence...</div></div>';
+    try{
+        var entries=[];
+        try{entries=await invoke('get_work_history')||[];}catch(_){entries=[];}
+        var result=await fetchVesselReviewProjection(imo,!!force);
+        if(mobileView!=='vessels')return;
+        host.innerHTML=mobileRenderVesselLookupResult(result,imo,entries);
+    }catch(e){
+        host.innerHTML='<div class="mobile-card"><div class="mobile-card-title">Search failed</div><div class="mobile-card-sub">'+mobileEsc(String(e))+'</div></div>';
+        logError('mobile_vessel_lookup',e);
+    }
+}
+function mobileLookupSpecificVessel(imo){
+    mobileVesselPendingImo=normalizeImo(imo);
+    var input=document.getElementById('mobile-vdb-imo');
+    if(input)input.value=mobileVesselPendingImo||'';
+    mobileLookupVesselByImo(false);
+    var host=document.getElementById('mobile-vdb-result');
+    if(host&&host.scrollIntoView)host.scrollIntoView({block:'start',behavior:'smooth'});
+}
+async function renderMobileVessels(){
+    mobileMainHtml('<div class="mobile-card"><div class="mobile-card-title">Vessel DB</div><div class="mobile-card-sub">Loading vessel database...</div></div>');
+    try{
+        var entries=await invoke('get_work_history')||[];
+        if(mobileView!=='vessels')return;
+        var vessels=groupVesselsFromWorkHistory(entries);
+        var h='<div class="mobile-card"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title">Vessel DB</div><div class="mobile-card-sub">Search vessel intelligence by IMO, or open a vessel from your Sea Service.</div></div><span class="mobile-action-icon" style="width:38px;height:38px;font-size:18px;">&#9872;</span></div></div>';
+        h+='<div class="mobile-card"><div class="mobile-field"><label>IMO number</label><div class="mobile-vessel-search"><input id="mobile-vdb-imo" inputmode="numeric" maxlength="7" placeholder="e.g. 9855552" value="'+mobileEsc(mobileVesselPendingImo||'')+'" onkeydown="if(event.key===\'Enter\')mobileLookupVesselByImo(false)"><button class="btn btn-accent" type="button" onclick="mobileLookupVesselByImo(false)">Search</button></div></div></div>';
+        h+='<div id="mobile-vdb-result"></div>';
+        h+='<div class="mobile-section-title">From your Sea Service</div>';
+        if(!vessels.length){
+            h+='<div class="mobile-card"><div class="mobile-card-title">No vessels linked yet</div><div class="mobile-card-sub">Add sea service with a valid IMO number. Skipi will connect the contract to the vessel database.</div></div>';
+            h+='<button class="mobile-primary-action" type="button" onclick="mobileShowExperienceForm(\'\')"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">Add sea service</span><span class="mobile-action-sub">Enter vessel, IMO, rank and dates.</span></span></button>';
+        }else{
+            vessels.forEach(function(v){h+=mobileVesselListCard(v,mobileLatestEntryForImo(entries,v.imo));});
+        }
+        mobileMainHtml(h);
+        var pending=mobileVesselPendingImo||vesselDbPendingImo;
+        if(pending)setTimeout(function(){mobileLookupSpecificVessel(pending);},80);
+    }catch(e){
+        if(mobileView==='vessels'){
+            mobileMainHtml('<div class="mobile-card"><div class="mobile-card-title">Vessel DB</div><div class="mobile-card-sub">Could not load vessel database.</div></div>');
+        }
+        logError('mobile_vessels_render',e);
     }
 }
 async function renderMobileJobs(){
@@ -3421,7 +4225,7 @@ async function mobileSetJobsReady(on){
 function renderMobileShell(){
     if(!shouldUseMobileShell())return;
     mobileSetSub(mobileVaultLabel());
-    mobileSetBottomNav(true);
+    mobileSetBottomNav(mobileView!=='dispatch');
     if(mobileView==='docs')return renderMobileDocs();
     if(mobileView==='add')return renderMobileAdd();
     if(mobileView==='profile')return renderMobileProfile();
@@ -3429,7 +4233,8 @@ function renderMobileShell(){
     if(mobileView==='cv')return renderMobileCv();
     if(mobileView==='dispatch')return renderMobileDispatch();
     if(mobileView==='jobs')return renderMobileJobs();
-    if(['information','vessels'].indexOf(mobileView)>=0)return renderMobileModule(mobileView);
+    if(mobileView==='information')return renderMobileInformation();
+    if(mobileView==='vessels')return renderMobileVessels();
     if(mobileView==='doc')return renderMobileDoc();
     if(mobileView==='pdf')return renderMobilePdfBuilder();
     return renderMobileHome();
@@ -6647,6 +7452,18 @@ function renderVesselReviewProjection(entry,imo){
     var data=entry.payload||{};
     var reviews=data.reviews||{};
     var byEpoch=reviews.by_epoch||[];
+    var publicOverall=Number(data.average_overall);
+    if(!byEpoch.length&&isFinite(publicOverall)){
+        var publicCount=Number(data.review_count||0);
+        var publicLowSample=vesselRatingLowSample(publicCount, data.rating_access&&data.rating_access.low_sample);
+        var publicMeta=publicCount?publicCount+' review'+(publicCount===1?'':'s'):'review signal';
+        var ph='<div class="vrev-head">';
+        ph+='<span class="vrev-title">Vessel reviews</span>';
+        ph+='<span class="vrev-rating"><span class="rating-starline '+(publicLowSample?'low-sample':'')+'">'+publicOverall.toFixed(1)+'&#9733;</span> <span class="vrev-muted">&middot; '+esc(publicMeta)+'</span>'+vesselRatingSampleHtml(publicCount,publicLowSample)+'</span>';
+        ph+='</div>';
+        ph+=vrevReviewCta(imo);
+        return ph;
+    }
     if(!byEpoch.length){
         return '<div class="vrev-head"><span class="vrev-title">Vessel reviews</span><span class="badge badge-none">No public reviews yet</span></div>'+vrevReviewCta(imo);
     }
@@ -6670,7 +7487,8 @@ function renderVesselReviewProjection(entry,imo){
     });
     var h='<div class="vrev-head">';
     h+='<span class="vrev-title">Vessel reviews</span>';
-    h+='<span class="vrev-rating">'+overallText+' <span class="vrev-muted">&middot; '+n+' review'+(n===1?'':'s')+'</span></span>';
+    var epochLowSample=vesselRatingLowSample(n,data.rating_access&&data.rating_access.low_sample);
+    h+='<span class="vrev-rating"><span class="rating-starline '+(epochLowSample?'low-sample':'')+'">'+overallText+'</span> <span class="vrev-muted">&middot; '+n+' review'+(n===1?'':'s')+'</span>'+vesselRatingSampleHtml(n,epochLowSample)+'</span>';
     h+='</div>';
     if(metrics)h+='<div class="vrev-metrics">'+metrics+'</div>';
     if(risks)h+='<div class="vrev-risk">'+risks+'</div>';
@@ -6701,7 +7519,7 @@ function renderRecentVesselReviews(items){
         var rating='';
         if(item.average_overall!==undefined&&item.average_overall!==null){
             var n=Number(item.average_overall);
-            if(isFinite(n))rating=' · '+n.toFixed(1)+'/5';
+            if(isFinite(n))rating=' · '+n.toFixed(1)+'/5'+vesselRatingSampleText(item.review_count,item.low_sample);
         }else if(item.signals_available){
             rating=' · rating locked';
         }
@@ -6751,7 +7569,7 @@ function vesselProjectionRatingSummary(data){
     data=data||{};
     var n=Number(data.average_overall);
     if(isFinite(n)){
-        return {value:n,count:data.review_count||0,source:'public'};
+        return {value:n,count:data.review_count||0,source:'public',low_sample:vesselRatingLowSample(data.review_count,data.rating_access&&data.rating_access.low_sample)};
     }
     var reviews=data.reviews||{};
     var byEpoch=reviews.by_epoch||[];
@@ -6761,7 +7579,7 @@ function vesselProjectionRatingSummary(data){
         var epoch=byEpoch.find(function(x){return x&&x.manager_epoch_id&&currentEpochIds[x.manager_epoch_id];})||byEpoch[0];
         var overall=epoch&&epoch.indices?Number(epoch.indices.overall):NaN;
         if(isFinite(overall)){
-            return {value:overall,count:epoch.n||0,source:'review_projection'};
+            return {value:overall,count:epoch.n||0,source:'review_projection',low_sample:vesselRatingLowSample(epoch.n,data.rating_access&&data.rating_access.low_sample)};
         }
     }
     return null;
@@ -6776,10 +7594,11 @@ function renderExperienceVesselRating(entry,imo,entryId,vesselName){
     var data=entry.payload||{};
     var rating=(entry.status==='ok'&&data)?vesselProjectionRatingSummary(data):null;
     var cls=rating?'exp-vessel-rating-link':'exp-vessel-rating-link empty';
+    if(rating&&rating.low_sample)cls+=' low-sample';
     var label=data.name_current||vesselName||'';
     var meta='';
     if(rating){
-        meta=rating.value.toFixed(1)+'/5'+(rating.count?' · '+rating.count+' reviews':'')+' · open vessel database';
+        meta=rating.value.toFixed(1)+'/5'+(rating.count?' · '+rating.count+' reviews':'')+vesselRatingSampleText(rating.count,rating.low_sample)+' · open vessel database';
         return '<button type="button" class="'+cls+'" onclick="openVesselFromExperience(\''+escAttr(entryId)+'\',\''+escAttr(imo)+'\',\''+escAttr(label)+'\')" title="Open vessel database">'
             + '<span class="stars">'+vdbStarLine(rating.value)+'</span><span class="meta">'+esc(meta)+'</span></button>';
     }
@@ -6912,11 +7731,23 @@ function vdbStarLine(value){
     for(var i=1;i<=5;i++)out+=i<=full?'★':'☆';
     return out;
 }
+function vesselRatingLowSample(count, explicit){
+    if(explicit===true)return true;
+    var n=Number(count||0);
+    return isFinite(n)&&n>0&&n<3;
+}
+function vesselRatingSampleHtml(count, explicit){
+    return vesselRatingLowSample(count, explicit)?' <span class="rating-sample-note">small sample</span>':'';
+}
+function vesselRatingSampleText(count, explicit){
+    return vesselRatingLowSample(count, explicit)?' · small sample':'';
+}
 function renderVesselDbStars(data){
     var access=data.rating_access||{};
     var n=Number(data.average_overall);
-    if(access.unlocked&&isFinite(n)){
-        return '<div class="vdb-stars"><div class="vdb-starline">'+vdbStarLine(n)+'</div><div class="vdb-star-meta">'+n.toFixed(1)+'/5'+(data.review_count?' · '+esc(data.review_count)+' reviews':'')+'</div></div>';
+    if(isFinite(n)){
+        var low=vesselRatingLowSample(data.review_count,access.low_sample);
+        return '<div class="vdb-stars '+(low?'low-sample':'')+'"><div class="vdb-starline">'+vdbStarLine(n)+'</div><div class="vdb-star-meta">'+n.toFixed(1)+'/5'+(data.review_count?' · '+esc(data.review_count)+' reviews':'')+vesselRatingSampleHtml(data.review_count,low)+'</div></div>';
     }
     if(access.signals_available){
         return '<div class="vdb-stars locked"><div class="vdb-starline">☆☆☆☆☆</div><div class="vdb-star-meta">Rating signals exist · detailed view improves as verified seafarers contribute reviews</div></div>';
@@ -6945,7 +7776,7 @@ function renderVesselDbRatings(data){
     scores+=vdbScore('Confidence',data.skipi_score_confidence,'');
     if(scores){
         h+='<div class="vdb-score-grid">'+scores+'</div>';
-        if(data.review_count)h+='<div class="vdb-row-meta" style="margin-top:8px;">'+esc(data.review_count)+' approved review signals included.</div>';
+        if(data.review_count)h+='<div class="vdb-row-meta" style="margin-top:8px;">'+esc(data.review_count)+' approved review signals included'+vesselRatingSampleText(data.review_count,data.rating_access&&data.rating_access.low_sample)+'.</div>';
     }else{
         var access=data.rating_access||{};
         var text=access.signals_available?'Rating signals exist, but this client does not have rating access yet.':'No public rating signals are available for this IMO yet.';
@@ -9285,10 +10116,13 @@ function jobsVesselRatingHtml(v, esc){
     var tagClose = imo ? '</button>' : '</div>';
     if(r && r.signals_available && r.average_overall !== null && r.average_overall !== undefined){
         var n = Number(r.average_overall);
-        return tagOpen
+        var low=vesselRatingLowSample(r.review_count,r.low_sample);
+        var ratedOpen=tagOpen.replace('job-vessel-rating','job-vessel-rating'+(low?' low-sample':''));
+        return ratedOpen
             + '<span class="stars">'+jobsStarLine(n)+'</span>'
             + '<span class="meta">'+esc(n.toFixed(1))+'/5'
             + (r.review_count ? ' · '+esc(r.review_count)+' reviews' : '')
+            + vesselRatingSampleText(r.review_count,low)
             + '</span>'+tagClose;
     }
     if(v && v.vessel_imo){
