@@ -131,6 +131,7 @@ pub fn run() {
             vault::get_current_vault_path,
             vault::get_vault_path,
             vault::get_vault_identity_key,
+            vault::delete_vault,
             vault::export_vault_backup,
             vault::import_vault_backup,
             // Documents
@@ -141,6 +142,7 @@ pub fn run() {
             documents::attach_file_bytes,
             documents::attach_pdf_pages,
             documents::read_file_base64,
+            documents::render_document_thumbnail,
             documents::render_document_pdf_preview,
             documents::get_document_file_path,
             documents::open_document_file,
@@ -149,9 +151,11 @@ pub fn run() {
             documents::add_catalog_doc,
             documents::delete_doc,
             // AI recognition
+            ai::ai_preview_recognize,
             ai::ai_recognize,
             ai::save_api_key,
             ai::get_api_key,
+            ai::get_effective_api_key,
             ai::save_ai_correction,
             ai::save_ocr_label,
             ai::get_ai_corrections,

@@ -393,10 +393,10 @@ pub fn get_downloads_dir() -> Result<String, String> {
 
     #[cfg(not(target_os = "android"))]
     {
-    let p = dirs::download_dir()
-        .or_else(dirs::home_dir)
-        .ok_or_else(|| "Could not resolve user home / downloads dir".to_string())?;
-    Ok(p.to_string_lossy().to_string())
+        let p = dirs::download_dir()
+            .or_else(dirs::home_dir)
+            .ok_or_else(|| "Could not resolve user home / downloads dir".to_string())?;
+        Ok(p.to_string_lossy().to_string())
     }
 }
 

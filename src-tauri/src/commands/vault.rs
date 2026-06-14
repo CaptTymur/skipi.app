@@ -310,6 +310,116 @@ pub fn get_current_vault_path(state: State<AppState>) -> Option<String> {
         .map(|p| p.to_string_lossy().to_string())
 }
 
+fn normalize_path_string(path: &Path) -> String {
+    path.to_string_lossy().to_string()
+}
+
+fn path_matches(a: &Path, b: &Path) -> bool {
+    if a == b {
+        return true;
+    }
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(ca), Ok(cb)) => ca == cb,
+        _ => normalize_path_string(a) == normalize_path_string(b),
+    }
+}
+
+fn load_vault_config() -> serde_json::Value {
+    let cfg = crate::config_path();
+    fs::read_to_string(&cfg)
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_else(|| serde_json::json!({}))
+}
+
+fn save_vault_config(data: &serde_json::Value) -> Result<(), String> {
+    let cfg = crate::config_path();
+    fs::write(&cfg, data.to_string()).map_err(|e| e.to_string())
+}
+
+fn prune_vault_from_config(target: &Path) -> Result<(), String> {
+    let mut data = load_vault_config();
+    if !data.is_object() {
+        data = serde_json::json!({});
+    }
+    let recent = crate::load_recent_vaults();
+    let kept: Vec<String> = recent
+        .into_iter()
+        .filter(|p| !path_matches(Path::new(p), target))
+        .collect();
+    data["recent_vaults"] = serde_json::Value::Array(
+        kept.iter()
+            .map(|s| serde_json::Value::String(s.clone()))
+            .collect(),
+    );
+
+    let last_matches = data
+        .get("last_vault")
+        .and_then(|v| v.as_str())
+        .map(|p| path_matches(Path::new(p), target))
+        .unwrap_or(false);
+    if last_matches {
+        if let Some(next) = kept.first() {
+            data["last_vault"] = serde_json::Value::String(next.clone());
+        } else if let Some(obj) = data.as_object_mut() {
+            obj.remove("last_vault");
+        }
+    }
+    save_vault_config(&data)
+}
+
+#[tauri::command]
+pub fn delete_vault(state: State<AppState>, path: Option<String>) -> Result<(), String> {
+    let target = match path {
+        Some(p) if !p.trim().is_empty() => PathBuf::from(p),
+        _ => state
+            .vault_path
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .ok_or("No vault selected")?
+            .clone(),
+    };
+
+    let is_current = state
+        .vault_path
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .map(|p| path_matches(p, &target))
+        .unwrap_or(false);
+
+    if !target.exists() {
+        let _ = prune_vault_from_config(&target);
+        if is_current {
+            *state.conn.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            *state.vault_path.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        }
+        return Ok(());
+    }
+    if !target.is_dir() || !target.join("skipi.db").is_file() {
+        return Err("Refusing to delete: this folder is not a Skipi vault.".to_string());
+    }
+
+    if is_current {
+        *state.conn.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+
+    match fs::remove_dir_all(&target) {
+        Ok(()) => {}
+        Err(e)
+            if e.kind() == std::io::ErrorKind::NotFound
+                || e.raw_os_error() == Some(2)
+                || !target.exists() => {}
+        Err(e) => return Err(format!("Could not delete vault: {}", e)),
+    }
+    if is_current {
+        *state.vault_path.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+    let _ = prune_vault_from_config(&target);
+    Ok(())
+}
+
 #[tauri::command]
 pub fn get_vault_path(state: State<AppState>) -> Result<String, String> {
     let lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
@@ -632,23 +742,7 @@ pub fn get_recent_vaults(_app: tauri::AppHandle) -> Vec<String> {
 
 #[tauri::command]
 pub fn forget_recent_vault(path: String) -> Result<(), String> {
-    use std::fs;
-    let cfg = crate::config_path();
-    let mut data: serde_json::Value = match fs::read_to_string(&cfg)
-        .ok()
-        .and_then(|t| serde_json::from_str(&t).ok())
-    {
-        Some(v) => v,
-        None => serde_json::json!({}),
-    };
-    let recent = crate::load_recent_vaults();
-    let kept: Vec<String> = recent.into_iter().filter(|p| p != &path).collect();
-    data["recent_vaults"] = serde_json::Value::Array(
-        kept.iter()
-            .map(|s| serde_json::Value::String(s.clone()))
-            .collect(),
-    );
-    fs::write(&cfg, data.to_string()).map_err(|e| e.to_string())
+    prune_vault_from_config(Path::new(&path))
 }
 
 #[cfg(test)]

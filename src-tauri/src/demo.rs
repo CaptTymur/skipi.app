@@ -191,7 +191,10 @@ fn fallback_demo_pdf(title: &str) -> Vec<u8> {
         })
         .collect();
 
-    let stream = format!("BT /F1 24 Tf 60 720 Td (Skipi DEMO) Tj 0 -36 Td /F1 14 Tf ({}) Tj ET", safe);
+    let stream = format!(
+        "BT /F1 24 Tf 60 720 Td (Skipi DEMO) Tj 0 -36 Td /F1 14 Tf ({}) Tj ET",
+        safe
+    );
     let mut pdf: Vec<u8> = Vec::new();
     let mut offsets: Vec<usize> = Vec::new();
     pdf.extend_from_slice(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n");
@@ -211,7 +214,9 @@ fn fallback_demo_pdf(title: &str) -> Vec<u8> {
         .as_bytes(),
     );
     offsets.push(pdf.len());
-    pdf.extend_from_slice(b"5 0 obj\n<</Type /Font /Subtype /Type1 /BaseFont /Helvetica>>\nendobj\n");
+    pdf.extend_from_slice(
+        b"5 0 obj\n<</Type /Font /Subtype /Type1 /BaseFont /Helvetica>>\nendobj\n",
+    );
     let xref_offset = pdf.len();
     pdf.extend_from_slice(b"xref\n0 6\n0000000000 65535 f \n");
     for off in &offsets {

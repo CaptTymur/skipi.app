@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skipi</title>
 <script>
-var APP_VERSION='0.4.147';
+var APP_VERSION='0.4.149';
 var UI_LANG_KEY='skipi-ui-language';
 var UI_LANG_OPTIONS=[
     ['ru','Русский'],
@@ -319,7 +319,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .tree-folder-header .cnt { margin-left:auto; font-size:10px; font-weight:400; }
 .tree-items { display:none; }
 .tree-items.open { display:block; }
-.tree-file { height:26px; display:flex; align-items:center; padding:0 8px 0 32px; gap:6px; font-size:12px; cursor:pointer; color:var(--text); }
+.tree-file { min-height:30px; display:flex; align-items:center; padding:2px 8px 2px 32px; gap:7px; font-size:12px; cursor:pointer; color:var(--text); }
 .tree-file:hover { background:var(--hover); }
 .tree-file.req { box-shadow:inset 3px 0 0 var(--accent); padding-left:29px; }
 .tree-file.conditional { box-shadow:inset 3px 0 0 #2aa198; padding-left:29px; }
@@ -332,6 +332,14 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .tree-file.active .name::after { content:' selected'; margin-left:6px; font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; opacity:.78; }
 .tree-file .icon { font-size:11px; color:var(--text2); width:14px; text-align:center; }
 .tree-file .name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.doc-thumb { width:24px; height:24px; flex:0 0 auto; border:1px solid var(--border); border-radius:5px; background:var(--bg); color:var(--text2); display:inline-flex; align-items:center; justify-content:center; overflow:hidden; background-size:cover; background-position:center; font-size:8px; font-weight:900; letter-spacing:.02em; line-height:1; }
+.doc-thumb.pdf { color:#c0392b; background-color:rgba(192,57,43,.08); border-color:rgba(192,57,43,.22); }
+.doc-thumb.image { color:var(--green); background-color:rgba(39,174,96,.08); border-color:rgba(39,174,96,.22); }
+.doc-thumb.file { font-size:10px; }
+.doc-thumb.empty { color:var(--text2); opacity:.7; }
+.doc-thumb.ready { color:transparent; border-color:rgba(var(--accent-rgb),.25); box-shadow:inset 0 0 0 1px rgba(255,255,255,.08); }
+.tree-file.active .doc-thumb { border-color:rgba(255,255,255,.72); background-color:rgba(255,255,255,.16); color:#fff; }
+.tree-file.active .doc-thumb.ready { color:transparent; }
 .tree-file.pkg-sel { background:rgba(78,201,112,.12); }
 .tree-file .req-mark { color:var(--accent); font-size:9px; margin-right:4px; opacity:.75; }
 .kind-badge { flex-shrink:0; border:1px solid var(--border); border-radius:3px; padding:1px 4px; font-size:8px; line-height:1.2; text-transform:uppercase; letter-spacing:.04em; color:var(--text2); background:var(--bg); cursor:pointer; user-select:none; }
@@ -738,6 +746,8 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .setting-control select { padding:5px 10px; background:var(--surface2); border:1px solid var(--border); border-radius:4px; color:var(--text); font-size:12px; cursor:pointer; }
 .setting-control input[type="text"], .setting-control input[type="password"] { padding:5px 10px; background:var(--surface); border:1px solid var(--border); border-radius:4px; color:var(--text); font-size:12px; width:220px; }
 .setting-control input:focus { border-color:var(--accent); outline:none; }
+.appearance-font-preview { margin-top:8px; padding:8px 10px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--text); font-size:13px; line-height:1.35; }
+.appearance-status { margin-top:6px; min-height:14px; color:var(--green); font-size:11px; font-weight:700; }
 .settings-close { position:absolute; top:12px; right:16px; width:28px; height:28px; display:flex; align-items:center; justify-content:center; cursor:pointer; border-radius:4px; color:var(--text2); font-size:18px; z-index:101; }
 .settings-close:hover { background:var(--hover); color:var(--text); }
 /* Toggle switch */
@@ -937,6 +947,15 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .mobile-dispatch-track-title { font-size:13px; font-weight:900; line-height:1.2; }
 .mobile-dispatch-track-sub { color:var(--text2); font-size:11px; line-height:1.25; }
 .mobile-dispatch-step { font-size:10px; font-weight:900; letter-spacing:.08em; text-transform:uppercase; color:var(--text2); margin-bottom:3px; }
+.mobile-setup-progress { display:flex; gap:5px; margin:0 0 12px; }
+.mobile-setup-dot { flex:1; height:5px; border-radius:999px; background:var(--border); }
+.mobile-setup-dot.done { background:var(--green); }
+.mobile-setup-dot.active { background:var(--accent); }
+.mobile-setup-review { border:1px solid var(--border); border-radius:8px; background:var(--surface); overflow:hidden; margin-bottom:10px; }
+.mobile-setup-review-row { display:flex; justify-content:space-between; gap:12px; padding:10px 12px; border-bottom:1px solid var(--border); font-size:13px; }
+.mobile-setup-review-row:last-child { border-bottom:0; }
+.mobile-setup-review-row span { color:var(--text2); }
+.mobile-setup-review-row strong { text-align:right; }
 .mobile-focus-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
 .mobile-choice-button { width:100%; min-height:70px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); padding:13px; margin-bottom:10px; display:flex; align-items:center; justify-content:space-between; gap:12px; text-align:left; }
 .mobile-choice-button.active { border-color:var(--accent); background:var(--accent-bg); box-shadow:0 0 0 1px var(--accent-bg2) inset; }
@@ -995,8 +1014,9 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .mobile-doc-icon { width:34px; height:34px; border-radius:7px; display:flex; align-items:center; justify-content:center; background:var(--bg); border:1px solid var(--border); color:var(--text2); font-size:16px; flex:0 0 auto; margin-top:1px; }
 .mobile-doc-icon.pdf { color:#c0392b; background:rgba(192,57,43,.08); border-color:rgba(192,57,43,.18); }
 .mobile-doc-icon.image { color:var(--green); background:rgba(39,174,96,.08); border-color:rgba(39,174,96,.18); }
+.mobile-doc-thumb { width:42px; height:52px; border-radius:7px; margin-top:1px; font-size:10px; box-shadow:0 1px 2px rgba(0,0,0,.12); }
+.mobile-doc-thumb.empty { height:42px; }
 .mobile-doc-content { min-width:0; flex:1; }
-.mobile-doc-file { color:var(--green); font-size:11px; line-height:1.35; margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .mobile-section-title { font-size:12px; color:var(--text2); font-weight:800; text-transform:uppercase; margin:14px 0 8px; }
 .mobile-search { width:100%; height:42px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); padding:0 12px; font-size:15px; margin-bottom:8px; }
 .mobile-filter-row { display:flex; gap:7px; overflow-x:auto; padding-bottom:8px; margin-bottom:2px; }
@@ -1032,6 +1052,10 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .mobile-preview-file .file-type { font-size:30px; line-height:1; }
 .mobile-preview-file .file-name { font-size:13px; font-weight:800; word-break:break-word; }
 .mobile-preview-file .file-note { font-size:12px; color:var(--text2); line-height:1.35; }
+.mobile-ocr-card { border:1px solid rgba(var(--accent-rgb),.28); background:linear-gradient(180deg,rgba(var(--accent-rgb),.08),var(--surface)); }
+.mobile-ocr-grid { display:grid; grid-template-columns:1fr; gap:9px; margin-top:12px; }
+.mobile-ocr-chip { display:inline-flex; align-items:center; border:1px solid rgba(var(--accent-rgb),.28); border-radius:999px; padding:3px 8px; color:var(--accent); background:var(--accent-bg); font-size:10px; font-weight:900; text-transform:uppercase; }
+.mobile-ocr-note { color:var(--text2); font-size:11px; line-height:1.35; margin-top:8px; }
 .mobile-pdf-preview { width:100%; background:#fff; color:#111; }
 .mobile-pdf-preview-actions { padding:10px; background:var(--surface); border-top:1px solid var(--border); text-align:center; }
 .mobile-preview-overlay { position:fixed; inset:0; z-index:130; display:flex; flex-direction:column; background:#0b0b0b; color:#fff; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); }
@@ -1193,7 +1217,7 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
             <div class="welcome" id="scr-welcome">
                 <h1>Skipi</h1>
                 <p id="welcome-subtitle">Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.147</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.149</span></p>
                 <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -2794,31 +2818,285 @@ function mobileWithHomeButton(html){
     if(String(html).indexOf('data-mobile-home-button')>=0)return html;
     return mobileHomeButtonHtml()+html;
 }
+var mobileVaultWizardState = {step:1,name:'',department:'',level:'',vessel_root:'',vessel_leaf:'',position:'',positionCustom:'',creating:false};
+var mobilePostCreateVaultHint = false;
+var MOBILE_SETUP_DEPARTMENTS = [
+    {id:'deck',label:'Deck Department',sub:'Navigation, cargo operations, bridge watchkeeping.'},
+    {id:'engine',label:'Engine Department',sub:'Engine room, machinery, technical operation.'},
+    {id:'electrical',label:'Electrical / ETO',sub:'Electrical, electronics and automation.'},
+    {id:'catering',label:'Catering / Hotel',sub:'Galley, steward, hospitality and hotel service.'},
+    {id:'other',label:'Cadet / Other',sub:'Training roles and positions outside the main departments.'}
+];
+function mobileSetupText(en,ru){return getUiLang()==='ru'?ru:en;}
+function mobileSetupProgress(){
+    var h='<div class="mobile-setup-progress" aria-hidden="true">';
+    for(var i=1;i<=6;i++){
+        var cls=i<mobileVaultWizardState.step?'done':(i===mobileVaultWizardState.step?'active':'');
+        h+='<span class="mobile-setup-dot '+cls+'"></span>';
+    }
+    return h+'</div>';
+}
+function mobileSetupChoice(title,sub,onClick,active,disabled,side){
+    return '<button class="mobile-choice-button '+(active?'active':'')+'" type="button" '+(disabled?'disabled ':'')+'onclick="'+onClick+'">'
+        +'<span class="mobile-choice-main"><span class="mobile-choice-title">'+mobileEsc(title)+'</span><span class="mobile-choice-sub">'+mobileEsc(sub||'')+'</span></span>'
+        +(side?'<span class="mobile-choice-side">'+mobileEsc(side)+'</span>':'')
+        +'</button>';
+}
+function mobileSetupDeptLabel(id){
+    var d=MOBILE_SETUP_DEPARTMENTS.find(function(x){return x.id===id;});
+    return d?d.label:'';
+}
+function mobileSetupLevelLabel(id){
+    var l=profileTax&&profileTax.levels?profileTax.levels.find(function(x){return x.id===id;}):null;
+    return l?l.label:'';
+}
+function mobileSetupVesselLabel(){
+    var id=mobileVaultWizardState.vessel_leaf||mobileVaultWizardState.vessel_root;
+    var v=profileTax&&profileTax.vessel_tree?profileTax.vessel_tree.find(function(x){return x.id===id;}):null;
+    return v?v.label:'';
+}
+function mobileSetupPositionLabel(){
+    var s=mobileVaultWizardState;
+    if(!s.position)return '';
+    if(s.position.indexOf('other_')===0)return (s.positionCustom||mobileSetupText('Custom position','Своя должность')).trim();
+    var p=profileTax&&profileTax.positions?profileTax.positions.find(function(x){return x.id===s.position;}):null;
+    return p?p.label:'';
+}
+async function mobileStartVaultWizard(){
+    try{
+        await loadTaxonomy();
+        mobileVaultWizardState={step:1,name:'',department:'',level:'',vessel_root:'',vessel_leaf:'',position:'',positionCustom:'',creating:false};
+        renderMobileVaultWizard();
+    }catch(e){
+        showToast('Could not load setup wizard: '+e,'error');
+        logError('mobile_setup_load',e);
+    }
+}
+function mobileVaultWizardBack(){
+    if(mobileVaultWizardState.step<=1){renderMobileWelcome();return;}
+    mobileVaultWizardState.step--;
+    renderMobileVaultWizard();
+}
+function mobileVaultWizardNext(){
+    var s=mobileVaultWizardState;
+    if(s.step===1){
+        var el=document.getElementById('mobile-setup-name');
+        var name=(el&&el.value?el.value.trim():'');
+        if(!name){showToast(mobileSetupText('Enter your name','Укажите имя'),'error');return;}
+        s.name=name;
+    }
+    if(s.step===2&&!s.department){showToast(mobileSetupText('Choose department','Выберите департамент'),'error');return;}
+    if(s.step===3&&!s.level){showToast(mobileSetupText('Choose STCW level','Выберите уровень STCW'),'error');return;}
+    if(s.step===4){
+        if(!s.vessel_root){showToast(mobileSetupText('Choose vessel type','Выберите тип судна'),'error');return;}
+        var root=profileTax.vessel_tree.find(function(v){return v.id===s.vessel_root;});
+        var kids=profileTax.vessel_tree.filter(function(v){return v.parent===s.vessel_root;});
+        if(root&&!root.is_leaf&&kids.length&&!s.vessel_leaf){showToast(mobileSetupText('Choose vessel subtype','Выберите подтип судна'),'error');return;}
+    }
+    if(s.step===5){
+        if(!s.position){showToast(mobileSetupText('Choose position','Выберите должность'),'error');return;}
+        if(s.position.indexOf('other_')===0){
+            var custom=(s.positionCustom||'').trim();
+            if(!custom){showToast(mobileSetupText('Type your position','Введите свою должность'),'error');return;}
+            s.positionCustom=custom;
+        }
+    }
+    if(s.step<6){s.step++;renderMobileVaultWizard();}
+}
+function mobileVaultPickDepartment(id){
+    mobileVaultWizardState.department=id;
+    mobileVaultWizardState.position='';
+    mobileVaultWizardState.positionCustom='';
+    renderMobileVaultWizard();
+}
+function mobileVaultPickLevel(id){
+    mobileVaultWizardState.level=id;
+    mobileVaultWizardState.position='';
+    mobileVaultWizardState.positionCustom='';
+    renderMobileVaultWizard();
+}
+function mobileVaultPickRoot(id){
+    var s=mobileVaultWizardState;
+    s.vessel_root=id;
+    s.vessel_leaf='';
+    var node=profileTax.vessel_tree.find(function(v){return v.id===id;});
+    var kids=profileTax.vessel_tree.filter(function(v){return v.parent===id;});
+    if((node&&node.is_leaf)||!kids.length)s.vessel_leaf=id;
+    renderMobileVaultWizard();
+}
+function mobileVaultPickLeaf(id){
+    mobileVaultWizardState.vessel_leaf=id;
+    renderMobileVaultWizard();
+}
+function mobileVaultResetVessel(){
+    mobileVaultWizardState.vessel_root='';
+    mobileVaultWizardState.vessel_leaf='';
+    renderMobileVaultWizard();
+}
+function mobileVaultPickPosition(id){
+    mobileVaultWizardState.position=id;
+    if(id.indexOf('other_')!==0)mobileVaultWizardState.positionCustom='';
+    renderMobileVaultWizard();
+    if(id.indexOf('other_')===0){
+        var el=document.getElementById('mobile-setup-position-custom');
+        if(el)el.focus();
+    }
+}
+function renderMobileVaultWizard(){
+    if(!shouldUseMobileShell())return;
+    var ru=getUiLang()==='ru';
+    var s=mobileVaultWizardState;
+    mobileView='home';
+    mobileSetSub(ru?'Создание профиля':'Profile setup');
+    mobileSetBottomNav(false);
+    var title=[
+        '',
+        ru?'Как вас зовут?':'What is your name?',
+        ru?'Ваш департамент':'Your department',
+        ru?'Ваш уровень STCW':'Your STCW level',
+        ru?'Тип судна':'Vessel type',
+        ru?'Ваша должность':'Your position',
+        ru?'Создать структуру':'Create structure'
+    ][s.step]||'';
+    var sub=[
+        '',
+        ru?'Имя попадет в название vault и в профиль моряка.':'This name is used for the vault folder and seafarer profile.',
+        ru?'Skipi покажет только релевантные должности.':'Skipi will narrow the position list.',
+        ru?'Это нужно для правильного набора обязательных документов.':'This drives the mandatory document set.',
+        ru?'Выберите блок флота и затем конкретный тип судна.':'Choose the fleet block, then the specific vessel family.',
+        ru?'По должности Skipi достроит требования и CV-логику.':'Your position completes the requirement profile.',
+        ru?'Проверьте выбор. После создания Skipi добавит нужные документы.':'Review the choices. Skipi will add the required documents.'
+    ][s.step]||'';
+    var h='<div class="mobile-card"><div class="mobile-dispatch-step">'+mobileEsc(ru?'Шаг ':'Step ')+s.step+' / 6</div>'+mobileSetupProgress()+'<div class="mobile-card-title">'+mobileEsc(title)+'</div><div class="mobile-card-sub">'+mobileEsc(sub)+'</div></div>';
+    if(s.step===1){
+        h+='<div class="mobile-card"><div class="mobile-field"><label>'+mobileEsc(ru?'Имя моряка':'Seafarer name')+'</label><input id="mobile-setup-name" value="'+mobileEsc(s.name||'')+'" placeholder="'+mobileEsc(ru?'Например, Tymur Rudov':'For example, Tymur Rudov')+'" autocomplete="name"></div></div>';
+    } else if(s.step===2){
+        MOBILE_SETUP_DEPARTMENTS.forEach(function(d){
+            h+=mobileSetupChoice(d.label,d.sub,'mobileVaultPickDepartment(\''+jsString(d.id)+'\')',s.department===d.id,false,s.department===d.id?'✓':'');
+        });
+    } else if(s.step===3){
+        (profileTax.levels||[]).forEach(function(l){
+            var desc=l.id==='support'
+                ? (ru?'Ratings, кадеты, поддерживающие должности.':'Ratings, cadets and support positions.')
+                : (l.id==='operational'
+                    ? (ru?'Вахтенные офицеры и инженеры.':'Watchkeeping officers and engineers.')
+                    : (ru?'Старшие офицеры и управление.':'Senior officers and management.'));
+            h+=mobileSetupChoice(l.label,desc,'mobileVaultPickLevel(\''+jsString(l.id)+'\')',s.level===l.id,false,s.level===l.id?'✓':'');
+        });
+    } else if(s.step===4){
+        var roots=(profileTax.vessel_tree||[]).filter(function(v){return !v.parent;});
+        if(!s.vessel_root){
+            roots.forEach(function(r){
+                h+=mobileSetupChoice(r.label,r.desc||r.description||'', 'mobileVaultPickRoot(\''+jsString(r.id)+'\')', false, false, '');
+            });
+        } else {
+            var chosen=roots.find(function(r){return r.id===s.vessel_root;});
+            h+='<div class="mobile-summary-row"><div><strong>'+mobileEsc(chosen?chosen.label:'')+'</strong><span>'+mobileEsc(ru?'Выбранный блок флота':'Selected fleet block')+'</span></div><button class="btn btn-outline" type="button" onclick="mobileVaultResetVessel()">'+mobileEsc(ru?'Изменить':'Change')+'</button></div>';
+            var kids=(profileTax.vessel_tree||[]).filter(function(v){return v.parent===s.vessel_root;});
+            if(kids.length){
+                kids.forEach(function(k){
+                    h+=mobileSetupChoice(k.label,k.desc||k.description||'', 'mobileVaultPickLeaf(\''+jsString(k.id)+'\')', s.vessel_leaf===k.id, false, s.vessel_leaf===k.id?'✓':'');
+                });
+            } else {
+                h+='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(ru?'Тип выбран':'Vessel type selected')+'</div><div class="mobile-card-sub">'+mobileEsc(ru?'Этот блок достаточно конкретный для создания структуры.':'This fleet block is specific enough for setup.')+'</div></div>';
+            }
+        }
+    } else if(s.step===5){
+        var posList=(profileTax.positions||[]).filter(function(p){
+            if(p.level!==s.level)return false;
+            if(!s.department||p.dept===s.department)return true;
+            return p.id==='cadet' && ['deck','engine','electrical','other'].indexOf(s.department)>=0;
+        });
+        if(!posList.length){
+            posList=(profileTax.positions||[]).filter(function(p){return p.level===s.level;});
+        }
+        posList.forEach(function(p){
+            h+=mobileSetupChoice(p.label,mobileSetupDeptLabel(p.dept)||p.dept||'', 'mobileVaultPickPosition(\''+jsString(p.id)+'\')', s.position===p.id, false, s.position===p.id?'✓':'');
+        });
+        var otherId='other_'+(s.department||'other');
+        h+=mobileSetupChoice(ru?'Другая должность':'Other position',ru?'Если вашей должности нет в списке, введите вручную.':'Type it manually if it is not listed.', 'mobileVaultPickPosition(\''+jsString(otherId)+'\')', s.position===otherId, false, s.position===otherId?'✓':'');
+        if(s.position===otherId){
+            h+='<div class="mobile-card"><div class="mobile-field"><label>'+mobileEsc(ru?'Своя должность':'Custom position')+'</label><input id="mobile-setup-position-custom" value="'+mobileEsc(s.positionCustom||'')+'" placeholder="'+mobileEsc(ru?'Например, Junior Officer':'For example, Junior Officer')+'" oninput="mobileVaultWizardState.positionCustom=this.value"></div></div>';
+        }
+    } else if(s.step===6){
+        h+='<div class="mobile-setup-review">';
+        h+='<div class="mobile-setup-review-row"><span>'+mobileEsc(ru?'Имя':'Name')+'</span><strong>'+mobileEsc(s.name)+'</strong></div>';
+        h+='<div class="mobile-setup-review-row"><span>'+mobileEsc(ru?'Департамент':'Department')+'</span><strong>'+mobileEsc(mobileSetupDeptLabel(s.department))+'</strong></div>';
+        h+='<div class="mobile-setup-review-row"><span>'+mobileEsc(ru?'Уровень':'Level')+'</span><strong>'+mobileEsc(mobileSetupLevelLabel(s.level))+'</strong></div>';
+        h+='<div class="mobile-setup-review-row"><span>'+mobileEsc(ru?'Тип судна':'Vessel type')+'</span><strong>'+mobileEsc(mobileSetupVesselLabel())+'</strong></div>';
+        h+='<div class="mobile-setup-review-row"><span>'+mobileEsc(ru?'Должность':'Position')+'</span><strong>'+mobileEsc(mobileSetupPositionLabel())+'</strong></div>';
+        h+='</div>';
+        h+='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(ru?'Что произойдет дальше':'What happens next')+'</div><div class="mobile-card-sub">'+mobileEsc(ru?'Skipi создаст vault, запишет выбранный профиль и добавит набор документов под эту должность и тип судна.':'Skipi will create the vault, save this profile, and add the document structure for this position and vessel type.')+'</div></div>';
+    }
+    h+='<div class="mobile-wizard-actions">';
+    h+='<button class="btn btn-outline" type="button" onclick="mobileVaultWizardBack()">'+mobileEsc(s.step===1?(ru?'Отмена':'Cancel'):(ru?'Назад':'Back'))+'</button>';
+    if(s.step<6){
+        h+='<button class="btn btn-accent" type="button" onclick="mobileVaultWizardNext()">'+mobileEsc(ru?'Далее':'Next')+'</button>';
+    } else {
+        h+='<button class="btn btn-accent" type="button" '+(s.creating?'disabled ':'')+'onclick="mobileFinishProfileVault()">'+mobileEsc(s.creating?(ru?'Создаю...':'Creating...'):(ru?'Создать vault':'Create vault'))+'</button>';
+    }
+    h+='</div>';
+    mobileMainHtml(h);
+    if(s.step===1){
+        var nameEl=document.getElementById('mobile-setup-name');
+        if(nameEl)nameEl.focus();
+    }
+}
 function renderMobileWelcome(){
     if(!shouldUseMobileShell())return;
     mobileView='home';
+    try{updateTitlebar();}catch(e){}
     mobileSetSub('Mobile seafarer vault');
     mobileSetBottomNav(false);
     var h='<div class="mobile-hero">';
     h+='<h1>Skipi</h1>';
     h+='<p>Create or open your seafarer vault, then add certificates from your phone camera or files.</p>';
     h+='<div class="mobile-stack">';
-    h+='<div class="mobile-card"><div class="mobile-field"><label>Seafarer name</label><input id="mobile-new-name" placeholder="Your name"></div><button class="btn btn-accent" style="width:100%;" onclick="mobileQuickCreateVault()">Create mobile vault</button></div>';
+    h+='<button class="mobile-primary-action" type="button" onclick="mobileStartVaultWizard()"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">Create mobile vault</span><span class="mobile-action-sub">Choose department, vessel type and rank first.</span></span></button>';
     h+='<button class="btn btn-outline" onclick="mobileOpenExistingVault()">Open existing vault</button>';
     h+='<button class="btn btn-outline" onclick="loadDemoVault()">Open demo vault</button>';
     h+='</div></div>';
     mobileMainHtml(h);
 }
 async function mobileQuickCreateVault(){
-    var nameEl=document.getElementById('mobile-new-name');
-    var name=(nameEl&&nameEl.value?nameEl.value.trim():'')||'Mobile Seafarer';
+    await mobileStartVaultWizard();
+}
+async function mobileFinishProfileVault(){
+    var s=mobileVaultWizardState;
+    if(s.creating)return;
+    if(s.step!==6)return;
+    var vessId=s.vessel_leaf||s.vessel_root;
+    if(!s.name||!s.level||!vessId||!s.position){
+        showToast(mobileSetupText('Finish the setup first','Сначала завершите настройку'),'error');
+        return;
+    }
+    if(s.position.indexOf('other_')===0&&!String(s.positionCustom||'').trim()){
+        showToast(mobileSetupText('Type your position','Введите свою должность'),'error');
+        return;
+    }
+    var name=s.name.trim()||'Mobile Seafarer';
     var folder=vaultFolderName('Seafarer',name);
     var path=await defaultVaultPath(folder);
+    s.creating=true;
+    renderMobileVaultWizard();
     try{
-        var info=await invoke('create_vault',{path:path,accountType:'seafarer',name:name,rank:null,vesselType:null});
+        var info=await invoke('create_profile_vault',{
+            path:path,
+            name:name,
+            stcwLevel:s.level,
+            vesselCategory:vessId,
+            position:s.position,
+            positionLabel:s.position.indexOf('other_')===0?s.positionCustom.trim():null,
+            recoveryKey:null
+        });
+        mobilePostCreateVaultHint=true;
         await loadVault(info);
-        showToast('Mobile vault created','success');
+        mobileView='profile';
+        renderMobileShell();
+        showToast(mobileSetupText('Mobile vault created with document structure','Vault создан со структурой документов'),'success');
     }catch(e){
+        s.creating=false;
+        renderMobileVaultWizard();
         showToast('Could not create vault: '+e,'error');
         logError('mobile_create_vault',e);
     }
@@ -2842,6 +3120,7 @@ async function mobileOpenExistingVault(forcePicker){
                 return;
             }
             var info=await invoke('open_vault',{path:recent[0]});
+            mobilePostCreateVaultHint=false;
             mobileView='home';
             selectedDocId=null;
             await loadVault(info);
@@ -2875,12 +3154,15 @@ function mobileRenderVaultPicker(paths,currentPath){
     unique.forEach(function(path){
         var name=mobileVaultNameFromPath(path);
         var isCurrent=currentPath&&path===currentPath;
-        h+='<button class="mobile-doc-row" type="button" onclick="mobileOpenVaultPath(\''+jsString(path)+'\')">'
+        h+='<div class="mobile-card">';
+        h+='<button class="mobile-doc-row" type="button" style="border:0;padding:0;background:transparent;" onclick="mobileOpenVaultPath(\''+jsString(path)+'\')">'
             +'<div class="mobile-doc-main"><div class="mobile-doc-icon">'+(isCurrent?'&#9679;':'&#128451;')+'</div><div class="mobile-doc-content">'
             +'<div class="mobile-doc-top"><div class="mobile-doc-title">'+mobileEsc(name)+'</div><span class="mobile-pill '+(isCurrent?'ok':'')+'">'+(isCurrent?'Current':'Open')+'</span></div>'
             +'<div class="mobile-doc-meta">'+(isCurrent?'This vault is open now.':'Tap to switch to this vault.')+'</div>'
             +'</div></div>'
             +'</button>';
+        h+='<div class="mobile-actions" style="margin-top:10px;"><button class="btn btn-outline mobile-grow" type="button" onclick="mobileOpenVaultPath(\''+jsString(path)+'\')">'+(isCurrent?'Open':'Switch')+'</button><button class="btn btn-outline btn-red mobile-grow" type="button" onclick="mobileDeleteVaultPath(\''+jsString(path)+'\')">Delete</button></div>';
+        h+='</div>';
     });
     h+='<button class="btn btn-outline" style="width:100%;margin-top:6px;" onclick="mobileReturnFromVaultPicker()">Back</button>';
     mobileMainHtml(h);
@@ -2896,12 +3178,36 @@ function mobileReturnFromVaultPicker(){
 async function mobileOpenVaultPath(path){
     try{
         var info=await invoke('open_vault',{path:path});
+        mobilePostCreateVaultHint=false;
         mobileView='home';
         selectedDocId=null;
         await loadVault(info);
     }catch(e){
         showToast('Could not open vault: '+e,'error');
         logError('mobile_open_vault_path',e);
+    }
+}
+async function mobileDeleteVaultPath(path){
+    var name=mobileVaultNameFromPath(path);
+    var ok=await uiConfirm('Delete vault "'+name+'" from this phone?\n\nThis removes the local folder and attached files. Export a backup first if you need it on desktop.',{confirmLabel:'Delete vault',danger:true});
+    if(!ok)return;
+    try{
+        var currentPath='';
+        try{currentPath=await invoke('get_current_vault_path')||'';}catch(_){}
+        await invoke('delete_vault',{path:path});
+        showToast('Vault deleted','success');
+        if(currentPath&&currentPath===path){
+            allDocs=[];
+            selectedDocId=null;
+            mobilePostCreateVaultHint=false;
+            renderMobileWelcome();
+            return;
+        }
+        var recent=await invoke('get_recent_vaults')||[];
+        mobileRenderVaultPicker(recent,currentPath);
+    }catch(e){
+        showToast('Delete failed: '+e,'error');
+        logError('mobile_delete_vault',e);
     }
 }
 function mobileScrollMainTop(){
@@ -2923,6 +3229,8 @@ function mobileStats(){
     var expiring=allDocs.filter(function(d){return d.file_name&&(classify(d)==='critical'||classify(d)==='warning');}).length;
     return {uploaded:uploaded,missing:missing,expiring:expiring,total:allDocs.length};
 }
+var documentThumbCache={};
+var documentThumbInFlight={};
 function mobileStatusPill(d){
     if(!d.file_name&&isActiveRequiredDoc(d))return '<span class="mobile-pill bad">Missing</span>';
     if(!d.file_name)return '<span class="mobile-pill">No file</span>';
@@ -2931,7 +3239,7 @@ function mobileStatusPill(d){
     if(s==='expired')return '<span class="mobile-pill bad">Expired</span>';
     if(s==='critical')return '<span class="mobile-pill warn">&lt;30 days</span>';
     if(s==='warning')return '<span class="mobile-pill warn">&lt;90 days</span>';
-    if(s==='valid')return '<span class="mobile-pill ok">'+(dl!==null?dl+'d':'Valid')+'</span>';
+    if(s==='valid')return '<span class="mobile-pill ok">Valid</span>';
     return '<span class="mobile-pill">No expiry</span>';
 }
 function mobileFileKind(fileName){
@@ -2940,22 +3248,70 @@ function mobileFileKind(fileName){
     if(ext==='pdf')return 'pdf';
     return ext?'file':'';
 }
-function mobileFileIcon(fileName){
-    var kind=mobileFileKind(fileName);
-    if(kind==='pdf')return '<span class="mobile-doc-icon pdf">PDF</span>';
-    if(kind==='image')return '<span class="mobile-doc-icon image">&#9635;</span>';
-    if(kind)return '<span class="mobile-doc-icon">&#128196;</span>';
-    return '<span class="mobile-doc-icon">+</span>';
+function documentThumbKey(d){
+    if(!d)return'';
+    return String(d.id||'')+'|'+String(d.sha256||d.file_name||'');
+}
+function documentThumbLabel(kind){
+    if(kind==='pdf')return 'PDF';
+    if(kind==='image')return 'IMG';
+    if(kind==='file')return '&#128196;';
+    return '+';
+}
+function documentThumbHtml(d, extraClass){
+    var kind=mobileFileKind(d&&d.file_name);
+    var key=documentThumbKey(d);
+    var cached=key?documentThumbCache[key]:null;
+    var cls='doc-thumb '+(extraClass||'')+' '+(kind||'empty')+(cached&&cached.ok?' ready':'');
+    var attrs=d&&d.file_name?' data-doc-thumb-id="'+escAttr(d.id)+'" data-doc-thumb-key="'+escAttr(key)+'" title="'+escAttr(d.file_name)+'"':' title="No file attached"';
+    var label=cached&&cached.ok?'':documentThumbLabel(kind);
+    var style=cached&&cached.ok?' style="background-image:url(&quot;data:'+escAttr(cached.mime)+';base64,'+escAttr(cached.b64)+'&quot;)"':'';
+    return '<span class="'+cls.trim()+'"'+attrs+style+'>'+label+'</span>';
+}
+function applyDocumentThumbNode(node,data){
+    if(!node||!data||!data.ok)return;
+    node.textContent='';
+    node.style.backgroundImage='url("data:'+data.mime+';base64,'+data.b64+'")';
+    node.classList.add('ready');
+}
+function hydrateDocumentThumbnails(root){
+    root=root||document;
+    var nodes=Array.prototype.slice.call(root.querySelectorAll('.doc-thumb[data-doc-thumb-id]'));
+    var started=0;
+    nodes.forEach(function(node){
+        var id=node.getAttribute('data-doc-thumb-id');
+        var key=node.getAttribute('data-doc-thumb-key');
+        if(!id||!key||node.classList.contains('ready'))return;
+        var cached=documentThumbCache[key];
+        if(cached){applyDocumentThumbNode(node,cached);return;}
+        if(documentThumbInFlight[key]){
+            documentThumbInFlight[key].then(function(data){applyDocumentThumbNode(node,data);});
+            return;
+        }
+        if(started>=24)return;
+        var d=(allDocs||[]).find(function(x){return x.id===id;});
+        var kind=mobileFileKind(d&&d.file_name);
+        if(kind!=='image'&&kind!=='pdf')return;
+        started++;
+        documentThumbInFlight[key]=invoke('render_document_thumbnail',{docId:id}).then(function(r){
+            var data={ok:true,b64:r[0],mime:r[1]};
+            documentThumbCache[key]=data;
+            return data;
+        },function(){
+            var data={error:true};
+            documentThumbCache[key]=data;
+            return data;
+        });
+        documentThumbInFlight[key].then(function(data){applyDocumentThumbNode(node,data);});
+    });
 }
 function mobileDocRow(d, extraAction){
     var action=extraAction||'mobileOpenDoc(\''+jsString(d.id)+'\')';
-    var kind=mobileFileKind(d.file_name);
-    var fileLine=d.file_name?'<div class="mobile-doc-file">'+(kind==='pdf'?'PDF':kind==='image'?'Image':'File')+' attached</div>':'';
     return '<button class="mobile-doc-row" type="button" onclick="'+action+'">'
-        + '<div class="mobile-doc-main">'+mobileFileIcon(d.file_name)+'<div class="mobile-doc-content">'
+        + '<div class="mobile-doc-main">'+documentThumbHtml(d,'mobile-doc-thumb')+'<div class="mobile-doc-content">'
         + '<div class="mobile-doc-top"><div class="mobile-doc-title">'+mobileEsc(d.title)+'</div>'+mobileStatusPill(d)+'</div>'
         + '<div class="mobile-doc-meta">'+mobileEsc(d.category)+(d.file_name?' · '+mobileEsc(d.file_name):'')+'</div>'
-        + fileLine+'</div></div>'
+        + '</div></div>'
         + '</button>';
 }
 function mobileFilteredDocs(kind){
@@ -4504,6 +4860,7 @@ function renderMobileDocs(){
     if(!docs.length)h+='<div class="mobile-card">No documents in this vault.</div>';
     docs.forEach(function(d){h+=mobileDocRow(d);});
     mobileMainHtml(h);
+    setTimeout(function(){hydrateDocumentThumbnails(document.getElementById('mobile-main'));},0);
 }
 function mobileBeginAdd(mode){
     if(mode==='pdf'){
@@ -4558,7 +4915,9 @@ async function mobileAttachPendingFileToDoc(docId){
         await mobileReloadDocs();
         selectedDocId=docId;
         mobileView='doc';
+        mobileOcrState={docId:docId,status:'offer'};
         renderMobileShell();
+        setTimeout(function(){mobileAutoStartOcrIfConfigured(docId);},450);
         showToast('File attached','success');
     }catch(e){
         showToast('Attach failed: '+e,'error');
@@ -4614,10 +4973,13 @@ function renderMobileProfile(){
     var st=mobileStats();
     var pct=st.total?Math.round((st.uploaded/st.total)*100):0;
     var h='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(mobileVaultLabel())+'</div><div class="mobile-card-sub">Local-first seafarer vault on this device.</div></div>';
+    if(mobilePostCreateVaultHint){
+        h+='<div class="mobile-card"><div class="mobile-card-title">Vault created</div><div class="mobile-card-sub">To open this profile on desktop, export a ZIP backup and import it in Skipi desktop from Settings -> Vaults -> Import vault backup.</div><div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-accent mobile-grow" type="button" onclick="mobileExportVaultBackup(true)">Share to desktop</button><button class="btn btn-outline mobile-grow" type="button" onclick="mobilePostCreateVaultHint=false;mobileShow(\'docs\')">Continue</button></div></div>';
+    }
     h+='<div class="mobile-stats"><div class="mobile-stat"><strong>'+st.total+'</strong><span>Total</span></div><div class="mobile-stat"><strong>'+st.uploaded+'</strong><span>Files</span></div><div class="mobile-stat"><strong>'+st.missing+'</strong><span>Missing</span></div></div>';
     h+='<div class="mobile-card"><div class="mobile-row"><div><div class="mobile-card-title">Profile completeness</div><div class="mobile-card-sub">Required profile documents and details.</div></div><span class="mobile-pill ok" id="mobile-profile-card-pct">'+pct+'%</span></div></div>';
     h+='<button class="mobile-primary-action" type="button" onclick="mobileShow(\'add\')"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">Add more documents</span><span class="mobile-action-sub">Scan or attach files from this phone.</span></span></button>';
-    h+='<div class="mobile-card"><div class="mobile-card-title">Vault</div><div class="mobile-card-sub">Stored locally on this phone. Export a ZIP backup to open this profile on desktop.</div><div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-accent mobile-grow" onclick="mobileExportVaultBackup(true)">Export / share backup</button><button class="btn btn-outline mobile-grow" onclick="mobileOpenExistingVault()">Switch vault</button><button class="btn btn-outline mobile-grow" onclick="openSettings()">Settings</button></div></div>';
+    h+='<div class="mobile-card"><div class="mobile-card-title">Vault</div><div class="mobile-card-sub">Stored locally on this phone. Export a ZIP backup to open this profile on desktop.</div><div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-accent mobile-grow" onclick="mobileExportVaultBackup(true)">Export / share backup</button><button class="btn btn-outline mobile-grow" onclick="mobileOpenExistingVault()">Switch vault</button><button class="btn btn-outline mobile-grow" onclick="openSettings()">Settings</button></div><div class="mobile-actions" style="margin-top:8px;"><button class="btn btn-outline btn-red mobile-grow" onclick="mobileDeleteCurrentVault()">Delete this vault</button></div></div>';
     mobileMainHtml(h);
     mobileRefreshProfileSummary();
 }
@@ -4661,10 +5023,159 @@ async function mobileExportVaultBackup(shareAfter){
         return null;
     }
 }
+async function mobileDeleteCurrentVault(){
+    var path='';
+    try{path=await invoke('get_current_vault_path')||'';}catch(e){}
+    var name=mobileVaultNameFromPath(path)||mobileVaultLabel();
+    var ok=await uiConfirm('Delete vault "'+name+'" from this phone?\n\nThis removes the local folder and attached files. Export a backup first if you want to open it on desktop.',{confirmLabel:'Delete vault',danger:true});
+    if(!ok)return;
+    try{
+        await invoke('delete_vault',{path:path||null});
+        allDocs=[];
+        selectedDocId=null;
+        mobilePostCreateVaultHint=false;
+        showToast('Vault deleted','success');
+        renderMobileWelcome();
+    }catch(e){
+        showToast('Delete failed: '+e,'error');
+        logError('mobile_delete_current_vault',e);
+    }
+}
 function mobileOpenDoc(id){
     selectedDocId=id;
     mobileView='doc';
     renderMobileShell();
+}
+var mobileOcrState=null;
+function mobileOcrLearningConsent(){
+    return localStorage.getItem('skipi-ocr-learning-consent')==='on';
+}
+function mobileSetOcrLearningConsent(on){
+    localStorage.setItem('skipi-ocr-learning-consent',on?'on':'off');
+}
+function mobileOcrFields(){
+    return [
+        ['doc_number','Document No.'],
+        ['issued_by','Issued By'],
+        ['valid_from','Issue Date'],
+        ['valid_to','Expiry Date']
+    ];
+}
+function mobileOcrHasAny(result){
+    return !!(result&&(result.doc_number||result.issued_by||result.valid_from||result.valid_to));
+}
+async function mobileStoredAiKey(){
+    try{return await invoke('get_effective_api_key')||'';}catch(e){return '';}
+}
+async function mobileEnsureAiKey(){
+    var key=await mobileStoredAiKey();
+    if(key&&key.length>10)return key;
+    key=await uiPrompt('AI recognition needs an Anthropic API key for now. The key is stored only inside this local vault.','');
+    if(!key)return '';
+    try{await invoke('save_api_key',{key:key});}catch(e){}
+    return key;
+}
+async function mobileAutoStartOcrIfConfigured(docId){
+    var key=await mobileStoredAiKey();
+    if(key&&key.length>10)mobileStartOcr(docId,{auto:true,key:key});
+}
+function mobileOcrResultValue(field){
+    var result=mobileOcrState&&mobileOcrState.result?mobileOcrState.result:{};
+    var d=allDocs.find(function(x){return x.id===selectedDocId;})||{};
+    return result[field]||d[field]||'';
+}
+function mobileOcrPanel(d){
+    if(!d||!d.file_name)return '';
+    var st=mobileOcrState&&mobileOcrState.docId===d.id?mobileOcrState:null;
+    if(!st||st.status==='offer'){
+        return '<div class="mobile-card mobile-ocr-card"><div class="mobile-row"><div><div class="mobile-card-title">Recognize fields</div><div class="mobile-card-sub">Extract document number, issue date and expiry date from this scan. You confirm before anything is saved.</div></div><span class="mobile-ocr-chip">Beta</span></div><div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-accent" onclick="mobileStartOcr(\''+jsString(d.id)+'\')">Recognize</button></div></div>';
+    }
+    if(st.status==='working'){
+        return '<div class="mobile-card mobile-ocr-card"><div class="mobile-card-title">Recognizing document...</div><div class="mobile-card-sub">Reading the scan and looking for printed fields. Keep the app open.</div></div>';
+    }
+    if(st.status==='error'){
+        return '<div class="mobile-card mobile-ocr-card"><div class="mobile-card-title">Recognition unavailable</div><div class="mobile-card-sub">'+mobileEsc(st.error||'Could not recognize this document.')+'</div><div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-outline" onclick="mobileDismissOcr()">Dismiss</button><button class="btn btn-accent" onclick="mobileStartOcr(\''+jsString(d.id)+'\')">Try again</button></div></div>';
+    }
+    if(st.status==='result'){
+        var h='<div class="mobile-card mobile-ocr-card"><div class="mobile-row"><div><div class="mobile-card-title">Check recognized fields</div><div class="mobile-card-sub">'+(mobileOcrHasAny(st.result)?'Edit anything that looks wrong, then confirm.':'No reliable fields were found. You can still enter them manually below.')+'</div></div><span class="mobile-ocr-chip">Check</span></div>';
+        h+='<div class="mobile-ocr-grid">';
+        mobileOcrFields().forEach(function(pair){
+            var f=pair[0],label=pair[1];
+            h+='<div class="mobile-field"><label>'+mobileEsc(label)+'</label><input id="mobile-ocr-'+f+'" '+((f==='valid_from'||f==='valid_to')?'inputmode="numeric" maxlength="10" placeholder="YYYY-MM-DD" oninput="autoFormatDate(this)"':'')+' value="'+mobileEsc(mobileOcrResultValue(f))+'"></div>';
+        });
+        h+='</div>';
+        h+='<label style="display:flex;align-items:flex-start;gap:8px;margin-top:10px;font-size:12px;line-height:1.35;color:var(--text2);"><input type="checkbox" '+(mobileOcrLearningConsent()?'checked':'')+' onchange="mobileSetOcrLearningConsent(this.checked)" style="margin-top:2px;">Allow Skipi to learn locally from my corrections for this document type.</label>';
+        h+='<div class="mobile-ocr-note">This does not upload scans for training. It only stores corrected field examples inside this vault unless a separate cloud-training consent is added later.</div>';
+        h+='<div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-accent" onclick="mobileConfirmOcr(\''+jsString(d.id)+'\')">Confirm fields</button><button class="btn btn-outline" onclick="mobileDismissOcr()">Dismiss</button></div></div>';
+        return h;
+    }
+    return '';
+}
+async function mobileStartOcr(docId,opts){
+    opts=opts||{};
+    var d=allDocs.find(function(x){return x.id===docId;});
+    if(!d||!d.file_name){showToast('Attach a scan first','warn');return;}
+    var key=opts.key||await mobileEnsureAiKey();
+    if(!key)return;
+    mobileOcrState={docId:docId,status:'working'};
+    selectedDocId=docId;
+    mobileView='doc';
+    renderMobileShell();
+    try{
+        var result=await invoke('ai_preview_recognize',{
+            docId:docId,
+            apiKey:key,
+            useLocal:false,
+            ollamaModel:null,
+            ollamaEndpoint:null,
+            docTitle:d.title||''
+        });
+        mobileOcrState={docId:docId,status:'result',result:result||{}};
+        renderMobileDoc();
+        showToast(mobileOcrHasAny(result)?'Fields recognized':'No reliable fields found','info');
+    }catch(e){
+        mobileOcrState={docId:docId,status:'error',error:String(e||'Recognition failed')};
+        renderMobileDoc();
+        if(!opts.auto)showToast('Recognition failed: '+e,'error');
+    }
+}
+function mobileDismissOcr(){
+    mobileOcrState=null;
+    renderMobileDoc();
+}
+async function mobileConfirmOcr(docId){
+    var st=mobileOcrState&&mobileOcrState.docId===docId?mobileOcrState:null;
+    var d=allDocs.find(function(x){return x.id===docId;});
+    if(!st||st.status!=='result'||!d)return;
+    var result=st.result||{};
+    var values={};
+    mobileOcrFields().forEach(function(pair){
+        var f=pair[0],el=document.getElementById('mobile-ocr-'+f);
+        values[f]=(el&&el.value||'').trim();
+    });
+    var statuses={};try{statuses=JSON.parse(d.field_statuses||'{}');}catch(e){}
+    try{
+        for(var f in values){
+            if(!Object.prototype.hasOwnProperty.call(values,f))continue;
+            if(values[f]){
+                await invoke('update_doc_field',{id:docId,field:f,value:values[f]});
+                statuses[f]='verified';
+                if(mobileOcrLearningConsent()&&result[f]!==undefined&&String(result[f]||'')!==values[f]){
+                    var docType=d.template_id||d.category||d.title||'Unknown';
+                    try{await invoke('save_ocr_label',{docId:docId,docType:docType,fieldName:f,aiValue:String(result[f]||''),correctValue:values[f]});}catch(e2){}
+                }
+            }
+        }
+        await invoke('update_field_statuses',{id:docId,statuses:JSON.stringify(statuses)});
+        mobileOcrState=null;
+        await mobileReloadDocs();
+        selectedDocId=docId;
+        renderMobileDoc();
+        showToast('Recognized fields saved','success');
+    }catch(e){
+        showToast('Could not save recognized fields: '+e,'error');
+        logError('mobile_confirm_ocr',e);
+    }
 }
 function renderMobileDoc(){
     var d=allDocs.find(function(x){return x.id===selectedDocId;});
@@ -4675,12 +5186,14 @@ function renderMobileDoc(){
     h+='<div class="mobile-actions" style="margin-top:12px;">';
     h+='<button class="btn btn-accent" onclick="mobileStartPdfBuilder(\''+jsString(d.id)+'\')">'+(d.file_name?'Replace scan':'Scan to PDF')+'</button>';
     if(d.file_name)h+='<button class="btn btn-outline" onclick="mobileOpenDocumentFile(\''+jsString(d.id)+'\')">Open</button>';
+    if(d.file_name)h+='<button class="btn btn-outline" onclick="mobileStartOcr(\''+jsString(d.id)+'\')">Recognize</button>';
     h+='<button class="btn btn-outline" onclick="mobileToggleDocActions()">More</button></div>';
     if(mobileDocActionsExpanded){
         h+='<div class="mobile-actions" style="margin-top:8px;"><button class="btn btn-outline" onclick="mobilePickFile(\''+jsString(d.id)+'\',true)">Take one photo</button><button class="btn btn-outline" onclick="mobilePickFile(\''+jsString(d.id)+'\',false)">Choose file</button></div>';
     }
     h+='</div>';
     if(d.file_name)h+='<div id="mobile-preview" class="mobile-preview">Loading preview...</div>';
+    h+=mobileOcrPanel(d);
     h+='<div class="mobile-card">';
     h+='<div class="mobile-field"><label>Document No.</label><input value="'+mobileEsc(d.doc_number||'')+'" onchange="mobileSaveField(\''+jsString(d.id)+'\',\'doc_number\',this.value)"></div>';
     h+='<div class="mobile-field"><label>Issued By</label><input value="'+mobileEsc(d.issued_by||'')+'" onchange="mobileSaveField(\''+jsString(d.id)+'\',\'issued_by\',this.value)"></div>';
@@ -4907,7 +5420,9 @@ async function mobileSavePdfBuilder(){
         await mobileReloadDocs();
         selectedDocId=d.id;
         mobileView='doc';
+        mobileOcrState={docId:d.id,status:'offer'};
         renderMobileShell();
+        setTimeout(function(){mobileAutoStartOcrIfConfigured(d.id);},450);
         showToast('PDF attached','success');
     }catch(e){
         if(mobilePdfBuilder)mobilePdfBuilder.busy=false;
@@ -4977,7 +5492,9 @@ async function mobileHandleFilePicked(files){
         await mobileReloadDocs();
         selectedDocId=docId;
         mobileView='doc';
+        mobileOcrState={docId:docId,status:'offer'};
         renderMobileShell();
+        setTimeout(function(){mobileAutoStartOcrIfConfigured(docId);},450);
         showToast('File attached','success');
     }catch(e){
         showToast('Attach failed: '+e,'error');
@@ -6988,7 +7505,6 @@ function renderTree(){
           +'<div class="tree-folder-header" onclick="toggleF(this)" title="Right-click to add a custom certificate to this section"><span class="arrow open">&#9654;</span>'+esc(cat)+'<span class="cnt">'+data.docs.length+'</span></div><div class="tree-items open">';
         data.docs.forEach(function(d){
             var a=d.id===selectedDocId?' active':'';
-            var ic=d.file_name?'&#128196;':'&#128195;';
             var kindClass=docKindClass(d);
             var kindBadge=docTreeKindBadge(d);
             var nameHtml='<span class="name">'+esc(d.title)+'</span>';
@@ -7002,13 +7518,14 @@ function renderTree(){
                     h+='<div class="tree-file'+kindClass+bg+'" onclick="togglePkg(\''+d.id+'\')"><span class="icon" style="font-size:18px;line-height:1;">'+(sel?'&#9745;':'&#9744;')+'</span>'+nameHtml+kindBadge+'</div>';
                 }
             }else{
-                h+='<div class="tree-file'+kindClass+a+'" onclick="selDoc(\''+d.id+'\')"'+(a?' aria-current="true" title="Selected certificate"':'')+'><span class="icon">'+ic+'</span>'+nameHtml+kindBadge+'</div>';
+                h+='<div class="tree-file'+kindClass+a+'" onclick="selDoc(\''+d.id+'\')"'+(a?' aria-current="true" title="Selected certificate"':'')+'>'+documentThumbHtml(d,'')+nameHtml+kindBadge+'</div>';
             }
         });
         h+='</div></div>';
     });
     if(!h)h='<div class="tree-empty">'+esc(getUiLang()==='ru'?'Нет документов для этого фильтра.':'No documents match this filter.')+'</div>';
     document.getElementById('panel-tree').innerHTML=h;
+    setTimeout(function(){hydrateDocumentThumbnails(document.getElementById('panel-tree'));},0);
 }
 
 function toggleF(el){var a=el.querySelector('.arrow'),d=el.nextElementSibling;d.classList.toggle('open');a.classList.toggle('open');}
@@ -7317,7 +7834,7 @@ function aiAutoscanEnabled(){return localStorage.getItem('skipi-ai-autoscan')===
 function setAiAutoscan(on){localStorage.setItem('skipi-ai-autoscan',on?'on':'off');}
 async function aiIsConfigured(){
     try{
-        var key=await invoke('get_api_key');
+        var key=await invoke('get_effective_api_key');
         if(key&&key.length>10)return true;
     }catch(e){}
     var endpoint=localStorage.getItem('skipi-ollama-endpoint')||'http://127.0.0.1:11434';
@@ -7332,7 +7849,7 @@ async function aiIsConfigured(){
 
 var _aiRec=async function(id,local){
     var st=document.getElementById('ai-st');var key='';
-    if(!local){try{key=await invoke('get_api_key');}catch(e){}if(!key){key=await uiPrompt('Anthropic API key:','');if(!key)return;try{await invoke('save_api_key',{key:key});}catch(e){}}}
+    if(!local){try{key=await invoke('get_effective_api_key');}catch(e){}if(!key){key=await uiPrompt('Anthropic API key:','');if(!key)return;try{await invoke('save_api_key',{key:key});}catch(e){}}}
     var beforeDoc=allDocs.find(function(x){return x.id===id;});
     var docTitle=beforeDoc?beforeDoc.title:'';
     // Use template_id if available (stable catalog id like 'passport', 'sid',
@@ -9351,6 +9868,7 @@ async function unlinkEvidenceFolder(entryId){
 async function loadDemoVault(){
     try{
         var info=await invoke('create_demo_vault_auto');
+        mobilePostCreateVaultHint=false;
         await loadVault(info);
     }catch(e){showToast('Demo error: '+e,'error');logError('Demo error',e);}
 }
@@ -13247,11 +13765,16 @@ function mobileRenderSettingsRecentVaults(paths, currentPath){
     var h = '<div class="mobile-section-title" style="margin-top:14px;">Recent vaults</div>';
     unique.slice(0,6).forEach(function(path){
         var isCurrent = currentPath && path === currentPath;
-        h += '<button class="mobile-doc-row" type="button" '+(isCurrent?'disabled':'onclick="mobileSettingsOpenVaultPath(\''+jsString(path)+'\')"')+'>';
+        h += '<div class="mobile-card" style="margin-top:10px;">';
+        h += '<button class="mobile-doc-row" type="button" style="border:0;padding:0;background:transparent;" '+(isCurrent?'disabled':'onclick="mobileSettingsOpenVaultPath(\''+jsString(path)+'\')"')+'>';
         h += '<div class="mobile-doc-main"><div class="mobile-doc-icon">'+(isCurrent?'&#9679;':'&#128451;')+'</div><div class="mobile-doc-content">';
         h += '<div class="mobile-doc-top"><div class="mobile-doc-title">'+mobileEsc(mobileVaultNameFromPath(path))+'</div><span class="mobile-pill '+(isCurrent?'ok':'')+'">'+(isCurrent?'Current':'Open')+'</span></div>';
         h += '<div class="mobile-doc-meta">'+(isCurrent?'This vault is open now.':'Tap to switch to this vault.')+'</div>';
         h += '</div></div></button>';
+        h += '<div class="mobile-actions" style="margin-top:10px;">';
+        if(!isCurrent) h += '<button class="btn btn-outline mobile-grow" type="button" onclick="mobileSettingsOpenVaultPath(\''+jsString(path)+'\')">Open</button>';
+        h += '<button class="btn btn-outline btn-red mobile-grow" type="button" onclick="mobileSettingsDeleteVaultPath(\''+jsString(path)+'\')">Delete</button>';
+        h += '</div></div>';
     });
     host.innerHTML = h;
 }
@@ -13259,6 +13782,10 @@ function mobileRenderSettingsRecentVaults(paths, currentPath){
 async function mobileSettingsOpenVaultPath(path){
     closeSettings();
     await mobileOpenVaultPath(path);
+}
+async function mobileSettingsDeleteVaultPath(path){
+    closeSettings();
+    await mobileDeleteVaultPath(path);
 }
 
 function renderSettingsBody(){
@@ -13422,8 +13949,9 @@ function renderSettingsBody(){
 
         // Interface font family
         var curFontUi = localStorage.getItem('skipi-font-ui') || 'system';
-        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Interface font</div><div class="setting-desc">Typeface for all UI text. Fonts not installed on your system fall back to the default.</div></div>';
-        h += '<div class="setting-control"><select onchange="setFontUi(this.value)">';
+        var curFontUiValue = _fontPresetValue(FONT_UI_PRESETS, curFontUi) || DEFAULT_FONT_UI;
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Interface font</div><div class="setting-desc">Applied immediately. Some named fonts may look identical on Android, so Serif and Monospace UI are included as visible checks.</div><div id="app-font-ui-preview" class="appearance-font-preview" style="font-family:'+escAttr(curFontUiValue)+';">Skipi documents · Certificate No. ABC 123</div><div id="app-font-ui-status" class="appearance-status">Applied automatically</div></div>';
+        h += '<div class="setting-control"><select id="app-font-ui-select" onchange="setFontUi(this.value)">';
         FONT_UI_PRESETS.forEach(function(p){
             h += '<option value="'+p.id+'"'+(curFontUi===p.id?' selected':'')+'>'+p.label+'</option>';
         });
@@ -13431,8 +13959,9 @@ function renderSettingsBody(){
 
         // Mono font family
         var curFontMono = localStorage.getItem('skipi-font-mono') || 'system';
-        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Monospace font</div><div class="setting-desc">Used for IMO numbers, passport fields, and other fixed-width data.</div></div>';
-        h += '<div class="setting-control"><select onchange="setFontMono(this.value)">';
+        var curFontMonoValue = _fontPresetValue(FONT_MONO_PRESETS, curFontMono) || DEFAULT_FONT_MONO;
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Monospace font</div><div class="setting-desc">Used for IMO numbers, passport fields, and other fixed-width data.</div><div id="app-font-mono-preview" class="appearance-font-preview" style="font-family:'+escAttr(curFontMonoValue)+';">IMO 9303807 · SID GG332748</div><div id="app-font-mono-status" class="appearance-status">Applied automatically</div></div>';
+        h += '<div class="setting-control"><select id="app-font-mono-select" onchange="setFontMono(this.value)">';
         FONT_MONO_PRESETS.forEach(function(p){
             h += '<option value="'+p.id+'"'+(curFontMono===p.id?' selected':'')+'>'+p.label+'</option>';
         });
@@ -14211,7 +14740,8 @@ var FONT_UI_PRESETS = [
     { id: 'segoe',    label: 'Segoe UI',       value: '"Segoe UI", Tahoma, sans-serif' },
     { id: 'ubuntu',   label: 'Ubuntu',         value: 'Ubuntu, "Liberation Sans", sans-serif' },
     { id: 'roboto',   label: 'Roboto',         value: 'Roboto, "Helvetica Neue", sans-serif' },
-    { id: 'georgia',  label: 'Georgia (serif)',value: 'Georgia, "Times New Roman", serif' }
+    { id: 'serif',    label: 'Serif',          value: 'Georgia, "Times New Roman", serif' },
+    { id: 'mono_ui',  label: 'Monospace UI',   value: '"Roboto Mono", "Droid Sans Mono", "SFMono-Regular", Consolas, monospace' }
 ];
 var FONT_MONO_PRESETS = [
     { id: 'system',   label: 'System default', value: DEFAULT_FONT_MONO },
@@ -14344,14 +14874,41 @@ function _fontPresetValue(presets, id){
     for(var i=0;i<presets.length;i++){ if(presets[i].id===id) return presets[i].value; }
     return null;
 }
+function _fontPresetLabel(presets, id){
+    if(!id) return '';
+    for(var i=0;i<presets.length;i++){ if(presets[i].id===id) return presets[i].label; }
+    return id;
+}
+function updateAppearanceFontPreview(previewId,statusId,value,label){
+    var preview=document.getElementById(previewId);
+    if(preview)preview.style.fontFamily=value;
+    var status=document.getElementById(statusId);
+    if(status){
+        status.textContent='Applied: '+label;
+        clearTimeout(status._clearTimer);
+        status._clearTimer=setTimeout(function(){status.textContent='Applied automatically';},1800);
+    }
+}
 
 function setFontUi(id){
     localStorage.setItem('skipi-font-ui', id);
     applyAppearance();
+    updateAppearanceFontPreview(
+        'app-font-ui-preview',
+        'app-font-ui-status',
+        _fontPresetValue(FONT_UI_PRESETS,id)||DEFAULT_FONT_UI,
+        _fontPresetLabel(FONT_UI_PRESETS,id)||'System default'
+    );
 }
 function setFontMono(id){
     localStorage.setItem('skipi-font-mono', id);
     applyAppearance();
+    updateAppearanceFontPreview(
+        'app-font-mono-preview',
+        'app-font-mono-status',
+        _fontPresetValue(FONT_MONO_PRESETS,id)||DEFAULT_FONT_MONO,
+        _fontPresetLabel(FONT_MONO_PRESETS,id)||'System default'
+    );
 }
 function setContentMaxWidth(px){
     var v=parseInt(px, 10);

@@ -7,6 +7,7 @@ use rusqlite::params;
 use serde::Deserialize;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use tauri::State;
 
@@ -854,6 +855,49 @@ pub fn read_file_base64(
     };
 
     Ok((b64, mime.to_string()))
+}
+
+#[tauri::command]
+pub fn render_document_thumbnail(
+    window: tauri::WebviewWindow,
+    state: State<AppState>,
+    doc_id: String,
+) -> Result<(String, String), String> {
+    let (path, file_name) = resolve_document_file(&state, &doc_id)?;
+    let ext = file_name.rsplit('.').next().unwrap_or("").to_lowercase();
+
+    if matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "webp" | "bmp") {
+        let data = fs::read(&path).map_err(|e| format!("Cannot read image: {}", e))?;
+        let image = image::load_from_memory(&data)
+            .map_err(|e| format!("Cannot decode thumbnail image: {}", e))?;
+        let thumb = image.thumbnail(180, 220);
+        let mut out = Vec::new();
+        thumb
+            .write_to(
+                &mut Cursor::new(&mut out),
+                image::ImageOutputFormat::Jpeg(78),
+            )
+            .map_err(|e| format!("Cannot encode thumbnail: {}", e))?;
+        return Ok((crate::base64_encode(&out), "image/jpeg".to_string()));
+    }
+
+    if ext == "pdf" {
+        #[cfg(target_os = "android")]
+        {
+            let preview_path = render_pdf_page_android(window.clone(), &path, 220)?;
+            let data = fs::read(&preview_path).map_err(|e| format!("Read PDF thumbnail: {}", e))?;
+            return Ok((crate::base64_encode(&data), "image/png".to_string()));
+        }
+
+        #[cfg(not(target_os = "android"))]
+        {
+            let _ = &window;
+            return Err("PDF thumbnails are available on Android builds.".to_string());
+        }
+    }
+
+    let _ = &window;
+    Err("Thumbnail is not available for this file type.".to_string())
 }
 
 fn sanitize_file_component(value: &str, fallback: &str, max_chars: usize) -> String {
