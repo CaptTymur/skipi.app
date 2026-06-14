@@ -832,22 +832,22 @@ input, select, textarea, button { font-family:var(--font-ui); }
 
 /* Mobile app shell */
 .mobile-shell { display:none; min-height:100dvh; background:var(--bg); color:var(--text); flex-direction:column; overflow:hidden; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); }
-.mobile-top { min-height:56px; flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 14px; border-bottom:1px solid var(--border); background:var(--surface); }
-.mobile-brand-wrap { min-width:0; flex:1; display:flex; align-items:center; gap:9px; }
+.mobile-top { min-height:54px; flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:7px 10px; border-bottom:1px solid var(--border); background:var(--surface); }
+.mobile-brand-wrap { min-width:0; flex:1; display:flex; align-items:center; gap:7px; }
 .mobile-top-home { width:40px; height:40px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:20px; line-height:1; }
 .mobile-top-home.active { border-color:var(--accent-bg2); background:var(--accent-bg); color:var(--accent); }
 .mobile-top-home:active { transform:translateY(1px); }
-.mobile-feedback-btn { min-width:40px; height:40px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; gap:6px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); padding:0 10px; font-size:12px; line-height:1; font-weight:900; }
+.mobile-feedback-btn { width:40px; height:40px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); padding:0; font-size:12px; line-height:1; font-weight:900; }
 .mobile-feedback-btn:active { transform:translateY(1px); }
-.mobile-feedback-mark { width:18px; height:18px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:var(--accent-bg); color:var(--accent); font-size:13px; font-weight:900; line-height:1; }
-.mobile-feedback-text { max-width:64px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.mobile-feedback-mark { width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:var(--accent-bg); color:var(--accent); font-size:14px; font-weight:900; line-height:1; }
+.mobile-feedback-text { display:none; }
 @media (max-width:360px){
     .mobile-feedback-btn { width:40px; padding:0; }
     .mobile-feedback-text { display:none; }
 }
 .mobile-brand { min-width:0; }
-.mobile-brand-title { font-size:16px; font-weight:800; line-height:1.1; }
-.mobile-brand-sub { font-size:11px; color:var(--text2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:68vw; margin-top:2px; }
+.mobile-brand-title { font-size:15px; font-weight:800; line-height:1.1; }
+.mobile-brand-sub { font-size:10px; color:var(--text2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:58vw; margin-top:2px; }
 .mobile-icon-btn { width:40px; height:40px; display:flex; align-items:center; justify-content:center; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:18px; }
 .mobile-main { flex:1; overflow:auto; -webkit-overflow-scrolling:touch; padding:14px; padding-bottom:16px; }
 .mobile-bottom-nav { min-height:104px; flex-shrink:0; display:flex; flex-direction:column; gap:7px; padding:7px 8px calc(7px + env(safe-area-inset-bottom,0px)); border-top:1px solid var(--border); background:var(--surface); }
@@ -860,11 +860,11 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .mobile-profile-meter-value { font-size:12px; font-weight:900; color:var(--green); min-width:38px; text-align:right; }
 .mobile-module-rail-wrap { position:relative; }
 .mobile-module-rail-wrap::before,
-.mobile-module-rail-wrap::after { position:absolute; top:0; bottom:1px; width:30px; display:flex; align-items:center; justify-content:center; color:var(--accent); font-size:22px; font-weight:900; pointer-events:none; z-index:2; opacity:0; transition:opacity .16s ease; }
-.mobile-module-rail-wrap::before { content:'‹'; left:0; background:linear-gradient(to right,var(--surface) 25%,transparent); }
-.mobile-module-rail-wrap::after { content:'›'; right:0; background:linear-gradient(to left,var(--surface) 25%,transparent); }
+.mobile-module-rail-wrap::after { position:absolute; top:0; bottom:1px; width:34px; display:flex; align-items:center; justify-content:center; color:var(--accent); font-size:24px; font-weight:900; pointer-events:none; z-index:2; opacity:0; transition:opacity .16s ease; }
+.mobile-module-rail-wrap::before { content:'‹'; left:0; background:linear-gradient(to right,var(--surface) 36%,rgba(255,255,255,0)); }
+.mobile-module-rail-wrap::after { content:'›'; right:0; background:linear-gradient(to left,var(--surface) 36%,rgba(255,255,255,0)); }
 .mobile-module-rail-wrap.has-before::before,
-.mobile-module-rail-wrap.has-more::after { opacity:1; }
+.mobile-module-rail-wrap.has-more::after { opacity:.96; }
 .mobile-module-rail { display:flex; gap:6px; overflow-x:auto; overflow-y:hidden; padding:0 28px 1px 0; scrollbar-width:none; scroll-snap-type:x proximity; }
 .mobile-module-rail::-webkit-scrollbar { display:none; }
 .mobile-nav-btn { flex:0 0 76px; min-height:50px; border:1px solid transparent; border-radius:8px; background:transparent; color:var(--text2); font-size:10px; font-weight:800; display:flex; flex-direction:column; gap:3px; align-items:center; justify-content:center; scroll-snap-align:start; }
@@ -877,6 +877,16 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .mobile-card.action { cursor:pointer; }
 .mobile-card-title { font-size:15px; font-weight:800; line-height:1.25; }
 .mobile-card-sub { font-size:12px; color:var(--text2); line-height:1.35; margin-top:4px; }
+.mobile-home-lead { border-color:rgba(var(--accent-rgb),.32); background:linear-gradient(180deg,rgba(var(--accent-rgb),.08),var(--surface)); }
+.mobile-home-lead .mobile-action-icon { background:var(--accent); color:#fff; }
+.mobile-home-action-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px; }
+.mobile-home-action-grid .mobile-primary-action { min-height:86px; margin:0; align-items:flex-start; padding:12px; }
+.mobile-home-action-grid .mobile-action-icon { width:34px; height:34px; font-size:17px; border-radius:8px; }
+.mobile-home-action-grid .mobile-action-title { font-size:14px; }
+.mobile-home-action-grid .mobile-action-sub { font-size:11px; line-height:1.28; }
+.mobile-alert-strip { border:1px solid var(--border); border-radius:8px; background:var(--surface); padding:10px 12px; margin-bottom:10px; display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.mobile-alert-strip strong { display:block; font-size:14px; line-height:1.2; }
+.mobile-alert-strip span { display:block; color:var(--text2); font-size:11px; line-height:1.3; margin-top:3px; }
 .mobile-ready-card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:13px; margin-bottom:10px; }
 .mobile-ready-card.on { border-color:rgba(39,174,96,.38); background:rgba(39,174,96,.07); }
 .mobile-ready-toggle { display:flex; align-items:center; gap:10px; font-size:15px; font-weight:900; line-height:1.25; color:var(--text); }
@@ -900,10 +910,10 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .mobile-cv-category { font-size:10px; color:#4a4a8a; font-weight:900; text-transform:uppercase; margin:9px 0 2px; }
 .mobile-cv-empty { font-size:12px; color:#777; padding:7px 0; }
 .mobile-mailing-pills { display:flex; flex-direction:column; gap:10px; margin-bottom:12px; }
-.mobile-mailing-pill { width:100%; min-height:86px; border:1px solid var(--border); border-radius:999px; background:var(--surface); color:var(--text); padding:12px 14px 12px 16px; display:flex; align-items:center; gap:12px; text-align:left; }
+.mobile-mailing-pill { width:100%; min-height:78px; border:1px solid var(--border); border-radius:999px; background:var(--surface); color:var(--text); padding:11px 14px 11px 15px; display:flex; align-items:center; gap:11px; text-align:left; }
 .mobile-mailing-pill.active { border-color:var(--accent); background:var(--accent-bg); box-shadow:0 0 0 1px var(--accent-bg2) inset; }
 .mobile-mailing-pill:disabled { opacity:.52; cursor:not-allowed; background:var(--bg); }
-.mobile-mailing-pill-icon { width:42px; height:42px; border-radius:50%; background:var(--accent-bg); color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:900; flex:0 0 auto; }
+.mobile-mailing-pill-icon { width:40px; height:40px; border-radius:50%; background:var(--accent-bg); color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:17px; font-weight:900; flex:0 0 auto; }
 .mobile-mailing-pill-main { min-width:0; flex:1; }
 .mobile-mailing-pill-title { display:block; font-size:15px; font-weight:900; line-height:1.18; color:var(--text); }
 .mobile-mailing-pill-desc { display:block; color:var(--text2); font-size:12px; line-height:1.35; margin-top:4px; }
@@ -938,6 +948,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .mobile-summary-row strong { display:block; font-size:15px; line-height:1.2; }
 .mobile-summary-row span { display:block; color:var(--text2); font-size:12px; line-height:1.35; margin-top:3px; }
 .mobile-wizard-actions { display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; margin-top:12px; }
+.mobile-wizard-actions .btn { min-height:42px; }
 .mobile-review-list { border:1px solid var(--border); border-radius:8px; overflow:hidden; background:var(--surface); margin-bottom:10px; }
 .mobile-review-row { display:flex; gap:9px; align-items:flex-start; padding:10px 12px; border-bottom:1px solid var(--border); }
 .mobile-review-row:last-child { border-bottom:none; }
@@ -1091,15 +1102,15 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
             <span class="mobile-profile-meter-track"><span class="mobile-profile-meter-fill" id="mobile-profile-meter-fill"></span></span>
             <span class="mobile-profile-meter-value" id="mobile-profile-meter-value">0%</span>
         </button>
-        <div class="mobile-module-rail-wrap" id="mobile-module-rail-wrap">
+        <div class="mobile-module-rail-wrap has-more" id="mobile-module-rail-wrap">
         <div class="mobile-module-rail" id="mobile-module-rail" onscroll="mobileUpdateModuleRailHint()">
-            <button class="mobile-nav-btn active" type="button" data-mview="docs" onclick="mobileShow('docs')"><span>&#128196;</span>Documents</button>
-            <button class="mobile-nav-btn" type="button" data-mview="experience" onclick="mobileShow('experience')"><span>&#9873;</span>Experience</button>
+            <button class="mobile-nav-btn active" type="button" data-mview="docs" onclick="mobileShow('docs')"><span>&#9633;</span>Documents</button>
+            <button class="mobile-nav-btn" type="button" data-mview="experience" onclick="mobileShow('experience')"><span>&#9873;&#65038;</span>Experience</button>
             <button class="mobile-nav-btn" type="button" data-mview="cv" onclick="mobileShow('cv')"><span>CV</span>CV</button>
-            <button class="mobile-nav-btn" type="button" data-mview="dispatch" onclick="mobileShow('dispatch')"><span>&#9993;</span>Mailings</button>
-            <button class="mobile-nav-btn" type="button" data-mview="jobs" onclick="mobileShow('jobs')"><span>&#128188;</span>Jobs</button>
+            <button class="mobile-nav-btn" type="button" data-mview="dispatch" onclick="mobileShow('dispatch')"><span>&#9993;&#65038;</span>Mailings</button>
+            <button class="mobile-nav-btn" type="button" data-mview="jobs" onclick="mobileShow('jobs')"><span>J</span>Jobs</button>
             <button class="mobile-nav-btn" type="button" data-mview="information" onclick="mobileShow('information')"><span>i</span>Info</button>
-            <button class="mobile-nav-btn" type="button" data-mview="vessels" onclick="mobileShow('vessels')"><span>&#9872;</span>Vessels</button>
+            <button class="mobile-nav-btn" type="button" data-mview="vessels" onclick="mobileShow('vessels')"><span>&#9872;&#65038;</span>Vessels</button>
         </div>
         </div>
     </nav>
@@ -3365,9 +3376,9 @@ function mobileDispatchOptionSummary(pkgs){
 function mobileDispatchStepLabel(){
     var ru=getUiLang()==='ru';
     if(mobileDispatchStep==='done')return ru?'Готово':'Done';
-    var order={choose:1,method:2,address:3,content:4,cv_mode:5,docs:5,review:5};
+    var order={choose:1,method:2,address:2,content:3,cv_mode:3,docs:3,review:4};
     var n=order[mobileDispatchStep]||1;
-    return ru?('Шаг '+n):('Step '+n);
+    return ru?('Шаг '+n+' из 5'):('Step '+n+' of 5');
 }
 function mobileDispatchHeader(title,sub){
     var h='<div class="mobile-card"><div class="mobile-focus-head"><div style="min-width:0;">';
@@ -3434,22 +3445,22 @@ function mobileDispatchChooseHtml(sendGate){
     var requestLoading=!dispatchMailingRequestsLoaded&&dispatchMailingRequestsLoading;
     var agencyReason=!sendGate.ok?(ru?'Сначала нужен CV или документы':'Complete a CV or upload documents first'):(!stats.allowed&&lastAgencyDbResult?(ru?'Нет открытых адресов':'No unlocked addresses'):'');
     var requestReason=!sendGate.ok?(ru?'Сначала нужен CV или документы':'Complete a CV or upload documents first'):(dispatchMailingRequestsLoaded&&!requestEmailCount?(ru?'Запросов под профиль нет':'No matching requests yet'):(requestLoading?(ru?'Проверяю запросы':'Checking requests'):''));
-    var h=mobileDispatchHeader(ru?'Куда отправить?':'Where do we send it?','');
+    var h=mobileDispatchHeader(ru?'Куда отправить CV?':'Where do we send your CV?','');
     if(!sendGate.ok){
         h+='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(ru?'Пока нечего отправлять':'Nothing to send yet')+'</div><div class="mobile-card-sub">'+mobileEsc(ru?'Заполните CV или загрузите документы. После этого выберите один из трех способов рассылки.':'Complete a CV or upload documents. Then choose one of the three mailing options.')+'</div></div>';
     }
     h+='<div class="mobile-mailing-pills">';
-    h+=mobileDispatchPill('manual','@',ru?'Я знаю адрес':'I know the address',ru?'Ввести email или поделиться через приложение телефона.':'Type an email or share through a phone app.','1',ru?'вариант':'option',sendGate.ok,false,!sendGate.ok?(ru?'Нет CV/документов':'No CV/documents'):'');
-    h+=mobileDispatchPill('agency_db','AG',ru?'Адреса агентств':'Agency contacts',ru?'Отправить в доступные крюинговые агентства.':'Send to available crewing agency contacts.',stats.allowed,ru?'адресов':'addresses',agencyReady,agencyLoading,agencyReason);
-    h+=mobileDispatchPill('crewing_requests','?',ru?'Крюинг запросил CV':'Crewing requested CV',(ru?'Ответить тем, кто уже ищет похожий профиль.':'Reply to crewings already looking for a similar profile.')+(crewingCount?(' '+(ru?'Крюингов: ':'Crewings: ')+crewingCount):''),requestEmailCount,ru?'адресов':'addresses',requestReady,requestLoading,requestReason);
+    h+=mobileDispatchPill('manual','@',ru?'Свой адрес':'Custom address',ru?'Email или меню «поделиться».':'Email or phone share sheet.','1',ru?'вариант':'option',sendGate.ok,false,!sendGate.ok?(ru?'Нет CV/документов':'No CV/documents'):'');
+    h+=mobileDispatchPill('agency_db','AG',ru?'База Skipi':'Skipi database',ru?'Адреса агентств по вашему профилю.':'Agency contacts for your profile.',stats.allowed,ru?'адресов':'addresses',agencyReady,agencyLoading,agencyReason);
+    h+=mobileDispatchPill('crewing_requests','?',ru?'Запросы крюинга':'Crewing requests',(ru?'Ответить тем, кто ищет такой профиль.':'Reply to companies looking for this profile.')+(crewingCount?(' '+(ru?'Крюингов: ':'Crewings: ')+crewingCount):''),requestEmailCount,ru?'адресов':'addresses',requestReady,requestLoading,requestReason);
     h+='</div>';
     return h;
 }
 function mobileDispatchMethodHtml(){
     var ru=getUiLang()==='ru';
     var h=mobileDispatchHeader(ru?'Как отправить?':'How do we send it?','');
-    h+=mobileDispatchChooseButton(false,ru?'Письмом':'By email',ru?'Откроется почтовое приложение с готовым письмом.':'Opens the mail app with a prepared message.',"mobileDispatchChooseMethod('email')",'@');
-    h+=mobileDispatchChooseButton(false,ru?'Через приложение':'Through an app',ru?'WhatsApp, Telegram, почта или другое приложение.':'WhatsApp, Telegram, mail client or another app.',"mobileDispatchChooseMethod('share')",'↕');
+    h+=mobileDispatchChooseButton(false,ru?'Email письмо':'Email draft',ru?'Откроем готовое письмо.':'Open a ready email draft.',"mobileDispatchChooseMethod('email')",'@');
+    h+=mobileDispatchChooseButton(false,ru?'Поделиться':'Share',ru?'WhatsApp, Telegram, почта и другие приложения.':'WhatsApp, Telegram, mail and other apps.',"mobileDispatchChooseMethod('share')",'↗');
     h+='<div class="mobile-wizard-actions"><button class="btn btn-outline" type="button" onclick="mobileDispatchBack()">'+mobileEsc(ru?'Назад':'Back')+'</button></div>';
     return h;
 }
@@ -4419,25 +4430,58 @@ function renderMobileShell(){
     if(mobileView==='pdf')return renderMobilePdfBuilder();
     return renderMobileHome();
 }
+function mobileHomeActionHtml(icon,title,sub,onclick){
+    return '<button class="mobile-primary-action" type="button" onclick="'+onclick+'"><span class="mobile-action-icon">'+icon+'</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(title)+'</span><span class="mobile-action-sub">'+mobileEsc(sub)+'</span></span></button>';
+}
 function renderMobileHome(){
+    var ru=getUiLang()==='ru';
     var st=mobileStats();
-    var h='<button class="mobile-primary-action" type="button" onclick="mobileBeginAdd(\'pdf\')"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">Scan document</span><span class="mobile-action-sub">Take pages, create PDF, then attach it to the right certificate.</span></span></button>';
+    var pct=mobileCompletenessPercent();
+    var missing=mobileFilteredDocs('missing');
+    var expiring=mobileFilteredDocs('expiring');
+    var uploaded=allDocs.filter(function(d){return !!d.file_name;});
+    var leadIcon='+';
+    var leadTitle=ru?'Сканировать документ':'Scan document';
+    var leadSub=ru?'Сфотографируйте страницы, Skipi соберет PDF.':'Take pages, Skipi creates a PDF.';
+    var leadAction="mobileBeginAdd('pdf')";
+    if(missing.length){
+        leadIcon='!';
+        leadTitle=ru?'Добавить обязательный документ':'Add required document';
+        leadSub=missing[0].title;
+        leadAction="mobileOpenDoc('"+jsString(missing[0].id)+"')";
+    }else if(expiring.length){
+        leadIcon='!';
+        leadTitle=ru?'Проверить срок действия':'Check expiry dates';
+        leadSub=ru?'Есть документы, которые скоро истекают.':'Some documents expire soon.';
+        leadAction="mobileSetDocsFilter('expiring');mobileShow('docs')";
+    }else if(uploaded.length){
+        leadIcon='CV';
+        leadTitle=ru?'Отправить CV':'Send CV';
+        leadSub=ru?'CV и документы готовы к отправке.':'Your CV and documents are ready.';
+        leadAction="mobileShow('dispatch')";
+    }
+    var h='<button class="mobile-primary-action mobile-home-lead" type="button" onclick="'+leadAction+'"><span class="mobile-action-icon">'+leadIcon+'</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(leadTitle)+'</span><span class="mobile-action-sub">'+mobileEsc(leadSub)+'</span></span></button>';
+    h+='<div class="mobile-home-action-grid">';
+    h+=mobileHomeActionHtml('+',ru?'Сканировать':'Scan',ru?'Камера в PDF':'Camera to PDF',"mobileBeginAdd('pdf')");
+    h+=mobileHomeActionHtml('CV',ru?'Посмотреть CV':'View CV',ru?'Что увидит получатель':'What recipient sees',"mobileShow('cv')");
+    h+=mobileHomeActionHtml('@',ru?'Рассылка':'Mailings',ru?'Email или поделиться':'Email or share',"mobileShow('dispatch')");
+    h+=mobileHomeActionHtml('J',ru?'Вакансии':'Jobs',ru?'Готовность и офферы':'Readiness and offers',"mobileShow('jobs')");
+    h+='</div>';
     h+='<div class="mobile-stats">'
-        + '<div class="mobile-stat"><strong>'+st.uploaded+'</strong><span>Uploaded</span></div>'
-        + '<div class="mobile-stat"><strong>'+st.missing+'</strong><span>Missing</span></div>'
-        + '<div class="mobile-stat"><strong>'+st.expiring+'</strong><span>Expiring</span></div>'
+        + '<div class="mobile-stat"><strong>'+st.uploaded+'</strong><span>'+mobileEsc(ru?'Файлов':'Uploaded')+'</span></div>'
+        + '<div class="mobile-stat"><strong>'+st.missing+'</strong><span>'+mobileEsc(ru?'Не хватает':'Missing')+'</span></div>'
+        + '<div class="mobile-stat"><strong>'+pct+'%</strong><span>'+mobileEsc(ru?'Профиль':'Profile')+'</span></div>'
         + '</div>';
-    h+='<div class="mobile-actions" style="margin-bottom:10px;"><button class="btn btn-outline" onclick="mobileShow(\'add\')">Other add options</button><button class="btn btn-outline" onclick="mobileShow(\'docs\')">Browse documents</button></div>';
-    var missing=mobileFilteredDocs('missing').slice(0,5);
-    h+='<div class="mobile-section-title">Needs attention</div>';
-    if(missing.length)missing.forEach(function(d){h+=mobileDocRow(d);});
-    else h+='<div class="mobile-card"><div class="mobile-card-title">No required documents missing</div><div class="mobile-card-sub">Open Documents to review optional certificates and expiry dates.</div></div>';
-    var loaded=allDocs.filter(function(d){return !!d.file_name;}).slice(0,6);
-    if(loaded.length){
-        h+='<div class="mobile-section-title">Loaded documents</div>';
-        loaded.forEach(function(d){h+=mobileDocRow(d);});
-        if(allDocs.filter(function(d){return !!d.file_name;}).length>loaded.length){
-            h+='<button class="btn btn-outline" style="width:100%;margin-top:2px;" onclick="mobileShow(\'docs\')">View all documents</button>';
+    h+='<div class="mobile-alert-strip"><div><strong>'+mobileEsc(st.missing?((ru?'Нужно добавить: ':'Missing: ')+st.missing):(ru?'Обязательные документы на месте':'Required documents are complete'))+'</strong><span>'+mobileEsc(st.expiring?((ru?'Скоро истекают: ':'Expiring soon: ')+st.expiring):(ru?'Сроки действия выглядят спокойно':'Expiry dates look clear'))+'</span></div><button class="btn btn-outline btn-sm" onclick="mobileShow(\'docs\')">'+mobileEsc(ru?'Документы':'Docs')+'</button></div>';
+    var attention=missing.concat(expiring.filter(function(d){return missing.indexOf(d)<0;})).slice(0,3);
+    h+='<div class="mobile-section-title">'+mobileEsc(ru?'Требует внимания':'Needs attention')+'</div>';
+    if(attention.length)attention.forEach(function(d){h+=mobileDocRow(d);});
+    else h+='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(ru?'Нет срочных действий':'No urgent action')+'</div><div class="mobile-card-sub">'+mobileEsc(ru?'Можно открыть CV, отправить документы или проверить вакансии.':'You can review CV, send documents or check jobs.')+'</div></div>';
+    if(uploaded.length){
+        h+='<div class="mobile-section-title">'+mobileEsc(ru?'Недавно загружено':'Recently loaded')+'</div>';
+        uploaded.slice(0,3).forEach(function(d){h+=mobileDocRow(d);});
+        if(uploaded.length>3){
+            h+='<button class="btn btn-outline" style="width:100%;margin-top:2px;" onclick="mobileShow(\'docs\')">'+mobileEsc(ru?'Все документы':'All documents')+'</button>';
         }
     }
     mobileMainHtml(h);
