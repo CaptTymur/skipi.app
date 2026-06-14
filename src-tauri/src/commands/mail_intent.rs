@@ -36,6 +36,14 @@ pub struct MailIntentResult {
 
 const FOOTER: &str = "Sent via Skipi (https://skipi.app)";
 
+#[cfg(target_os = "android")]
+fn outbox_dir() -> PathBuf {
+    PathBuf::from("/storage/emulated/0/Download")
+        .join("Skipi")
+        .join("Outbox")
+}
+
+#[cfg(not(target_os = "android"))]
 fn outbox_dir() -> PathBuf {
     let home = std::env::var_os("HOME")
         .map(PathBuf::from)
@@ -181,6 +189,10 @@ fn build_eml(intent: &MailIntent) -> Result<String, String> {
     Ok(out)
 }
 
+#[cfg(target_os = "android")]
+fn open_path(_path: &Path) {}
+
+#[cfg(not(target_os = "android"))]
 fn open_path(path: &Path) {
     let _ = std::process::Command::new("xdg-open").arg(path).spawn();
 }

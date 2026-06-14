@@ -383,10 +383,21 @@ pub fn job_hide(vacancy_id: String) -> Result<(), String> {
 /// generated redacted-CV PDF in a predictable, attach-friendly location.
 #[tauri::command]
 pub fn get_downloads_dir() -> Result<String, String> {
+    #[cfg(target_os = "android")]
+    {
+        let p = std::path::PathBuf::from("/storage/emulated/0/Download");
+        std::fs::create_dir_all(&p)
+            .map_err(|e| format!("Could not create Android Downloads dir: {e}"))?;
+        return Ok(p.to_string_lossy().to_string());
+    }
+
+    #[cfg(not(target_os = "android"))]
+    {
     let p = dirs::download_dir()
         .or_else(dirs::home_dir)
         .ok_or_else(|| "Could not resolve user home / downloads dir".to_string())?;
     Ok(p.to_string_lossy().to_string())
+    }
 }
 
 fn bump_counter(vacancy_id: &str, action: &str) -> Result<(), String> {
