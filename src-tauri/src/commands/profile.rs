@@ -35,6 +35,7 @@ pub fn get_profile_taxonomy() -> serde_json::Value {
             serde_json::json!({
                 "id": p.id,
                 "label": p.label,
+                "display_label": profiles::position_display_label(p.id).unwrap_or(p.label),
                 "level": p.level.id(),
                 "dept": p.dept,
             })

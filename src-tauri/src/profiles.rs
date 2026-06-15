@@ -198,7 +198,18 @@ pub struct Position {
     pub id: &'static str,
     pub label: &'static str,
     pub level: StcwLevel,
-    pub dept: &'static str, // "deck" / "engine" / "catering" / "other"
+    pub dept: &'static str, // "deck" / "engine" / "electrical" / "catering" / "other"
+}
+
+pub fn position_display_label(id: &str) -> Option<&'static str> {
+    match id {
+        "second_officer" => Some("2nd Officer"),
+        "third_officer" => Some("3rd Officer"),
+        "second_engineer" => Some("2nd Engineer"),
+        "third_engineer" => Some("3rd Engineer"),
+        "fourth_engineer" => Some("4th Engineer"),
+        _ => position(id).map(|p| p.label),
+    }
 }
 
 pub fn positions() -> Vec<Position> {
@@ -270,7 +281,7 @@ pub fn positions() -> Vec<Position> {
             id: "eto",
             label: "Electro-Technical Officer (ETO)",
             level: Operational,
-            dept: "engine",
+            dept: "electrical",
         },
         // Support
         Position {
@@ -284,6 +295,18 @@ pub fn positions() -> Vec<Position> {
             label: "Cadet",
             level: Support,
             dept: "other",
+        },
+        Position {
+            id: "cadet_deck",
+            label: "Deck Cadet",
+            level: Support,
+            dept: "deck",
+        },
+        Position {
+            id: "cadet_engine",
+            label: "Engine Cadet",
+            level: Support,
+            dept: "engine",
         },
         Position {
             id: "ab",
@@ -304,6 +327,12 @@ pub fn positions() -> Vec<Position> {
             dept: "engine",
         },
         Position {
+            id: "pumpman",
+            label: "Pumpman",
+            level: Support,
+            dept: "deck",
+        },
+        Position {
             id: "wiper",
             label: "Wiper",
             level: Support,
@@ -313,7 +342,7 @@ pub fn positions() -> Vec<Position> {
             id: "ete",
             label: "Electro-Technical Rating",
             level: Support,
-            dept: "engine",
+            dept: "electrical",
         },
         Position {
             id: "fitter",
@@ -359,11 +388,15 @@ pub fn position_id_from_rank_label(value: &str) -> Option<&'static str> {
         "thirdmate" | "3rdofficer" | "3officer" | "3o" => Some("third_officer"),
         "juniorofficer" | "jrofficer" | "juniordeckofficer" => Some("junior_officer"),
         "juniorengineer" | "jrengineer" | "juniorengineofficer" => Some("junior_engineer"),
-        "cadet" | "deckcadet" | "enginecadet" | "trainee" => Some("cadet"),
+        "cadet" | "trainee" => Some("cadet"),
+        "deckcadet" => Some("cadet_deck"),
+        "enginecadet" => Some("cadet_engine"),
         "electrotechnicalofficer" | "electrotechnicalofficereto" => Some("eto"),
+        "electricalengineer" => Some("eto"),
         "electrician" | "electrotechnicalrating" | "etr" => Some("ete"),
         "ableseaman" | "ablebodiedseaman" => Some("ab"),
         "ordinaryseaman" => Some("os"),
+        "pumpman" | "pumpmanrating" | "pumpmanondeck" | "pumpmanratingdeck" => Some("pumpman"),
         "chiefcook" => Some("cook"),
         "steward" => Some("messman"),
         "oiler" => Some("motorman"),
@@ -608,7 +641,7 @@ pub fn position_docs(pos_id: &str) -> Vec<DocTemplate> {
         ],
 
         // Support
-        "bosun" | "ab" => vec![
+        "bosun" | "ab" | "pumpman" => vec![
             DocTemplate { id: "able_seafarer_deck", title: "Able Seafarer Deck",
                 category: "Ratings Certificate", regulatory_basis: "STCW II/5",
                 has_expiry: true, typical_years: Some(5), notes: "" },
@@ -827,13 +860,30 @@ mod tests {
     #[test]
     fn position_catalog_includes_entry_and_junior_roles() {
         assert_eq!(position("cadet").unwrap().label, "Cadet");
+        assert_eq!(position("cadet_deck").unwrap().label, "Deck Cadet");
+        assert_eq!(position("cadet_engine").unwrap().label, "Engine Cadet");
         assert_eq!(position("junior_officer").unwrap().label, "Junior Officer");
         assert_eq!(
             position("junior_engineer").unwrap().label,
             "Junior Engineer"
         );
+        assert_eq!(position("pumpman").unwrap().dept, "deck");
+        assert_eq!(position("eto").unwrap().dept, "electrical");
+        assert_eq!(
+            position_display_label("second_officer"),
+            Some("2nd Officer")
+        );
+        assert_eq!(position_display_label("third_officer"), Some("3rd Officer"));
 
         assert_eq!(position_id_from_rank_label("Cadet"), Some("cadet"));
+        assert_eq!(
+            position_id_from_rank_label("Deck Cadet"),
+            Some("cadet_deck")
+        );
+        assert_eq!(
+            position_id_from_rank_label("Engine Cadet"),
+            Some("cadet_engine")
+        );
         assert_eq!(
             position_id_from_rank_label("Junior Officer"),
             Some("junior_officer")
@@ -842,6 +892,15 @@ mod tests {
             position_id_from_rank_label("Junior Engineer"),
             Some("junior_engineer")
         );
+        assert_eq!(
+            position_id_from_rank_label("2nd Officer"),
+            Some("second_officer")
+        );
+        assert_eq!(
+            position_id_from_rank_label("3rd Officer"),
+            Some("third_officer")
+        );
+        assert_eq!(position_id_from_rank_label("Pumpman"), Some("pumpman"));
     }
 
     #[test]
@@ -861,6 +920,12 @@ mod tests {
         assert!(junior_engineer.contains(&"erm"));
 
         assert!(position_docs("cadet").is_empty());
+        assert!(position_docs("cadet_deck").is_empty());
+        assert!(position_docs("cadet_engine").is_empty());
+
+        let pumpman: Vec<&str> = position_docs("pumpman").into_iter().map(|t| t.id).collect();
+        assert!(pumpman.contains(&"able_seafarer_deck"));
+        assert!(pumpman.contains(&"rating_navwatch"));
     }
 }
 

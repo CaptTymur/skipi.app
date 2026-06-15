@@ -996,14 +996,19 @@ var WIZARD_POSITION_TO_RANK = {
     third_engineer: '3rd Engineer',
     fourth_engineer: '4th Engineer',
     junior_engineer: 'Junior Engineer',
-    eto: 'Electro-Technical Officer',
+    eto: 'Electro-Technical Officer (ETO)',
+    ete: 'Electro-Technical Rating',
     bosun: 'Bosun',
     ab: 'AB',
     os: 'OS',
+    pumpman: 'Pumpman',
+    fitter: 'Fitter',
+    motorman: 'Motorman',
+    wiper: 'Wiper',
     cook: 'Cook',
     cadet: 'Cadet',
-    cadet_deck: 'Cadet',
-    cadet_engine: 'Cadet',
+    cadet_deck: 'Deck Cadet',
+    cadet_engine: 'Engine Cadet',
 };
 
 // Map long-form rank labels (Second Officer, Third Engineer) to the terse
@@ -1017,12 +1022,14 @@ var RANK_ALIASES = {
     'Fourth Engineer': '4th Engineer',
     'Electro Technical Officer': 'Electro-Technical Officer',
     'ETO': 'Electro-Technical Officer',
-    'Deck Cadet': 'Cadet',
-    'Engine Cadet': 'Cadet',
+    'Electro-Technical Officer (ETO)': 'Electro-Technical Officer',
 };
 function canonicalRank(r) {
     if (!r) return r;
     return RANK_ALIASES[r] || r;
+}
+function positionDisplayLabel(p){
+    return p?(p.display_label||p.label||''):'';
 }
 
 function err(m) { var e=document.getElementById('err'); e.textContent=m; e.style.display='block'; }
@@ -2522,7 +2529,7 @@ async function refreshSeafarerFramework(){
         }
         if(wizardState.position&&wizardState.position.indexOf('other_')!==0){
             var ps=profileTax.positions.find(function(p){return p.id===wizardState.position;});
-            if(ps)posLabel=ps.label;
+            if(ps)posLabel=positionDisplayLabel(ps);
         } else if(wizardState.position&&wizardState.position.indexOf('other_')===0){
             posLabel=(wizardState.positionCustom||'Custom position');
         }
@@ -2668,7 +2675,7 @@ function renderWizard(){
             h+='<div style="margin:22px 0 10px;padding:8px 12px;background:var(--bg2);border-left:3px solid var(--accent);border-radius:3px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--accent);letter-spacing:1.2px;">'+dLabel+'</div>';
             byDept[dept].forEach(function(p){
                 var sel=wizardState.position===p.id?' style="border-color:var(--accent);background:var(--bg2);"':'';
-                h+='<div class="wizard-card" onclick="wPickPosition(\''+p.id+'\')"'+sel+'><div>'+p.label+'</div></div>';
+                h+='<div class="wizard-card" onclick="wPickPosition(\''+p.id+'\')"'+sel+'><div>'+positionDisplayLabel(p)+'</div></div>';
             });
             // "Other position" card per department
             var otherId='other_'+dept;
@@ -2690,7 +2697,7 @@ function renderWizard(){
         if(wizardState.position.indexOf('other_')===0){
             posLabel=wizardState.positionCustom+' (custom — '+wizardState.position.slice(6)+')';
         } else {
-            posLabel=(profileTax.positions.find(function(p){return p.id===wizardState.position;})||{}).label||'';
+            posLabel=positionDisplayLabel(profileTax.positions.find(function(p){return p.id===wizardState.position;}));
         }
         h+='<p style="color:var(--text2);font-size:12px;margin-bottom:14px;">Review your profile. Skipi will generate the required set of documents based on these choices. See the right panel for the full regulatory scope.</p>';
         h+='<div style="background:var(--bg2);padding:12px;border-radius:6px;margin-bottom:12px;">';
@@ -2843,12 +2850,13 @@ function populateNationalitySelect(selectEl, currentVal){
 
 // ========== Maritime rank list (hard dropdown for Rank field) ==========
 var RANKS = [
-    "Master","Chief Officer","Second Officer","Third Officer","Junior Officer","Cadet","Deck Cadet",
-    "Chief Engineer","Second Engineer","Third Engineer","Fourth Engineer","Junior Engineer","Engine Cadet",
-    "Electro-Technical Officer","Electrician",
+    "Master","Chief Officer","2nd Officer","3rd Officer","Junior Officer",
+    "Chief Engineer","2nd Engineer","3rd Engineer","4th Engineer","Junior Engineer",
+    "Electro-Technical Officer (ETO)","Electro-Technical Rating","Electrician",
+    "Deck Cadet","Engine Cadet","Cadet",
     "Bosun","Able Seaman","Ordinary Seaman",
     "Pumpman","Fitter","Motorman","Oiler","Wiper",
-    "Chief Cook","Cook","Steward","Messman",
+    "Chief Cook","Cook","Messman / Steward","Steward","Messman",
     "Radio Officer","Gas Engineer","Cargo Engineer","Reefer Engineer",
     "Other"
 ];
@@ -2865,8 +2873,11 @@ function populateRankControl(prefix,currentVal,placeholder){
     var selectEl=document.getElementById(prefix+'-rank');
     if(!selectEl)return;
     currentVal=String(currentVal||'').trim();
+    var displayVal=canonicalRank(currentVal);
+    if(displayVal==='Electro-Technical Officer')displayVal='Electro-Technical Officer (ETO)';
     var isKnown=currentVal&&rankListContains(currentVal);
-    populateSelect(selectEl,RANKS,isKnown?currentVal:'',placeholder||'-- Select rank --');
+    if(!isKnown&&displayVal&&rankListContains(displayVal))isKnown=true;
+    populateSelect(selectEl,RANKS,isKnown?(rankListContains(displayVal)?displayVal:currentVal):'',placeholder||'-- Select rank --');
     var custom=document.getElementById(prefix+'-rank_custom');
     if(custom){
         custom.value=currentVal&&!isKnown?currentVal:'';
