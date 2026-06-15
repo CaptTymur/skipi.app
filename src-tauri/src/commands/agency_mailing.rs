@@ -80,20 +80,78 @@ fn nationality(code: &str, label: &str) -> AgencyMailingNationalityDb {
 
 fn ensure_db_file() -> Result<(PathBuf, AgencyMailingDbFile), String> {
     let path = db_path()?;
+    let seed_db = template_db();
     if !path.exists() {
-        let db = template_db();
-        let text = serde_json::to_string_pretty(&db)
+        let text = serde_json::to_string_pretty(&seed_db)
             .map_err(|e| format!("Serialize agency database template failed: {e}"))?;
         fs::write(&path, text)
             .map_err(|e| format!("Write agency database template failed: {e}"))?;
-        return Ok((path, db));
+        return Ok((path, seed_db));
     }
 
     let text =
         fs::read_to_string(&path).map_err(|e| format!("Read agency database failed: {e}"))?;
-    let db: AgencyMailingDbFile =
+    let mut db: AgencyMailingDbFile =
         serde_json::from_str(&text).map_err(|e| format!("Parse agency database failed: {e}"))?;
+    if should_upgrade_db(&db, &seed_db) {
+        let mut changed = merge_seed_db(&mut db, &seed_db);
+        if seed_db.version > db.version {
+            db.version = seed_db.version;
+            changed = true;
+        }
+        if seed_db.updated_at > db.updated_at {
+            db.updated_at = seed_db.updated_at.clone();
+            changed = true;
+        }
+        if changed {
+            let text = serde_json::to_string_pretty(&db)
+                .map_err(|e| format!("Serialize upgraded agency database failed: {e}"))?;
+            fs::write(&path, text)
+                .map_err(|e| format!("Write upgraded agency database failed: {e}"))?;
+        }
+    }
     Ok((path, db))
+}
+
+fn should_upgrade_db(existing: &AgencyMailingDbFile, seed: &AgencyMailingDbFile) -> bool {
+    seed.version > existing.version
+        || (seed.version == existing.version && seed.updated_at > existing.updated_at)
+}
+
+fn merge_seed_db(existing: &mut AgencyMailingDbFile, seed: &AgencyMailingDbFile) -> bool {
+    let mut changed = false;
+    for seed_bucket in &seed.nationalities {
+        if let Some(bucket) = existing
+            .nationalities
+            .iter_mut()
+            .find(|b| b.code.eq_ignore_ascii_case(&seed_bucket.code))
+        {
+            if bucket.label.trim().is_empty() && !seed_bucket.label.trim().is_empty() {
+                bucket.label = seed_bucket.label.clone();
+                changed = true;
+            }
+            let mut seen: HashSet<String> = bucket
+                .agencies
+                .iter()
+                .map(|a| a.email.trim().to_lowercase())
+                .filter(|email| !email.is_empty())
+                .collect();
+            for agency in &seed_bucket.agencies {
+                let email = agency.email.trim();
+                if !valid_email(email) {
+                    continue;
+                }
+                if seen.insert(email.to_lowercase()) {
+                    bucket.agencies.push(agency.clone());
+                    changed = true;
+                }
+            }
+        } else {
+            existing.nationalities.push(seed_bucket.clone());
+            changed = true;
+        }
+    }
+    changed
 }
 
 fn normalize_nationality(input: Option<String>) -> Option<(&'static str, &'static str)> {
