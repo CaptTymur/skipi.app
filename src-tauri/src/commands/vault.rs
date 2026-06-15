@@ -442,6 +442,20 @@ pub fn get_vault_identity_key(state: State<AppState>) -> Result<serde_json::Valu
     identity::get_vault_identity_key(conn, &vault_path)
 }
 
+#[tauri::command]
+pub fn get_identity_trust_status(state: State<AppState>) -> Result<serde_json::Value, String> {
+    let vault_path = state
+        .vault_path
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .ok_or("No vault open")?
+        .clone();
+    let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = conn_lock.as_ref().ok_or("No vault open")?;
+    identity::get_identity_trust_status(conn, &vault_path, crate::load_recent_vaults())
+}
+
 fn zip_path_name(path: &Path) -> String {
     path.components()
         .map(|c| c.as_os_str().to_string_lossy())

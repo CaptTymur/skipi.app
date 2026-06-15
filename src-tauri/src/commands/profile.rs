@@ -1,6 +1,7 @@
 use crate::db::{self, VaultInfo};
-use crate::{demo, frameworks, identity, profiles, AppState};
+use crate::{api, demo, frameworks, identity, profiles, AppState};
 use rusqlite::Connection;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use tauri::State;
@@ -991,6 +992,7 @@ fn csv_list(s: Option<String>) -> Vec<String> {
 pub fn get_matchable_profile(state: State<AppState>) -> Result<serde_json::Value, String> {
     let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = lock.as_ref().ok_or("No vault open")?;
+    let _ = identity::sync_identity_fingerprint(conn);
 
     let g = |k: &str| db::get_vault_info_value(conn, k);
     let age_bucket = compute_age_bucket(g("personal_dob").as_deref());
@@ -1000,6 +1002,10 @@ pub fn get_matchable_profile(state: State<AppState>) -> Result<serde_json::Value
         "matchable_version": MATCHABLE_VERSION,
         "user_id": g("user_id"),
         "identity_pubkey": g("identity_pubkey"),
+        "identity_fingerprint": g("identity_fingerprint"),
+        "identity_trust_status": g("identity_trust_status"),
+        "public_seafarer_id": g("skipi_public_seafarer_id"),
+        "identity_claim_status": g("skipi_identity_claim_status"),
         "rank_id": g("position"),
         "rank_label": None::<String>,
         "stcw_level": g("stcw_level"),
@@ -1016,6 +1022,107 @@ pub fn get_matchable_profile(state: State<AppState>) -> Result<serde_json::Value
         "languages": csv_list(g("personal_languages")),
         "english_level": g("personal_english_level"),
     }))
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct SeafarerIdentityClaimRequest {
+    vault_user_id: String,
+    first_name: String,
+    last_name: String,
+    date_of_birth: String,
+    nationality_code: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct SeafarerIdentityClaimResponse {
+    status: String,
+    duplicate: bool,
+    public_seafarer_id: Option<String>,
+    trust_level: String,
+    identity_recovery_key: Option<String>,
+    message: String,
+}
+
+fn required_identity_field(conn: &Connection, key: &str, label: &str) -> Result<String, String> {
+    let value = db::get_vault_info_value(conn, key).unwrap_or_default();
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        Err(format!("Fill {label} before claiming Skipi ID"))
+    } else {
+        Ok(trimmed.to_string())
+    }
+}
+
+#[tauri::command]
+pub fn claim_seafarer_identity(state: State<AppState>) -> Result<serde_json::Value, String> {
+    let vault_path = state
+        .vault_path
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .ok_or("No vault open")?
+        .clone();
+    let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = lock.as_ref().ok_or("No vault open")?;
+
+    identity::ensure_vault_identity(conn, &vault_path)?;
+    let vault_user_id = required_identity_field(conn, "user_id", "vault User ID")?;
+    let first_name = required_identity_field(conn, "personal_first_name", "first name")?;
+    let last_name = required_identity_field(conn, "personal_surname", "surname")?;
+    let date_of_birth = required_identity_field(conn, "personal_dob", "date of birth")?;
+    let nationality_code = db::get_vault_info_value(conn, "personal_nationality_code")
+        .map(|s| s.trim().to_ascii_uppercase())
+        .filter(|s| !s.is_empty());
+
+    let body = SeafarerIdentityClaimRequest {
+        vault_user_id,
+        first_name,
+        last_name,
+        date_of_birth,
+        nationality_code,
+    };
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .connect_timeout(std::time::Duration::from_secs(4))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let response: SeafarerIdentityClaimResponse =
+        api::post_json(&client, "/api/seafarer-identity/claim", &body)?;
+
+    db::set_vault_info(conn, "skipi_identity_claim_status", &response.status)
+        .map_err(|e| e.to_string())?;
+    db::set_vault_info(
+        conn,
+        "skipi_identity_duplicate",
+        if response.duplicate { "true" } else { "false" },
+    )
+    .map_err(|e| e.to_string())?;
+    db::set_vault_info(conn, "skipi_identity_trust_level", &response.trust_level)
+        .map_err(|e| e.to_string())?;
+    db::set_vault_info(conn, "skipi_identity_message", &response.message)
+        .map_err(|e| e.to_string())?;
+    db::set_vault_info(
+        conn,
+        "skipi_identity_last_claim_at",
+        &chrono::Utc::now().to_rfc3339(),
+    )
+    .map_err(|e| e.to_string())?;
+    db::set_vault_info(
+        conn,
+        "skipi_public_seafarer_id",
+        response.public_seafarer_id.as_deref().unwrap_or(""),
+    )
+    .map_err(|e| e.to_string())?;
+    if let Some(key) = response
+        .identity_recovery_key
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+    {
+        db::set_vault_info(conn, "skipi_identity_recovery_key", key).map_err(|e| e.to_string())?;
+    }
+    let _ = identity::sync_identity_fingerprint(conn);
+
+    serde_json::to_value(response).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1151,6 +1258,7 @@ pub fn set_seafarer_personal(
         }
     }
     if changed {
+        let _ = identity::sync_identity_fingerprint(conn);
         let _ = db::log_event(conn, "profile_updated", "vault_info", None, None);
     }
     let framework = if let Some(path) = vault_path.as_ref() {
@@ -1306,6 +1414,57 @@ pub fn get_profile_photo_data_url(state: State<AppState>) -> Result<Option<Strin
 
 // ========== PROFILE STATUS =======================================
 
+fn doc_text_present(value: Option<&String>) -> bool {
+    value.map(|s| !s.trim().is_empty()).unwrap_or(false)
+}
+
+fn doc_has_attached_file(doc: &db::DocRecord) -> bool {
+    doc_text_present(doc.file_name.as_ref())
+        || doc_text_present(doc.sha256.as_ref())
+        || doc.file_size.unwrap_or(0) > 0
+}
+
+fn required_profile_status_from_docs(
+    templates: &[profiles::DocTemplate],
+    docs: &[db::DocRecord],
+) -> (Vec<serde_json::Value>, Vec<String>, f64) {
+    let have: std::collections::HashSet<String> = docs
+        .iter()
+        .filter_map(|d| {
+            if doc_has_attached_file(d) {
+                d.template_id.clone()
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let total = templates.len() as f64;
+    let mut missing_ids: Vec<String> = Vec::new();
+    let required_json: Vec<serde_json::Value> = templates
+        .iter()
+        .map(|t| {
+            let has = have.contains(t.id);
+            if !has {
+                missing_ids.push(t.id.to_string());
+            }
+            serde_json::json!({
+                "id": t.id,
+                "title": t.title,
+                "category": t.category,
+                "regulatory_basis": t.regulatory_basis,
+                "has": has,
+            })
+        })
+        .collect();
+    let pct = if total > 0.0 {
+        (total - missing_ids.len() as f64) / total * 100.0
+    } else {
+        0.0
+    };
+    (required_json, missing_ids, pct)
+}
+
 #[tauri::command]
 pub fn get_profile_status(state: State<AppState>) -> Result<serde_json::Value, String> {
     let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
@@ -1325,48 +1484,7 @@ pub fn get_profile_status(state: State<AppState>) -> Result<serde_json::Value, S
         ) {
             if let Some(level) = profiles::StcwLevel::from_id(&l) {
                 let tpls = profiles::required_docs_for_profile(level, &v, &p);
-                let have: std::collections::HashSet<String> = docs
-                    .iter()
-                    .filter_map(|d| {
-                        let filled = d.file_name.is_some()
-                            || (d
-                                .doc_number
-                                .as_ref()
-                                .map(|s| !s.is_empty())
-                                .unwrap_or(false))
-                            || (d.valid_to.as_ref().map(|s| !s.is_empty()).unwrap_or(false));
-                        if filled {
-                            d.template_id.clone()
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-
-                let total = tpls.len() as f64;
-                let mut missing_ids: Vec<String> = Vec::new();
-                let required_json: Vec<serde_json::Value> = tpls
-                    .iter()
-                    .map(|t| {
-                        let has = have.contains(t.id);
-                        if !has {
-                            missing_ids.push(t.id.to_string());
-                        }
-                        serde_json::json!({
-                            "id": t.id,
-                            "title": t.title,
-                            "category": t.category,
-                            "regulatory_basis": t.regulatory_basis,
-                            "has": has,
-                        })
-                    })
-                    .collect();
-                let pct = if total > 0.0 {
-                    (total - missing_ids.len() as f64) / total * 100.0
-                } else {
-                    0.0
-                };
-                (required_json, missing_ids, pct)
+                required_profile_status_from_docs(&tpls, &docs)
             } else {
                 (vec![], vec![], 0.0)
             }
@@ -1471,6 +1589,38 @@ mod tests {
 
         drop(conn);
         let _ = std::fs::remove_dir_all(vault_path);
+    }
+
+    #[test]
+    fn profile_completeness_ignores_seeded_expiry_dates() {
+        let templates = profiles::required_docs_for_profile(
+            profiles::StcwLevel::Management,
+            "bulker",
+            "master",
+        );
+        assert!(templates.len() > 1);
+        let mut docs: Vec<db::DocRecord> = templates
+            .iter()
+            .map(frameworks::record_from_profile_template)
+            .collect();
+        assert!(docs.iter().any(|d| d.valid_to.is_some()));
+
+        let (_, missing, pct) = required_profile_status_from_docs(&templates, &docs);
+        assert_eq!(missing.len(), templates.len());
+        assert_eq!(pct, 0.0);
+
+        let passport = docs
+            .iter_mut()
+            .find(|d| d.template_id.as_deref() == Some("passport"))
+            .expect("master/bulker profile should require a passport");
+        passport.file_name = Some("Passport/passport.jpg".to_string());
+        passport.sha256 = Some("abc123".to_string());
+        passport.file_size = Some(2048);
+
+        let (_, missing, pct) = required_profile_status_from_docs(&templates, &docs);
+        assert_eq!(missing.len(), templates.len() - 1);
+        let expected = 100.0 / templates.len() as f64;
+        assert!((pct - expected).abs() < 0.0001);
     }
 
     #[test]

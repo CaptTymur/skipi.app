@@ -2725,10 +2725,19 @@ function mobileSetSub(text){
     var el=document.getElementById('mobile-vault-sub');
     if(el)el.textContent=text||mobileVaultLabel();
 }
+function mobileDocHasAttachedFile(d){
+    return !!(d&&(
+        String(d.file_name||'').trim()||
+        String(d.sha256||'').trim()||
+        Number(d.file_size||0)>0
+    ));
+}
 function mobileCompletenessPercent(){
     if(!Array.isArray(allDocs)||!allDocs.length)return 0;
-    var uploaded=allDocs.filter(function(d){return !!d.file_name;}).length;
-    return Math.round((uploaded/allDocs.length)*100);
+    var required=allDocs.filter(function(d){return isActiveRequiredDoc(d);});
+    if(!required.length)return 0;
+    var uploaded=required.filter(mobileDocHasAttachedFile).length;
+    return Math.round((uploaded/required.length)*100);
 }
 function mobileSetProfileMeterPct(pct){
     pct=Math.max(0,Math.min(100,Math.round(Number(pct)||0)));
@@ -2783,9 +2792,7 @@ function mobileSetBottomNav(showNav){
         topHome.classList.toggle('active',mobileView==='home');
         topHome.setAttribute('aria-current',mobileView==='home'?'page':'false');
     }
-    var pct=mobileCompletenessPercent();
     var meter=document.getElementById('mobile-profile-meter');
-    mobileSetProfileMeterPct(pct);
     if(meter)meter.classList.toggle('active',mobileView==='home'||mobileView==='profile');
     document.querySelectorAll('.mobile-nav-btn').forEach(function(btn){
         var v=btn.getAttribute('data-mview');
@@ -2818,7 +2825,18 @@ function mobileWithHomeButton(html){
     if(String(html).indexOf('data-mobile-home-button')>=0)return html;
     return mobileHomeButtonHtml()+html;
 }
-var mobileVaultWizardState = {step:1,name:'',department:'',level:'',vessel_root:'',vessel_leaf:'',position:'',positionCustom:'',creating:false};
+var MOBILE_SETUP_TOTAL_STEPS = 9;
+function mobileInitialVaultWizardState(){
+    return {
+        step:1,creating:false,
+        name:'',firstName:'',surname:'',dateOfBirth:'',placeOfBirth:'',nationality:'',
+        department:'',level:'',vessel_root:'',vessel_leaf:'',position:'',positionCustom:'',
+        email:'',homeAddress:'',
+        readyForOffers:false,phones:'',preferredMessenger:'WhatsApp',nearestAirport:'',nearestIntlAirport:'',
+        availableFrom:'',minSalary:'',currency:'USD'
+    };
+}
+var mobileVaultWizardState = mobileInitialVaultWizardState();
 var mobilePostCreateVaultHint = false;
 var MOBILE_SETUP_DEPARTMENTS = [
     {id:'deck',label:'Deck Department',sub:'Navigation, cargo operations, bridge watchkeeping.'},
@@ -2830,11 +2848,25 @@ var MOBILE_SETUP_DEPARTMENTS = [
 function mobileSetupText(en,ru){return getUiLang()==='ru'?ru:en;}
 function mobileSetupProgress(){
     var h='<div class="mobile-setup-progress" aria-hidden="true">';
-    for(var i=1;i<=6;i++){
+    for(var i=1;i<=MOBILE_SETUP_TOTAL_STEPS;i++){
         var cls=i<mobileVaultWizardState.step?'done':(i===mobileVaultWizardState.step?'active':'');
         h+='<span class="mobile-setup-dot '+cls+'"></span>';
     }
     return h+'</div>';
+}
+function mobileSetupInput(id,label,value,attrs){
+    return '<div class="mobile-field"><label>'+mobileEsc(label)+'</label><input id="'+id+'" value="'+mobileEsc(value||'')+'" '+(attrs||'')+'></div>';
+}
+function mobileSetupSelectBox(id,label){
+    return '<div class="mobile-field"><label>'+mobileEsc(label)+'</label><select id="'+id+'"></select></div>';
+}
+function mobileSetupRead(id){
+    var el=document.getElementById(id);
+    return el?String(el.value||'').trim():'';
+}
+function mobileSetupFullName(){
+    var s=mobileVaultWizardState;
+    return [s.firstName,s.surname].filter(function(v){return String(v||'').trim();}).join(' ').trim() || s.name || '';
 }
 function mobileSetupChoice(title,sub,onClick,active,disabled,side){
     return '<button class="mobile-choice-button '+(active?'active':'')+'" type="button" '+(disabled?'disabled ':'')+'onclick="'+onClick+'">'
@@ -2865,7 +2897,7 @@ function mobileSetupPositionLabel(){
 async function mobileStartVaultWizard(){
     try{
         await loadTaxonomy();
-        mobileVaultWizardState={step:1,name:'',department:'',level:'',vessel_root:'',vessel_leaf:'',position:'',positionCustom:'',creating:false};
+        mobileVaultWizardState=mobileInitialVaultWizardState();
         renderMobileVaultWizard();
     }catch(e){
         showToast('Could not load setup wizard: '+e,'error');
@@ -2880,28 +2912,54 @@ function mobileVaultWizardBack(){
 function mobileVaultWizardNext(){
     var s=mobileVaultWizardState;
     if(s.step===1){
-        var el=document.getElementById('mobile-setup-name');
-        var name=(el&&el.value?el.value.trim():'');
-        if(!name){showToast(mobileSetupText('Enter your name','Укажите имя'),'error');return;}
-        s.name=name;
+        s.firstName=mobileSetupRead('mobile-setup-first_name');
+        s.surname=mobileSetupRead('mobile-setup-surname');
+        s.name=mobileSetupFullName();
+        if(!s.firstName||!s.surname){showToast(mobileSetupText('Enter first name and surname','Укажите имя и фамилию'),'error');return;}
     }
-    if(s.step===2&&!s.department){showToast(mobileSetupText('Choose department','Выберите департамент'),'error');return;}
-    if(s.step===3&&!s.level){showToast(mobileSetupText('Choose STCW level','Выберите уровень STCW'),'error');return;}
-    if(s.step===4){
+    if(s.step===2){
+        s.dateOfBirth=mobileSetupRead('mobile-setup-date_of_birth');
+        s.placeOfBirth=mobileSetupRead('mobile-setup-place_of_birth');
+        s.nationality=mobileSetupRead('mobile-setup-nationality');
+        if(!s.dateOfBirth||!s.placeOfBirth||!s.nationality){showToast(mobileSetupText('Complete birth details and citizenship','Заполните дату, место рождения и гражданство'),'error');return;}
+    }
+    if(s.step===3&&!s.department){showToast(mobileSetupText('Choose department','Выберите департамент'),'error');return;}
+    if(s.step===4&&!s.level){showToast(mobileSetupText('Choose STCW level','Выберите уровень STCW'),'error');return;}
+    if(s.step===5){
         if(!s.vessel_root){showToast(mobileSetupText('Choose vessel type','Выберите тип судна'),'error');return;}
         var root=profileTax.vessel_tree.find(function(v){return v.id===s.vessel_root;});
         var kids=profileTax.vessel_tree.filter(function(v){return v.parent===s.vessel_root;});
         if(root&&!root.is_leaf&&kids.length&&!s.vessel_leaf){showToast(mobileSetupText('Choose vessel subtype','Выберите подтип судна'),'error');return;}
     }
-    if(s.step===5){
+    if(s.step===6){
         if(!s.position){showToast(mobileSetupText('Choose position','Выберите должность'),'error');return;}
         if(s.position.indexOf('other_')===0){
-            var custom=(s.positionCustom||'').trim();
+            var custom=mobileSetupRead('mobile-setup-position-custom') || (s.positionCustom||'').trim();
             if(!custom){showToast(mobileSetupText('Type your position','Введите свою должность'),'error');return;}
             s.positionCustom=custom;
         }
     }
-    if(s.step<6){s.step++;renderMobileVaultWizard();}
+    if(s.step===7){
+        s.email=mobileSetupRead('mobile-setup-email');
+        s.homeAddress=mobileSetupRead('mobile-setup-home_address');
+        if(!s.email||!s.homeAddress){showToast(mobileSetupText('Enter email and home address','Укажите email и домашний адрес'),'error');return;}
+    }
+    if(s.step===8){
+        var rdy=document.getElementById('mobile-setup-ready_for_offers');
+        s.readyForOffers=!!(rdy&&rdy.checked);
+        s.phones=mobileSetupRead('mobile-setup-phones');
+        s.preferredMessenger=mobileSetupRead('mobile-setup-preferred_messenger')||'WhatsApp';
+        s.nearestAirport=mobileSetupRead('mobile-setup-nearest_airport');
+        s.nearestIntlAirport=mobileSetupRead('mobile-setup-nearest_intl_airport');
+        s.availableFrom=mobileSetupRead('mobile-setup-available_from');
+        s.minSalary=mobileSetupRead('mobile-setup-min_salary');
+        s.currency=mobileSetupRead('mobile-setup-currency')||'USD';
+        if(s.readyForOffers&&(!s.phones||!s.nearestAirport||!s.nearestIntlAirport||!s.availableFrom||!s.minSalary)){
+            showToast(mobileSetupText('Complete phone, airports, availability and salary','Заполните телефон, аэропорты, дату готовности и зарплату'),'error');
+            return;
+        }
+    }
+    if(s.step<MOBILE_SETUP_TOTAL_STEPS){s.step++;renderMobileVaultWizard();}
 }
 function mobileVaultPickDepartment(id){
     mobileVaultWizardState.department=id;
@@ -2942,6 +3000,51 @@ function mobileVaultPickPosition(id){
         if(el)el.focus();
     }
 }
+function mobileSetupToggleReady(on){
+    ['mobile-setup-phones','mobile-setup-preferred_messenger','mobile-setup-nearest_airport','mobile-setup-nearest_intl_airport','mobile-setup-available_from','mobile-setup-min_salary','mobile-setup-currency'].forEach(function(id){
+        var el=document.getElementById(id);
+        if(el){
+            el.disabled=!on;
+            el.style.opacity=on?'1':'0.45';
+        }
+    });
+}
+function mobileSetupAfterRender(){
+    var s=mobileVaultWizardState;
+    if(s.step===2){
+        populateNationalitySelect(document.getElementById('mobile-setup-nationality'),s.nationality||'');
+    }
+    if(s.step===8){
+        populateSelect(document.getElementById('mobile-setup-currency'),CURRENCIES,s.currency||'USD','');
+        var msgr=document.getElementById('mobile-setup-preferred_messenger');
+        if(msgr)msgr.value=s.preferredMessenger||'WhatsApp';
+        populateAirportDatalist();
+        mobileSetupToggleReady(!!s.readyForOffers);
+    }
+}
+function mobileSetupPersonalFields(){
+    var s=mobileVaultWizardState;
+    var rank=mobileSetupPositionLabel();
+    return {
+        surname:s.surname,
+        first_name:s.firstName,
+        date_of_birth:s.dateOfBirth,
+        place_of_birth:s.placeOfBirth,
+        nationality:s.nationality,
+        email:s.email,
+        home_address:s.homeAddress,
+        rank:rank,
+        preferred_vessel_types:(s.vessel_leaf||s.vessel_root),
+        phones:s.readyForOffers?s.phones:'',
+        preferred_messenger:s.preferredMessenger||'WhatsApp',
+        nearest_airport:s.readyForOffers?s.nearestAirport:'',
+        nearest_intl_airport:s.readyForOffers?s.nearestIntlAirport:'',
+        available_from:s.readyForOffers?s.availableFrom:'',
+        min_salary:s.readyForOffers?s.minSalary:'',
+        currency:s.currency||'USD',
+        ready_for_offers:'false'
+    };
+}
 function renderMobileVaultWizard(){
     if(!shouldUseMobileShell())return;
     var ru=getUiLang()==='ru';
@@ -2951,30 +3054,45 @@ function renderMobileVaultWizard(){
     mobileSetBottomNav(false);
     var title=[
         '',
-        ru?'Как вас зовут?':'What is your name?',
+        ru?'Имя и фамилия':'Name and surname',
+        ru?'Личные данные':'Personal details',
         ru?'Ваш департамент':'Your department',
         ru?'Ваш уровень STCW':'Your STCW level',
         ru?'Тип судна':'Vessel type',
         ru?'Ваша должность':'Your position',
-        ru?'Создать структуру':'Create structure'
+        ru?'Контакты':'Contact details',
+        ru?'Готовность к контракту':'Job offer readiness',
+        ru?'Проверьте профиль':'Review profile'
     ][s.step]||'';
     var sub=[
         '',
-        ru?'Имя попадет в название vault и в профиль моряка.':'This name is used for the vault folder and seafarer profile.',
+        ru?'Эти данные попадут в название vault и CV.':'These details go into the vault name and CV.',
+        ru?'Нужны для CV, рассылок и идентификации профиля.':'Needed for CV, mailings and profile identity.',
         ru?'Skipi покажет только релевантные должности.':'Skipi will narrow the position list.',
         ru?'Это нужно для правильного набора обязательных документов.':'This drives the mandatory document set.',
         ru?'Выберите блок флота и затем конкретный тип судна.':'Choose the fleet block, then the specific vessel family.',
         ru?'По должности Skipi достроит требования и CV-логику.':'Your position completes the requirement profile.',
-        ru?'Проверьте выбор. После создания Skipi добавит нужные документы.':'Review the choices. Skipi will add the required documents.'
+        ru?'Минимум для связи и генерации резюме.':'Minimum contact data for CV and applications.',
+        ru?'Если вы не готовы, поля офферов можно оставить выключенными.':'If you are not ready, keep offer fields switched off.',
+        ru?'После создания Skipi добавит обязательные документы под ваш профиль.':'Skipi will add mandatory documents for this profile.'
     ][s.step]||'';
-    var h='<div class="mobile-card"><div class="mobile-dispatch-step">'+mobileEsc(ru?'Шаг ':'Step ')+s.step+' / 6</div>'+mobileSetupProgress()+'<div class="mobile-card-title">'+mobileEsc(title)+'</div><div class="mobile-card-sub">'+mobileEsc(sub)+'</div></div>';
+    var h='<div class="mobile-card"><div class="mobile-dispatch-step">'+mobileEsc(ru?'Шаг ':'Step ')+s.step+' / '+MOBILE_SETUP_TOTAL_STEPS+'</div>'+mobileSetupProgress()+'<div class="mobile-card-title">'+mobileEsc(title)+'</div><div class="mobile-card-sub">'+mobileEsc(sub)+'</div></div>';
     if(s.step===1){
-        h+='<div class="mobile-card"><div class="mobile-field"><label>'+mobileEsc(ru?'Имя моряка':'Seafarer name')+'</label><input id="mobile-setup-name" value="'+mobileEsc(s.name||'')+'" placeholder="'+mobileEsc(ru?'Например, Tymur Rudov':'For example, Tymur Rudov')+'" autocomplete="name"></div></div>';
+        h+='<div class="mobile-card">';
+        h+=mobileSetupInput('mobile-setup-first_name',ru?'Имя':'First name',s.firstName,'autocomplete="given-name"');
+        h+=mobileSetupInput('mobile-setup-surname',ru?'Фамилия':'Surname',s.surname,'autocomplete="family-name"');
+        h+='</div>';
     } else if(s.step===2){
+        h+='<div class="mobile-card">';
+        h+=mobileSetupInput('mobile-setup-date_of_birth',ru?'Дата рождения':'Date of birth',s.dateOfBirth,'type="text" inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" oninput="autoFormatDate(this)"');
+        h+=mobileSetupInput('mobile-setup-place_of_birth',ru?'Место рождения':'Place of birth',s.placeOfBirth,'autocomplete="address-level2"');
+        h+=mobileSetupSelectBox('mobile-setup-nationality',ru?'Гражданство':'Citizenship');
+        h+='</div>';
+    } else if(s.step===3){
         MOBILE_SETUP_DEPARTMENTS.forEach(function(d){
             h+=mobileSetupChoice(d.label,d.sub,'mobileVaultPickDepartment(\''+jsString(d.id)+'\')',s.department===d.id,false,s.department===d.id?'✓':'');
         });
-    } else if(s.step===3){
+    } else if(s.step===4){
         (profileTax.levels||[]).forEach(function(l){
             var desc=l.id==='support'
                 ? (ru?'Ratings, кадеты, поддерживающие должности.':'Ratings, cadets and support positions.')
@@ -2983,7 +3101,7 @@ function renderMobileVaultWizard(){
                     : (ru?'Старшие офицеры и управление.':'Senior officers and management.'));
             h+=mobileSetupChoice(l.label,desc,'mobileVaultPickLevel(\''+jsString(l.id)+'\')',s.level===l.id,false,s.level===l.id?'✓':'');
         });
-    } else if(s.step===4){
+    } else if(s.step===5){
         var roots=(profileTax.vessel_tree||[]).filter(function(v){return !v.parent;});
         if(!s.vessel_root){
             roots.forEach(function(r){
@@ -3001,7 +3119,7 @@ function renderMobileVaultWizard(){
                 h+='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(ru?'Тип выбран':'Vessel type selected')+'</div><div class="mobile-card-sub">'+mobileEsc(ru?'Этот блок достаточно конкретный для создания структуры.':'This fleet block is specific enough for setup.')+'</div></div>';
             }
         }
-    } else if(s.step===5){
+    } else if(s.step===6){
         var posList=(profileTax.positions||[]).filter(function(p){
             if(p.level!==s.level)return false;
             if(!s.department||p.dept===s.department)return true;
@@ -3018,27 +3136,49 @@ function renderMobileVaultWizard(){
         if(s.position===otherId){
             h+='<div class="mobile-card"><div class="mobile-field"><label>'+mobileEsc(ru?'Своя должность':'Custom position')+'</label><input id="mobile-setup-position-custom" value="'+mobileEsc(s.positionCustom||'')+'" placeholder="'+mobileEsc(ru?'Например, Junior Officer':'For example, Junior Officer')+'" oninput="mobileVaultWizardState.positionCustom=this.value"></div></div>';
         }
-    } else if(s.step===6){
+    } else if(s.step===7){
+        h+='<div class="mobile-card">';
+        h+=mobileSetupInput('mobile-setup-email','Email',s.email,'type="email" autocomplete="email"');
+        h+=mobileSetupInput('mobile-setup-home_address',ru?'Домашний адрес':'Home address',s.homeAddress,'autocomplete="street-address" placeholder="'+mobileEsc(ru?'Город, страна, адрес':'City, country, address')+'"');
+        h+='</div>';
+    } else if(s.step===8){
+        h+='<div class="mobile-card">';
+        h+='<label class="mobile-ready-toggle"><input id="mobile-setup-ready_for_offers" type="checkbox" '+(s.readyForOffers?'checked ':'')+'onchange="mobileVaultWizardState.readyForOffers=this.checked;mobileSetupToggleReady(this.checked)"><span>'+mobileEsc(ru?'Готов принимать предложения':'Ready for job offers')+'</span></label>';
+        h+='<div class="mobile-ready-note">'+mobileEsc(ru?'Когда выключено, Skipi сохранит профиль, но не будет требовать зарплату, телефон и аэропорты.':'When off, Skipi saves the profile without requiring salary, phone and airports.')+'</div>';
+        h+='</div>';
+        h+='<div class="mobile-card">';
+        h+=mobileSetupInput('mobile-setup-phones',ru?'Телефон':'Phone',s.phones,'placeholder="+XX XXX..." inputmode="tel" autocomplete="tel"');
+        h+='<div class="mobile-field"><label>'+mobileEsc(ru?'Мессенджер':'Messenger')+'</label><select id="mobile-setup-preferred_messenger"><option value="WhatsApp">WhatsApp</option><option value="Telegram">Telegram</option><option value="Viber">Viber</option><option value="Signal">Signal</option><option value="Other">Other</option></select></div>';
+        h+=mobileSetupInput('mobile-setup-nearest_airport',ru?'Ближайший аэропорт':'Nearest airport',s.nearestAirport,'placeholder="'+mobileEsc(ru?'Начните вводить':'Start typing')+'"');
+        h+=mobileSetupInput('mobile-setup-nearest_intl_airport',ru?'Ближайший международный аэропорт':'Nearest international airport',s.nearestIntlAirport,'placeholder="'+mobileEsc(ru?'Начните вводить':'Start typing')+'"');
+        h+=mobileSetupInput('mobile-setup-available_from',ru?'Готов к посадке с':'Available for joining from',s.availableFrom,'type="text" inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" oninput="autoFormatDate(this)"');
+        h+='<div class="mobile-field"><label>'+mobileEsc(ru?'Минимальная зарплата в месяц':'Minimum salary per month')+'</label><div style="display:flex;gap:8px;"><input id="mobile-setup-min_salary" value="'+mobileEsc(s.minSalary||'')+'" type="number" min="0" inputmode="numeric" style="flex:1;min-width:0;"><select id="mobile-setup-currency" style="width:88px;flex:0 0 88px;"></select></div></div>';
+        h+='</div>';
+    } else if(s.step===9){
         h+='<div class="mobile-setup-review">';
-        h+='<div class="mobile-setup-review-row"><span>'+mobileEsc(ru?'Имя':'Name')+'</span><strong>'+mobileEsc(s.name)+'</strong></div>';
+        h+='<div class="mobile-setup-review-row"><span>'+mobileEsc(ru?'Имя':'Name')+'</span><strong>'+mobileEsc(mobileSetupFullName())+'</strong></div>';
+        h+='<div class="mobile-setup-review-row"><span>'+mobileEsc(ru?'Гражданство':'Citizenship')+'</span><strong>'+mobileEsc(s.nationality)+'</strong></div>';
         h+='<div class="mobile-setup-review-row"><span>'+mobileEsc(ru?'Департамент':'Department')+'</span><strong>'+mobileEsc(mobileSetupDeptLabel(s.department))+'</strong></div>';
         h+='<div class="mobile-setup-review-row"><span>'+mobileEsc(ru?'Уровень':'Level')+'</span><strong>'+mobileEsc(mobileSetupLevelLabel(s.level))+'</strong></div>';
         h+='<div class="mobile-setup-review-row"><span>'+mobileEsc(ru?'Тип судна':'Vessel type')+'</span><strong>'+mobileEsc(mobileSetupVesselLabel())+'</strong></div>';
         h+='<div class="mobile-setup-review-row"><span>'+mobileEsc(ru?'Должность':'Position')+'</span><strong>'+mobileEsc(mobileSetupPositionLabel())+'</strong></div>';
+        h+='<div class="mobile-setup-review-row"><span>Email</span><strong>'+mobileEsc(s.email)+'</strong></div>';
+        h+='<div class="mobile-setup-review-row"><span>'+mobileEsc(ru?'Офферы':'Offers')+'</span><strong>'+mobileEsc(s.readyForOffers?(ru?'готов после документов':'ready after documents'):(ru?'не готов':'not ready'))+'</strong></div>';
         h+='</div>';
-        h+='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(ru?'Что произойдет дальше':'What happens next')+'</div><div class="mobile-card-sub">'+mobileEsc(ru?'Skipi создаст vault, запишет выбранный профиль и добавит набор документов под эту должность и тип судна.':'Skipi will create the vault, save this profile, and add the document structure for this position and vessel type.')+'</div></div>';
+        h+='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(ru?'Что произойдет дальше':'What happens next')+'</div><div class="mobile-card-sub">'+mobileEsc(ru?'Skipi создаст vault, сохранит профиль и добавит набор документов под эту должность и тип судна. Индикатор заполненности начнется с реально загруженных документов.':'Skipi will create the vault, save the profile, and add the document structure for this position and vessel type. Completeness starts from real attached documents.')+'</div></div>';
     }
     h+='<div class="mobile-wizard-actions">';
     h+='<button class="btn btn-outline" type="button" onclick="mobileVaultWizardBack()">'+mobileEsc(s.step===1?(ru?'Отмена':'Cancel'):(ru?'Назад':'Back'))+'</button>';
-    if(s.step<6){
+    if(s.step<MOBILE_SETUP_TOTAL_STEPS){
         h+='<button class="btn btn-accent" type="button" onclick="mobileVaultWizardNext()">'+mobileEsc(ru?'Далее':'Next')+'</button>';
     } else {
         h+='<button class="btn btn-accent" type="button" '+(s.creating?'disabled ':'')+'onclick="mobileFinishProfileVault()">'+mobileEsc(s.creating?(ru?'Создаю...':'Creating...'):(ru?'Создать vault':'Create vault'))+'</button>';
     }
     h+='</div>';
     mobileMainHtml(h);
+    mobileSetupAfterRender();
     if(s.step===1){
-        var nameEl=document.getElementById('mobile-setup-name');
+        var nameEl=document.getElementById('mobile-setup-first_name');
         if(nameEl)nameEl.focus();
     }
 }
@@ -3064,9 +3204,9 @@ async function mobileQuickCreateVault(){
 async function mobileFinishProfileVault(){
     var s=mobileVaultWizardState;
     if(s.creating)return;
-    if(s.step!==6)return;
+    if(s.step!==MOBILE_SETUP_TOTAL_STEPS)return;
     var vessId=s.vessel_leaf||s.vessel_root;
-    if(!s.name||!s.level||!vessId||!s.position){
+    if(!s.firstName||!s.surname||!s.dateOfBirth||!s.placeOfBirth||!s.nationality||!s.email||!s.homeAddress||!s.level||!vessId||!s.position){
         showToast(mobileSetupText('Finish the setup first','Сначала завершите настройку'),'error');
         return;
     }
@@ -3074,7 +3214,7 @@ async function mobileFinishProfileVault(){
         showToast(mobileSetupText('Type your position','Введите свою должность'),'error');
         return;
     }
-    var name=s.name.trim()||'Mobile Seafarer';
+    var name=mobileSetupFullName()||'Mobile Seafarer';
     var folder=vaultFolderName('Seafarer',name);
     var path=await defaultVaultPath(folder);
     s.creating=true;
@@ -3089,11 +3229,16 @@ async function mobileFinishProfileVault(){
             positionLabel:s.position.indexOf('other_')===0?s.positionCustom.trim():null,
             recoveryKey:null
         });
+        var personalFields=mobileSetupPersonalFields();
+        var requestedReady=!!s.readyForOffers;
+        await invoke('set_seafarer_personal',{fields:personalFields});
         mobilePostCreateVaultHint=true;
         await loadVault(info);
         mobileView='profile';
         renderMobileShell();
-        showToast(mobileSetupText('Mobile vault created with document structure','Vault создан со структурой документов'),'success');
+        showToast(requestedReady
+            ? mobileSetupText('Vault created. Add required documents and sea service before enabling offers.','Vault создан. Добавьте обязательные документы и опыт перед включением офферов.')
+            : mobileSetupText('Mobile vault created with profile and document structure','Vault создан с профилем и структурой документов'),'success');
     }catch(e){
         s.creating=false;
         renderMobileVaultWizard();
@@ -4549,6 +4694,18 @@ function mobileSectionRatingsForSchema(schema,rating,comment){
         return {section_id:sec.id,rating_mode:'rough',section_rating:Number(rating),comment:(comment||'').trim()||null};
     });
 }
+async function reviewIdentityContext(){
+    try{
+        var profile=await invoke('get_matchable_profile');
+        if(profile&&profile.public_seafarer_id&&profile.user_id){
+            return {
+                public_seafarer_id:profile.public_seafarer_id,
+                identity_vault_user_id:profile.user_id
+            };
+        }
+    }catch(e){}
+    return {};
+}
 async function mobileTryPublishAssessment(schema,state,summary){
     if(!schema||!schema.version_id)return {ok:false,reason:'schema unavailable'};
     var e=state.entry;
@@ -4577,6 +4734,7 @@ async function mobileTryPublishAssessment(schema,state,summary){
         section_ratings:mobileSectionRatingsForSchema(schema,rating,comment),
         item_ratings:[]
     };
+    Object.assign(payload,await reviewIdentityContext());
     var r=await apiFetch('/api/reviews',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)},15000);
     if(!r.ok)throw new Error('HTTP '+r.status+': '+(await r.text()).slice(0,180));
     return {ok:true};
@@ -4978,10 +5136,12 @@ function renderMobileProfile(){
     }
     h+='<div class="mobile-stats"><div class="mobile-stat"><strong>'+st.total+'</strong><span>Total</span></div><div class="mobile-stat"><strong>'+st.uploaded+'</strong><span>Files</span></div><div class="mobile-stat"><strong>'+st.missing+'</strong><span>Missing</span></div></div>';
     h+='<div class="mobile-card"><div class="mobile-row"><div><div class="mobile-card-title">Profile completeness</div><div class="mobile-card-sub">Required profile documents and details.</div></div><span class="mobile-pill ok" id="mobile-profile-card-pct">'+pct+'%</span></div></div>';
+    h+='<div id="mobile-identity-trust"></div>';
     h+='<button class="mobile-primary-action" type="button" onclick="mobileShow(\'add\')"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">Add more documents</span><span class="mobile-action-sub">Scan or attach files from this phone.</span></span></button>';
     h+='<div class="mobile-card"><div class="mobile-card-title">Vault</div><div class="mobile-card-sub">Stored locally on this phone. Export a ZIP backup to open this profile on desktop.</div><div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-accent mobile-grow" onclick="mobileExportVaultBackup(true)">Export / share backup</button><button class="btn btn-outline mobile-grow" onclick="mobileOpenExistingVault()">Switch vault</button><button class="btn btn-outline mobile-grow" onclick="openSettings()">Settings</button></div><div class="mobile-actions" style="margin-top:8px;"><button class="btn btn-outline btn-red mobile-grow" onclick="mobileDeleteCurrentVault()">Delete this vault</button></div></div>';
     mobileMainHtml(h);
     mobileRefreshProfileSummary();
+    mobileRefreshIdentityTrust();
 }
 async function mobileRefreshProfileSummary(){
     try{
@@ -4993,6 +5153,61 @@ async function mobileRefreshProfileSummary(){
             mobileSetProfileMeterPct(pct);
         }
     }catch(e){}
+}
+function identityTrustBadgeHtml(status){
+    if(status==='possible_duplicate')return '<span class="mobile-pill warn">Possible duplicate</span>';
+    if(status==='incomplete')return '<span class="mobile-pill">Identity incomplete</span>';
+    return '<span class="mobile-pill ok">Unique identity</span>';
+}
+function identityTrustHtml(data, compact){
+    data=data||{};
+    var status=data.status||'incomplete';
+    var server=data.server_identity||{};
+    var dup=(data.possible_duplicates||[]);
+    var linked=(data.linked_copies||[]);
+    var title=status==='possible_duplicate'?'Possible duplicate profile':(status==='incomplete'?'Identity not complete':'Identity looks unique');
+    var sub=status==='possible_duplicate'
+        ? 'Another vault has the same name and date of birth but a different user ID.'
+        : (status==='incomplete'
+            ? 'Fill first name, surname and date of birth to create an identity fingerprint.'
+            : 'No other opened vault on this device has the same identity fingerprint with a different user ID.');
+    var h='<div class="mobile-card '+(status==='possible_duplicate'?'mobile-dispatch-trust':'')+'"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title">'+mobileEsc(title)+'</div><div class="mobile-card-sub">'+mobileEsc(sub)+'</div></div>'+identityTrustBadgeHtml(status)+'</div>';
+    if(data.user_id)h+='<div class="mobile-card-sub" style="margin-top:8px;font-family:var(--font-mono);word-break:break-all;">User ID: '+mobileEsc(data.user_id)+'</div>';
+    if(data.identity_fingerprint)h+='<div class="mobile-card-sub" style="margin-top:4px;font-family:var(--font-mono);word-break:break-all;">Fingerprint: '+mobileEsc(data.identity_fingerprint)+'</div>';
+    if(server.public_seafarer_id){
+        h+='<div class="mobile-summary-row" style="margin-top:12px;"><div><strong>Skipi ID</strong><span>'+mobileEsc(server.public_seafarer_id)+' · '+mobileEsc(server.trust_level||'identity_claimed')+'</span></div><span class="mobile-pill ok">Registered</span></div>';
+    }else if(server.claim_status==='possible_duplicate'){
+        h+='<div class="mobile-summary-row" style="margin-top:12px;"><div><strong>Server identity</strong><span>'+mobileEsc(server.message||'A matching identity already exists. Recovery or manual merge is required.')+'</span></div><span class="mobile-pill warn">Duplicate</span></div>';
+    }else if(!compact){
+        h+='<div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-accent btn-sm" type="button" onclick="claimSkipiIdentity()">Claim Skipi ID</button></div>';
+    }
+    if(server.message&&server.claim_status!=='possible_duplicate'&&!compact){
+        h+='<div class="mobile-card-sub" style="margin-top:8px;">'+mobileEsc(server.message)+'</div>';
+    }
+    if(dup.length&&!compact){
+        h+='<div class="mobile-section-title" style="margin-top:12px;">Duplicate candidates</div>';
+        dup.forEach(function(x){
+            h+='<div class="mobile-summary-row"><div><strong>'+mobileEsc(x.name||'Vault')+'</strong><span>'+mobileEsc((x.date_of_birth||'')+(x.user_id?' · '+x.user_id:''))+'</span></div></div>';
+        });
+    }
+    if(linked.length&&!compact){
+        h+='<div class="mobile-section-title" style="margin-top:12px;">Same identity copies</div>';
+        linked.forEach(function(x){
+            h+='<div class="mobile-summary-row"><div><strong>'+mobileEsc(x.name||'Vault')+'</strong><span>'+mobileEsc('Same recovery identity'+(x.path?' · '+x.path:''))+'</span></div></div>';
+        });
+    }
+    h+='</div>';
+    return h;
+}
+async function mobileRefreshIdentityTrust(){
+    var host=document.getElementById('mobile-identity-trust');
+    if(!host)return;
+    try{
+        var status=await invoke('get_identity_trust_status');
+        host.innerHTML=identityTrustHtml(status,true);
+    }catch(e){
+        host.innerHTML='';
+    }
 }
 async function mobileExportVaultBackup(shareAfter){
     try{
@@ -6194,7 +6409,7 @@ function attachClosedCombobox(inputEl, list){
 }
 
 function attachAirportComboboxes(){
-    ['fp-nearest_airport','fp-nearest_intl_airport','sp-nearest_airport','sp-nearest_intl_airport'].forEach(function(id){
+    ['fp-nearest_airport','fp-nearest_intl_airport','sp-nearest_airport','sp-nearest_intl_airport','mobile-setup-nearest_airport','mobile-setup-nearest_intl_airport'].forEach(function(id){
         var el=document.getElementById(id);
         if(el) attachClosedCombobox(el, workFormListWithCurrent(AIRPORT_HUBS,el.value||''));
     });
@@ -9328,6 +9543,7 @@ async function submitReviewForm(){
             section_ratings:sectionRatings,
             item_ratings:itemRatings
         };
+        Object.assign(payload,await reviewIdentityContext());
         var r=await apiFetch('/api/reviews',{
             method:'POST',
             headers:{'Content-Type':'application/json'},
@@ -13809,6 +14025,7 @@ function renderSettingsBody(){
             h += '<button class="mobile-primary-action" type="button" onclick="mobileExportVaultBackup(true)"><span class="mobile-action-icon">&#8682;</span><span class="mobile-action-copy"><span class="mobile-action-title">Export / share backup</span><span class="mobile-action-sub">Create a ZIP backup for opening this profile on desktop.</span></span></button>';
             h += '<button class="mobile-primary-action" type="button" onclick="closeSettings();renderMobileWelcome()"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">Create new vault</span><span class="mobile-action-sub">Start a clean mobile seafarer vault.</span></span></button>';
             h += '<button class="mobile-primary-action" type="button" onclick="closeSettings();loadDemoVault()"><span class="mobile-action-icon">&#9679;</span><span class="mobile-action-copy"><span class="mobile-action-title">Open demo vault</span><span class="mobile-action-sub">Use sample data for testing.</span></span></button>';
+            h += '<div id="vault-identity-trust"></div>';
             h += '<div id="mobile-settings-recent-vaults"></div>';
             h += '<details style="margin-top:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);padding:10px 12px;"><summary style="font-weight:800;cursor:pointer;">Advanced vault tools</summary>';
             h += '<div class="setting-row" style="margin-top:10px;"><div class="setting-info"><div class="setting-label">Recovery key</div><div class="setting-desc" id="vault-identity-user">'+tr('settings.loading_identity')+'</div><div id="vault-identity-key" class="setting-desc" style="margin-top:6px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-family:var(--font-mono);font-size:11px;word-break:break-all;">'+tr('settings.key_hidden')+'</div></div><div class="setting-control" style="display:flex;gap:6px;flex-wrap:wrap;"><button id="vault-identity-show-btn" class="btn btn-outline btn-sm" onclick="toggleVaultRecoveryKey()">'+tr('settings.show')+'</button><button class="btn btn-outline btn-sm" onclick="copyVaultRecoveryKey()">'+tr('settings.copy')+'</button></div></div>';
@@ -13818,6 +14035,7 @@ function renderSettingsBody(){
             document.getElementById('settings-body').innerHTML = h;
             loadMobileSettingsVaultSummary();
             loadVaultIdentityKey();
+            loadIdentityTrustStatus();
             return;
         }
         h += '<div class="settings-section"><h3>Vaults</h3><div class="section-desc">Manage your Skipi vaults. Each vault is a separate folder on your computer containing documents and metadata.</div>';
@@ -13827,6 +14045,7 @@ function renderSettingsBody(){
         h += '<div id="vault-identity-user" class="setting-desc" style="margin-top:8px;font-family:var(--font-mono);font-size:11px;word-break:break-all;">'+tr('settings.loading_identity')+'</div>';
         h += '<div id="vault-identity-key" class="setting-desc" style="margin-top:6px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-family:var(--font-mono);font-size:11px;word-break:break-all;">'+tr('settings.key_hidden')+'</div></div>';
         h += '<div class="setting-control" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;"><button id="vault-identity-show-btn" class="btn btn-outline btn-sm" onclick="toggleVaultRecoveryKey()">'+tr('settings.show')+'</button><button class="btn btn-outline btn-sm" onclick="copyVaultRecoveryKey()">'+tr('settings.copy')+'</button></div></div>';
+        h += '<div id="vault-identity-trust"></div>';
         h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Open another vault</div><div class="setting-desc">Choose an existing Skipi vault folder to switch to.</div></div>';
         h += '<div class="setting-control"><button class="btn btn-outline btn-sm" onclick="switchVault()">Open&hellip;</button></div></div>';
         h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Create new vault</div><div class="setting-desc">Close the current vault and start the setup flow for a new one.</div></div>';
@@ -14044,6 +14263,7 @@ function renderSettingsBody(){
             if(el) el.textContent = p || '(no vault open)';
         }).catch(function(){});
         loadVaultIdentityKey();
+        loadIdentityTrustStatus();
     }
     if(settingsTab === 'about'){
         invoke('get_app_version').then(function(v){
@@ -14103,6 +14323,36 @@ async function loadVaultIdentityKey(){
         vaultIdentityCache = null;
         if(userEl) userEl.textContent = tr('settings.identity_load_failed');
         if(keyEl) keyEl.textContent = String(e || 'Unknown error');
+    }
+}
+
+async function loadIdentityTrustStatus(){
+    var host=document.getElementById('vault-identity-trust');
+    if(!host)return;
+    host.innerHTML='<div class="mobile-card" style="margin:12px 0;"><div class="mobile-card-title">Identity trust</div><div class="mobile-card-sub">Checking local vaults...</div></div>';
+    try{
+        var status=await invoke('get_identity_trust_status');
+        host.innerHTML=identityTrustHtml(status,false);
+    }catch(e){
+        host.innerHTML='<div class="mobile-card" style="margin:12px 0;"><div class="mobile-card-title">Identity trust</div><div class="mobile-card-sub">Could not check duplicate status: '+esc(String(e||''))+'</div></div>';
+    }
+}
+
+async function claimSkipiIdentity(){
+    var ok=await uiConfirm('Claim a Skipi Seafarer ID for this profile?\n\nSkipi sends first name, surname and date of birth to the server only to compute a private duplicate fingerprint. Raw identity fields are not stored by the server.',{confirmLabel:'Claim Skipi ID'});
+    if(!ok)return;
+    try{
+        showToast('Claiming Skipi ID...','info');
+        var result=await invoke('claim_seafarer_identity');
+        if(result&&result.duplicate){
+            showToast(result.message||'Possible duplicate identity found.','error');
+        }else{
+            showToast((result&&result.public_seafarer_id)?('Skipi ID '+result.public_seafarer_id+' registered'):'Skipi ID updated','success');
+        }
+        await loadIdentityTrustStatus();
+        await mobileRefreshIdentityTrust();
+    }catch(e){
+        showToast('Could not claim Skipi ID: '+String(e||''),'error');
     }
 }
 
