@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Skipi",
+  "productName": "Skipi Seafarer",
   "version": "0.4.150",
   "identifier": "app.skipi.desktop",
   "build": {
@@ -10,7 +10,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Skipi 0.4.150",
+        "title": "Skipi Seafarer 0.4.150",
         "width": 1100,
         "height": 750,
         "resizable": true,
@@ -24,7 +24,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://api-ru.skipi.app/latest.json",
+        "https://api-ru.skipi.app/seafarer/latest.json",
         "https://github.com/CaptTymur/skipi.app/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDdGQTlDNTM0NDUxRUQ0RDYKUldUVzFCNUZOTVdwZjMvck15Z0lWNHk1MnR0VXVUMEtsRkltTmVNb29rY1B3cjhoc2FlVnhoQ1oK"
@@ -38,7 +38,7 @@
     "copyright": "Copyright © 2026 Tymur Rudov. MIT licensed client.",
     "category": "Productivity",
     "shortDescription": "Maritime document management for seafarers",
-    "longDescription": "Skipi is a local-first document vault for seafarers and ship managers. Store certificates, track expiry dates, build shareable packages — all data stays on your computer.",
+    "longDescription": "Skipi Seafarer is a local-first document vault for seafarers and ship managers. Store certificates, track expiry dates, build shareable packages — all data stays on your computer.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
