@@ -4529,29 +4529,180 @@ function mobileExperienceInput(id,label,value,attrs){
     attrs=attrs||'';
     return '<div class="mobile-field"><label>'+mobileEsc(label)+'</label><input id="'+id+'" value="'+escAttr(value||'')+'" '+attrs+'></div>';
 }
-function mobileExperienceFormHtml(entry,prefill){
-    entry=entry||{};
-    prefill=prefill||{};
-    var v=function(key){return entry[key]!=null?entry[key]:(prefill[key]!=null?prefill[key]:'');};
-    var title=entry.id?'Edit sea service':'Add sea service';
-    var h='<div class="mobile-card"><div class="mobile-dispatch-step">Sea Service</div><div class="mobile-card-title">'+mobileEsc(title)+'</div><div class="mobile-card-sub">Add the contract first. After saving, Skipi can assess the vessel through the linked IMO.</div></div>';
-    h+='<div class="mobile-card"><div class="mobile-form-grid">';
-    h+=mobileExperienceInput('mwh-vessel','Vessel name',v('vessel_name'),'placeholder="MV Example" autocomplete="off"');
-    h+=mobileExperienceInput('mwh-imo','IMO number',v('imo'),'inputmode="numeric" maxlength="7" placeholder="1234567"');
-    h+=mobileExperienceInput('mwh-position','Position',v('position'),'placeholder="Deck Cadet, AB, 3/O..." autocomplete="off"');
-    h+=mobileExperienceInput('mwh-type','Vessel type',v('vessel_type'),'placeholder="Bulk Carrier, Container..." autocomplete="off"');
-    h+=mobileExperienceInput('mwh-flag','Flag',v('flag'),'placeholder="Panama, Liberia..." autocomplete="off"');
-    h+=mobileExperienceInput('mwh-company','Company / manager',v('company'),'placeholder="Company name" autocomplete="off"');
-    h+=mobileExperienceInput('mwh-on','Sign on',v('sign_on'),'inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" oninput="autoFormatDate(this)"');
-    h+=mobileExperienceInput('mwh-off','Sign off',v('sign_off'),'inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" oninput="autoFormatDate(this)"');
-    h+=mobileExperienceInput('mwh-dwt','DWT',v('dwt'),'inputmode="numeric" placeholder="optional"');
-    h+=mobileExperienceInput('mwh-teu','TEU',v('teu'),'inputmode="numeric" placeholder="container ships"');
-    h+='<div class="mobile-field"><label>Notes</label><textarea id="mwh-notes" placeholder="Contract notes, route, onboard context...">'+mobileEsc(v('notes'))+'</textarea></div>';
-    h+='</div><div class="mobile-actions" style="margin-top:12px;">';
-    h+='<button class="btn btn-accent mobile-grow" type="button" onclick="mobileSaveExperience(\''+jsString(entry.id||'')+'\')">Save</button>';
-    h+='<button class="btn btn-outline mobile-grow" type="button" onclick="renderMobileExperience()">Cancel</button>';
-    h+='</div></div>';
-    return h;
+var MOBILE_EXPERIENCE_TOTAL_STEPS=6;
+var mobileExperienceWizardState=null;
+function mobileExperiencePick(entry,prefill,key){
+    entry=entry||{};prefill=prefill||{};
+    var camel={vessel_name:'vesselName',vessel_type:'vesselType',sign_on:'signOn',sign_off:'signOff'}[key];
+    if(entry[key]!=null)return entry[key];
+    if(camel&&entry[camel]!=null)return entry[camel];
+    if(prefill[key]!=null)return prefill[key];
+    if(camel&&prefill[camel]!=null)return prefill[camel];
+    return '';
+}
+function mobileExperienceInitialState(entry,prefill){
+    entry=entry||{};prefill=prefill||{};
+    return {
+        id:entry.id||'',step:1,saving:false,
+        vessel_name:mobileExperiencePick(entry,prefill,'vessel_name'),
+        imo:mobileExperiencePick(entry,prefill,'imo'),
+        position:mobileExperiencePick(entry,prefill,'position'),
+        vessel_type:mobileExperiencePick(entry,prefill,'vessel_type'),
+        flag:mobileExperiencePick(entry,prefill,'flag'),
+        company:mobileExperiencePick(entry,prefill,'company'),
+        sign_on:mobileExperiencePick(entry,prefill,'sign_on'),
+        sign_off:mobileExperiencePick(entry,prefill,'sign_off'),
+        dwt:mobileExperiencePick(entry,prefill,'dwt'),
+        teu:mobileExperiencePick(entry,prefill,'teu'),
+        notes:mobileExperiencePick(entry,prefill,'notes')
+    };
+}
+function mobileExperienceRead(id){
+    var el=document.getElementById(id);
+    return el?String(el.value||'').trim():'';
+}
+function mobileExperienceProgress(){
+    var s=mobileExperienceWizardState||{step:1};
+    var h='<div class="mobile-setup-progress" aria-hidden="true">';
+    for(var i=1;i<=MOBILE_EXPERIENCE_TOTAL_STEPS;i++){
+        var cls=i<s.step?'done':(i===s.step?'active':'');
+        h+='<span class="mobile-setup-dot '+cls+'"></span>';
+    }
+    return h+'</div>';
+}
+function mobileExperienceSyncStep(){
+    var s=mobileExperienceWizardState;
+    if(!s)return;
+    if(s.step===1){
+        s.vessel_name=mobileExperienceRead('mwh-vessel');
+        s.imo=mobileExperienceRead('mwh-imo');
+    }else if(s.step===2){
+        s.position=mobileExperienceRead('mwh-position');
+        s.vessel_type=mobileExperienceRead('mwh-type');
+    }else if(s.step===3){
+        s.flag=mobileExperienceRead('mwh-flag');
+        s.company=mobileExperienceRead('mwh-company');
+    }else if(s.step===4){
+        s.sign_on=mobileExperienceRead('mwh-on');
+        s.sign_off=mobileExperienceRead('mwh-off');
+    }else if(s.step===5){
+        s.dwt=mobileExperienceRead('mwh-dwt');
+        s.teu=mobileExperienceRead('mwh-teu');
+        s.notes=mobileExperienceRead('mwh-notes');
+    }
+}
+function mobileExperienceValidDate(value){
+    if(!value)return true;
+    return /^\d{4}-\d{2}-\d{2}$/.test(String(value||''));
+}
+function mobileExperienceValidateStep(step){
+    var s=mobileExperienceWizardState;
+    if(!s)return false;
+    var ru=getUiLang()==='ru';
+    if(step===1){
+        if(!s.vessel_name){showToast(ru?'Укажите название судна':'Vessel name is required','warn');return false;}
+        if(!normalizeImo(s.imo)){showToast(ru?'IMO должен содержать 7 цифр':'IMO number must contain exactly 7 digits','warn');return false;}
+    }
+    if(step===2&&!s.position){showToast(ru?'Укажите должность':'Position is required','warn');return false;}
+    if(step===4){
+        if(!mobileExperienceValidDate(s.sign_on)||!mobileExperienceValidDate(s.sign_off)){showToast(ru?'Дата должна быть в формате YYYY-MM-DD':'Dates must be in YYYY-MM-DD format','warn');return false;}
+        if(s.sign_on&&s.sign_off&&s.sign_off<s.sign_on){showToast(ru?'Дата списания не может быть раньше посадки':'Sign off cannot be before sign on','warn');return false;}
+    }
+    return true;
+}
+function mobileExperienceNext(){
+    mobileExperienceSyncStep();
+    if(!mobileExperienceValidateStep(mobileExperienceWizardState.step))return;
+    if(mobileExperienceWizardState.step<MOBILE_EXPERIENCE_TOTAL_STEPS){
+        mobileExperienceWizardState.step++;
+        mobileRenderExperienceWizard();
+    }
+}
+function mobileExperienceBack(){
+    mobileExperienceSyncStep();
+    if(!mobileExperienceWizardState||mobileExperienceWizardState.step<=1){mobileExperienceWizardState=null;return renderMobileExperience();}
+    mobileExperienceWizardState.step--;
+    mobileRenderExperienceWizard();
+}
+function mobileExperienceCancel(){
+    mobileExperienceWizardState=null;
+    renderMobileExperience();
+}
+function mobileExperienceSummaryRow(label,value){
+    return '<div class="mobile-setup-review-row"><span>'+mobileEsc(label)+'</span><strong>'+mobileEsc(value||'--')+'</strong></div>';
+}
+function mobileExperiencePayloadFromState(){
+    mobileExperienceSyncStep();
+    if(!mobileExperienceValidateStep(1)||!mobileExperienceValidateStep(2)||!mobileExperienceValidateStep(4))return null;
+    var s=mobileExperienceWizardState;
+    return {
+        vesselName:s.vessel_name,
+        vesselType:s.vessel_type||null,
+        imo:normalizeImo(s.imo),
+        flag:s.flag||null,
+        company:s.company||null,
+        position:s.position,
+        signOn:s.sign_on||null,
+        signOff:s.sign_off||null,
+        dwt:s.dwt||null,
+        teu:s.teu||null,
+        notes:s.notes||null
+    };
+}
+function mobileRenderExperienceWizard(){
+    var s=mobileExperienceWizardState;
+    if(!s)return renderMobileExperience();
+    mobileView='experience';
+    var ru=getUiLang()==='ru';
+    var titles=['',ru?'Судно и IMO':'Vessel and IMO',ru?'Должность':'Position',ru?'Компания и флаг':'Company and flag',ru?'Даты контракта':'Contract dates',ru?'Размеры и заметки':'Size and notes',ru?'Проверка':'Review'];
+    var subs=['',ru?'IMO связывает ваш опыт с базой судов и отзывами.':'IMO links your sea service to Vessel DB and assessments.',ru?'Минимум нужна должность на этом контракте.':'At minimum, add your position for this contract.',ru?'Можно оставить пустым, если не помните.':'Optional if you do not remember.',ru?'Даты помогают посчитать sea time.':'Dates help Skipi calculate sea time.',ru?'Необязательные поля можно пропустить.':'Optional fields can be skipped.',ru?'После сохранения Skipi предложит оценить судно.':'After saving, Skipi will offer to assess the vessel.'];
+    var h='<div class="mobile-card"><div class="mobile-dispatch-step">'+mobileEsc(ru?'Шаг ':'Step ')+s.step+' / '+MOBILE_EXPERIENCE_TOTAL_STEPS+'</div>'+mobileExperienceProgress()+'<div class="mobile-card-title">'+mobileEsc(titles[s.step])+'</div><div class="mobile-card-sub">'+mobileEsc(subs[s.step])+'</div></div>';
+    if(s.step===1){
+        h+='<div class="mobile-card">';
+        h+=mobileExperienceInput('mwh-vessel',ru?'Название судна':'Vessel name',s.vessel_name,'placeholder="MV Example" autocomplete="off"');
+        h+=mobileExperienceInput('mwh-imo','IMO',s.imo,'inputmode="numeric" maxlength="7" placeholder="1234567"');
+        h+='</div>';
+    }else if(s.step===2){
+        h+='<div class="mobile-card">';
+        h+=mobileExperienceInput('mwh-position',ru?'Должность':'Position',s.position,'placeholder="Master, 2nd Officer, Deck Cadet..." autocomplete="off"');
+        h+=mobileExperienceInput('mwh-type',ru?'Тип судна':'Vessel type',s.vessel_type,'placeholder="Bulk Carrier, Tanker, Container..." autocomplete="off"');
+        h+='</div>';
+    }else if(s.step===3){
+        h+='<div class="mobile-card">';
+        h+=mobileExperienceInput('mwh-flag',ru?'Флаг':'Flag',s.flag,'placeholder="Panama, Liberia..." autocomplete="off"');
+        h+=mobileExperienceInput('mwh-company',ru?'Компания / менеджер':'Company / manager',s.company,'placeholder="Company name" autocomplete="off"');
+        h+='</div>';
+    }else if(s.step===4){
+        h+='<div class="mobile-card">';
+        h+=mobileExperienceInput('mwh-on',ru?'Посадка':'Sign on',s.sign_on,'inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" oninput="autoFormatDate(this)"');
+        h+=mobileExperienceInput('mwh-off',ru?'Списание':'Sign off',s.sign_off,'inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" oninput="autoFormatDate(this)"');
+        h+='</div>';
+    }else if(s.step===5){
+        h+='<div class="mobile-card">';
+        h+=mobileExperienceInput('mwh-dwt','DWT',s.dwt,'inputmode="numeric" placeholder="'+mobileEsc(ru?'необязательно':'optional')+'"');
+        h+=mobileExperienceInput('mwh-teu','TEU',s.teu,'inputmode="numeric" placeholder="'+mobileEsc(ru?'для контейнеровозов':'container ships')+'"');
+        h+='<div class="mobile-field"><label>'+mobileEsc(ru?'Заметки':'Notes')+'</label><textarea id="mwh-notes" placeholder="'+mobileEsc(ru?'Маршрут, контракт, важный контекст':'Route, contract, onboard context')+'">'+mobileEsc(s.notes||'')+'</textarea></div>';
+        h+='</div>';
+    }else{
+        h+='<div class="mobile-setup-review">';
+        h+=mobileExperienceSummaryRow(ru?'Судно':'Vessel',s.vessel_name);
+        h+=mobileExperienceSummaryRow('IMO',normalizeImo(s.imo)||s.imo);
+        h+=mobileExperienceSummaryRow(ru?'Должность':'Position',s.position);
+        h+=mobileExperienceSummaryRow(ru?'Тип судна':'Vessel type',s.vessel_type);
+        h+=mobileExperienceSummaryRow(ru?'Флаг':'Flag',s.flag);
+        h+=mobileExperienceSummaryRow(ru?'Компания':'Company',s.company);
+        h+=mobileExperienceSummaryRow(ru?'Период':'Period',(s.sign_on||'?')+' - '+(s.sign_off||'present'));
+        h+='</div>';
+    }
+    h+='<div class="mobile-wizard-actions">';
+    h+='<button class="btn btn-outline" type="button" onclick="mobileExperienceBack()">'+mobileEsc(s.step===1?(ru?'Отмена':'Cancel'):(ru?'Назад':'Back'))+'</button>';
+    if(s.step<MOBILE_EXPERIENCE_TOTAL_STEPS){
+        h+='<button class="btn btn-accent" type="button" onclick="mobileExperienceNext()">'+mobileEsc(ru?'Далее':'Next')+'</button>';
+    }else{
+        h+='<button class="btn btn-accent" type="button" '+(s.saving?'disabled ':'')+'onclick="mobileSaveExperience(\''+jsString(s.id||'')+'\')">'+mobileEsc(s.saving?(ru?'Сохраняю...':'Saving...'):(ru?'Сохранить':'Save'))+'</button>';
+    }
+    h+='</div>';
+    mobileMainHtml(h);
 }
 async function mobileShowExperienceForm(entryId,prefill){
     mobileView='experience';
@@ -4560,7 +4711,8 @@ async function mobileShowExperienceForm(entryId,prefill){
         try{entry=mobileWorkEntryById(await invoke('get_work_history')||[],entryId);}catch(e){entry=null;}
         if(!entry){showToast('Sea Service entry not found','warn');return renderMobileExperience();}
     }
-    mobileMainHtml(mobileExperienceFormHtml(entry,prefill));
+    mobileExperienceWizardState=mobileExperienceInitialState(entry,prefill);
+    mobileRenderExperienceWizard();
 }
 function mobileReadExperiencePayload(){
     var g=function(id){var el=document.getElementById(id);return el?String(el.value||'').trim():'';};
@@ -4583,21 +4735,26 @@ function mobileReadExperiencePayload(){
     };
 }
 async function mobileSaveExperience(entryId){
-    var payload=mobileReadExperiencePayload();
+    var payload=mobileExperienceWizardState?mobileExperiencePayloadFromState():mobileReadExperiencePayload();
     if(!payload)return;
+    var effectiveId=(mobileExperienceWizardState&&mobileExperienceWizardState.id)||entryId||'';
+    if(mobileExperienceWizardState){mobileExperienceWizardState.saving=true;mobileRenderExperienceWizard();}
     try{
-        if(entryId){
-            payload.id=entryId;
+        if(effectiveId){
+            payload.id=effectiveId;
             await invoke('update_work_history',payload);
+            mobileExperienceWizardState=null;
             showToast('Sea Service updated','success');
             await renderMobileExperience();
         }else{
             var newId=await invoke('add_work_history',payload);
+            mobileExperienceWizardState=null;
             showToast('Sea Service saved. Now assess the vessel.','success');
             await renderMobileExperience();
             if(newId)setTimeout(function(){mobileStartAssessment(newId);},250);
         }
     }catch(e){
+        if(mobileExperienceWizardState){mobileExperienceWizardState.saving=false;mobileRenderExperienceWizard();}
         showToast('Could not save Sea Service: '+e,'error');
         logError('mobile_save_experience',e);
     }
