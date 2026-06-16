@@ -739,13 +739,21 @@ pub fn get_recent_vaults(_app: tauri::AppHandle) -> Vec<String> {
         let Ok(entries) = fs::read_dir(vaults) else {
             return vec![];
         };
-        let mut found: Vec<String> = entries
+        let mut found: Vec<(PathBuf, std::time::SystemTime)> = entries
             .filter_map(|entry| entry.ok().map(|e| e.path()))
             .filter(|path| path.join("skipi.db").is_file())
-            .map(|path| path.to_string_lossy().to_string())
+            .map(|path| {
+                let modified = fs::metadata(path.join("skipi.db"))
+                    .and_then(|m| m.modified())
+                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                (path, modified)
+            })
             .collect();
-        found.sort();
-        return found;
+        found.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        return found
+            .into_iter()
+            .map(|(path, _)| path.to_string_lossy().to_string())
+            .collect();
     }
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]

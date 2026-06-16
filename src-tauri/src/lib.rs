@@ -20,6 +20,17 @@ pub(crate) struct AppState {
 }
 
 pub(crate) fn config_path() -> PathBuf {
+    #[cfg(target_os = "android")]
+    {
+        // `dirs::config_dir()` is not reliable under Android WebView/Tauri:
+        // on the test Pixel it resolved outside the app sandbox, so writes to
+        // last_vault silently failed. Keep Skipi config inside the app-private
+        // data directory used by this package.
+        let dir = PathBuf::from("/data/user/0/app.skipi.seafarer").join("skipi");
+        let _ = fs::create_dir_all(&dir);
+        return dir.join("config.json");
+    }
+
     let dir = dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("skipi");
