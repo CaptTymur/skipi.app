@@ -2366,12 +2366,16 @@ async function init() {
         var lv=await invoke('get_last_vault');
         if(lv){hadVaultPath=true;try{var info=await invoke('open_vault',{path:lv});await loadVault(info);return;}catch(e){}}
     }catch(e){err('Init:'+e);}
-    // No vault opened. If we had no prior vault path at all, this is a fresh install —
-    // jump straight into the Seafarer wizard (user's first run). If we had a path but
-    // couldn't reopen it (moved/deleted), fall back to the welcome screen so the user
-    // can Open another one.
-    // Always show the welcome screen — let the user choose Create / Open / Demo.
-    showWelcome();
+    // No vault opened. On a mobile fresh install, lead the user directly into
+    // the seafarer profile wizard: department → vessel type → rank → profile
+    // fields. If a previous vault path existed but could not reopen, show the
+    // welcome screen so the user can select/move/import a vault explicitly.
+    if(!hadVaultPath && shouldUseMobileShell()){
+        showWelcome();
+        setTimeout(function(){mobileStartVaultWizard();},0);
+    }else{
+        showWelcome();
+    }
     // Check for updates even without a vault open
     setTimeout(function(){checkForUpdate(true);},3000);
     // No vault is open yet. Do not touch the jobs board here: network polling
@@ -3056,6 +3060,10 @@ function mobileSetupPersonalFields(){
         available_from:s.readyForOffers?s.availableFrom:'',
         min_salary:s.readyForOffers?s.minSalary:'',
         currency:s.currency||'USD',
+        // A fresh mobile vault cannot be truly "ready for offers" yet: the
+        // backend requires mandatory docs and sea service first. Save the
+        // offer-contact fields, then keep the actual jobs toggle off until
+        // the user passes the readiness gate in Jobs/Profile.
         ready_for_offers:'false'
     };
 }
@@ -3248,6 +3256,7 @@ async function mobileFinishProfileVault(){
         await invoke('set_seafarer_personal',{fields:personalFields});
         mobilePostCreateVaultHint=true;
         await loadVault(info);
+        await mobileRefreshProfileMeter();
         mobileView='profile';
         renderMobileShell();
         showToast(requestedReady
