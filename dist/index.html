@@ -2365,6 +2365,16 @@ async function init() {
     try{types=await invoke('get_vault_types');document.getElementById('err').style.display='none';
         var lv=await invoke('get_last_vault');
         if(lv){hadVaultPath=true;try{var info=await invoke('open_vault',{path:lv});await loadVault(info);return;}catch(e){}}
+        if(!lv&&shouldUseMobileShell()){
+            var recent=[];
+            try{recent=await invoke('get_recent_vaults')||[];}catch(_){}
+            if(recent.length)hadVaultPath=true;
+            for(var ri=0;ri<recent.length;ri++){
+                var rp=recent[ri];
+                if(!rp)continue;
+                try{var rinfo=await invoke('open_vault',{path:rp});await loadVault(rinfo);return;}catch(_){}
+            }
+        }
     }catch(e){err('Init:'+e);}
     // No vault opened. On a mobile fresh install, lead the user directly into
     // the seafarer profile wizard: department → vessel type → rank → profile
