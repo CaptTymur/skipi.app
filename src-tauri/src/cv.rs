@@ -79,6 +79,45 @@ pub struct CvData {
     pub work_history: Vec<CvWorkEntry>,
     /// Days of sea time derived from work_history (rough: sum of sign_off - sign_on).
     pub total_sea_days: i64,
+    /// Total recorded days served per position, sorted by descending duration.
+    pub experience_by_position: Vec<(String, i64)>,
+}
+
+/// Format a day count as "Xy Ym · Zd" (years, months, days).
+pub fn format_duration_days(days: i64) -> String {
+    let d = days.max(0);
+    let years = d / 365;
+    let months = (d % 365) / 30;
+    let mut parts: Vec<String> = Vec::new();
+    if years > 0 {
+        parts.push(format!("{}y", years));
+    }
+    if months > 0 {
+        parts.push(format!("{}m", months));
+    }
+    let head = if parts.is_empty() {
+        "0m".to_string()
+    } else {
+        parts.join(" ")
+    };
+    format!("{} · {}d", head, d)
+}
+
+/// Days between sign_on and sign_off for one entry (0 if missing/invalid).
+fn work_entry_days(w: &CvWorkEntry) -> i64 {
+    use chrono::NaiveDate;
+    let on = w
+        .sign_on
+        .as_deref()
+        .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
+    let off = w
+        .sign_off
+        .as_deref()
+        .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
+    match (on, off) {
+        (Some(a), Some(b)) if b > a => (b - a).num_days(),
+        _ => 0,
+    }
 }
 
 // -------- Build from DB ------------------------------------------------------
@@ -212,25 +251,26 @@ pub fn build_cv_data(conn: &Connection) -> Result<CvData, String> {
         .collect();
 
     // Compute total sea days: rough sum of (sign_off - sign_on) across entries.
-    let total_sea_days: i64 = {
-        use chrono::NaiveDate;
-        work_history
-            .iter()
-            .map(|w| {
-                let on = w
-                    .sign_on
-                    .as_deref()
-                    .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
-                let off = w
-                    .sign_off
-                    .as_deref()
-                    .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
-                match (on, off) {
-                    (Some(a), Some(b)) if b > a => (b - a).num_days(),
-                    _ => 0,
-                }
-            })
-            .sum()
+    let total_sea_days: i64 = work_history.iter().map(work_entry_days).sum();
+
+    // Aggregate recorded days per position, sorted by descending duration.
+    let experience_by_position: Vec<(String, i64)> = {
+        let mut acc: Vec<(String, i64)> = Vec::new();
+        for w in &work_history {
+            let days = work_entry_days(w);
+            let pos = if w.position.trim().is_empty() {
+                "Unspecified".to_string()
+            } else {
+                w.position.trim().to_string()
+            };
+            if let Some(e) = acc.iter_mut().find(|(p, _)| *p == pos) {
+                e.1 += days;
+            } else {
+                acc.push((pos, days));
+            }
+        }
+        acc.sort_by(|a, b| b.1.cmp(&a.1));
+        acc
     };
 
     Ok(CvData {
@@ -238,6 +278,7 @@ pub fn build_cv_data(conn: &Connection) -> Result<CvData, String> {
         certificates,
         work_history,
         total_sea_days,
+        experience_by_position,
     })
 }
 
@@ -356,16 +397,35 @@ fn build_document_xml(data: &CvData) -> String {
     }
     body.push_str(spacer());
 
+    // Experience by position — total time served in each rank.
+    if !data.experience_by_position.is_empty() {
+        body.push_str(&heading("Experience by position"));
+        for (pos, days) in &data.experience_by_position {
+            body.push_str(&para(
+                &format!("{} — {}", pos, format_duration_days(*days)),
+                false,
+                22,
+            ));
+        }
+        body.push_str(spacer());
+    }
+
     // Work history
     body.push_str(&heading("Sea-going experience"));
     if data.work_history.is_empty() {
         body.push_str(&para("(no work history recorded)", false, 22));
     } else {
         for w in &data.work_history {
+            let entry_days = work_entry_days(w);
             let period = match (&w.sign_on, &w.sign_off) {
                 (Some(on), Some(off)) => format!("{} — {}", on, off),
                 (Some(on), None) => format!("{} — present", on),
                 _ => "dates unknown".to_string(),
+            };
+            let period = if entry_days > 0 {
+                format!("{}  ({})", period, format_duration_days(entry_days))
+            } else {
+                period
             };
             body.push_str(&para(
                 &format!("{} — {}", w.vessel_name, w.position),
@@ -1129,6 +1189,53 @@ pub fn render_cv_pdf(
         );
     }
 
+    // -------- Experience by position --------
+    if !data.experience_by_position.is_empty() && cursor_y > margin + 28.0 {
+        cursor_y -= section_h + 2.0;
+        pdf_fill_rect(
+            &sea_layer,
+            margin,
+            cursor_y,
+            content_w,
+            section_h,
+            grey_bg.clone(),
+        );
+        pdf_text(
+            &sea_layer,
+            "EXPERIENCE BY POSITION",
+            margin + 3.0,
+            cursor_y + 2.0,
+            9.0,
+            &bold,
+            accent.clone(),
+        );
+        for (pos, days) in &data.experience_by_position {
+            if cursor_y < margin + 10.0 {
+                break;
+            }
+            cursor_y -= cert_row_h;
+            pdf_stroke_rect(&sea_layer, margin, cursor_y, content_w, cert_row_h);
+            pdf_text(
+                &sea_layer,
+                &truncate(pos, 40),
+                margin + 2.0,
+                cursor_y + 2.0,
+                8.0,
+                &reg,
+                dark.clone(),
+            );
+            pdf_text(
+                &sea_layer,
+                &format_duration_days(*days),
+                margin + content_w * 0.6 + 2.0,
+                cursor_y + 2.0,
+                8.0,
+                &reg,
+                dark.clone(),
+            );
+        }
+    }
+
     // -------- Footer --------
     pdf_text(
         &layer,
@@ -1351,6 +1458,7 @@ fn redact_cv_data(data: &CvData) -> CvData {
         certificates,
         work_history,
         total_sea_days: data.total_sea_days,
+        experience_by_position: data.experience_by_position.clone(),
     }
 }
 

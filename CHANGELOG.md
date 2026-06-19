@@ -7,6 +7,15 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.146] — 2026-06-19
+
+### Added
+- CV (DOCX and PDF) now includes an "Experience by position" section totalling
+  time served in each rank in years, months, and days, and appends a per-contract
+  duration to each sea-going experience line.
+- Added Trainee, Apprentice, Deck Boy, and Welder to the rank taxonomy used by the
+  Sea Service position selector and seafarer profile.
+
 ## [0.4.139] — 2026-05-24
 
 ### Added
