@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Скипи Моряк</title>
 <script>
-var APP_VERSION='0.4.151';
+var APP_VERSION='0.4.152';
 var UI_LANG_KEY='skipi-ui-language';
 var UI_LANG_OPTIONS=[
     ['ru','Русский'],
@@ -1037,6 +1037,10 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .mobile-field input,
 .mobile-field select { height:42px; padding:0 10px; }
 .mobile-field textarea { min-height:86px; padding:10px; resize:vertical; line-height:1.35; }
+.mobile-rank-chips-label { font-size:11px; color:var(--text2); margin:8px 2px 4px; }
+.mobile-rank-chips { display:flex; flex-wrap:wrap; gap:6px; max-height:148px; overflow-y:auto; padding:2px; margin-bottom:6px; }
+.mobile-rank-chip { flex:0 0 auto; padding:6px 11px; border-radius:14px; border:1px solid var(--border); background:var(--bg); color:var(--text); font:inherit; font-size:12px; line-height:1.2; cursor:pointer; }
+.mobile-rank-chip:active { background:var(--accent); color:#fff; border-color:var(--accent); }
 .mobile-actions { display:flex; gap:8px; flex-wrap:wrap; }
 .mobile-actions .btn { min-height:40px; }
 .mobile-actions .btn.mobile-grow { flex:1; min-width:118px; }
@@ -1224,7 +1228,7 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
             <div class="welcome" id="scr-welcome">
                 <h1 id="welcome-title">Скипи Моряк</h1>
                 <p id="welcome-subtitle">Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.151</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.152</span></p>
                 <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -2101,10 +2105,23 @@ function mobileExperienceByRank(work){
     order.sort(function(a,b){return map[b]-map[a];});
     return order.map(function(pos){return {position:pos,days:map[pos]};});
 }
-function mobileRankDatalistHtml(id){
-    var opts='';
-    (typeof RANKS!=='undefined'?RANKS:[]).forEach(function(n){opts+='<option value="'+escAttr(n)+'"></option>';});
-    return '<datalist id="'+id+'">'+opts+'</datalist>';
+function mobileRankChipsHtml(){
+    // Tappable rank suggestions for the Sea Service position field. A native
+    // <datalist> popup intercepted the first "Next" tap and reverted typed
+    // text on Android WebView (data loss), so we use plain chips instead:
+    // they fill the field on tap and commit to wizard state immediately,
+    // while the input above still accepts free text.
+    var ranks=(typeof RANKS!=='undefined'?RANKS:[]);
+    var h='<div class="mobile-rank-chips" id="mwh-rank-chips">';
+    ranks.forEach(function(n){
+        h+='<button type="button" class="mobile-rank-chip" onclick="mobileExperiencePickRank(\''+jsString(n)+'\')">'+mobileEsc(n)+'</button>';
+    });
+    return h+'</div>';
+}
+function mobileExperiencePickRank(rank){
+    var el=document.getElementById('mwh-position');
+    if(el)el.value=rank;
+    if(mobileExperienceWizardState)mobileExperienceWizardState.position=rank;
 }
 
 function workEntryMonths(w){
@@ -3261,15 +3278,16 @@ function renderMobileWelcome(){
     if(!shouldUseMobileShell())return;
     mobileView='home';
     try{updateTitlebar();}catch(e){}
-    mobileSetSub('Mobile seafarer vault');
+    var ru=getUiLang()==='ru';
+    mobileSetSub(ru?'Мобильный профиль моряка':'Mobile seafarer vault');
     mobileSetBottomNav(false);
     var h='<div class="mobile-hero">';
     h+='<h1>'+mobileEsc(tr('app.name'))+'</h1>';
-    h+='<p>Create or open your seafarer vault, then add certificates from your phone camera or files.</p>';
+    h+='<p>'+mobileEsc(ru?'Создайте или откройте профиль моряка, затем добавляйте сертификаты камерой телефона или из файлов.':'Create or open your seafarer vault, then add certificates from your phone camera or files.')+'</p>';
     h+='<div class="mobile-stack">';
-    h+='<button class="mobile-primary-action" type="button" onclick="mobileStartVaultWizard()"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">Create mobile vault</span><span class="mobile-action-sub">Choose department, vessel type and rank first.</span></span></button>';
-    h+='<button class="btn btn-outline" onclick="mobileOpenExistingVault()">Open existing vault</button>';
-    h+='<button class="btn btn-outline" onclick="loadDemoVault()">Open demo vault</button>';
+    h+='<button class="mobile-primary-action" type="button" onclick="mobileStartVaultWizard()"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(ru?'Создать профиль':'Create mobile vault')+'</span><span class="mobile-action-sub">'+mobileEsc(ru?'Сначала выберите департамент, тип судна и должность.':'Choose department, vessel type and rank first.')+'</span></span></button>';
+    h+='<button class="btn btn-outline" onclick="mobileOpenExistingVault()">'+mobileEsc(ru?'Открыть существующий':'Open existing vault')+'</button>';
+    h+='<button class="btn btn-outline" onclick="loadDemoVault()">'+mobileEsc(ru?'Открыть демо':'Open demo vault')+'</button>';
     h+='</div></div>';
     mobileMainHtml(h);
 }
@@ -4716,8 +4734,9 @@ function mobileRenderExperienceWizard(){
         h+='</div>';
     }else if(s.step===2){
         h+='<div class="mobile-card">';
-        h+=mobileExperienceInput('mwh-position',ru?'Должность':'Position',s.position,'placeholder="Master, 2nd Officer, Deck Cadet..." autocomplete="off" list="mwh-position-options"');
-        h+=mobileRankDatalistHtml('mwh-position-options');
+        h+=mobileExperienceInput('mwh-position',ru?'Должность':'Position',s.position,'placeholder="Master, 2nd Officer, Deck Cadet..." autocomplete="off"');
+        h+='<div class="mobile-rank-chips-label">'+mobileEsc(ru?'Быстрый выбор:':'Quick pick:')+'</div>';
+        h+=mobileRankChipsHtml();
         h+=mobileExperienceInput('mwh-type',ru?'Тип судна':'Vessel type',s.vessel_type,'placeholder="Bulk Carrier, Tanker, Container..." autocomplete="off"');
         h+='</div>';
     }else if(s.step===3){

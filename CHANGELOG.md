@@ -7,6 +7,16 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.152] — 2026-06-19
+
+### Fixed
+- Sea Service wizard no longer loses a typed/selected position. The rank
+  `<datalist>` popup on Android WebView intercepted the first "Next" tap and
+  reverted uncommitted text; replaced it with tappable rank chips that fill the
+  field and commit to wizard state immediately. Free-text entry is preserved.
+- Localised the mobile welcome screen (title/subtitle/buttons) so Russian UI no
+  longer mixes with English copy.
+
 ## [0.4.151] — 2026-06-19
 
 ### Added
