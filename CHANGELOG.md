@@ -7,6 +7,21 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.151] — 2026-06-19
+
+### Added
+- CV now shows an "Experience by position" summary that totals time served in
+  each rank in years, months, and days, and appends a per-contract duration to
+  every sea-going experience line.
+- Sea Service position field now offers a rank suggestion list (Cadet, Oiler,
+  Welder, and the full rank taxonomy) while still accepting free text.
+- Added Trainee, Apprentice, Deck Boy, and Welder to the rank taxonomy.
+
+### Changed
+- Made the Sea Service entry "Edit" action the primary, clearly labelled button
+  on each experience card so existing entries can be corrected without deleting
+  and re-adding them.
+
 ## [0.4.139] — 2026-05-24
 
 ### Added
