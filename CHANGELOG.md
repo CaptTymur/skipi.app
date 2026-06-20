@@ -7,6 +7,15 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.149] — 2026-06-20
+
+### Fixed
+- Escape the profile prompt's dead-end: it now offers "Back to vault selection"
+  (close this vault and return to the welcome screen, where you can create a new
+  profile, open another vault, load the demo, or remove recent vaults) plus a
+  direct "Open demo". Combined with the existing ×/Skip and Open/Import, an
+  unfilled profile no longer traps you with no way out.
+
 ## [0.4.148] — 2026-06-20
 
 ### Fixed
