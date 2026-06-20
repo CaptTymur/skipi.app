@@ -7,6 +7,14 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.150] — 2026-06-20
+
+### Fixed
+- Vessel DB: clicking a row in "Latest vessel reviews" now actually opens the
+  vessel. The lookup result was rendered below the long recent-reviews list, so
+  it appeared off-screen and the page seemed not to react. The result block now
+  sits directly under the IMO search box and scrolls into view on lookup.
+
 ## [0.4.149] — 2026-06-20
 
 ### Fixed
