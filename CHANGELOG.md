@@ -7,6 +7,17 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.147] — 2026-06-20
+
+### Fixed
+- The "Complete your Seafarer Profile" prompt can now be dismissed: a close (×)
+  button and a "Skip for now" button let you explore the app without filling it
+  (Jobs/Mailings stay gated until it's complete; the prompt returns next time the
+  vault opens).
+- Added an "Already set up Skipi on your phone or another device?" shortcut in
+  that prompt with "Open existing vault" and "Import backup" actions, so a profile
+  created on mobile can be brought over instead of re-entered.
+
 ## [0.4.146] — 2026-06-19
 
 ### Added

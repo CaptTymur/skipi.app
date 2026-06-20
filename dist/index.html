@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Скипи Моряк</title>
 <script>
-var APP_VERSION='0.4.146';
+var APP_VERSION='0.4.147';
 var UI_LANG_KEY='skipi-ui-language';
 var UI_LANG_OPTIONS=[
     ['ru','Русский'],
@@ -903,7 +903,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1 id="welcome-title">Скипи Моряк</h1>
                 <p id="welcome-subtitle">Skipi - United Seafarers</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.146</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.147</span></p>
                 <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -939,9 +939,15 @@ input, select, textarea, button { font-family:var(--font-ui); }
 
 <!-- Forced profile onboarding overlay (Seafarer) — blocks app until all required fields are filled -->
 <div id="forced-profile-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9998;align-items:flex-start;justify-content:center;overflow:auto;padding:40px 20px;">
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;max-width:720px;width:100%;padding:24px;box-shadow:0 10px 40px rgba(0,0,0,.4);">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;max-width:720px;width:100%;padding:24px;box-shadow:0 10px 40px rgba(0,0,0,.4);position:relative;">
+        <button type="button" onclick="closeForcedProfile()" aria-label="Close" title="Close" style="position:absolute;top:10px;right:14px;background:none;border:none;color:var(--text2);font-size:24px;line-height:1;cursor:pointer;padding:2px 8px;">&times;</button>
         <h2 style="margin:0 0 4px;font-size:18px;">Complete your Seafarer Profile</h2>
-        <p style="margin:0 0 14px;color:var(--text2);font-size:12px;">These details are required before you can start using Skipi Seafarer. They live only inside this vault on disk. Photo is optional.</p>
+        <p style="margin:0 0 10px;color:var(--text2);font-size:12px;">These details power Jobs and Mailings. They live only inside this vault on disk. Photo is optional — or skip for now and explore first.</p>
+        <div style="margin:0 0 16px;padding:9px 12px;background:var(--bg);border:1px solid var(--border);border-radius:7px;font-size:12px;color:var(--text2);display:flex;flex-wrap:wrap;align-items:center;gap:8px;">
+            <span>Already set up Skipi on your phone or another device?</span>
+            <button type="button" class="btn btn-outline btn-sm" onclick="fpUseExisting('open')">Open existing vault</button>
+            <button type="button" class="btn btn-outline btn-sm" onclick="fpUseExisting('import')">Import backup&hellip;</button>
+        </div>
         <div id="fp-err" style="display:none;background:var(--red);color:#fff;padding:6px 10px;border-radius:4px;font-size:12px;margin-bottom:12px;"></div>
         <div class="field-grid">
             <div class="field"><label>Surname *</label><input id="fp-surname"></div>
@@ -964,7 +970,8 @@ input, select, textarea, button { font-family:var(--font-ui); }
         <div style="margin-top:14px;display:flex;align-items:center;gap:10px;">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;"><input type="checkbox" id="fp-ready_for_offers" onchange="fpToggleReady(this.checked)" style="width:16px;height:16px;accent-color:var(--accent);"> Ready to accept job offers</label>
         </div>
-        <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end;">
+        <div style="margin-top:16px;display:flex;gap:8px;justify-content:space-between;align-items:center;">
+            <button class="btn btn-outline" onclick="closeForcedProfile()">Skip for now</button>
             <button class="btn btn-accent" onclick="fpSubmit()">Save &amp; Continue</button>
         </div>
     </div>
@@ -3393,6 +3400,25 @@ async function openForcedProfile(forceOpen){
         if(rdy){rdy.checked=rdyVal;}
         fpToggleReady(rdyVal);
     }catch(e){logError('openForcedProfile',e);}
+}
+// Dismiss the forced profile so the user can explore without filling it. It is
+// not destructive — Jobs/Mailings stay gated until the profile is complete, and
+// the prompt returns on the next vault open.
+function closeForcedProfile(){
+    _forcedProfileActive=false;
+    var overlay=document.getElementById('forced-profile-overlay');
+    if(overlay)overlay.style.display='none';
+}
+// "I already have a profile (e.g. from my phone)" — step the overlay aside and
+// reuse the existing Open-vault / Import-backup flows. If nothing was loaded
+// (user cancelled) and the profile is still incomplete, the prompt comes back.
+async function fpUseExisting(action){
+    closeForcedProfile();
+    try{
+        if(action==='import')await importVaultBackup();
+        else await switchVault();
+    }catch(e){logError('fpUseExisting',e);}
+    setTimeout(function(){try{openForcedProfile(false);}catch(e){}},300);
 }
 async function fpSubmit(){
     var fields={};
