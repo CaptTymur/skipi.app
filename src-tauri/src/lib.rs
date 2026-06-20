@@ -100,8 +100,8 @@ pub(crate) fn base64_encode(data: &[u8]) -> String {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     use commands::{
-        agency_mailing, ai, cv_commands, documents, email, jobs, mail_intent, messaging, packages,
-        profile, review, vault, work_history,
+        agency_mailing, ai, assistant, cv_commands, documents, email, jobs, mail_intent, messaging,
+        packages, profile, review, vault, work_history,
     };
 
     tauri::Builder::default()
@@ -162,6 +162,8 @@ pub fn run() {
             documents::add_custom_doc,
             documents::add_catalog_doc,
             documents::delete_doc,
+            // AI assistant (server-proxied chat)
+            assistant::assistant_chat,
             // AI recognition
             ai::ai_preview_recognize,
             ai::ai_recognize,

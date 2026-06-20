@@ -5,8 +5,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Скипи Моряк - United Seafarers</title>
 <script>
-var APP_VERSION='0.4.153';
+var APP_VERSION='0.4.154';
 var UI_LANG_KEY='skipi-ui-language';
+// Skipi Assistant knowledge base — bundled with the app, shipped/updated with
+// each release. Edit this block to teach the assistant new things; the server
+// prepends it to the system prompt (alongside the seafarer's own profile).
+var SKIPI_ASSISTANT_CONTEXT_VERSION='2026-06-20.1';
+var SKIPI_ASSISTANT_CONTEXT=[
+'About Skipi: Skipi is a local-first maritime app for seafarers. It stores certificates and documents privately on the seafarer\'s own device, tracks expiry dates, generates a CV / Application Form, sends documents to crewing agencies, surfaces matching vacancies (Jobs), and lets seafarers read and write honest vessel reviews by IMO. The assistant lives inside the Skipi Seafarer app.',
+'Your role: be a knowledgeable, practical maritime career companion. Help with certificates and STCW/MLC requirements, document validity and renewal planning, CV and job-application advice, interview preparation, rank and career progression, flags, vessel types, contracts, joining/sign-off logistics, and general seafaring questions.',
+'How to use the profile: the seafarer\'s rank, certificates (with statuses and expiry), nationality, availability and sea service are provided. Use them to personalise answers — e.g. flag which of THEIR certificates are expiring, what is typically required for the next rank up from THEIRS, or visa considerations for THEIR nationality.',
+'Guardrails: requirements vary by flag state, company and convention amendments. When something is flag/company/legally specific, say so and tell the seafarer to confirm with the flag administration, the company, or their training centre. Never present yourself as official or legal advice. If you are unsure, say you are unsure rather than guessing.',
+'Skipi tips you can mention when relevant: keep certificates up to date in the Documents tab; the app warns before expiry; complete the profile to unlock better vacancy matching; write a vessel review after a contract to help other seafarers and unlock reading detailed reviews.'
+].join('\n\n');
 var UI_LANG_OPTIONS=[
     ['ru','Русский'],
     ['en','English'],
@@ -847,6 +858,23 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .chat-day-sep { display: flex; justify-content: center; margin: 8px 0; }
 .chat-day-sep span { background: var(--surface2); color: var(--text2); font-size: 11px; padding: 3px 10px; border-radius: 10px; }
 
+/* AI Assistant module */
+.mobile-assistant-wrap { display:flex; flex-direction:column; min-height:100%; }
+.mobile-assistant-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; padding:2px 2px 10px; border-bottom:1px solid var(--border); }
+.mobile-assistant-stream { flex:1; display:flex; flex-direction:column; gap:9px; padding:12px 2px; overflow-y:auto; }
+.mobile-msg { max-width:86%; padding:9px 12px; border-radius:14px; font-size:14px; line-height:1.4; white-space:normal; word-wrap:break-word; }
+.mobile-msg.me { align-self:flex-end; background:var(--accent); color:#fff; border-bottom-right-radius:4px; }
+.mobile-msg.ai { align-self:flex-start; background:var(--surface2,var(--bg)); color:var(--text); border:1px solid var(--border); border-bottom-left-radius:4px; }
+.mobile-msg.err { align-self:flex-start; background:rgba(220,80,80,0.10); color:var(--text); border:1px solid rgba(220,80,80,0.4); border-bottom-left-radius:4px; }
+.mobile-msg.typing { opacity:.6; font-style:italic; }
+.mobile-assistant-empty { text-align:center; padding:34px 14px 10px; color:var(--text2); }
+.mobile-assistant-empty-title { font-size:18px; font-weight:800; color:var(--text); }
+.mobile-assistant-empty-sub { font-size:13px; margin-top:6px; }
+.mobile-assistant-suggest { display:flex; flex-direction:column; gap:8px; margin-top:18px; }
+.mobile-assistant-chip { text-align:left; padding:11px 14px; border-radius:12px; border:1px solid var(--border); background:var(--bg); color:var(--text); font:inherit; font-size:13px; cursor:pointer; }
+.mobile-assistant-chip:active { background:var(--accent); color:#fff; border-color:var(--accent); }
+.mobile-assistant-composer { position:sticky; bottom:0; margin-top:6px; }
+
 /* Mobile app shell */
 .mobile-shell { display:none; min-height:100dvh; background:var(--bg); color:var(--text); flex-direction:column; overflow:hidden; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); }
 .mobile-top { min-height:54px; flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:7px 10px; border-bottom:1px solid var(--border); background:var(--surface); }
@@ -1140,6 +1168,7 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
         <div class="mobile-module-rail-wrap has-more" id="mobile-module-rail-wrap">
         <div class="mobile-module-rail" id="mobile-module-rail" onscroll="mobileUpdateModuleRailHint()">
             <button class="mobile-nav-btn active" type="button" data-mview="docs" onclick="mobileShow('docs')"><span>&#9633;</span>Documents</button>
+            <button class="mobile-nav-btn" type="button" data-mview="assistant" onclick="mobileShow('assistant')"><span>&#128172;</span>Assistant</button>
             <button class="mobile-nav-btn" type="button" data-mview="experience" onclick="mobileShow('experience')"><span>&#9873;&#65038;</span>Experience</button>
             <button class="mobile-nav-btn" type="button" data-mview="cv" onclick="mobileShow('cv')"><span>CV</span>CV</button>
             <button class="mobile-nav-btn" type="button" data-mview="dispatch" onclick="mobileShow('dispatch')"><span>&#9993;&#65038;</span>Mailings</button>
@@ -1228,7 +1257,7 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
             <div class="welcome" id="scr-welcome">
                 <h1 id="welcome-title">Скипи Моряк</h1>
                 <p id="welcome-subtitle">Skipi - United Seafarers</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.153</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.154</span></p>
                 <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -2891,7 +2920,7 @@ function mobileShouldShowHomeButton(){
     if(!shouldUseMobileShell())return false;
     if(mobileView==='home')return false;
     if(mobileView==='dispatch')return false;
-    return ['docs','doc','add','pdf','profile','experience','cv','jobs','information','vessels'].indexOf(mobileView)>=0;
+    return ['docs','doc','add','pdf','profile','experience','cv','jobs','information','vessels','assistant'].indexOf(mobileView)>=0;
 }
 function mobileHomeButtonHtml(){
     var ru=getUiLang()==='ru';
@@ -5189,6 +5218,91 @@ async function mobileSetJobsReady(on){
         renderMobileJobs();
     }
 }
+// ===================== AI Assistant module =====================
+var mobileAssistantMessages=[];
+var mobileAssistantBusy=false;
+var mobileAssistantRemaining=null;
+var mobileAssistantConsentKey='skipi-assistant-consent';
+var mobileAssistantConvKey='skipi-assistant-conv';
+(function(){try{var raw=localStorage.getItem(mobileAssistantConvKey);if(raw)mobileAssistantMessages=JSON.parse(raw)||[];}catch(e){mobileAssistantMessages=[];}})();
+function mobileAssistantSaveConv(){try{localStorage.setItem(mobileAssistantConvKey,JSON.stringify(mobileAssistantMessages.slice(-40)));}catch(e){}}
+function mobileAssistantConsented(){try{return localStorage.getItem(mobileAssistantConsentKey)==='1';}catch(e){return false;}}
+function mobileAssistantSetConsent(){try{localStorage.setItem(mobileAssistantConsentKey,'1');}catch(e){}renderMobileAssistant();}
+function mobileAssistantClear(){if(mobileAssistantBusy)return;mobileAssistantMessages=[];mobileAssistantSaveConv();renderMobileAssistant();}
+function mobileAssistantSuggest(text){var ta=document.getElementById('mobile-assistant-input');if(ta){ta.value=text;ta.focus();mobileAssistantAutoGrow(ta);}}
+function mobileAssistantAutoGrow(ta){if(!ta)return;ta.style.height='auto';ta.style.height=Math.min(120,ta.scrollHeight)+'px';}
+function mobileAssistantFormat(text){return mobileEsc(String(text||'')).replace(/\n/g,'<br>');}
+function mobileAssistantBubbles(){
+    var ru=getUiLang()==='ru';
+    if(!mobileAssistantMessages.length){
+        var sugg=ru?['Каких сертификатов мне не хватает для моей должности?','Когда истекают мои сертификаты?','Помоги подготовиться к собеседованию','Что нужно для повышения в должности?']
+                   :['Which certificates am I missing for my rank?','When do my certificates expire?','Help me prepare for an interview','What do I need for the next rank up?'];
+        var h='<div class="mobile-assistant-empty"><div class="mobile-assistant-empty-title">'+mobileEsc(ru?'Чем помочь?':'How can I help?')+'</div><div class="mobile-assistant-empty-sub">'+mobileEsc(ru?'AI-ассистент моряка. Знает ваш профиль и сертификаты.':'Your seafarer AI assistant. It knows your profile and certificates.')+'</div><div class="mobile-assistant-suggest">';
+        sugg.forEach(function(s){h+='<button class="mobile-assistant-chip" type="button" onclick="mobileAssistantSuggest(\''+jsString(s)+'\')">'+mobileEsc(s)+'</button>';});
+        return h+'</div></div>';
+    }
+    var h='';
+    mobileAssistantMessages.forEach(function(m){
+        var cls=m.role==='user'?'me':(m._error?'err':'ai');
+        h+='<div class="mobile-msg '+cls+'">'+mobileAssistantFormat(m.content)+'</div>';
+    });
+    if(mobileAssistantBusy)h+='<div class="mobile-msg ai typing">'+mobileEsc(getUiLang()==='ru'?'Печатает…':'Typing…')+'</div>';
+    return h;
+}
+function renderMobileAssistant(){
+    if(!shouldUseMobileShell())return;
+    mobileView='assistant';
+    mobileSetSub(mobileVaultLabel());
+    mobileSetBottomNav(true);
+    var ru=getUiLang()==='ru';
+    if(!mobileAssistantConsented()){
+        var h='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(ru?'AI-ассистент моряка':'Seafarer AI assistant')+'</div>'
+            +'<div class="mobile-card-sub" style="margin-top:8px;">'+mobileEsc(ru?'Бесплатный AI-ассистент по карьере и документам. Использует ваш профиль и сертификаты из приложения, чтобы отвечать точнее.':'A free AI assistant for your maritime career and documents. It uses your profile and certificates from the app to answer more precisely.')+'</div>'
+            +'<div class="mobile-card-sub" style="margin-top:10px;">'+mobileEsc(ru?'Чтобы улучшать ассистента, ваши переписки отправляются в Skipi. Не делитесь паролями или личными данными. Это не официальная и не юридическая консультация.':'To improve the assistant, your conversations are sent to Skipi. Do not share passwords or sensitive personal data. This is not official or legal advice.')+'</div>'
+            +'<button class="btn btn-accent" style="margin-top:14px;width:100%;" onclick="mobileAssistantSetConsent()">'+mobileEsc(ru?'Понятно, начать':'Got it, start')+'</button></div>';
+        mobileMainHtml(h);
+        return;
+    }
+    var head='<div class="mobile-assistant-head"><div style="min-width:0;"><div class="mobile-card-title">'+mobileEsc(ru?'Ассистент':'Assistant')+'</div>'
+        +'<div class="mobile-card-sub">'+mobileEsc(ru?'AI-помощник моряка':'Seafarer AI helper')+(mobileAssistantRemaining!=null?' · '+mobileAssistantRemaining+mobileEsc(ru?' осталось сегодня':' left today'):'')+'</div></div>'
+        +'<button class="btn btn-outline btn-sm" type="button" onclick="mobileAssistantClear()">'+mobileEsc(ru?'Очистить':'Clear')+'</button></div>';
+    var body='<div class="mobile-assistant-stream" id="mobile-assistant-stream">'+mobileAssistantBubbles()+'</div>';
+    var composer='<div class="chat-composer mobile-assistant-composer">'
+        +'<textarea id="mobile-assistant-input" rows="1" placeholder="'+escAttr(ru?'Спросите ассистента…':'Ask the assistant…')+'" '+(mobileAssistantBusy?'disabled ':'')+'oninput="mobileAssistantAutoGrow(this)"></textarea>'
+        +'<button class="btn-send" type="button" onclick="mobileAssistantSend()" '+(mobileAssistantBusy?'disabled':'')+' aria-label="Send">&#10148;</button></div>';
+    mobileMainHtml('<div class="mobile-assistant-wrap">'+head+body+composer+'</div>');
+    setTimeout(function(){var s=document.getElementById('mobile-assistant-stream');if(s)s.scrollTop=s.scrollHeight;},30);
+}
+async function mobileAssistantSend(){
+    if(mobileAssistantBusy)return;
+    var ta=document.getElementById('mobile-assistant-input');
+    var text=ta?String(ta.value||'').trim():'';
+    if(!text)return;
+    mobileAssistantMessages.push({role:'user',content:text});
+    mobileAssistantBusy=true;
+    mobileAssistantSaveConv();
+    renderMobileAssistant();
+    try{
+        var resp=await invoke('assistant_chat',{
+            messages:mobileAssistantMessages.map(function(m){return {role:m.role,content:m.content};}),
+            appContext:SKIPI_ASSISTANT_CONTEXT,
+            appContextVersion:SKIPI_ASSISTANT_CONTEXT_VERSION,
+            locale:getUiLang()
+        });
+        mobileAssistantMessages.push({role:'assistant',content:(resp&&resp.reply)||''});
+        if(resp&&typeof resp.remaining_today!=='undefined')mobileAssistantRemaining=resp.remaining_today;
+    }catch(e){
+        var msg=''+e,ru=getUiLang()==='ru',friendly;
+        if(msg.indexOf('503')>=0||msg.indexOf('not configured')>=0)friendly=ru?'Ассистент ещё настраивается — попробуйте позже.':'The assistant is being set up — please try again later.';
+        else if(msg.indexOf('429')>=0||msg.indexOf('daily limit')>=0)friendly=ru?'Достигнут дневной лимит бесплатных запросов. Возвращайтесь завтра.':'You have reached today\'s free limit. Please come back tomorrow.';
+        else friendly=ru?'Не удалось связаться с ассистентом. Проверьте интернет и попробуйте снова.':'Could not reach the assistant. Check your connection and try again.';
+        mobileAssistantMessages.push({role:'assistant',content:friendly,_error:true});
+        logError('assistant_chat',e);
+    }
+    mobileAssistantBusy=false;
+    mobileAssistantSaveConv();
+    renderMobileAssistant();
+}
 function renderMobileShell(){
     if(!shouldUseMobileShell())return;
     mobileSetSub(mobileVaultLabel());
@@ -5202,6 +5316,7 @@ function renderMobileShell(){
     if(mobileView==='jobs')return renderMobileJobs();
     if(mobileView==='information')return renderMobileInformation();
     if(mobileView==='vessels')return renderMobileVessels();
+    if(mobileView==='assistant')return renderMobileAssistant();
     if(mobileView==='doc')return renderMobileDoc();
     if(mobileView==='pdf')return renderMobilePdfBuilder();
     return renderMobileHome();

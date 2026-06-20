@@ -1,5 +1,6 @@
 pub mod agency_mailing;
 pub mod ai;
+pub mod assistant;
 pub mod cv_commands;
 pub mod documents;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]

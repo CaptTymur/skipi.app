@@ -7,6 +7,17 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.154] — 2026-06-20
+
+### Added
+- New AI Assistant module: a free, in-app maritime career/documents chat. The
+  app sends the seafarer's locally-assembled profile (rank, certificates, sea
+  service — no name or document numbers) plus a bundled Skipi knowledge base to
+  a server-side proxy that calls Claude; conversations are logged server-side to
+  improve the assistant and rate-limited per seafarer. A personal Skipi key is
+  issued automatically on first use and a one-time consent screen explains the
+  logging.
+
 ## [0.4.153] — 2026-06-20
 
 ### Fixed
