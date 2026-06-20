@@ -7,6 +7,14 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.151] — 2026-06-20
+
+### Fixed
+- Linux stability: disable WebKitGTK's DMA-BUF renderer at startup
+  (`WEBKIT_DISABLE_DMABUF_RENDERER=1`) to stop the recurring "WebKitWebProcess
+  has stopped unexpectedly" crash seen on NVIDIA (and some other) GPU/driver
+  combos. The variable is only set on Linux and honours an explicit override.
+
 ## [0.4.150] — 2026-06-20
 
 ### Fixed
