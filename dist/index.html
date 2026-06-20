@@ -5,19 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Скипи Моряк - United Seafarers</title>
 <script>
-var APP_VERSION='0.4.154';
+var APP_VERSION='0.4.155';
 var UI_LANG_KEY='skipi-ui-language';
-// Skipi Assistant knowledge base — bundled with the app, shipped/updated with
-// each release. Edit this block to teach the assistant new things; the server
-// prepends it to the system prompt (alongside the seafarer's own profile).
-var SKIPI_ASSISTANT_CONTEXT_VERSION='2026-06-20.1';
-var SKIPI_ASSISTANT_CONTEXT=[
-'About Skipi: Skipi is a local-first maritime app for seafarers. It stores certificates and documents privately on the seafarer\'s own device, tracks expiry dates, generates a CV / Application Form, sends documents to crewing agencies, surfaces matching vacancies (Jobs), and lets seafarers read and write honest vessel reviews by IMO. The assistant lives inside the Skipi Seafarer app.',
-'Your role: be a knowledgeable, practical maritime career companion. Help with certificates and STCW/MLC requirements, document validity and renewal planning, CV and job-application advice, interview preparation, rank and career progression, flags, vessel types, contracts, joining/sign-off logistics, and general seafaring questions.',
-'How to use the profile: the seafarer\'s rank, certificates (with statuses and expiry), nationality, availability and sea service are provided. Use them to personalise answers — e.g. flag which of THEIR certificates are expiring, what is typically required for the next rank up from THEIRS, or visa considerations for THEIR nationality.',
-'Guardrails: requirements vary by flag state, company and convention amendments. When something is flag/company/legally specific, say so and tell the seafarer to confirm with the flag administration, the company, or their training centre. Never present yourself as official or legal advice. If you are unsure, say you are unsure rather than guessing.',
-'Skipi tips you can mention when relevant: keep certificates up to date in the Documents tab; the app warns before expiry; complete the profile to unlock better vacancy matching; write a vessel review after a contract to help other seafarers and unlock reading detailed reviews.'
-].join('\n\n');
+// NOTE: the assistant's system prompt and knowledge base are NOT bundled here.
+// They live only on the server (skipi-server) so they can't be extracted from
+// the APK or this public repo. The client sends only the conversation and the
+// seafarer's own profile.
 var UI_LANG_OPTIONS=[
     ['ru','Русский'],
     ['en','English'],
@@ -1257,7 +1250,7 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
             <div class="welcome" id="scr-welcome">
                 <h1 id="welcome-title">Скипи Моряк</h1>
                 <p id="welcome-subtitle">Skipi - United Seafarers</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.154</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.155</span></p>
                 <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -5285,8 +5278,6 @@ async function mobileAssistantSend(){
     try{
         var resp=await invoke('assistant_chat',{
             messages:mobileAssistantMessages.map(function(m){return {role:m.role,content:m.content};}),
-            appContext:SKIPI_ASSISTANT_CONTEXT,
-            appContextVersion:SKIPI_ASSISTANT_CONTEXT_VERSION,
             locale:getUiLang()
         });
         mobileAssistantMessages.push({role:'assistant',content:(resp&&resp.reply)||''});

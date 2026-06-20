@@ -7,6 +7,15 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.155] — 2026-06-20
+
+### Changed
+- Assistant: the system prompt and Skipi knowledge base now live only on the
+  server and are no longer bundled in the app, so they can't be extracted from
+  the APK or the public repo. The client sends only the conversation and the
+  seafarer's own profile. Server-side prompt-extraction defences added
+  (input filter, output canary check, per-key attempt tracking).
+
 ## [0.4.154] — 2026-06-20
 
 ### Added
