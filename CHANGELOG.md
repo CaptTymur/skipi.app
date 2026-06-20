@@ -7,6 +7,13 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.161] — 2026-06-20
+
+### Changed
+- The AI assistant is disabled in the demo profile: instead of the chat, demo
+  users see a short note asking them to create their own seafarer profile (so the
+  demo can't spend real API budget). It works normally on a real vault.
+
 ## [0.4.158] — 2026-06-20
 
 ### Fixed

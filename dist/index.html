@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Скипи Моряк - United Seafarers</title>
 <script>
-var APP_VERSION='0.4.158';
+var APP_VERSION='0.4.161';
 var UI_LANG_KEY='skipi-ui-language';
 // NOTE: the assistant's system prompt and knowledge base are NOT bundled here.
 // They live only on the server (skipi-server) so they can't be extracted from
@@ -1255,7 +1255,7 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
             <div class="welcome" id="scr-welcome">
                 <h1 id="welcome-title">Скипи Моряк</h1>
                 <p id="welcome-subtitle">Skipi - United Seafarers</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.158</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.161</span></p>
                 <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -5220,6 +5220,9 @@ async function mobileSetJobsReady(on){
 var mobileAssistantMessages=[];
 var mobileAssistantBusy=false;
 var mobileAssistantRemaining=null;
+// True while the demo vault is loaded — the AI assistant is gated off so demo
+// users can't spend real API budget; they're told to create their own profile.
+var mobileIsDemo=false;
 var mobileAssistantConsentKey='skipi-assistant-consent';
 var mobileAssistantConvKey='skipi-assistant-conv';
 (function(){try{var raw=localStorage.getItem(mobileAssistantConvKey);if(raw)mobileAssistantMessages=JSON.parse(raw)||[];}catch(e){mobileAssistantMessages=[];}})();
@@ -5253,6 +5256,19 @@ function renderMobileAssistant(){
     mobileSetSub(mobileVaultLabel());
     mobileSetBottomNav(true);
     var ru=getUiLang()==='ru';
+    // Self-correcting demo check: re-read the flag from the vault and re-render
+    // if it changed (covers the case where it wasn't set yet at vault load).
+    try{invoke('get_profile_status').then(function(sp){
+        var d=String((sp&&sp.is_demo)||'')==='1';
+        if(d!==mobileIsDemo){mobileIsDemo=d;if(mobileView==='assistant')renderMobileAssistant();}
+    }).catch(function(){});}catch(e){}
+    if(mobileIsDemo){
+        var hd='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(ru?'AI-ассистент моряка':'Seafarer AI assistant')+'</div>'
+            +'<div class="mobile-card-sub" style="margin-top:8px;">'+mobileEsc(ru?'Это демо-профиль. Чтобы задавать вопросы AI-ассистенту, создайте свой профиль моряка — он будет отвечать по вашим документам, сертификатам и опыту.':'This is a demo profile. To ask the AI assistant, create your own seafarer profile — it answers based on your own documents, certificates and experience.')+'</div>'
+            +'<button class="btn btn-accent" style="margin-top:14px;width:100%;" onclick="mobileStartVaultWizard()">'+mobileEsc(ru?'Создать свой профиль':'Create my profile')+'</button></div>';
+        mobileMainHtml(hd);
+        return;
+    }
     if(!mobileAssistantConsented()){
         var h='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(ru?'AI-ассистент моряка':'Seafarer AI assistant')+'</div>'
             +'<div class="mobile-card-sub" style="margin-top:8px;">'+mobileEsc(ru?'Бесплатный AI-ассистент по карьере и документам. Использует ваш профиль и сертификаты из приложения, чтобы отвечать точнее.':'A free AI assistant for your maritime career and documents. It uses your profile and certificates from the app to answer more precisely.')+'</div>'
@@ -5282,6 +5298,7 @@ function mobileAssistantScroll(){
 }
 async function mobileAssistantSend(){
     if(mobileAssistantBusy)return;
+    if(mobileIsDemo){renderMobileAssistant();return;}
     var ta=document.getElementById('mobile-assistant-input');
     var text=ta?String(ta.value||'').trim():'';
     if(!text)return;
@@ -7468,6 +7485,8 @@ async function loadVault(info){
     hide('scr-welcome');hide('scr-setup');show('scr-content');show('left-panel');hide('tabs');show('statusbar');
     var mb=document.getElementById('modules-bar');if(mb)mb.style.display='flex';
     currentAccountType=info.account_type||'';
+    mobileIsDemo=String((info&&info.is_demo)||'')==='1';
+    try{invoke('get_profile_status').then(function(sp){mobileIsDemo=String((sp&&sp.is_demo)||'')==='1';}).catch(function(){});}catch(e){}
     var prevPosition = currentWizardPosition;
     currentWizardPosition=info.position||'';
     currentWizardVesselCategory=info.vessel_category||'';
