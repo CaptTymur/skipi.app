@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Скипи Моряк - United Seafarers</title>
 <script>
-var APP_VERSION='0.4.155';
+var APP_VERSION='0.4.158';
 var UI_LANG_KEY='skipi-ui-language';
 // NOTE: the assistant's system prompt and knowledge base are NOT bundled here.
 // They live only on the server (skipi-server) so they can't be extracted from
@@ -852,21 +852,26 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .chat-day-sep span { background: var(--surface2); color: var(--text2); font-size: 11px; padding: 3px 10px; border-radius: 10px; }
 
 /* AI Assistant module */
-.mobile-assistant-wrap { display:flex; flex-direction:column; min-height:100%; }
+.mobile-assistant-wrap { display:flex; flex-direction:column; height:100%; }
 .mobile-assistant-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; padding:2px 2px 10px; border-bottom:1px solid var(--border); }
-.mobile-assistant-stream { flex:1; display:flex; flex-direction:column; gap:9px; padding:12px 2px; overflow-y:auto; }
+.mobile-assistant-stream { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; gap:9px; padding:12px 2px; overflow-y:auto; -webkit-overflow-scrolling:touch; }
 .mobile-msg { max-width:86%; padding:9px 12px; border-radius:14px; font-size:14px; line-height:1.4; white-space:normal; word-wrap:break-word; }
 .mobile-msg.me { align-self:flex-end; background:var(--accent); color:#fff; border-bottom-right-radius:4px; }
 .mobile-msg.ai { align-self:flex-start; background:var(--surface2,var(--bg)); color:var(--text); border:1px solid var(--border); border-bottom-left-radius:4px; }
 .mobile-msg.err { align-self:flex-start; background:rgba(220,80,80,0.10); color:var(--text); border:1px solid rgba(220,80,80,0.4); border-bottom-left-radius:4px; }
-.mobile-msg.typing { opacity:.6; font-style:italic; }
+.mobile-msg.typing { padding:12px 14px; }
+.mobile-typing { display:inline-flex; gap:5px; align-items:center; }
+.mobile-typing span { width:7px; height:7px; border-radius:50%; background:var(--text2); display:inline-block; animation:mobileTyping 1.2s infinite ease-in-out; }
+.mobile-typing span:nth-child(2){ animation-delay:.18s; }
+.mobile-typing span:nth-child(3){ animation-delay:.36s; }
+@keyframes mobileTyping { 0%,60%,100%{ transform:translateY(0); opacity:.4; } 30%{ transform:translateY(-4px); opacity:1; } }
 .mobile-assistant-empty { text-align:center; padding:34px 14px 10px; color:var(--text2); }
 .mobile-assistant-empty-title { font-size:18px; font-weight:800; color:var(--text); }
 .mobile-assistant-empty-sub { font-size:13px; margin-top:6px; }
 .mobile-assistant-suggest { display:flex; flex-direction:column; gap:8px; margin-top:18px; }
 .mobile-assistant-chip { text-align:left; padding:11px 14px; border-radius:12px; border:1px solid var(--border); background:var(--bg); color:var(--text); font:inherit; font-size:13px; cursor:pointer; }
 .mobile-assistant-chip:active { background:var(--accent); color:#fff; border-color:var(--accent); }
-.mobile-assistant-composer { position:sticky; bottom:0; margin-top:6px; }
+.mobile-assistant-composer { flex:0 0 auto; margin-top:6px; }
 
 /* Mobile app shell */
 .mobile-shell { display:none; min-height:100dvh; background:var(--bg); color:var(--text); flex-direction:column; overflow:hidden; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); }
@@ -1250,7 +1255,7 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
             <div class="welcome" id="scr-welcome">
                 <h1 id="welcome-title">Скипи Моряк</h1>
                 <p id="welcome-subtitle">Skipi - United Seafarers</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.155</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.158</span></p>
                 <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -5239,7 +5244,7 @@ function mobileAssistantBubbles(){
         var cls=m.role==='user'?'me':(m._error?'err':'ai');
         h+='<div class="mobile-msg '+cls+'">'+mobileAssistantFormat(m.content)+'</div>';
     });
-    if(mobileAssistantBusy)h+='<div class="mobile-msg ai typing">'+mobileEsc(getUiLang()==='ru'?'Печатает…':'Typing…')+'</div>';
+    if(mobileAssistantBusy)h+='<div class="mobile-msg ai typing"><span class="mobile-typing"><span></span><span></span><span></span></span></div>';
     return h;
 }
 function renderMobileAssistant(){
@@ -5262,15 +5267,25 @@ function renderMobileAssistant(){
     var body='<div class="mobile-assistant-stream" id="mobile-assistant-stream">'+mobileAssistantBubbles()+'</div>';
     var composer='<div class="chat-composer mobile-assistant-composer">'
         +'<textarea id="mobile-assistant-input" rows="1" placeholder="'+escAttr(ru?'Спросите ассистента…':'Ask the assistant…')+'" '+(mobileAssistantBusy?'disabled ':'')+'oninput="mobileAssistantAutoGrow(this)"></textarea>'
-        +'<button class="btn-send" type="button" onclick="mobileAssistantSend()" '+(mobileAssistantBusy?'disabled':'')+' aria-label="Send">&#10148;</button></div>';
+        +'<button class="btn-send" type="button" onmousedown="event.preventDefault()" onclick="mobileAssistantSend()" '+(mobileAssistantBusy?'disabled':'')+' aria-label="Send">&#10148;</button></div>';
     mobileMainHtml('<div class="mobile-assistant-wrap">'+head+body+composer+'</div>');
-    setTimeout(function(){var s=document.getElementById('mobile-assistant-stream');if(s)s.scrollTop=s.scrollHeight;},30);
+    // The scroll container is #mobile-main, not the stream — scroll IT to the
+    // bottom so the newest message / typing indicator is always in view. Repeat
+    // across a few frames to survive the keyboard-close reflow.
+    mobileAssistantScroll(); setTimeout(mobileAssistantScroll,60); setTimeout(mobileAssistantScroll,220);
+}
+function mobileAssistantScroll(){
+    var s=document.getElementById('mobile-assistant-stream');
+    if(s)s.scrollTop=s.scrollHeight;
+    var main=document.getElementById('mobile-main');
+    if(main)main.scrollTop=main.scrollHeight;
 }
 async function mobileAssistantSend(){
     if(mobileAssistantBusy)return;
     var ta=document.getElementById('mobile-assistant-input');
     var text=ta?String(ta.value||'').trim():'';
     if(!text)return;
+    if(ta){ta.value='';ta.blur();}
     mobileAssistantMessages.push({role:'user',content:text});
     mobileAssistantBusy=true;
     mobileAssistantSaveConv();

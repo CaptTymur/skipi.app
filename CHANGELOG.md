@@ -7,6 +7,15 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.158] — 2026-06-20
+
+### Fixed
+- Assistant chat now gives immediate feedback and reliable scrolling: the
+  conversation auto-scrolls to the newest message/reply (it was scrolling the
+  wrong element), an animated typing indicator shows while waiting, the composer
+  no longer overlaps the last message, and the send button fires on the first
+  tap even while the keyboard is open.
+
 ## [0.4.155] — 2026-06-20
 
 ### Changed
