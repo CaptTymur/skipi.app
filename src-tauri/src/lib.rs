@@ -211,6 +211,7 @@ pub fn run() {
             profile::get_seafarer_personal,
             profile::set_seafarer_personal,
             profile::upload_profile_photo,
+            profile::upload_profile_photo_bytes,
             profile::clear_profile_photo,
             profile::get_profile_photo_abs_path,
             profile::get_profile_photo_data_url,

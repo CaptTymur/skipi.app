@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Скипи Моряк</title>
 <script>
-var APP_VERSION='0.4.152';
+var APP_VERSION='0.4.153';
 var UI_LANG_KEY='skipi-ui-language';
 var UI_LANG_OPTIONS=[
     ['ru','Русский'],
@@ -1228,7 +1228,7 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
             <div class="welcome" id="scr-welcome">
                 <h1 id="welcome-title">Скипи Моряк</h1>
                 <p id="welcome-subtitle">Maritime Document Management</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.152</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.153</span></p>
                 <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -14820,7 +14820,37 @@ async function spSave(){
         scheduleDeveloperGroupInviteCheck(900);
     }catch(e){showToast('Save error: '+e,'error');logError('Save error',e);}
 }
+function spUploadPhotoMobile(){
+    // Android/iOS pickers give a content:// URI with no filesystem path, so the
+    // desktop path-copy command fails ("Source photo does not exist"). Read the
+    // image bytes from a WebView File instead and write them into the vault.
+    var input=document.createElement('input');
+    input.type='file';
+    input.accept='image/*';
+    input.style.display='none';
+    document.body.appendChild(input);
+    input.onchange=async function(){
+        var file=input.files&&input.files[0];
+        if(input.parentNode)input.parentNode.removeChild(input);
+        if(!file)return;
+        if(file.size>12*1024*1024){showToast('Photo is too large (12 MB max).','error');return;}
+        try{
+            showToast('Uploading photo...','info');
+            var b64=await mobileReadFileAsBase64(file);
+            await invoke('upload_profile_photo_bytes',{fileName:file.name||'photo.jpg',dataBase64:b64});
+            showToast('Photo uploaded','success');
+            try{await spLoad();}catch(e){logError('spUploadPhoto:reload',e);}
+        }catch(e){
+            showToast('Upload failed: '+(e&&e.message?e.message:e),'error');
+            logError('spUploadPhotoMobile',e);
+        }
+    };
+    input.click();
+}
 async function spUploadPhoto(){
+    if(isMobileMode()||hostPlatform==='android'||hostPlatform==='ios'){
+        return spUploadPhotoMobile();
+    }
     if(typeof open!=='function'){
         showToast('Dialog not available — reload the app','error');
         return;

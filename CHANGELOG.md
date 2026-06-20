@@ -7,6 +7,14 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.153] — 2026-06-20
+
+### Fixed
+- Profile photo upload now works on Android/iOS. The picker hands the WebView a
+  `content://` URI with no filesystem path, so the desktop path-copy command
+  failed with "Source photo does not exist". Mobile now reads the chosen image
+  bytes and writes them straight into the vault via `upload_profile_photo_bytes`.
+
 ## [0.4.152] — 2026-06-19
 
 ### Fixed

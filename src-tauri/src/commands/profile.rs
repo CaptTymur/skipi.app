@@ -1346,6 +1346,53 @@ pub fn upload_profile_photo(state: State<AppState>, source_path: String) -> Resu
     Ok(rel)
 }
 
+/// Mobile-safe profile photo upload. The desktop `upload_profile_photo` copies
+/// from a filesystem path, but the Android/iOS photo picker hands the WebView a
+/// `content://` URI (or a File/Blob) with no real path, so `src.exists()` fails
+/// with "Source photo does not exist". Here the client reads the picked image
+/// into base64 and we write the bytes straight into the vault.
+#[tauri::command]
+pub fn upload_profile_photo_bytes(
+    state: State<AppState>,
+    file_name: String,
+    data_base64: String,
+) -> Result<String, String> {
+    let ext = std::path::Path::new(&file_name)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_lowercase())
+        .filter(|s| matches!(s.as_str(), "jpg" | "jpeg" | "png" | "webp"))
+        .unwrap_or_else(|| "jpg".to_string());
+    let bytes = data_encoding::BASE64
+        .decode(data_base64.as_bytes())
+        .map_err(|e| format!("Invalid photo encoding: {}", e))?;
+    if bytes.is_empty() {
+        return Err("Selected photo is empty".to_string());
+    }
+    let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
+    let vault_path = vault_lock.as_ref().ok_or("No vault open")?;
+    let profile_dir = vault_path.join("_profile");
+    fs::create_dir_all(&profile_dir).map_err(|e| e.to_string())?;
+    if let Ok(entries) = fs::read_dir(&profile_dir) {
+        for entry in entries.flatten() {
+            if let Some(n) = entry.file_name().to_str() {
+                if n.starts_with("photo.") {
+                    let _ = fs::remove_file(entry.path());
+                }
+            }
+        }
+    }
+    let dest_name = format!("photo.{}", ext);
+    fs::write(profile_dir.join(&dest_name), &bytes).map_err(|e| e.to_string())?;
+    let rel = format!("_profile/{}", dest_name);
+    {
+        let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = conn_lock.as_ref().ok_or("No vault open")?;
+        db::set_vault_info(conn, "personal_photo_path", &rel).map_err(|e| e.to_string())?;
+    }
+    Ok(rel)
+}
+
 #[tauri::command]
 pub fn clear_profile_photo(state: State<AppState>) -> Result<(), String> {
     let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
