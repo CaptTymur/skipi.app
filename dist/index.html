@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Скипи Моряк</title>
 <script>
-var APP_VERSION='0.4.147';
+var APP_VERSION='0.4.148';
 var UI_LANG_KEY='skipi-ui-language';
 var UI_LANG_OPTIONS=[
     ['ru','Русский'],
@@ -903,7 +903,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
             <div class="welcome" id="scr-welcome">
                 <h1 id="welcome-title">Скипи Моряк</h1>
                 <p id="welcome-subtitle">Skipi - United Seafarers</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.147</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.148</span></p>
                 <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -967,8 +967,9 @@ input, select, textarea, button { font-family:var(--font-ui); }
             </div>
         </div>
         <div class="field" style="margin-top:8px;"><label>Home address *</label><input id="fp-home_address" placeholder="Street, city, country, ZIP"></div>
-        <div style="margin-top:14px;display:flex;align-items:center;gap:10px;">
+        <div style="margin-top:14px;">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;"><input type="checkbox" id="fp-ready_for_offers" onchange="fpToggleReady(this.checked)" style="width:16px;height:16px;accent-color:var(--accent);"> Ready to accept job offers</label>
+            <div style="margin:4px 0 0 24px;font-size:11px;color:var(--text2);">On adds availability fields (phones, airports, available date, salary). Turn off to finish with just the basics.</div>
         </div>
         <div style="margin-top:16px;display:flex;gap:8px;justify-content:space-between;align-items:center;">
             <button class="btn btn-outline" onclick="closeForcedProfile()">Skip for now</button>
@@ -3420,22 +3421,45 @@ async function fpUseExisting(action){
     }catch(e){logError('fpUseExisting',e);}
     setTimeout(function(){try{openForcedProfile(false);}catch(e){}},300);
 }
+// Red-outline a required field that failed validation; clear it the moment the
+// user types/changes the value so the highlight tracks what's actually missing.
+function fpMarkField(el,bad){
+    if(!el)return;
+    if(bad){
+        el.style.borderColor='var(--red)';
+        el.style.boxShadow='0 0 0 1px var(--red)';
+        if(!el._fpClearBound){
+            el._fpClearBound=true;
+            var clear=function(){el.style.borderColor='';el.style.boxShadow='';};
+            el.addEventListener('input',clear);
+            el.addEventListener('change',clear);
+        }
+    }else{
+        el.style.borderColor='';el.style.boxShadow='';
+    }
+}
 async function fpSubmit(){
     var fields={};
     var missing=[];
     var labelMap={surname:'Surname',first_name:'First name',date_of_birth:'Date of birth',place_of_birth:'Place of birth',nationality:'Citizenship',phones:'Phones',email:'Email',rank:'Rank',preferred_vessel_types:'Vessel type',nearest_airport:'Nearest airport',nearest_intl_airport:'Nearest intl airport',available_from:'Available from',home_address:'Home address',min_salary:'Minimum salary'};
     var rdy=document.getElementById('fp-ready_for_offers');
     var readyOn=!!(rdy&&rdy.checked);
+    var missingEls=[];
     fpRequiredKeys(readyOn).forEach(function(k){
         var el=document.getElementById('fp-'+k);
         var v=k==='rank'?rankValueFromControl('fp'):(el?(el.value||'').trim():'');
-        if(!v)missing.push(labelMap[k]||k);
+        if(!v){missing.push(labelMap[k]||k);if(el)missingEls.push(el);}
+        fpMarkField(el,!v);
         if(k==='min_salary')fields.min_salary=v;
         else fields[k]=v;
     });
     var errEl=document.getElementById('fp-err');
     if(missing.length){
-        if(errEl){errEl.style.display='block';errEl.textContent='Please fill required fields: '+missing.join(', ');}
+        if(errEl){errEl.style.display='block';errEl.textContent='Please fill the highlighted required field'+(missing.length>1?'s':'')+': '+missing.join(', ');}
+        if(missingEls[0]){
+            try{missingEls[0].scrollIntoView({behavior:'smooth',block:'center'});}catch(e){}
+            try{missingEls[0].focus({preventScroll:true});}catch(e2){try{missingEls[0].focus();}catch(e3){}}
+        }
         return;
     }
     if(errEl)errEl.style.display='none';

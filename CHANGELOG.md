@@ -7,6 +7,16 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.148] — 2026-06-20
+
+### Fixed
+- Profile validation now points you at what's missing: failed required fields get
+  a red outline, the form scrolls to and focuses the first one, and the outline
+  clears as you type — instead of just listing field names in an error bar.
+- Added a hint under "Ready to accept job offers" explaining it adds the
+  availability fields (phones, airports, available date, salary), so users who
+  just want the basics can turn it off and finish faster.
+
 ## [0.4.147] — 2026-06-20
 
 ### Fixed
