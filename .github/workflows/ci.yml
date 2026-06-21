@@ -1,0 +1,108 @@
+# Skipi — CI (pull-request / branch regression gate)
+#
+# The release workflow only runs on a version TAG, so a broken change can sit
+# on a branch or PR undetected until release. This workflow runs the cheap,
+# high-value checks on every PR and on pushes to the integration branches, so
+# regressions are caught BEFORE merge. iOS is built on Mac and Android on
+# Linux against one shared dist/index.html, so the JS gate here protects all
+# three platforms from a single malformed-JS regression.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, mobile-start]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Parse the inline JS in dist/index.html and fail fast on syntax errors.
+  # This is the shared frontend for desktop, Android and iOS — one missing
+  # bracket here breaks every platform, so this is the most important gate.
+  js-syntax:
+    name: JS syntax check
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check inline JS in dist/index.html
+        run: |
+          node -e '
+            const fs = require("fs");
+            const html = fs.readFileSync("dist/index.html", "utf8");
+            const blocks = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+            if (!blocks.length) { console.error("no <script> blocks found"); process.exit(1); }
+            const main = blocks.reduce((a,b) => a.length > b.length ? a : b, "");
+            try {
+              new Function(main);
+              console.log("JS syntax OK (" + main.length + " chars across " + blocks.length + " blocks)");
+            } catch (e) {
+              console.error("SYNTAX ERROR in dist/index.html inline JS:");
+              console.error("  " + e.message);
+              process.exit(1);
+            }
+          '
+
+  # Compile-check the Rust backend on Linux. Catches shared-code / #[cfg]
+  # breakage (the desktop + Android path) without a full bundle.
+  linux-check:
+    name: Linux cargo check
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            libgtk-3-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-ci-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-ci-
+      - name: cargo check
+        working-directory: src-tauri
+        run: cargo check --locked
+
+  # --------------------------------------------------------------------------
+  # Cross-platform compile guards — recommended next step (kept off until
+  # verified on a runner so CI stays green). Enable to catch Android/iOS
+  # build breakage automatically, which is the main risk of editing one shared
+  # repo from two machines (iOS on Mac, Android on Linux):
+  #
+  # android-build:
+  #   runs-on: ubuntu-22.04
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-java@v4   # temurin 21
+  #     - uses: android-actions/setup-android@v3   # SDK + NDK
+  #     - uses: dtolnay/rust-toolchain@stable
+  #       with: { targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android }
+  #     - run: cargo install tauri-cli --version '^2'
+  #     - working-directory: src-tauri
+  #       run: cargo tauri android build --apk --debug
+  #
+  # ios-compile:
+  #   runs-on: macos-latest   # Xcode preinstalled
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: dtolnay/rust-toolchain@stable
+  #       with: { targets: aarch64-apple-ios-sim }
+  #     - run: cargo install tauri-cli --version '^2'
+  #     - working-directory: src-tauri
+  #       run: cargo tauri ios build --target aarch64-sim --no-sign
+  # --------------------------------------------------------------------------
