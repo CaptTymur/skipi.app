@@ -1255,7 +1255,7 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
             <div class="welcome" id="scr-welcome">
                 <h1 id="welcome-title">Скипи Моряк</h1>
                 <p id="welcome-subtitle">Skipi - United Seafarers</p>
-                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">0.4.162</span></p>
+                <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">EMBED-TEST</span></p>
                 <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
                 <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
                 <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
@@ -1413,10 +1413,6 @@ function canonicalRank(r) {
     if (!r) return r;
     return RANK_ALIASES[r] || r;
 }
-function positionDisplayLabel(p){
-    return p?(p.display_label||p.label||''):'';
-}
-
 function err(m) { var e=document.getElementById('err'); e.textContent=m; e.style.display='block'; }
 
 /* ── Toast notification system ── */
@@ -8643,7 +8639,9 @@ async function showMissing(){
 }
 
 // ========== Work history ==========
-function escAttr(s){return String(s||'').replace(/'/g,"&#39;").replace(/"/g,'&quot;');}
+// NOTE: escAttr is defined earlier (full version escaping & < > " '). The
+// partial duplicate that used to live here shadowed it and broke onclick
+// attributes containing & (e.g. vessel names) — removed in the trunk merge.
 var VESSEL_REVIEWS_API = '/api/vessels/';
 var VESSEL_REVIEWS_FALLBACK_API = 'http://127.0.0.1:8000/api/vessels/';
 var VESSEL_REVIEW_CACHE_KEY = 'skipi-vessel-reviews-cache-v2';
