@@ -22,7 +22,11 @@ pub fn get_app_version() -> String {
 /// Used by the feedback template so beta reports always include the platform.
 #[tauri::command]
 pub fn get_platform() -> String {
-    if cfg!(target_os = "macos") {
+    if cfg!(target_os = "android") {
+        "android".to_string()
+    } else if cfg!(target_os = "ios") {
+        "ios".to_string()
+    } else if cfg!(target_os = "macos") {
         "macos".to_string()
     } else if cfg!(target_os = "windows") {
         "windows".to_string()
@@ -36,13 +40,30 @@ pub fn get_platform() -> String {
 /// Default parent folder for new vaults. Used by the frontend to pre-fill
 /// "where this vault will be saved" before any native picker opens.
 #[tauri::command]
-pub fn get_default_vault_parent() -> Result<String, String> {
-    let p = dirs::document_dir()
-        .or_else(dirs::home_dir)
-        .ok_or_else(|| "Could not resolve user Documents / home folder".to_string())?
-        .join("Skipi");
-    fs::create_dir_all(&p).map_err(|e| format!("Could not create default Skipi folder: {}", e))?;
-    Ok(p.to_string_lossy().to_string())
+pub fn get_default_vault_parent(_app: tauri::AppHandle) -> Result<String, String> {
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        use tauri::Manager;
+        let p = _app
+            .path()
+            .app_data_dir()
+            .map_err(|e| format!("Could not resolve app data folder: {}", e))?
+            .join("vaults");
+        fs::create_dir_all(&p)
+            .map_err(|e| format!("Could not create mobile Skipi vault folder: {}", e))?;
+        return Ok(p.to_string_lossy().to_string());
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let p = dirs::document_dir()
+            .or_else(dirs::home_dir)
+            .ok_or_else(|| "Could not resolve user Documents / home folder".to_string())?
+            .join("Skipi");
+        fs::create_dir_all(&p)
+            .map_err(|e| format!("Could not create default Skipi folder: {}", e))?;
+        Ok(p.to_string_lossy().to_string())
+    }
 }
 
 /// Detects how Skipi is installed on Linux so the frontend can choose
@@ -77,6 +98,14 @@ pub fn get_linux_install_type() -> String {
 /// Receives the current `WebviewWindow` directly (Tauri injects it) — that
 /// way we don't depend on a specific label or on extra window-plugin
 /// capabilities on the JS side.
+#[cfg(any(target_os = "android", target_os = "ios"))]
+#[tauri::command]
+pub fn set_window_title(window: tauri::WebviewWindow, title: String) -> Result<(), String> {
+    let _ = (window, title);
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[tauri::command]
 pub fn set_window_title(window: tauri::WebviewWindow, title: String) -> Result<(), String> {
     window.set_title(&title).map_err(|e| e.to_string())
@@ -86,6 +115,17 @@ pub fn set_window_title(window: tauri::WebviewWindow, title: String) -> Result<(
 /// `open` / `start` so we don't need the tauri_plugin_shell dep. Used to
 /// redirect Linux `.deb` users to the release page when auto-update isn't
 /// applicable to their install type.
+#[cfg(any(target_os = "android", target_os = "ios"))]
+#[tauri::command]
+pub fn open_external_url(url: String) -> Result<(), String> {
+    let allowed = ["https://", "http://", "mailto:", "tel:"];
+    if !allowed.iter().any(|p| url.starts_with(p)) {
+        return Err("Only http(s)/mailto/tel URLs are allowed".to_string());
+    }
+    Err("Opening external URLs is not wired for mobile yet.".to_string())
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[tauri::command]
 pub fn open_external_url(url: String) -> Result<(), String> {
     // Sanity check — limit to scheme://-style URLs so this command can't be
@@ -270,6 +310,116 @@ pub fn get_current_vault_path(state: State<AppState>) -> Option<String> {
         .map(|p| p.to_string_lossy().to_string())
 }
 
+fn normalize_path_string(path: &Path) -> String {
+    path.to_string_lossy().to_string()
+}
+
+fn path_matches(a: &Path, b: &Path) -> bool {
+    if a == b {
+        return true;
+    }
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(ca), Ok(cb)) => ca == cb,
+        _ => normalize_path_string(a) == normalize_path_string(b),
+    }
+}
+
+fn load_vault_config() -> serde_json::Value {
+    let cfg = crate::config_path();
+    fs::read_to_string(&cfg)
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_else(|| serde_json::json!({}))
+}
+
+fn save_vault_config(data: &serde_json::Value) -> Result<(), String> {
+    let cfg = crate::config_path();
+    fs::write(&cfg, data.to_string()).map_err(|e| e.to_string())
+}
+
+fn prune_vault_from_config(target: &Path) -> Result<(), String> {
+    let mut data = load_vault_config();
+    if !data.is_object() {
+        data = serde_json::json!({});
+    }
+    let recent = crate::load_recent_vaults();
+    let kept: Vec<String> = recent
+        .into_iter()
+        .filter(|p| !path_matches(Path::new(p), target))
+        .collect();
+    data["recent_vaults"] = serde_json::Value::Array(
+        kept.iter()
+            .map(|s| serde_json::Value::String(s.clone()))
+            .collect(),
+    );
+
+    let last_matches = data
+        .get("last_vault")
+        .and_then(|v| v.as_str())
+        .map(|p| path_matches(Path::new(p), target))
+        .unwrap_or(false);
+    if last_matches {
+        if let Some(next) = kept.first() {
+            data["last_vault"] = serde_json::Value::String(next.clone());
+        } else if let Some(obj) = data.as_object_mut() {
+            obj.remove("last_vault");
+        }
+    }
+    save_vault_config(&data)
+}
+
+#[tauri::command]
+pub fn delete_vault(state: State<AppState>, path: Option<String>) -> Result<(), String> {
+    let target = match path {
+        Some(p) if !p.trim().is_empty() => PathBuf::from(p),
+        _ => state
+            .vault_path
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .ok_or("No vault selected")?
+            .clone(),
+    };
+
+    let is_current = state
+        .vault_path
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .map(|p| path_matches(p, &target))
+        .unwrap_or(false);
+
+    if !target.exists() {
+        let _ = prune_vault_from_config(&target);
+        if is_current {
+            *state.conn.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            *state.vault_path.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        }
+        return Ok(());
+    }
+    if !target.is_dir() || !target.join("skipi.db").is_file() {
+        return Err("Refusing to delete: this folder is not a Skipi vault.".to_string());
+    }
+
+    if is_current {
+        *state.conn.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+
+    match fs::remove_dir_all(&target) {
+        Ok(()) => {}
+        Err(e)
+            if e.kind() == std::io::ErrorKind::NotFound
+                || e.raw_os_error() == Some(2)
+                || !target.exists() => {}
+        Err(e) => return Err(format!("Could not delete vault: {}", e)),
+    }
+    if is_current {
+        *state.vault_path.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+    let _ = prune_vault_from_config(&target);
+    Ok(())
+}
+
 #[tauri::command]
 pub fn get_vault_path(state: State<AppState>) -> Result<String, String> {
     let lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
@@ -290,6 +440,20 @@ pub fn get_vault_identity_key(state: State<AppState>) -> Result<serde_json::Valu
     let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = conn_lock.as_ref().ok_or("No vault open")?;
     identity::get_vault_identity_key(conn, &vault_path)
+}
+
+#[tauri::command]
+pub fn get_identity_trust_status(state: State<AppState>) -> Result<serde_json::Value, String> {
+    let vault_path = state
+        .vault_path
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .ok_or("No vault open")?
+        .clone();
+    let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = conn_lock.as_ref().ok_or("No vault open")?;
+    identity::get_identity_trust_status(conn, &vault_path, crate::load_recent_vaults())
 }
 
 fn zip_path_name(path: &Path) -> String {
@@ -556,32 +720,51 @@ pub fn import_vault_backup(
 }
 
 #[tauri::command]
-pub fn get_recent_vaults() -> Vec<String> {
-    crate::load_recent_vaults()
+pub fn get_recent_vaults(_app: tauri::AppHandle) -> Vec<String> {
+    let recent: Vec<String> = crate::load_recent_vaults()
         .into_iter()
         .filter(|p| std::path::Path::new(p).is_dir())
-        .collect()
+        .collect();
+    if !recent.is_empty() {
+        return recent;
+    }
+
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        use tauri::Manager;
+        let Ok(base) = _app.path().app_data_dir() else {
+            return vec![];
+        };
+        let vaults = base.join("vaults");
+        let Ok(entries) = fs::read_dir(vaults) else {
+            return vec![];
+        };
+        let mut found: Vec<(PathBuf, std::time::SystemTime)> = entries
+            .filter_map(|entry| entry.ok().map(|e| e.path()))
+            .filter(|path| path.join("skipi.db").is_file())
+            .map(|path| {
+                let modified = fs::metadata(path.join("skipi.db"))
+                    .and_then(|m| m.modified())
+                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                (path, modified)
+            })
+            .collect();
+        found.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        return found
+            .into_iter()
+            .map(|(path, _)| path.to_string_lossy().to_string())
+            .collect();
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        recent
+    }
 }
 
 #[tauri::command]
 pub fn forget_recent_vault(path: String) -> Result<(), String> {
-    use std::fs;
-    let cfg = crate::config_path();
-    let mut data: serde_json::Value = match fs::read_to_string(&cfg)
-        .ok()
-        .and_then(|t| serde_json::from_str(&t).ok())
-    {
-        Some(v) => v,
-        None => serde_json::json!({}),
-    };
-    let recent = crate::load_recent_vaults();
-    let kept: Vec<String> = recent.into_iter().filter(|p| p != &path).collect();
-    data["recent_vaults"] = serde_json::Value::Array(
-        kept.iter()
-            .map(|s| serde_json::Value::String(s.clone()))
-            .collect(),
-    );
-    fs::write(&cfg, data.to_string()).map_err(|e| e.to_string())
+    prune_vault_from_config(Path::new(&path))
 }
 
 #[cfg(test)]

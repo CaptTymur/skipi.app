@@ -1,6 +1,6 @@
 use rusqlite::{params, Connection, OptionalExtension, Result};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::{collections::HashSet, path::Path};
 #[cfg(unix)]
 use std::{fs, os::unix::fs::PermissionsExt};
 
@@ -270,20 +270,18 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
         );",
     )?;
 
-    let current: u32 = conn
-        .query_row(
-            "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap_or(0);
+    let applied: HashSet<u32> = {
+        let mut stmt = conn.prepare("SELECT version FROM schema_migrations")?;
+        let rows = stmt.query_map([], |row| row.get::<_, u32>(0))?;
+        rows.collect::<Result<HashSet<_>>>()?
+    };
 
     for (v, sql) in migrations() {
-        if v <= current {
+        if applied.contains(&v) {
             continue;
         }
         let tx = conn.transaction()?;
-        tx.execute_batch(sql)?;
+        execute_migration_sql(&tx, sql)?;
         tx.execute(
             "INSERT INTO schema_migrations (version, applied_at) VALUES (?1, datetime('now'))",
             params![v],
@@ -291,6 +289,29 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
         tx.commit()?;
     }
     Ok(())
+}
+
+fn execute_migration_sql(conn: &Connection, sql: &str) -> Result<()> {
+    for statement in sql.split(';') {
+        let statement = statement.trim();
+        if statement.is_empty() {
+            continue;
+        }
+        if let Err(err) = conn.execute(statement, []) {
+            if is_duplicate_add_column(statement, &err) {
+                continue;
+            }
+            return Err(err);
+        }
+    }
+    Ok(())
+}
+
+fn is_duplicate_add_column(statement: &str, err: &rusqlite::Error) -> bool {
+    let normalized = statement.to_ascii_uppercase();
+    normalized.starts_with("ALTER TABLE")
+        && normalized.contains(" ADD COLUMN ")
+        && err.to_string().contains("duplicate column name")
 }
 
 /// Back-compat: existing vaults that predate the migration framework
@@ -437,6 +458,141 @@ mod tests {
 
         drop(conn);
         let _ = fs::remove_dir_all(&vault_path);
+    }
+
+    #[test]
+    fn open_db_tolerates_duplicate_column_in_pending_migration() {
+        let vault_path = env::temp_dir().join(format!("skipi-duplicate-dwt-{}", Uuid::new_v4()));
+        fs::create_dir_all(&vault_path).unwrap();
+        let db_path = vault_path.join("skipi.db");
+
+        {
+            let conn = Connection::open(&db_path).unwrap();
+            conn.execute_batch(
+                r#"
+                CREATE TABLE schema_migrations (
+                    version INTEGER PRIMARY KEY,
+                    applied_at TEXT NOT NULL
+                );
+                INSERT INTO schema_migrations(version, applied_at)
+                    VALUES (1, datetime('now')), (2, datetime('now')), (3, datetime('now')),
+                           (4, datetime('now')), (5, datetime('now')), (6, datetime('now'));
+                CREATE TABLE documents (
+                    id TEXT PRIMARY KEY,
+                    category TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    template_id TEXT
+                );
+                CREATE TABLE work_history (
+                    id TEXT PRIMARY KEY,
+                    vessel_name TEXT NOT NULL,
+                    position TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    dwt TEXT
+                );
+                CREATE TABLE ai_corrections (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    doc_type TEXT NOT NULL,
+                    field_name TEXT NOT NULL,
+                    correct_value TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+            "#,
+            )
+            .unwrap();
+        }
+
+        let conn = open_db(&vault_path).unwrap();
+        assert!(table_has_column(&conn, "work_history", "dwt"));
+        assert!(table_has_column(&conn, "work_history", "teu"));
+        assert!(migration_recorded(&conn, 7));
+
+        drop(conn);
+        let _ = fs::remove_dir_all(&vault_path);
+    }
+
+    #[test]
+    fn open_db_applies_missing_migration_below_recorded_max_version() {
+        let vault_path = env::temp_dir().join(format!("skipi-missing-v7-{}", Uuid::new_v4()));
+        fs::create_dir_all(&vault_path).unwrap();
+        let db_path = vault_path.join("skipi.db");
+
+        {
+            let conn = Connection::open(&db_path).unwrap();
+            conn.execute_batch(
+                r#"
+                CREATE TABLE schema_migrations (
+                    version INTEGER PRIMARY KEY,
+                    applied_at TEXT NOT NULL
+                );
+                INSERT INTO schema_migrations(version, applied_at)
+                    VALUES (1, datetime('now')), (2, datetime('now')), (3, datetime('now')),
+                           (4, datetime('now')), (5, datetime('now')), (6, datetime('now')),
+                           (8, datetime('now')), (9, datetime('now'));
+                CREATE TABLE documents (
+                    id TEXT PRIMARY KEY,
+                    category TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    template_id TEXT,
+                    is_permanent INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE TABLE work_history (
+                    id TEXT PRIMARY KEY,
+                    vessel_name TEXT NOT NULL,
+                    position TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE ai_corrections (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    doc_type TEXT NOT NULL,
+                    field_name TEXT NOT NULL,
+                    correct_value TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE vessel_review_receipts (
+                    id TEXT PRIMARY KEY,
+                    work_history_id TEXT NOT NULL,
+                    vessel_imo TEXT NOT NULL,
+                    overall_rating REAL NOT NULL,
+                    summary_json TEXT NOT NULL DEFAULT '{}',
+                    submitted_at TEXT NOT NULL,
+                    lock_until TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+            "#,
+            )
+            .unwrap();
+        }
+
+        let conn = open_db(&vault_path).unwrap();
+        assert!(table_has_column(&conn, "work_history", "dwt"));
+        assert!(table_has_column(&conn, "work_history", "teu"));
+        assert!(migration_recorded(&conn, 7));
+
+        drop(conn);
+        let _ = fs::remove_dir_all(&vault_path);
+    }
+
+    fn table_has_column(conn: &Connection, table: &str, column: &str) -> bool {
+        let mut stmt = conn
+            .prepare(&format!("PRAGMA table_info({})", table))
+            .unwrap();
+        let columns = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
+        columns.iter().any(|name| name == column)
+    }
+
+    fn migration_recorded(conn: &Connection, version: u32) -> bool {
+        conn.query_row(
+            "SELECT 1 FROM schema_migrations WHERE version = ?1",
+            params![version],
+            |_| Ok(true),
+        )
+        .unwrap_or(false)
     }
 
     #[test]

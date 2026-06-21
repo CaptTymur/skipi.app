@@ -47,7 +47,21 @@ pub struct AgencyMailingDbResult {
     pub agencies: Vec<AgencyMailingAgency>,
 }
 
-fn db_path() -> Result<PathBuf, String> {
+#[cfg(any(target_os = "android", target_os = "ios"))]
+fn db_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    use tauri::Manager;
+
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Resolve app data dir failed: {e}"))?
+        .join("skipi");
+    fs::create_dir_all(&dir).map_err(|e| format!("Create config dir failed: {e}"))?;
+    Ok(dir.join("agency_mailing_db.json"))
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn db_path(_app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let dir = dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("skipi");
@@ -78,8 +92,8 @@ fn nationality(code: &str, label: &str) -> AgencyMailingNationalityDb {
     }
 }
 
-fn ensure_db_file() -> Result<(PathBuf, AgencyMailingDbFile), String> {
-    let path = db_path()?;
+fn ensure_db_file(app: &tauri::AppHandle) -> Result<(PathBuf, AgencyMailingDbFile), String> {
+    let path = db_path(app)?;
     let seed_db = template_db();
     if !path.exists() {
         let text = serde_json::to_string_pretty(&seed_db)
@@ -207,17 +221,18 @@ fn unique_valid_agencies(agencies: &[AgencyMailingAgency]) -> Vec<AgencyMailingA
 }
 
 #[tauri::command]
-pub fn agency_mailing_database_path() -> Result<String, String> {
-    let (path, _) = ensure_db_file()?;
+pub fn agency_mailing_database_path(app: tauri::AppHandle) -> Result<String, String> {
+    let (path, _) = ensure_db_file(&app)?;
     Ok(path.to_string_lossy().to_string())
 }
 
 #[tauri::command]
 pub fn fetch_agency_mailing_database(
+    app: tauri::AppHandle,
     nationality: Option<String>,
     profile_pct: Option<u32>,
 ) -> Result<AgencyMailingDbResult, String> {
-    let (path, db) = ensure_db_file()?;
+    let (path, db) = ensure_db_file(&app)?;
     let normalized = normalize_nationality(nationality);
     let pct = profile_pct.unwrap_or(0).min(100);
 

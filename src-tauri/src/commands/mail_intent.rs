@@ -36,6 +36,14 @@ pub struct MailIntentResult {
 
 const FOOTER: &str = "Sent via Skipi (https://skipi.app)";
 
+#[cfg(target_os = "android")]
+fn outbox_dir() -> PathBuf {
+    PathBuf::from("/storage/emulated/0/Download")
+        .join("Skipi")
+        .join("Outbox")
+}
+
+#[cfg(not(target_os = "android"))]
 fn outbox_dir() -> PathBuf {
     let home = std::env::var_os("HOME")
         .map(PathBuf::from)
@@ -181,6 +189,10 @@ fn build_eml(intent: &MailIntent) -> Result<String, String> {
     Ok(out)
 }
 
+#[cfg(target_os = "android")]
+fn open_path(_path: &Path) {}
+
+#[cfg(not(target_os = "android"))]
 fn open_path(path: &Path) {
     let _ = std::process::Command::new("xdg-open").arg(path).spawn();
 }
@@ -216,4 +228,162 @@ pub fn create_email_file(intent: MailIntent) -> Result<MailIntentResult, String>
         folder_path: dir.to_string_lossy().to_string(),
         message: format!("Email file created: {}", fname),
     })
+}
+
+#[cfg(target_os = "android")]
+fn safe_share_file_name(path: &Path, idx: usize) -> String {
+    let original = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("attachment");
+    let clean: String = original
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let clean = clean.trim_matches('_');
+    if clean.is_empty() {
+        format!("skipi-attachment-{}", idx + 1)
+    } else {
+        clean.to_string()
+    }
+}
+
+#[cfg(target_os = "android")]
+fn copy_attachments_to_share_cache(
+    app: &tauri::AppHandle,
+    attachments: &[String],
+) -> Result<Vec<String>, String> {
+    use tauri::Manager;
+
+    let cache_dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| format!("Resolve share cache dir: {}", e))?
+        .join("skipi-share");
+    fs::create_dir_all(&cache_dir).map_err(|e| format!("Create share cache: {}", e))?;
+
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let mut out = Vec::new();
+    for (idx, path_str) in attachments.iter().enumerate() {
+        let source = Path::new(path_str);
+        if !source.exists() {
+            return Err(format!("Attachment not found: {}", path_str));
+        }
+        let target = cache_dir.join(format!(
+            "{}-{}-{}",
+            stamp,
+            idx + 1,
+            safe_share_file_name(source, idx)
+        ));
+        fs::copy(source, &target).map_err(|e| format!("Prepare share attachment: {}", e))?;
+        out.push(target.to_string_lossy().to_string());
+    }
+    Ok(out)
+}
+
+/// Open the native Android share sheet with a Skipi dispatch draft.
+/// The frontend prepares CV/PDF/ZIP files first, then this command copies
+/// them into app cache and hands content URIs to Android via FileProvider.
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub fn mobile_share_dispatch(
+    window: tauri::WebviewWindow,
+    recipients: Vec<String>,
+    subject: String,
+    body: String,
+    attachments: Vec<String>,
+    mode: Option<String>,
+) -> Result<String, String> {
+    use jni::objects::{JObject, JString, JValue};
+    use std::sync::mpsc;
+    use std::time::Duration;
+    use tauri::Manager;
+
+    let share_paths = copy_attachments_to_share_cache(window.app_handle(), &attachments)?;
+    let recipients_joined = recipients.join("\n");
+    let paths_joined = share_paths.join("\n");
+    let mode = mode.unwrap_or_else(|| "share".to_string());
+    let (tx, rx) = mpsc::channel();
+
+    window
+        .with_webview(move |webview| {
+            webview.jni_handle().exec(move |env, activity, _webview| {
+                let result = (|| -> Result<String, String> {
+                    let subject_string = env
+                        .new_string(subject)
+                        .map_err(|e| format!("Android subject string: {}", e))?;
+                    let body_string = env
+                        .new_string(body)
+                        .map_err(|e| format!("Android body string: {}", e))?;
+                    let recipients_string = env
+                        .new_string(recipients_joined)
+                        .map_err(|e| format!("Android recipients string: {}", e))?;
+                    let paths_string = env
+                        .new_string(paths_joined)
+                        .map_err(|e| format!("Android attachment string: {}", e))?;
+                    let mode_string = env
+                        .new_string(mode)
+                        .map_err(|e| format!("Android mode string: {}", e))?;
+
+                    let subject_object = JObject::from(subject_string);
+                    let body_object = JObject::from(body_string);
+                    let recipients_object = JObject::from(recipients_string);
+                    let paths_object = JObject::from(paths_string);
+                    let mode_object = JObject::from(mode_string);
+
+                    let value = env
+                        .call_method(
+                            activity,
+                            "shareSkipiDispatch",
+                            "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+                            &[
+                                JValue::Object(&subject_object),
+                                JValue::Object(&body_object),
+                                JValue::Object(&recipients_object),
+                                JValue::Object(&paths_object),
+                                JValue::Object(&mode_object),
+                            ],
+                        )
+                        .map_err(|e| format!("Open Android share sheet: {}", e))?
+                        .l()
+                        .map_err(|e| format!("Android share result: {}", e))?;
+
+                    if value.is_null() {
+                        return Ok("Share sheet opened".to_string());
+                    }
+                    let message: String = env
+                        .get_string(&JString::from(value))
+                        .map_err(|e| format!("Android share result string: {}", e))?
+                        .into();
+                    Err(message)
+                })();
+                let _ = tx.send(result);
+            });
+        })
+        .map_err(|e| e.to_string())?;
+
+    rx.recv_timeout(Duration::from_secs(5))
+        .map_err(|_| "Timed out while opening Android share sheet".to_string())?
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+pub fn mobile_share_dispatch(
+    _window: tauri::WebviewWindow,
+    _recipients: Vec<String>,
+    _subject: String,
+    _body: String,
+    _attachments: Vec<String>,
+    _mode: Option<String>,
+) -> Result<String, String> {
+    Err("Mobile share sheet is only available on Android in this build.".to_string())
 }

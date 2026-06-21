@@ -14,6 +14,48 @@ pub struct AiRecognizeResult {
     pub title_suggestion: Option<String>,
 }
 
+const CLAUDE_OCR_PRIMARY_MODEL: &str = "claude-haiku-4-5-20251001";
+const CLAUDE_OCR_FALLBACK_MODEL: &str = "claude-sonnet-4-6";
+
+fn bundled_api_key() -> String {
+    option_env!("SKIPI_ANTHROPIC_API_KEY")
+        .unwrap_or("")
+        .trim()
+        .to_string()
+}
+
+fn read_saved_api_key(conn: &rusqlite::Connection) -> String {
+    conn.query_row(
+        "SELECT value FROM vault_info WHERE key = 'api_key'",
+        [],
+        |row| row.get(0),
+    )
+    .unwrap_or_default()
+}
+
+fn result_has_core_fields(result: &AiRecognizeResult) -> bool {
+    result
+        .doc_number
+        .as_ref()
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false)
+        || result
+            .issued_by
+            .as_ref()
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false)
+        || result
+            .valid_from
+            .as_ref()
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false)
+        || result
+            .valid_to
+            .as_ref()
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false)
+}
+
 /// Repair unquoted scalar values in JSON produced by LLMs.
 /// e.g. `"valid_from": 01-06-1984` → `"valid_from": "01-06-1984"`
 fn repair_unquoted_scalars(s: &str) -> String {
@@ -72,10 +114,118 @@ fn repair_unquoted_scalars(s: &str) -> String {
     out
 }
 
-#[tauri::command]
-pub async fn ai_recognize(
-    state: tauri::State<'_, AppState>,
-    doc_id: String,
+fn parse_ai_result(content_text: &str) -> Result<AiRecognizeResult, String> {
+    // Extract JSON from response
+    let json_str = if let Some(start) = content_text.find('{') {
+        if let Some(end) = content_text.rfind('}') {
+            let raw = &content_text[start..=end];
+            raw.lines()
+                .map(|line| {
+                    let mut in_str = false;
+                    let bytes = line.as_bytes();
+                    for i in 0..bytes.len() {
+                        if bytes[i] == b'"' && (i == 0 || bytes[i - 1] != b'\\') {
+                            in_str = !in_str;
+                        }
+                        if !in_str
+                            && i + 1 < bytes.len()
+                            && bytes[i] == b'/'
+                            && bytes[i + 1] == b'/'
+                        {
+                            return line[..i].trim_end().to_string();
+                        }
+                    }
+                    line.to_string()
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        } else {
+            content_text.to_string()
+        }
+    } else {
+        content_text.to_string()
+    };
+
+    let json_str = repair_unquoted_scalars(&json_str);
+
+    // Normalize JSON: convert array values to joined strings
+    match serde_json::from_str::<serde_json::Value>(&json_str) {
+        Ok(mut v) => {
+            if let Some(obj) = v.as_object_mut() {
+                for (_key, val) in obj.iter_mut() {
+                    if let Some(arr) = val.as_array() {
+                        let joined = arr
+                            .iter()
+                            .filter_map(|x| x.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        *val = serde_json::Value::String(joined);
+                    }
+                    if let Some(s) = val.as_str() {
+                        if s.len() > 10 && s.contains('T') {
+                            *val = serde_json::Value::String(s[..10].to_string());
+                        }
+                    }
+                }
+            }
+            serde_json::from_value(v)
+                .map_err(|e| format!("Cannot parse AI response: {} — raw: {}", e, json_str))
+        }
+        Err(e) => Err(format!(
+            "Cannot parse AI response: {} — raw: {}",
+            e, json_str
+        )),
+    }
+}
+
+fn claude_ocr_request(
+    client: &reqwest::blocking::Client,
+    api_key: &str,
+    model: &str,
+    file_block: &serde_json::Value,
+    prompt: &str,
+) -> Result<String, String> {
+    let body = serde_json::json!({
+        "model": model,
+        "max_tokens": 300,
+        "messages": [{
+            "role": "user",
+            "content": [
+                file_block.clone(),
+                { "type": "text", "text": prompt }
+            ]
+        }]
+    });
+
+    let resp = client
+        .post("https://api.anthropic.com/v1/messages")
+        .header("x-api-key", api_key)
+        .header("anthropic-version", "2023-06-01")
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .map_err(|e| format!("API request failed with {}: {}", model, e))?;
+
+    let status = resp.status();
+    let resp_text = resp.text().map_err(|e| e.to_string())?;
+    if !status.is_success() {
+        return Err(format!(
+            "API error {} with {}: {}",
+            status, model, resp_text
+        ));
+    }
+
+    let resp_json: serde_json::Value =
+        serde_json::from_str(&resp_text).map_err(|e| format!("Cannot parse response: {}", e))?;
+    Ok(resp_json["content"][0]["text"]
+        .as_str()
+        .unwrap_or("{}")
+        .to_string())
+}
+
+async fn ai_recognize_fields(
+    state: &AppState,
+    doc_id: &str,
     api_key: String,
     use_local: bool,
     ollama_model: Option<String>,
@@ -164,9 +314,7 @@ pub async fn ai_recognize(
                 .build()
                 .map_err(|e| e.to_string())?;
 
-            let content_text: String;
-
-            if use_local {
+            let result = if use_local {
                 // Ollama API (local)
                 let model = ollama_model.unwrap_or_else(|| "minicpm-v:12b".to_string());
                 let endpoint =
@@ -194,9 +342,11 @@ pub async fn ai_recognize(
 
                 let resp_json: serde_json::Value = serde_json::from_str(&resp_text)
                     .map_err(|e| format!("Cannot parse Ollama response: {}", e))?;
-                content_text = resp_json["response"].as_str().unwrap_or("{}").to_string();
+                let content_text = resp_json["response"].as_str().unwrap_or("{}").to_string();
+                parse_ai_result(&content_text)?
             } else {
-                // Claude API (cloud)
+                // Claude API (cloud): use the low-cost model first, then a stronger
+                // fallback only when the first pass produces no core fields or invalid JSON.
                 let file_block = if is_pdf {
                     serde_json::json!({
                         "type": "document",
@@ -208,114 +358,127 @@ pub async fn ai_recognize(
                         "source": { "type": "base64", "media_type": media_type, "data": b64 }
                     })
                 };
-                let body = serde_json::json!({
-                    "model": "claude-sonnet-4-20250514",
-                    "max_tokens": 300,
-                    "messages": [{
-                        "role": "user",
-                        "content": [
-                            file_block,
-                            { "type": "text", "text": prompt }
-                        ]
-                    }]
-                });
 
-                let resp = client
-                    .post("https://api.anthropic.com/v1/messages")
-                    .header("x-api-key", &api_key)
-                    .header("anthropic-version", "2023-06-01")
-                    .header("content-type", "application/json")
-                    .json(&body)
-                    .send()
-                    .map_err(|e| format!("API request failed: {}", e))?;
+                let primary = claude_ocr_request(
+                    &client,
+                    &api_key,
+                    CLAUDE_OCR_PRIMARY_MODEL,
+                    &file_block,
+                    &prompt,
+                );
 
-                let status = resp.status();
-                let resp_text = resp.text().map_err(|e| e.to_string())?;
-                if !status.is_success() {
-                    return Err(format!("API error {}: {}", status, resp_text));
-                }
-
-                let resp_json: serde_json::Value = serde_json::from_str(&resp_text)
-                    .map_err(|e| format!("Cannot parse response: {}", e))?;
-                content_text = resp_json["content"][0]["text"]
-                    .as_str()
-                    .unwrap_or("{}")
-                    .to_string();
-            }
-
-            // Extract JSON from response
-            let json_str = if let Some(start) = content_text.find('{') {
-                if let Some(end) = content_text.rfind('}') {
-                    let raw = &content_text[start..=end];
-                    let cleaned: String = raw
-                        .lines()
-                        .map(|line| {
-                            let mut in_str = false;
-                            let bytes = line.as_bytes();
-                            for i in 0..bytes.len() {
-                                if bytes[i] == b'"' && (i == 0 || bytes[i - 1] != b'\\') {
-                                    in_str = !in_str;
-                                }
-                                if !in_str
-                                    && i + 1 < bytes.len()
-                                    && bytes[i] == b'/'
-                                    && bytes[i + 1] == b'/'
-                                {
-                                    let before = line[..i].trim_end();
-                                    return before.to_string();
-                                }
+                match primary {
+                    Ok(text) => match parse_ai_result(&text) {
+                        Ok(result) if result_has_core_fields(&result) => result,
+                        Ok(empty_result) => {
+                            let fallback = claude_ocr_request(
+                                &client,
+                                &api_key,
+                                CLAUDE_OCR_FALLBACK_MODEL,
+                                &file_block,
+                                &prompt,
+                            );
+                            match fallback {
+                                Ok(text) => parse_ai_result(&text)?,
+                                Err(_) => empty_result,
                             }
-                            line.to_string()
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    cleaned
-                } else {
-                    content_text.clone()
-                }
-            } else {
-                content_text.clone()
-            };
-
-            let json_str = repair_unquoted_scalars(&json_str);
-
-            // Normalize JSON: convert array values to joined strings
-            let result: AiRecognizeResult =
-                match serde_json::from_str::<serde_json::Value>(&json_str) {
-                    Ok(mut v) => {
-                        if let Some(obj) = v.as_object_mut() {
-                            for (_key, val) in obj.iter_mut() {
-                                if let Some(arr) = val.as_array() {
-                                    let joined = arr
-                                        .iter()
-                                        .filter_map(|x| x.as_str())
-                                        .collect::<Vec<_>>()
-                                        .join(", ");
-                                    *val = serde_json::Value::String(joined);
-                                }
-                                if let Some(s) = val.as_str() {
-                                    if s.len() > 10 && s.contains('T') {
-                                        *val = serde_json::Value::String(s[..10].to_string());
-                                    }
+                        }
+                        Err(primary_parse_error) => {
+                            let fallback = claude_ocr_request(
+                                &client,
+                                &api_key,
+                                CLAUDE_OCR_FALLBACK_MODEL,
+                                &file_block,
+                                &prompt,
+                            );
+                            match fallback {
+                                Ok(text) => parse_ai_result(&text)?,
+                                Err(fallback_error) => {
+                                    return Err(format!(
+                                        "{} failed to produce valid JSON: {}; {} also failed: {}",
+                                        CLAUDE_OCR_PRIMARY_MODEL,
+                                        primary_parse_error,
+                                        CLAUDE_OCR_FALLBACK_MODEL,
+                                        fallback_error
+                                    ))
                                 }
                             }
                         }
-                        serde_json::from_value(v).map_err(|e| {
-                            format!("Cannot parse AI response: {} — raw: {}", e, json_str)
-                        })?
+                    },
+                    Err(primary_error) => {
+                        let fallback = claude_ocr_request(
+                            &client,
+                            &api_key,
+                            CLAUDE_OCR_FALLBACK_MODEL,
+                            &file_block,
+                            &prompt,
+                        );
+                        match fallback {
+                            Ok(text) => parse_ai_result(&text)?,
+                            Err(fallback_error) => {
+                                return Err(format!(
+                                    "{} failed: {}; {} also failed: {}",
+                                    CLAUDE_OCR_PRIMARY_MODEL,
+                                    primary_error,
+                                    CLAUDE_OCR_FALLBACK_MODEL,
+                                    fallback_error
+                                ))
+                            }
+                        }
                     }
-                    Err(e) => {
-                        return Err(format!(
-                            "Cannot parse AI response: {} — raw: {}",
-                            e, json_str
-                        ))
-                    }
-                };
+                }
+            };
 
             Ok(result)
         })
         .await
         .map_err(|e| format!("AI task failed: {}", e))??;
+
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn ai_preview_recognize(
+    state: tauri::State<'_, AppState>,
+    doc_id: String,
+    api_key: String,
+    use_local: bool,
+    ollama_model: Option<String>,
+    ollama_endpoint: Option<String>,
+    doc_title: Option<String>,
+) -> Result<AiRecognizeResult, String> {
+    ai_recognize_fields(
+        &state,
+        &doc_id,
+        api_key,
+        use_local,
+        ollama_model,
+        ollama_endpoint,
+        doc_title,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn ai_recognize(
+    state: tauri::State<'_, AppState>,
+    doc_id: String,
+    api_key: String,
+    use_local: bool,
+    ollama_model: Option<String>,
+    ollama_endpoint: Option<String>,
+    doc_title: Option<String>,
+) -> Result<AiRecognizeResult, String> {
+    let result = ai_recognize_fields(
+        &state,
+        &doc_id,
+        api_key,
+        use_local,
+        ollama_model,
+        ollama_endpoint,
+        doc_title,
+    )
+    .await?;
 
     let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = conn_lock.as_ref().ok_or("No vault open")?;
@@ -355,14 +518,18 @@ pub fn save_api_key(state: State<AppState>, key: String) -> Result<(), String> {
 pub fn get_api_key(state: State<AppState>) -> Result<String, String> {
     let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = lock.as_ref().ok_or("No vault open")?;
-    let info_key: String = conn
-        .query_row(
-            "SELECT value FROM vault_info WHERE key = 'api_key'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or_default();
-    Ok(info_key)
+    Ok(read_saved_api_key(conn))
+}
+
+#[tauri::command]
+pub fn get_effective_api_key(state: State<AppState>) -> Result<String, String> {
+    let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = lock.as_ref().ok_or("No vault open")?;
+    let saved_key = read_saved_api_key(conn);
+    if !saved_key.trim().is_empty() {
+        return Ok(saved_key);
+    }
+    Ok(bundled_api_key())
 }
 
 #[tauri::command]

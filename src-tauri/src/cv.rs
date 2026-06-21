@@ -197,21 +197,27 @@ pub fn build_cv_data(conn: &Connection) -> Result<CvData, String> {
     let docs = db::get_all_docs(conn).map_err(|e| e.to_string())?;
     let has_certificate_payload = |d: &db::DocRecord| {
         d.file_name.is_some()
+            || d.sha256.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false)
+            || d.file_size.unwrap_or(0) > 0
             || d.doc_number
                 .as_ref()
-                .map(|s| !s.is_empty())
+                .map(|s| !s.trim().is_empty())
                 .unwrap_or(false)
-            || d.issued_by.as_ref().map(|s| !s.is_empty()).unwrap_or(false)
+            || d.issued_by
+                .as_ref()
+                .map(|s| !s.trim().is_empty())
+                .unwrap_or(false)
             || d.valid_from
                 .as_ref()
-                .map(|s| !s.is_empty())
+                .map(|s| !s.trim().is_empty())
                 .unwrap_or(false)
-            || d.valid_to.as_ref().map(|s| !s.is_empty()).unwrap_or(false)
     };
     let certificates: Vec<CvCertificate> = docs
         .iter()
-        // A CV should only show documents the seafarer actually has.
-        // Skip truly empty slots (no file AND no metadata at all).
+        // A CV should only show documents the seafarer actually has or entered.
+        // Some profile templates prefill expiry/permanent values for required
+        // placeholders; expiry/permanent alone is not enough to claim a
+        // certificate in the CV.
         .filter(|d| has_certificate_payload(d))
         .map(|d| CvCertificate {
             title: d.title.clone(),
@@ -2003,4 +2009,64 @@ pub fn render_redacted_cv_pdf(
     let mut writer = std::io::BufWriter::new(file);
     save_pdf(doc, &mut writer)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{env, fs};
+    use uuid::Uuid;
+
+    fn test_doc(id: &str, title: &str) -> db::DocRecord {
+        db::DocRecord {
+            id: id.to_string(),
+            category: "Certificate of Competency".to_string(),
+            title: title.to_string(),
+            file_name: None,
+            has_expiry: true,
+            is_permanent: false,
+            valid_from: None,
+            valid_to: None,
+            issued_by: None,
+            doc_number: None,
+            notes: None,
+            field_statuses: None,
+            regulatory_basis: None,
+            template_id: None,
+            sha256: None,
+            file_size: None,
+            content_type: None,
+            visibility: "private".to_string(),
+            is_national: false,
+        }
+    }
+
+    #[test]
+    fn cv_ignores_template_expiry_without_user_payload() {
+        let vault_path = env::temp_dir().join(format!("skipi-cv-payload-{}", Uuid::new_v4()));
+        fs::create_dir_all(&vault_path).unwrap();
+        let conn = db::open_db(&vault_path).unwrap();
+        db::set_vault_info(&conn, "account_type", "seafarer").unwrap();
+        db::set_vault_info(&conn, "name", "Test Seafarer").unwrap();
+
+        let mut seeded = test_doc("seeded", "Seeded expiry only");
+        seeded.valid_to = Some("2031-06-15".to_string());
+        db::insert_doc(&conn, &seeded).unwrap();
+
+        let mut permanent_placeholder = test_doc("permanent", "Permanent placeholder only");
+        permanent_placeholder.is_permanent = true;
+        db::insert_doc(&conn, &permanent_placeholder).unwrap();
+
+        let mut entered = test_doc("entered", "Entered certificate");
+        entered.doc_number = Some("ABC-123".to_string());
+        entered.valid_to = Some("2031-06-15".to_string());
+        db::insert_doc(&conn, &entered).unwrap();
+
+        let data = build_cv_data(&conn).unwrap();
+        let titles: Vec<&str> = data.certificates.iter().map(|c| c.title.as_str()).collect();
+        assert_eq!(titles, vec!["Entered certificate"]);
+
+        drop(conn);
+        let _ = fs::remove_dir_all(&vault_path);
+    }
 }

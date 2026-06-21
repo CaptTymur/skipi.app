@@ -95,6 +95,168 @@ fn derive_user_id(pubkey: &[u8; 32]) -> String {
     encoded.chars().take(16).collect::<String>().to_lowercase()
 }
 
+fn normalize_identity_part(value: Option<String>) -> Option<String> {
+    let normalized = value?
+        .trim()
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(|c| c.to_lowercase())
+        .collect::<String>();
+    if normalized.is_empty() {
+        None
+    } else {
+        Some(normalized)
+    }
+}
+
+fn display_identity_name(conn: &Connection) -> String {
+    let first = db::get_vault_info_value(conn, "personal_first_name").unwrap_or_default();
+    let surname = db::get_vault_info_value(conn, "personal_surname").unwrap_or_default();
+    let name = [first.trim(), surname.trim()]
+        .into_iter()
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    if !name.is_empty() {
+        return name;
+    }
+    db::get_vault_info_value(conn, "name").unwrap_or_else(|| "Unnamed vault".to_string())
+}
+
+fn identity_canonical_string(conn: &Connection) -> Option<String> {
+    let first = normalize_identity_part(db::get_vault_info_value(conn, "personal_first_name"))?;
+    let surname = normalize_identity_part(db::get_vault_info_value(conn, "personal_surname"))?;
+    let dob = normalize_identity_part(db::get_vault_info_value(conn, "personal_dob"))?;
+    Some(format!("{first}|{surname}|{dob}"))
+}
+
+pub fn calculate_identity_fingerprint(conn: &Connection) -> Option<String> {
+    let canonical = identity_canonical_string(conn)?;
+    let mut hasher = Sha256::new();
+    hasher.update(b"skipi-local-identity-fingerprint-v1\0");
+    hasher.update(canonical.as_bytes());
+    let digest = hasher.finalize();
+    Some(format!("idfp1_{}", &hex::encode(digest)[..24]))
+}
+
+pub fn sync_identity_fingerprint(conn: &Connection) -> Result<Option<String>, String> {
+    let fingerprint = calculate_identity_fingerprint(conn);
+    db::set_vault_info(conn, "identity_fingerprint_version", "1").map_err(|e| e.to_string())?;
+    db::set_vault_info(
+        conn,
+        "identity_fingerprint",
+        fingerprint.as_deref().unwrap_or(""),
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(fingerprint)
+}
+
+fn same_path(a: &Path, b: &Path) -> bool {
+    if a == b {
+        return true;
+    }
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(ca), Ok(cb)) => ca == cb,
+        _ => a.to_string_lossy() == b.to_string_lossy(),
+    }
+}
+
+fn related_vault_json(conn: &Connection, path: &Path, relation: &str) -> serde_json::Value {
+    serde_json::json!({
+        "path": path.to_string_lossy(),
+        "name": display_identity_name(conn),
+        "date_of_birth": db::get_vault_info_value(conn, "personal_dob"),
+        "nationality": db::get_vault_info_value(conn, "personal_nationality"),
+        "user_id": db::get_vault_info_value(conn, "user_id"),
+        "relation": relation,
+    })
+}
+
+pub fn get_identity_trust_status(
+    conn: &Connection,
+    vault_path: &Path,
+    recent_paths: Vec<String>,
+) -> Result<serde_json::Value, String> {
+    ensure_vault_identity(conn, vault_path)?;
+    let current_user_id = db::get_vault_info_value(conn, "user_id").unwrap_or_default();
+    let current_fingerprint = sync_identity_fingerprint(conn)?;
+
+    let mut possible_duplicates = Vec::new();
+    let mut linked_copies = Vec::new();
+
+    if let Some(fp) = current_fingerprint.as_deref().filter(|s| !s.is_empty()) {
+        let mut seen_paths = std::collections::HashSet::new();
+        for raw in recent_paths {
+            if raw.trim().is_empty() {
+                continue;
+            }
+            if !seen_paths.insert(raw.clone()) {
+                continue;
+            }
+            let path = PathBuf::from(&raw);
+            if same_path(vault_path, &path) || !path.join("skipi.db").is_file() {
+                continue;
+            }
+            let Ok(other_conn) = db::open_db(&path) else {
+                continue;
+            };
+            let other_fp = db::get_vault_info_value(&other_conn, "identity_fingerprint")
+                .filter(|s| !s.trim().is_empty())
+                .or_else(|| calculate_identity_fingerprint(&other_conn));
+            if other_fp.as_deref() != Some(fp) {
+                continue;
+            }
+            let other_user_id =
+                db::get_vault_info_value(&other_conn, "user_id").unwrap_or_default();
+            if !other_user_id.is_empty() && other_user_id == current_user_id {
+                linked_copies.push(related_vault_json(&other_conn, &path, "same_identity_copy"));
+            } else {
+                possible_duplicates.push(related_vault_json(
+                    &other_conn,
+                    &path,
+                    "possible_duplicate",
+                ));
+            }
+        }
+    }
+
+    let status = if current_fingerprint
+        .as_deref()
+        .map(|s| s.is_empty())
+        .unwrap_or(true)
+    {
+        "incomplete"
+    } else if !possible_duplicates.is_empty() {
+        "possible_duplicate"
+    } else {
+        "unique"
+    };
+    db::set_vault_info(conn, "identity_trust_status", status).map_err(|e| e.to_string())?;
+
+    Ok(serde_json::json!({
+        "status": status,
+        "user_id": current_user_id,
+        "identity_fingerprint": current_fingerprint,
+        "fingerprint_version": 1,
+        "server_identity": {
+            "public_seafarer_id": db::get_vault_info_value(conn, "skipi_public_seafarer_id").filter(|s| !s.trim().is_empty()),
+            "claim_status": db::get_vault_info_value(conn, "skipi_identity_claim_status").filter(|s| !s.trim().is_empty()),
+            "duplicate": db::get_vault_info_value(conn, "skipi_identity_duplicate").map(|s| s == "true").unwrap_or(false),
+            "trust_level": db::get_vault_info_value(conn, "skipi_identity_trust_level").filter(|s| !s.trim().is_empty()),
+            "message": db::get_vault_info_value(conn, "skipi_identity_message").filter(|s| !s.trim().is_empty()),
+            "last_claim_at": db::get_vault_info_value(conn, "skipi_identity_last_claim_at").filter(|s| !s.trim().is_empty()),
+            "has_recovery_key": db::get_vault_info_value(conn, "skipi_identity_recovery_key").map(|s| !s.trim().is_empty()).unwrap_or(false),
+        },
+        "profile": {
+            "name": display_identity_name(conn),
+            "date_of_birth": db::get_vault_info_value(conn, "personal_dob"),
+            "nationality": db::get_vault_info_value(conn, "personal_nationality"),
+        },
+        "possible_duplicates": possible_duplicates,
+        "linked_copies": linked_copies,
+    }))
+}
+
 /// Ensure that `<vault>/_identity/sk.bin` exists. If it does, load the
 /// keypair from it; otherwise generate a fresh one. Either way, write the
 /// public key and derived `user_id` into `vault_info`.
@@ -190,6 +352,7 @@ pub fn get_vault_identity_key(
         "version": IDENTITY_VERSION,
         "user_id": derive_user_id(&pub_bytes),
         "identity_pubkey": hex::encode(pub_bytes),
+        "identity_fingerprint": sync_identity_fingerprint(conn)?,
         "recovery_key": recovery_key_from_secret(&secret),
         "profile": {
             "name": db::get_vault_info_value(conn, "name"),
@@ -278,5 +441,84 @@ mod tests {
 
         drop(conn);
         let _ = fs::remove_dir_all(&vault_path);
+    }
+
+    fn seed_identity_profile(conn: &Connection, first: &str, surname: &str, dob: &str) {
+        db::set_vault_info(conn, "personal_first_name", first).unwrap();
+        db::set_vault_info(conn, "personal_surname", surname).unwrap();
+        db::set_vault_info(conn, "personal_dob", dob).unwrap();
+        db::set_vault_info(conn, "personal_nationality", "Ukrainian").unwrap();
+    }
+
+    #[test]
+    fn identity_fingerprint_detects_duplicate_candidates() {
+        let a = std::env::temp_dir().join(format!("skipi-id-a-{}", uuid::Uuid::new_v4()));
+        let b = std::env::temp_dir().join(format!("skipi-id-b-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&a).unwrap();
+        fs::create_dir_all(&b).unwrap();
+        let conn_a = db::open_db(&a).unwrap();
+        let conn_b = db::open_db(&b).unwrap();
+        ensure_vault_identity(&conn_a, &a).unwrap();
+        ensure_vault_identity(&conn_b, &b).unwrap();
+        seed_identity_profile(&conn_a, "Mikhail", "Petrov", "1990-01-02");
+        seed_identity_profile(&conn_b, "mikhail", "petrov", "1990-01-02");
+
+        let status = get_identity_trust_status(
+            &conn_a,
+            &a,
+            vec![
+                a.to_string_lossy().to_string(),
+                b.to_string_lossy().to_string(),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(status["status"], "possible_duplicate");
+        assert_eq!(status["possible_duplicates"].as_array().unwrap().len(), 1);
+        assert_eq!(status["linked_copies"].as_array().unwrap().len(), 0);
+
+        drop(conn_a);
+        drop(conn_b);
+        let _ = fs::remove_dir_all(a);
+        let _ = fs::remove_dir_all(b);
+    }
+
+    #[test]
+    fn same_recovery_key_is_linked_copy_not_duplicate() {
+        let a = std::env::temp_dir().join(format!("skipi-id-copy-a-{}", uuid::Uuid::new_v4()));
+        let b = std::env::temp_dir().join(format!("skipi-id-copy-b-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&a).unwrap();
+        fs::create_dir_all(&b).unwrap();
+        let conn_a = db::open_db(&a).unwrap();
+        ensure_vault_identity(&conn_a, &a).unwrap();
+        seed_identity_profile(&conn_a, "Mikhail", "Petrov", "1990-01-02");
+        let key = get_vault_identity_key(&conn_a, &a).unwrap()["recovery_key"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        install_recovery_key(&b, &key).unwrap();
+        let conn_b = db::open_db(&b).unwrap();
+        ensure_vault_identity(&conn_b, &b).unwrap();
+        seed_identity_profile(&conn_b, "Mikhail", "Petrov", "1990-01-02");
+
+        let status = get_identity_trust_status(
+            &conn_a,
+            &a,
+            vec![
+                a.to_string_lossy().to_string(),
+                b.to_string_lossy().to_string(),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(status["status"], "unique");
+        assert_eq!(status["possible_duplicates"].as_array().unwrap().len(), 0);
+        assert_eq!(status["linked_copies"].as_array().unwrap().len(), 1);
+
+        drop(conn_a);
+        drop(conn_b);
+        let _ = fs::remove_dir_all(a);
+        let _ = fs::remove_dir_all(b);
     }
 }

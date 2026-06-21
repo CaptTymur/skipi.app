@@ -20,6 +20,17 @@ pub(crate) struct AppState {
 }
 
 pub(crate) fn config_path() -> PathBuf {
+    #[cfg(target_os = "android")]
+    {
+        // `dirs::config_dir()` is not reliable under Android WebView/Tauri:
+        // on the test Pixel it resolved outside the app sandbox, so writes to
+        // last_vault silently failed. Keep Skipi config inside the app-private
+        // data directory used by this package.
+        let dir = PathBuf::from("/data/user/0/app.skipi.seafarer").join("skipi");
+        let _ = fs::create_dir_all(&dir);
+        return dir.join("config.json");
+    }
+
     let dir = dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("skipi");
@@ -89,8 +100,8 @@ pub(crate) fn base64_encode(data: &[u8]) -> String {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     use commands::{
-        agency_mailing, ai, cv_commands, documents, email, jobs, mail_intent, messaging, packages,
-        profile, review, vault, work_history,
+        agency_mailing, ai, assistant, cv_commands, documents, email, jobs, mail_intent, messaging,
+        packages, profile, review, vault, work_history,
     };
 
     tauri::Builder::default()
@@ -131,6 +142,8 @@ pub fn run() {
             vault::get_current_vault_path,
             vault::get_vault_path,
             vault::get_vault_identity_key,
+            vault::get_identity_trust_status,
+            vault::delete_vault,
             vault::export_vault_backup,
             vault::import_vault_backup,
             // Documents
@@ -138,16 +151,25 @@ pub fn run() {
             documents::update_expiry,
             documents::update_doc_field,
             documents::attach_file,
+            documents::attach_file_bytes,
+            documents::attach_pdf_pages,
             documents::read_file_base64,
+            documents::render_document_thumbnail,
+            documents::render_document_pdf_preview,
             documents::get_document_file_path,
+            documents::open_document_file,
             documents::export_documents_bundle,
             documents::add_custom_doc,
             documents::add_catalog_doc,
             documents::delete_doc,
+            // AI assistant (server-proxied chat)
+            assistant::assistant_chat,
             // AI recognition
+            ai::ai_preview_recognize,
             ai::ai_recognize,
             ai::save_api_key,
             ai::get_api_key,
+            ai::get_effective_api_key,
             ai::save_ai_correction,
             ai::save_ocr_label,
             ai::get_ai_corrections,
@@ -186,10 +208,12 @@ pub fn run() {
             vault::get_recent_vaults,
             vault::forget_recent_vault,
             profile::get_matchable_profile,
+            profile::claim_seafarer_identity,
             profile::get_jobs_readiness_status,
             profile::get_seafarer_personal,
             profile::set_seafarer_personal,
             profile::upload_profile_photo,
+            profile::upload_profile_photo_bytes,
             profile::clear_profile_photo,
             profile::get_profile_photo_abs_path,
             profile::get_profile_photo_data_url,
@@ -229,6 +253,7 @@ pub fn run() {
             jobs::open_mail_with_attachment,
             jobs::get_downloads_dir,
             mail_intent::create_email_file,
+            mail_intent::mobile_share_dispatch,
             feedback::init_app_diagnostics,
             feedback::app_heartbeat,
             feedback::mark_app_shutdown,

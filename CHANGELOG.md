@@ -7,6 +7,14 @@ every released slice.
 
 ## [Unreleased]
 
+## [0.4.162] — 2026-06-21
+
+### Changed
+- Unified the desktop (`main`) and Android (`mobile-start`) trunks into one
+  shared codebase: the mobile AI assistant, mobile-mode shell and Android
+  fixes now sit alongside the desktop forced-profile escape, Vessel DB
+  review-click fix and the Linux DMABUF crash fix in a single tree.
+
 ## [0.4.151] — 2026-06-20
 
 ### Fixed
@@ -61,6 +69,74 @@ every released slice.
   duration to each sea-going experience line.
 - Added Trainee, Apprentice, Deck Boy, and Welder to the rank taxonomy used by the
   Sea Service position selector and seafarer profile.
+## [0.4.161] — 2026-06-20
+
+### Changed
+- The AI assistant is disabled in the demo profile: instead of the chat, demo
+  users see a short note asking them to create their own seafarer profile (so the
+  demo can't spend real API budget). It works normally on a real vault.
+
+## [0.4.158] — 2026-06-20
+
+### Fixed
+- Assistant chat now gives immediate feedback and reliable scrolling: the
+  conversation auto-scrolls to the newest message/reply (it was scrolling the
+  wrong element), an animated typing indicator shows while waiting, the composer
+  no longer overlaps the last message, and the send button fires on the first
+  tap even while the keyboard is open.
+
+## [0.4.155] — 2026-06-20
+
+### Changed
+- Assistant: the system prompt and Skipi knowledge base now live only on the
+  server and are no longer bundled in the app, so they can't be extracted from
+  the APK or the public repo. The client sends only the conversation and the
+  seafarer's own profile. Server-side prompt-extraction defences added
+  (input filter, output canary check, per-key attempt tracking).
+
+## [0.4.154] — 2026-06-20
+
+### Added
+- New AI Assistant module: a free, in-app maritime career/documents chat. The
+  app sends the seafarer's locally-assembled profile (rank, certificates, sea
+  service — no name or document numbers) plus a bundled Skipi knowledge base to
+  a server-side proxy that calls Claude; conversations are logged server-side to
+  improve the assistant and rate-limited per seafarer. A personal Skipi key is
+  issued automatically on first use and a one-time consent screen explains the
+  logging.
+
+## [0.4.153] — 2026-06-20
+
+### Fixed
+- Profile photo upload now works on Android/iOS. The picker hands the WebView a
+  `content://` URI with no filesystem path, so the desktop path-copy command
+  failed with "Source photo does not exist". Mobile now reads the chosen image
+  bytes and writes them straight into the vault via `upload_profile_photo_bytes`.
+
+## [0.4.152] — 2026-06-19
+
+### Fixed
+- Sea Service wizard no longer loses a typed/selected position. The rank
+  `<datalist>` popup on Android WebView intercepted the first "Next" tap and
+  reverted uncommitted text; replaced it with tappable rank chips that fill the
+  field and commit to wizard state immediately. Free-text entry is preserved.
+- Localised the mobile welcome screen (title/subtitle/buttons) so Russian UI no
+  longer mixes with English copy.
+
+## [0.4.151] — 2026-06-19
+
+### Added
+- CV now shows an "Experience by position" summary that totals time served in
+  each rank in years, months, and days, and appends a per-contract duration to
+  every sea-going experience line.
+- Sea Service position field now offers a rank suggestion list (Cadet, Oiler,
+  Welder, and the full rank taxonomy) while still accepting free text.
+- Added Trainee, Apprentice, Deck Boy, and Welder to the rank taxonomy.
+
+### Changed
+- Made the Sea Service entry "Edit" action the primary, clearly labelled button
+  on each experience card so existing entries can be corrected without deleting
+  and re-adding them.
 
 ## [0.4.139] — 2026-05-24
 
