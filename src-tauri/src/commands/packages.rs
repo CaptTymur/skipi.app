@@ -564,7 +564,15 @@ pub fn open_email_with_attachment(
     }
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]
-    Ok(zip_str)
+    return Ok(zip_str);
+
+    // Mobile (iOS/Android): no native desktop mail client integration.
+    // Circulation on mobile goes through the share sheet from the frontend.
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        let _ = (&to, &subject, &body_str, &zip_path);
+        Err("open_email_with_attachment is desktop-only; mobile uses the share sheet".to_string())
+    }
 }
 
 #[tauri::command]
