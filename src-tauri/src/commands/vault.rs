@@ -79,7 +79,16 @@ pub fn get_linux_install_type() -> String {
 /// capabilities on the JS side.
 #[tauri::command]
 pub fn set_window_title(window: tauri::WebviewWindow, title: String) -> Result<(), String> {
-    window.set_title(&title).map_err(|e| e.to_string())
+    // Desktop only — mobile platforms have no OS window titlebar.
+    #[cfg(desktop)]
+    {
+        window.set_title(&title).map_err(|e| e.to_string())
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (window, title);
+        Ok(())
+    }
 }
 
 /// Opens a URL in the user's default browser. Implemented via `xdg-open` /
@@ -108,6 +117,13 @@ pub fn open_external_url(url: String) -> Result<(), String> {
     };
     #[cfg(target_os = "linux")]
     let cmd = std::process::Command::new("xdg-open").arg(&url).spawn();
+    // Mobile (iOS/Android) has no spawnable `open`/`start`/`xdg-open`; external
+    // URL opening on mobile is handled by the webview / OS link handling.
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    let cmd: std::io::Result<std::process::Child> = Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "open_external_url is not supported on mobile",
+    ));
     cmd.map(|_| ()).map_err(|e| e.to_string())
 }
 
