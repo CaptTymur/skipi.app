@@ -90,7 +90,7 @@ function applyI18nChrome(){
     var pairs=[
         ['mt-files','nav.files'],['mt-exp','nav.experience'],['mt-cv','nav.cv'],['mt-pkg','nav.packages'],['mt-disp','nav.dispatch'],['mt-jobs','nav.jobs'],['mt-info','nav.information'],['mt-vessels','nav.vessels'],
         ['welcome-title','app.name'],
-        ['welcome-subtitle','welcome.subtitle'],['btn-create-vault','welcome.create'],['btn-open-vault','welcome.open'],['welcome-folder-hint','welcome.hint'],['welcome-demo-prefix','welcome.demo_prefix'],['welcome-demo-link','welcome.demo']
+        ['welcome-subtitle','welcome.subtitle'],['btn-create-vault','welcome.create'],['btn-open-vault','welcome.open'],['welcome-folder-hint','welcome.hint'],['welcome-demo-prefix','welcome.demo_prefix'],['welcome-demo-link-text','welcome.demo']
     ];
     pairs.forEach(function(p){
         var el=document.getElementById(p[0]);
@@ -910,9 +910,10 @@ input, select, textarea, button { font-family:var(--font-ui); }
                 <div id="welcome-folder-hint" style="margin-top:12px;font-size:11px;color:var(--text2);line-height:1.45;max-width:360px;">
                     New vault folders are named clearly, for example <code>Skipi Seafarer - Tymur Rudov</code>. When opening a vault, select that named folder.
                 </div>
-                <div style="margin-top:18px;font-size:12px;color:var(--text2);">
-                    <span id="welcome-demo-prefix">Just exploring?</span> <a href="#" id="welcome-demo-link" onclick="loadDemoVault();return false;" style="color:var(--accent);">Load demo seafarer</a>
+                <div style="display:flex;align-items:center;gap:10px;max-width:360px;width:100%;margin:18px 0 10px;color:var(--text2);opacity:.65;font-size:11px;">
+                    <span style="flex:1;height:1px;background:var(--border);"></span><span id="welcome-demo-prefix">Just exploring?</span><span style="flex:1;height:1px;background:var(--border);"></span>
                 </div>
+                <button class="btn btn-outline" id="welcome-demo-link" onclick="loadDemoVault();return false;" style="border-color:var(--accent);color:var(--accent);"><span style="margin-right:6px;">🎬</span><span id="welcome-demo-link-text">Load demo seafarer</span></button>
             </div>
             <div id="scr-setup" style="display:none;"></div>
             <div id="scr-content" style="display:none;"></div>
