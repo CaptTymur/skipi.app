@@ -223,6 +223,56 @@ fn claude_ocr_request(
         .to_string())
 }
 
+/// Cloud recognition via the Skipi server proxy: POST the page image + OCR
+/// prompt under the seafarer's `sks_` key. The server holds the Anthropic key,
+/// does the vision call and returns the raw model text (same shape the direct
+/// Anthropic call returned). Walks the same api_bases() fallback chain the rest
+/// of the app uses; auth/limit failures (401/429/503) return immediately.
+fn server_ocr_request(
+    client: &reqwest::blocking::Client,
+    sks_key: &str,
+    media_type: &str,
+    image_b64: &str,
+    prompt: &str,
+) -> Result<String, String> {
+    #[derive(serde::Serialize)]
+    struct Req<'a> {
+        image_base64: &'a str,
+        media_type: &'a str,
+        prompt: &'a str,
+    }
+    #[derive(serde::Deserialize)]
+    struct Resp {
+        text: String,
+    }
+    let body = Req {
+        image_base64: image_b64,
+        media_type,
+        prompt,
+    };
+    let mut last = String::from("recognition server unavailable");
+    for base in crate::api::api_bases() {
+        let url = format!("{}/api/assistant/recognize", base.trim_end_matches('/'));
+        match client.post(&url).bearer_auth(sks_key).json(&body).send() {
+            Ok(resp) => {
+                let status = resp.status();
+                let text = resp.text().unwrap_or_default();
+                if status.is_success() {
+                    let r: Resp =
+                        serde_json::from_str(&text).map_err(|e| format!("parse error: {}", e))?;
+                    return Ok(r.text);
+                }
+                last = format!("HTTP {}: {}", status.as_u16(), text);
+                if matches!(status.as_u16(), 401 | 429 | 503) {
+                    return Err(last);
+                }
+            }
+            Err(e) => last = format!("{}", e),
+        }
+    }
+    Err(last)
+}
+
 async fn ai_recognize_fields(
     state: &AppState,
     doc_id: &str,
@@ -285,6 +335,21 @@ async fn ai_recognize_fields(
         )
     };
 
+    // When the seafarer has no local Anthropic key, route cloud recognition
+    // through the server proxy — it holds the key, issues a per-device `sks_`
+    // key and rate-limits, exactly like the AI assistant. No key in the app.
+    let server_key: Option<String> = if !use_local && api_key.trim().is_empty() {
+        let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = conn_lock.as_ref().ok_or("No vault open")?;
+        let http = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(20))
+            .build()
+            .map_err(|e| e.to_string())?;
+        Some(crate::commands::assistant::ensure_key(conn, &http)?)
+    } else {
+        None
+    };
+
     let result =
         tauri::async_runtime::spawn_blocking(move || -> Result<AiRecognizeResult, String> {
             let is_pdf = ext == "pdf";
@@ -344,6 +409,11 @@ async fn ai_recognize_fields(
                     .map_err(|e| format!("Cannot parse Ollama response: {}", e))?;
                 let content_text = resp_json["response"].as_str().unwrap_or("{}").to_string();
                 parse_ai_result(&content_text)?
+            } else if let Some(skey) = server_key.as_ref() {
+                // Server proxy (no local key): the server holds the Anthropic key
+                // and picks the vision model. Single call, no fallback chain.
+                let text = server_ocr_request(&client, skey, media_type, &b64, &prompt)?;
+                parse_ai_result(&text)?
             } else {
                 // Claude API (cloud): use the low-cost model first, then a stronger
                 // fallback only when the first pass produces no core fields or invalid JSON.

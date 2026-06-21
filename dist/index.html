@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Скипи Моряк - United Seafarers</title>
 <script>
-var APP_VERSION='0.4.162';
+var APP_VERSION='0.4.163';
 var UI_LANG_KEY='skipi-ui-language';
 // NOTE: the assistant's system prompt and knowledge base are NOT bundled here.
 // They live only on the server (skipi-server) so they can't be extracted from
@@ -5693,12 +5693,10 @@ async function mobileStoredAiKey(){
     try{return await invoke('get_effective_api_key')||'';}catch(e){return '';}
 }
 async function mobileEnsureAiKey(){
-    var key=await mobileStoredAiKey();
-    if(key&&key.length>10)return key;
-    key=await uiPrompt('AI recognition needs an Anthropic API key for now. The key is stored only inside this local vault.','');
-    if(!key)return '';
-    try{await invoke('save_api_key',{key:key});}catch(e){}
-    return key;
+    // Recognition runs through the Skipi server proxy (the server holds the
+    // Anthropic key), so no per-vault key is needed. A user-pasted key, if any,
+    // is still honoured; otherwise we return '' and the backend uses the server.
+    return await mobileStoredAiKey();
 }
 async function mobileAutoStartOcrIfConfigured(docId){
     var key=await mobileStoredAiKey();
@@ -5741,7 +5739,7 @@ async function mobileStartOcr(docId,opts){
     var d=allDocs.find(function(x){return x.id===docId;});
     if(!d||!d.file_name){showToast('Attach a scan first','warn');return;}
     var key=opts.key||await mobileEnsureAiKey();
-    if(!key)return;
+    // No abort on empty key: '' routes recognition through the server proxy.
     mobileOcrState={docId:docId,status:'working'};
     selectedDocId=docId;
     mobileView='doc';
@@ -8532,7 +8530,9 @@ async function aiIsConfigured(){
 
 var _aiRec=async function(id,local){
     var st=document.getElementById('ai-st');var key='';
-    if(!local){try{key=await invoke('get_effective_api_key');}catch(e){}if(!key){key=await uiPrompt('Anthropic API key:','');if(!key)return;try{await invoke('save_api_key',{key:key});}catch(e){}}}
+    // Cloud recognition: use a user-pasted key if present, otherwise leave it
+    // empty and the backend routes through the Skipi server proxy (no key needed).
+    if(!local){try{key=await invoke('get_effective_api_key');}catch(e){}}
     var beforeDoc=allDocs.find(function(x){return x.id===id;});
     var docTitle=beforeDoc?beforeDoc.title:'';
     // Use template_id if available (stable catalog id like 'passport', 'sid',

@@ -128,7 +128,7 @@ fn ensure_device_id(conn: &Connection) -> Result<String, String> {
     Ok(d)
 }
 
-fn ensure_key(conn: &Connection, client: &Client) -> Result<String, String> {
+pub fn ensure_key(conn: &Connection, client: &Client) -> Result<String, String> {
     if let Some(k) = db::get_vault_info_value(conn, "assistant_key") {
         if !k.trim().is_empty() {
             return Ok(k);
