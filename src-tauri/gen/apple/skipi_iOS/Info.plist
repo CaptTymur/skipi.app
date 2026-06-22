@@ -22,6 +22,12 @@
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Skipi uses the camera to scan your certificates and documents into your vault.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Skipi may save document images or exported files to your photo library when you choose to do so.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Skipi accesses your photo library so you can add document images to your vault.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>

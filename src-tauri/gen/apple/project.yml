@@ -55,6 +55,9 @@ targets:
         CFBundleShortVersionString: 0.4.163
         CFBundleVersion: "0.4.163"
         ITSAppUsesNonExemptEncryption: false
+        NSCameraUsageDescription: Skipi uses the camera to scan your certificates and documents into your vault.
+        NSPhotoLibraryUsageDescription: Skipi accesses your photo library so you can add document images to your vault.
+        NSPhotoLibraryAddUsageDescription: Skipi may save document images or exported files to your photo library when you choose to do so.
     entitlements:
       path: skipi_iOS/skipi_iOS.entitlements
     scheme:
