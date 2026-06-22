@@ -2473,16 +2473,11 @@ async function init() {
             }
         }
     }catch(e){err('Init:'+e);}
-    // No vault opened. On a mobile fresh install, lead the user directly into
-    // the seafarer profile wizard: department → vessel type → rank → profile
-    // fields. If a previous vault path existed but could not reopen, show the
-    // welcome screen so the user can select/move/import a vault explicitly.
-    if(!hadVaultPath && shouldUseMobileShell()){
-        showWelcome();
-        setTimeout(function(){mobileStartVaultWizard();},0);
-    }else{
-        showWelcome();
-    }
+    // No vault opened. Show the welcome screen with an explicit Create / Open / Demo
+    // choice (Issue A: the demo must be visible on a fresh mobile install). The 9-step
+    // profile wizard starts only when the user taps "Create profile" — it is no longer
+    // auto-started on a fresh mobile install. Applies to both iOS and Android shells.
+    showWelcome();
     // Check for updates even without a vault open
     setTimeout(function(){checkForUpdate(true);},3000);
     // No vault is open yet. Do not touch the jobs board here: network polling
