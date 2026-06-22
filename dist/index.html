@@ -7976,12 +7976,11 @@ function showView(v, opts){
 // Refs: Obsidian "Skipi Applications — приложения в домах Skipi",
 //       "Skipi BNWAS — первый плагин Skipi Seafarer".
 
-// Public App Store product URL for standalone BNWAS. Still TODO: BNWAS was
-// submitted to Apple (App Store Connect app id 6761688012, bundle org.tymur.BNWAS)
-// but the public apps.apple.com URL is not confirmed live yet. When confirmed,
-// set this to e.g. 'https://apps.apple.com/app/id6761688012' and the Install
-// action will start opening it on platforms where external URLs are wired.
-var BNWAS_APP_STORE_URL = '';
+// Public App Store product URL for standalone BNWAS (App Store Connect app id
+// 6761688012, bundle org.tymur.BNWAS). On iOS the Install action opens this via
+// open_external_url; an apps.apple.com link lets iOS show Open vs Get/Install
+// automatically depending on whether BNWAS is installed.
+var BNWAS_APP_STORE_URL = 'https://apps.apple.com/app/id6761688012';
 // Optional public info/support page (GitHub Pages). Left blank until a stable
 // public landing URL is confirmed.
 var BNWAS_LEARN_MORE_URL = '';

@@ -117,12 +117,20 @@ pub fn set_window_title(window: tauri::WebviewWindow, title: String) -> Result<(
 /// applicable to their install type.
 #[cfg(any(target_os = "android", target_os = "ios"))]
 #[tauri::command]
-pub fn open_external_url(url: String) -> Result<(), String> {
+pub fn open_external_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    // Same scheme allowlist as desktop — limit to schemes Skipi routes through
+    // the OS default app so this can't be abused to launch arbitrary handlers.
     let allowed = ["https://", "http://", "mailto:", "tel:"];
     if !allowed.iter().any(|p| url.starts_with(p)) {
         return Err("Only http(s)/mailto/tel URLs are allowed".to_string());
     }
-    Err("Opening external URLs is not wired for mobile yet.".to_string())
+    // Route through the opener plugin, which has Android/iOS implementations
+    // (Intent.ACTION_VIEW / UIApplication.open). Used so the Apps host BNWAS
+    // tile can open the App Store product page on iOS.
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
