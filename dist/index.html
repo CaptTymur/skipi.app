@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -14476,7 +14476,7 @@ async function mobileSettingsDeleteVaultPath(path){
 }
 
 function renderSettingsBody(){
-    var cur = document.documentElement.getAttribute('data-theme')||'dark';
+    var cur = document.documentElement.getAttribute('data-theme')||'light';
     var h = '';
 
     if(settingsTab === 'general'){
@@ -14607,7 +14607,7 @@ function renderSettingsBody(){
     }
 
     if(settingsTab === 'appearance'){
-        var themeChoice = localStorage.getItem('skipi-theme') || 'dark';
+        var themeChoice = localStorage.getItem('skipi-theme') || 'light';
         var resolvedTheme = _resolvedTheme(themeChoice);
         var accentVal = localStorage.getItem('skipi-accent') ||
                         (resolvedTheme==='light' ? DEFAULT_ACCENT_LIGHT : DEFAULT_ACCENT_DARK);
@@ -15535,11 +15535,11 @@ function _resolvedTheme(choice){
     if(choice!=='system') return choice;
     try{
         return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    }catch(e){ return 'dark'; }
+    }catch(e){ return 'light'; }
 }
 
 function applyAppearance(){
-    var choice=localStorage.getItem('skipi-theme')||'dark';
+    var choice=localStorage.getItem('skipi-theme')||'light';
     var resolved=_resolvedTheme(choice);
     document.documentElement.setAttribute('data-theme', resolved);
 
@@ -15581,7 +15581,7 @@ function applyAppearance(){
         try{
             var mq=window.matchMedia('(prefers-color-scheme: dark)');
             _systemThemeListener=function(){
-                if((localStorage.getItem('skipi-theme')||'dark')==='system'){
+                if((localStorage.getItem('skipi-theme')||'light')==='system'){
                     applyAppearance();
                 }
             };
