@@ -1051,6 +1051,76 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .mobile-doc-thumb.empty { height:42px; }
 .mobile-doc-content { min-width:0; flex:1; }
 .mobile-section-title { font-size:12px; color:var(--text2); font-weight:800; text-transform:uppercase; margin:14px 0 8px; }
+/* Apps / Plugins host — first-party Applications shelf. Theme-aware via CSS
+   variables so it follows the user's light/dark choice (no dark-first regression). */
+.apps-screen { padding:22px 26px 40px; max-width:920px; }
+.apps-head { margin-bottom:6px; }
+.apps-head-title { font-size:22px; font-weight:800; color:var(--text); }
+.apps-head-sub { font-size:12.5px; color:var(--text2); margin-top:4px; line-height:1.4; max-width:640px; }
+.apps-cat-title { font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:var(--text2); margin:22px 0 10px; }
+.apps-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:12px; }
+.apps-tile { display:flex; gap:12px; text-align:left; align-items:flex-start; padding:14px; border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--text); cursor:pointer; transition:border-color .12s, transform .05s; }
+.apps-tile:hover { border-color:var(--accent); }
+.apps-tile:active { transform:translateY(1px); }
+.apps-tile.soon { opacity:.72; }
+.apps-tile-icon { width:46px; height:46px; flex:0 0 auto; border-radius:11px; background:var(--accent-bg); color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:24px; }
+.apps-tile-icon.big { width:58px; height:58px; font-size:30px; border-radius:14px; }
+.apps-tile-body { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.apps-tile-name { font-size:15px; font-weight:800; line-height:1.2; }
+.apps-tile-sub { font-size:12px; color:var(--text2); line-height:1.35; }
+.apps-badge { display:inline-block; align-self:flex-start; margin-top:5px; font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; padding:2px 7px; border-radius:999px; }
+.apps-badge.live { background:var(--accent-bg); color:var(--accent); }
+.apps-badge.soon { background:var(--hover); color:var(--text2); }
+.apps-back { background:transparent; border:none; color:var(--accent); font-size:13px; font-weight:700; cursor:pointer; padding:4px 0; margin-bottom:8px; }
+.apps-detail { max-width:640px; }
+.apps-detail-head { display:flex; gap:14px; align-items:center; margin-bottom:6px; }
+.apps-detail-name { font-size:20px; font-weight:800; color:var(--text); }
+.apps-detail-cat { font-size:12px; color:var(--text2); margin-top:2px; }
+.apps-detail-desc { font-size:13.5px; color:var(--text); line-height:1.5; }
+.apps-note { font-size:12.5px; color:var(--text2); background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin:10px 0; line-height:1.4; }
+.apps-safety { font-size:12.5px; color:var(--text); background:var(--accent-bg); border:1px solid var(--accent-bg2); border-radius:8px; padding:10px 12px; margin:10px 0; line-height:1.45; }
+.apps-perm { border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin:14px 0; background:var(--surface); }
+.apps-perm-title { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:var(--text2); margin-bottom:8px; }
+.apps-perm-row { display:flex; align-items:center; gap:9px; font-size:13px; padding:3px 0; color:var(--text); }
+.apps-perm-dot { width:18px; height:18px; flex:0 0 auto; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; line-height:1; }
+.apps-perm-row.clear .apps-perm-dot { background:rgba(78,201,112,.16); color:var(--green); }
+.apps-perm-row.used .apps-perm-dot { background:rgba(216,155,101,.18); color:var(--orange); }
+.apps-perm-dot.ext { background:var(--accent-bg); color:var(--accent); }
+.apps-actions { margin-top:18px; }
+body.mobile-mode .apps-note, body.mobile-mode .apps-safety, body.mobile-mode .apps-perm { margin-left:0; margin-right:0; }
+.mobile-action-title .apps-badge.soon { margin:0 0 0 6px; vertical-align:middle; padding:1px 6px; }
+.mobile-action-title .apps-badge.live { margin:0 0 0 6px; vertical-align:middle; padding:1px 6px; }
+/* BNWAS embedded watch runner — theme-aware with explicit day/night skins. */
+.bnwas-run { position:relative; max-width:560px; border-radius:14px; padding:18px 20px 24px; overflow:hidden; }
+.bnwas-run.bnwas-day { background:var(--surface); color:var(--text); border:1px solid var(--border); }
+.bnwas-run.bnwas-night { background:#0A0E17; color:#E8EDF5; border:1px solid #1c2433; }
+.bnwas-run.bnwas-night .apps-back { color:#6ea8ff; }
+.bnwas-head { display:flex; justify-content:space-between; align-items:center; gap:10px; margin:4px 0 8px; }
+.bnwas-title { font-size:17px; font-weight:800; line-height:1.2; }
+.bnwas-sub { font-size:11.5px; opacity:.7; margin-top:2px; }
+.bnwas-night-toggle { flex:0 0 auto; background:transparent; border:1px solid currentColor; color:inherit; opacity:.85; border-radius:8px; padding:6px 11px; font-size:12px; font-weight:700; cursor:pointer; }
+.bnwas-stageline { text-align:center; font-size:11px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; opacity:.7; margin-top:10px; }
+.bnwas-clock { text-align:center; font-family:var(--font-mono); font-size:66px; font-weight:300; line-height:1.05; margin:4px 0 0; font-variant-numeric:tabular-nums; }
+.bnwas-cap { text-align:center; font-size:12px; opacity:.6; margin-bottom:16px; }
+.bnwas-presets { display:flex; flex-wrap:wrap; gap:7px; justify-content:center; margin-bottom:16px; }
+.bnwas-preset { min-width:46px; padding:8px 11px; border-radius:8px; border:1px solid var(--border); background:transparent; color:inherit; font-size:13px; font-weight:700; cursor:pointer; }
+.bnwas-night .bnwas-preset { border-color:rgba(255,255,255,.18); }
+.bnwas-preset.on { background:#3B82F6; border-color:#3B82F6; color:#fff; }
+.bnwas-preset:disabled { opacity:.4; cursor:default; }
+.bnwas-meta { display:flex; justify-content:center; gap:26px; font-size:12px; opacity:.75; margin-bottom:18px; }
+.bnwas-meta b { font-weight:800; }
+.bnwas-controls { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; position:relative; z-index:2; }
+.bnwas-btn-main { min-width:180px; }
+.bnwas-btn-main.alerting { animation:bnwasPulse 1s infinite; }
+@keyframes bnwasPulse { 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.05); } }
+.bnwas-safety { margin-top:18px; position:relative; z-index:2; }
+.bnwas-flash { position:absolute; inset:0; border-radius:14px; pointer-events:none; opacity:0; z-index:1; transition:opacity .12s; }
+.bnwas-flash.on { opacity:.42; background:#ffffff; }
+.bnwas-flash.hard { opacity:.5; background:#e55561; animation:bnwasHard .55s infinite alternate; }
+@keyframes bnwasHard { from{ opacity:.28; } to{ opacity:.6; } }
+.bnwas-run.bnwas-stage2 { box-shadow:0 0 0 2px #e55561 inset; }
+body.mobile-mode .bnwas-run { max-width:none; }
+body.mobile-mode .bnwas-clock { font-size:58px; }
 .mobile-search { width:100%; height:42px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); padding:0 12px; font-size:15px; margin-bottom:8px; }
 .mobile-filter-row { display:flex; gap:7px; overflow-x:auto; padding-bottom:8px; margin-bottom:2px; }
 .mobile-filter-chip { flex:0 0 auto; border:1px solid var(--border); border-radius:999px; background:var(--surface); color:var(--text2); min-height:34px; padding:0 12px; font-size:12px; font-weight:800; }
@@ -1173,6 +1243,7 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
             <button class="mobile-nav-btn" type="button" data-mview="jobs" onclick="mobileShow('jobs')"><span>J</span>Jobs</button>
             <button class="mobile-nav-btn" type="button" data-mview="information" onclick="mobileShow('information')"><span>i</span>Info</button>
             <button class="mobile-nav-btn" type="button" data-mview="vessels" onclick="mobileShow('vessels')"><span>&#9872;&#65038;</span>Vessels</button>
+            <button class="mobile-nav-btn" type="button" data-mview="apps" onclick="mobileShow('apps')"><span>&#9638;</span>Apps</button>
         </div>
         </div>
     </nav>
@@ -1192,6 +1263,7 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
     <div class="mod-tab" onclick="showView('jobs')" id="mt-jobs" title="Jobs — receive matching offers"><span>Jobs</span></div>
     <div class="mod-tab" onclick="showView('information')" id="mt-info" title="Information - market pulse"><span>Information</span></div>
     <div class="mod-tab" onclick="showView('vessels')" id="mt-vessels" title="Суда"><span>Суда</span></div>
+    <div class="mod-tab" onclick="showView('apps')" id="mt-apps" title="Apps — tools and plugins"><span>Apps</span></div>
     <div class="mb-spacer"></div>
     <div class="profile-completion-chip" id="profile-completion-chip" onclick="openProfileDashboard()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openProfileDashboard();}" role="button" tabindex="0" title="Profile completeness">
         <span class="pc-dot" id="pc-dot"></span>
@@ -2928,7 +3000,7 @@ function mobileShouldShowHomeButton(){
     if(!shouldUseMobileShell())return false;
     if(mobileView==='home')return false;
     if(mobileView==='dispatch')return false;
-    return ['docs','doc','add','pdf','profile','experience','cv','jobs','information','vessels','assistant'].indexOf(mobileView)>=0;
+    return ['docs','doc','add','pdf','profile','experience','cv','jobs','information','vessels','apps','assistant'].indexOf(mobileView)>=0;
 }
 function mobileHomeButtonHtml(){
     var ru=getUiLang()==='ru';
@@ -3495,6 +3567,7 @@ function mobileShow(view){
     mobileView=view||'home';
     if(mobileView==='add'&&mobileAddMode!=='attach_single'&&mobileAddMode!=='attach_pdf')mobileAddMode='choose';
     if(mobileView==='dispatch')mobileDispatchStep='choose';
+    if(mobileView==='apps')appsState.selectedId=null;
     renderMobileShell();
     setTimeout(mobileScrollMainTop,0);
     setTimeout(mobileScrollMainTop,140);
@@ -5349,6 +5422,7 @@ function renderMobileShell(){
     if(mobileView==='jobs')return renderMobileJobs();
     if(mobileView==='information')return renderMobileInformation();
     if(mobileView==='vessels')return renderMobileVessels();
+    if(mobileView==='apps')return renderMobileApps();
     if(mobileView==='assistant')return renderMobileAssistant();
     if(mobileView==='doc')return renderMobileDoc();
     if(mobileView==='pdf')return renderMobilePdfBuilder();
@@ -7882,7 +7956,7 @@ function showView(v, opts){
     updateProfileCompletionChip();
     document.querySelectorAll('.ribbon-icon').forEach(function(el){el.classList.remove('active');});
     document.querySelectorAll('.modules-bar .mod-tab').forEach(function(el){el.classList.remove('active');});
-    var shortMap={files:'files',dashboard:'dash',cv:'cv',experience:'exp',vessels:'vessels',packages:'pkg',dispatch:'disp',jobs:'jobs',information:'info',settings:'set'};
+    var shortMap={files:'files',dashboard:'dash',cv:'cv',experience:'exp',vessels:'vessels',packages:'pkg',dispatch:'disp',jobs:'jobs',information:'info',apps:'apps',settings:'set'};
     var ri=document.getElementById('ri-'+shortMap[v]);
     if(ri)ri.classList.add('active');
     var mt=document.getElementById('mt-'+shortMap[v]);
@@ -7894,7 +7968,7 @@ function showView(v, opts){
         vessels:tr('title.vessels'),packages:tr('title.packages'),dispatch:tr('title.dispatch'),jobs:tr('title.jobs'),
         information:tr('title.information'),settings:tr('title.settings')
     }[v]||v;
-    document.getElementById('left-panel').style.display=(v==='dashboard'||v==='cv'||v==='experience'||v==='vessels'||v==='dispatch'||v==='jobs'||v==='information')?'none':'';
+    document.getElementById('left-panel').style.display=(v==='dashboard'||v==='cv'||v==='experience'||v==='vessels'||v==='dispatch'||v==='jobs'||v==='information'||v==='apps')?'none':'';
     // The old second tabs row duplicated the selected document title.
     // Keep it disabled; the document name is already visible in the tree and editor.
     var tabsEl=document.getElementById('tabs');
@@ -7919,7 +7993,380 @@ function showView(v, opts){
     else if(v==='dispatch')showDispatch();
     else if(v==='jobs')showJobs();
     else if(v==='information')showInformation();
+    else if(v==='apps'){appsState.selectedId=null;showApps();}
     else if(v==='settings')openSettings();
+}
+
+// ===================== Apps / Plugins host =====================
+// First-party Applications screen for Skipi Seafarer. NOT a marketplace and NOT
+// a third-party plugin runtime — a static, local registry of official Skipi
+// tools surfaced as a smartphone-style shelf. The first tile is BNWAS /
+// Time Anchor, an EMBEDDED first-party plugin: Install it once, then Open runs
+// the watchkeeping timer INSIDE Skipi Seafarer (no App Store, no external app).
+// BNWAS is local-only: no server, no account, no analytics, no access to
+// seafarer documents, no watch-behaviour upload.
+// Refs: Obsidian "Skipi Applications — приложения в домах Skipi",
+//       "Skipi BNWAS — первый плагин Skipi Seafarer".
+//       Reference timer logic: /home/linux/time-anchor-app
+//       (TimerViewModel.kt / SoundPlayer.kt).
+
+var SKIPI_APP_CATEGORIES = [
+    {key:'safety',    label:'Safety / Watchkeeping'},
+    {key:'utils',     label:'Utils'},
+    {key:'education', label:'Education'},
+    {key:'reports',   label:'Reports'}
+];
+
+// Local/static manifest-like registry — the seed of a future plugin architecture.
+var SKIPI_APPS = [
+    {
+        id:'app.skipi.applications.bnwas',
+        name:'BNWAS / Time Anchor',
+        category:'safety',
+        hosts:['seafarer','onboard','management'],
+        status:'available',
+        distribution:'built_in_first_party',
+        icon:'⏱️', // stopwatch
+        short:'Personal watchkeeping timer and time-anchor. Runs inside Skipi. Offline.',
+        description:'Personal watchkeeping timer and time-anchor tool for mariners. Runs inside Skipi Seafarer. Works offline. No account. No data upload.',
+        safety_note:'Not certified bridge equipment. Does not replace vessel BNWAS, lookout duties, bridge procedures or company SMS.',
+        permissions:{ server_access:false, documents_access:false, account_required:false, analytics:false, local_only:true },
+        privacy:{ server_upload:false, analytics:false, location:false, account_required:false },
+        actions:['install','open']
+    },
+    // Seed tiles for future first-party apps — shown as "Coming soon" so the
+    // shelf demonstrates the platform direction. No runtime behind these yet.
+    { id:'app.skipi.applications.distance-tables', name:'Distance Tables', category:'utils', status:'coming_soon', icon:'📏', short:'Port-to-port distance and voyage-time helper.' },
+    { id:'app.skipi.applications.draft-survey',    name:'Draft Survey',    category:'utils', status:'coming_soon', icon:'⚖️', short:'Draft survey calculation and report.' },
+    { id:'app.skipi.applications.education',        name:'Education',       category:'education', status:'coming_soon', icon:'🎓', short:'Courses, trainers, interview prep.' },
+    { id:'app.skipi.applications.reports',         name:'Complaints / Reports', category:'reports', status:'coming_soon', icon:'📝', short:'Safety reports and signals.' }
+];
+
+var appsState = { selectedId:null, bnwasOpen:false };
+
+function appsById(id){ return SKIPI_APPS.find(function(a){return a.id===id;})||null; }
+function appsCatLabel(key){ var c=SKIPI_APP_CATEGORIES.find(function(x){return x.key===key;}); return c?c.label:key; }
+
+var BNWAS_ID='app.skipi.applications.bnwas';
+
+// ---- Local install/enable state + settings (no server, no account) ----
+function bnwasInstalled(){ try{ return localStorage.getItem('skipi_bnwas_installed')==='1'; }catch(e){ return false; } }
+function bnwasSetInstalled(v){ try{ if(v) localStorage.setItem('skipi_bnwas_installed','1'); else localStorage.removeItem('skipi_bnwas_installed'); }catch(e){} }
+function bnwasLoadSettings(){ try{ var s=JSON.parse(localStorage.getItem('skipi_bnwas_settings')||'{}'); return { intervalMin: s.intervalMin||3, nightMode: s.nightMode!==false }; }catch(e){ return { intervalMin:3, nightMode:true }; } }
+function bnwasSaveSettings(){ try{ localStorage.setItem('skipi_bnwas_settings', JSON.stringify({ intervalMin:bnwas.intervalMin, nightMode:bnwas.nightMode })); }catch(e){} }
+
+// Resolve the primary action for an app. BNWAS is an embedded first-party
+// plugin: Install (not installed) -> Open (runs the watch inside Skipi).
+function appsPrimaryAction(app){
+    if(!app||app.status==='coming_soon') return { label:'Coming soon', disabled:true, onclick:'' };
+    if(app.id===BNWAS_ID){
+        if(bnwasInstalled()) return { label:'Open', disabled:false, onclick:'appsOpenBnwas()' };
+        return { label:'Install', disabled:false, onclick:'appsInstallBnwas()' };
+    }
+    return { label:'Open', disabled:false, onclick:"appsOpen('"+app.id+"')" };
+}
+
+// Short note shown under the description.
+function appsPlatformNote(app){
+    if(!app||app.id!==BNWAS_ID) return '';
+    return 'Runs inside Skipi Seafarer. The watch timer runs while Skipi is open; mobile background/alarm support comes later.';
+}
+
+function appsInstallBnwas(){
+    bnwasSetInstalled(true);
+    showToast('BNWAS / Time Anchor installed.','success');
+    appsRerender();
+}
+function appsUninstallBnwas(){
+    bnwasEnd();
+    appsState.bnwasOpen=false;
+    bnwasSetInstalled(false);
+    showToast('BNWAS removed.','info');
+    appsRerender();
+}
+function appsOpenBnwas(){
+    if(!bnwasInstalled()){ appsInstallBnwas(); }
+    appsState.bnwasOpen=true;
+    appsRerender();
+}
+function appsOpen(id){
+    var app=appsById(id);
+    if(!app) return;
+    showToast(app.name+' — coming soon.','info');
+}
+function appsRerender(){
+    if(shouldUseMobileShell()) renderMobileApps();
+    else showApps();
+}
+
+function appsSelect(id){
+    appsState.selectedId=id;
+    appsState.bnwasOpen=false;
+    appsRerender();
+}
+function appsBack(){
+    if(appsState.bnwasOpen) appsState.bnwasOpen=false;   // runner -> detail
+    else appsState.selectedId=null;                       // detail -> list
+    appsRerender();
+}
+
+// =================== BNWAS embedded watch engine ===================
+// Mirrors /home/linux/time-anchor-app TimerViewModel, adapted for Skipi:
+// IDLE -> WATCHING -> ALARM until acknowledged. When the interval expires,
+// the alarm starts immediately and keeps repeating until the user confirms
+// presence. Local-only; never touches server, account or documents.
+var BNWAS_PRESETS=[1,2,3,5,10,15,30];
+var BNWAS_GRACE=60;
+var bnwas={ stage:'idle', intervalMin:3, remaining:180, grace:BNWAS_GRACE, cycles:0,
+            totalSec:0, nightMode:true, flash:false, timer:null, audio:null,
+            stage2Timer:null, startedMs:0 };
+(function bnwasInit(){ var s=bnwasLoadSettings(); bnwas.intervalMin=s.intervalMin; bnwas.nightMode=s.nightMode; bnwas.remaining=bnwas.intervalMin*60; })();
+
+// ---- Web Audio tones (oscillator + decay envelope, mirrors SoundPlayer) ----
+function bnwasAudioCtx(){
+    if(!bnwas.audio){ try{ bnwas.audio=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ bnwas.audio=null; } }
+    if(bnwas.audio&&bnwas.audio.state==='suspended'){ try{ bnwas.audio.resume(); }catch(e){} }
+    return bnwas.audio;
+}
+function bnwasDing(freq,dur,vol,decay){
+    var ctx=bnwasAudioCtx(); if(!ctx) return;
+    try{
+        var t0=ctx.currentTime, osc=ctx.createOscillator(), g=ctx.createGain();
+        osc.type='sine'; osc.frequency.value=freq;
+        g.gain.setValueAtTime(Math.max(0.0001,vol),t0);
+        g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
+        osc.connect(g); g.connect(ctx.destination);
+        osc.start(t0); osc.stop(t0+dur+0.03);
+    }catch(e){}
+}
+function bnwasStage1Sound(){ bnwasDing(440,0.6,0.16,3); }  // soft ship's-bell ding
+function bnwasStage2Burst(){
+    // escalating 6s sequence (C5/E5/G5/A5/C6), louder toward the end
+    var seq=[[0,523.25,0.25],[0.8,659.25,0.25],[2.2,523.25,0.4],[2.6,659.25,0.4],[3.0,784,0.4],[4.0,784,0.6],[4.3,880,0.65],[4.6,1046.5,0.7]];
+    seq.forEach(function(d){ setTimeout(function(){ bnwasDing(d[1],0.4,d[2],4); }, d[0]*1000); });
+}
+function bnwasStage2Start(){ if(bnwas.stage2Timer) return; bnwasStage2Burst(); bnwas.stage2Timer=setInterval(bnwasStage2Burst,6000); }
+function bnwasStage2Stop(){ if(bnwas.stage2Timer){ clearInterval(bnwas.stage2Timer); bnwas.stage2Timer=null; } }
+
+// ---- Engine control ----
+function bnwasSetInterval(min){ if(bnwas.stage!=='idle') return; bnwas.intervalMin=min; bnwas.remaining=min*60; bnwasSaveSettings(); bnwasRenderRunner(); }
+function bnwasToggleNight(){ bnwas.nightMode=!bnwas.nightMode; bnwasSaveSettings(); bnwasRenderRunner(); }
+function bnwasStart(){
+    if(bnwas.stage!=='idle') return;
+    bnwasAudioCtx(); // unlock audio within the user gesture
+    bnwas.stage='watching'; bnwas.remaining=bnwas.intervalMin*60; bnwas.grace=BNWAS_GRACE;
+    bnwas.flash=false; bnwas.startedMs=Date.now();
+    if(bnwas.timer) clearInterval(bnwas.timer);
+    bnwas.timer=setInterval(bnwasTick,1000);
+    bnwasRenderRunner();
+}
+function bnwasTick(){
+    if(bnwas.startedMs) bnwas.totalSec=Math.floor((Date.now()-bnwas.startedMs)/1000);
+    if(bnwas.stage==='watching'){
+        bnwas.remaining-=1;
+        if(bnwas.remaining<=0){
+            bnwas.stage='stage2';
+            bnwas.remaining=0;
+            bnwas.grace=0;
+            bnwas.flash=false;
+            bnwasStage2Start();
+            bnwasRenderRunner();
+            return;
+        }
+    } else if(bnwas.stage==='stage1'){
+        bnwas.grace-=1;
+        if(bnwas.grace<=0){ bnwas.stage='stage2'; bnwas.grace=0; bnwas.flash=false; bnwasStage2Start(); }
+        else if(bnwas.nightMode){ bnwas.flash=!bnwas.flash; if(bnwas.grace%5===0) bnwasStage1Sound(); }
+        else { bnwas.flash=false; if(bnwas.grace%10===0) bnwasStage1Sound(); }
+    }
+    bnwasUpdateRunnerDom();
+}
+function bnwasAck(){
+    if(bnwas.stage==='idle') return;
+    bnwasStage2Stop();
+    if(bnwas.stage!=='watching') bnwas.cycles+=1; // count a completed/acked interval
+    bnwas.stage='watching'; bnwas.remaining=bnwas.intervalMin*60; bnwas.grace=BNWAS_GRACE; bnwas.flash=false;
+    bnwasRenderRunner();
+}
+function bnwasEnd(){
+    bnwasStage2Stop();
+    if(bnwas.timer){ clearInterval(bnwas.timer); bnwas.timer=null; }
+    bnwas.stage='idle'; bnwas.remaining=bnwas.intervalMin*60; bnwas.grace=BNWAS_GRACE; bnwas.flash=false; bnwas.startedMs=0;
+    bnwasRenderRunner();
+}
+
+// ---- Runner rendering ----
+function bnwasFmt(sec){ sec=Math.max(0,sec|0); var m=Math.floor(sec/60), s=sec%60; return (m<10?'0':'')+m+':'+(s<10?'0':'')+s; }
+function bnwasStatusText(){ return bnwas.stage==='idle'?'Ready':bnwas.stage==='watching'?'Watching':bnwas.stage==='stage1'?'Alarm — acknowledge':'Alarm — acknowledge'; }
+function bnwasBigTime(){ return bnwas.stage==='watching'?bnwasFmt(bnwas.remaining):bnwas.stage==='stage1'?bnwasFmt(bnwas.grace):'00:00'; }
+function bnwasCaption(){ return bnwas.stage==='watching'?'until next check':bnwas.stage==='stage1'?'alarm — acknowledge now':bnwas.stage==='stage2'?'alarm — acknowledge now':'interval '+bnwas.intervalMin+' min'; }
+function bnwasRunnerHtml(){
+    var night=bnwas.nightMode, alerting=(bnwas.stage==='stage1'||bnwas.stage==='stage2');
+    var presets='';
+    BNWAS_PRESETS.forEach(function(m){ presets+='<button class="bnwas-preset'+(bnwas.intervalMin===m?' on':'')+'" type="button"'+(bnwas.stage!=='idle'?' disabled':'')+' onclick="bnwasSetInterval('+m+')">'+m+'m</button>'; });
+    var h='<div class="apps-screen bnwas-run '+(night?'bnwas-night':'bnwas-day')+(bnwas.stage==='stage1'?' bnwas-stage1':'')+(bnwas.stage==='stage2'?' bnwas-stage2':'')+'" id="bnwas-run">';
+    h+='<button class="apps-back" type="button" onclick="appsBack()">← BNWAS</button>';
+    h+='<div class="bnwas-head"><div><div class="bnwas-title">BNWAS / Time Anchor</div><div class="bnwas-sub">Personal watchkeeping timer · local-only</div></div>'
+      +'<button class="bnwas-night-toggle" type="button" onclick="bnwasToggleNight()">'+(night?'☾ Night':'☀ Day')+'</button></div>';
+    h+='<div class="bnwas-stageline" id="bnwas-status">'+esc(bnwasStatusText())+'</div>';
+    h+='<div class="bnwas-clock" id="bnwas-clock">'+esc(bnwasBigTime())+'</div>';
+    h+='<div class="bnwas-cap" id="bnwas-cap">'+esc(bnwasCaption())+'</div>';
+    h+='<div class="bnwas-presets">'+presets+'</div>';
+    h+='<div class="bnwas-meta"><span>Cycles <b id="bnwas-cycles">'+bnwas.cycles+'</b></span><span>Watch time <b id="bnwas-total">'+esc(bnwasFmt(bnwas.totalSec))+'</b></span></div>';
+    h+='<div class="bnwas-controls">';
+    if(bnwas.stage==='idle'){
+        h+='<button class="btn btn-accent bnwas-btn-main" onclick="bnwasStart()">Start watch</button>';
+    } else {
+        h+='<button class="btn btn-accent bnwas-btn-main'+(alerting?' alerting':'')+'" onclick="bnwasAck()">'+(alerting?'Acknowledge':'I am here · reset')+'</button>';
+        h+='<button class="btn btn-outline" onclick="bnwasEnd()">End watch</button>';
+    }
+    h+='</div>';
+    h+='<div class="apps-safety bnwas-safety"><b>Safety</b> — Not certified bridge equipment. A personal reminder only. Does not replace the vessel BNWAS, alarms, lookout duties, bridge procedures or company SMS.</div>';
+    h+='<div class="bnwas-flash" id="bnwas-flash"></div>';
+    h+='</div>';
+    return h;
+}
+// Per-second light DOM update (avoids re-rendering the whole runner each tick).
+function bnwasUpdateRunnerDom(){
+    var run=document.getElementById('bnwas-run'); if(!run) return; // runner not mounted
+    var set=function(id,v){ var el=document.getElementById(id); if(el) el.textContent=v; };
+    set('bnwas-status',bnwasStatusText()); set('bnwas-clock',bnwasBigTime()); set('bnwas-cap',bnwasCaption());
+    set('bnwas-cycles',bnwas.cycles); set('bnwas-total',bnwasFmt(bnwas.totalSec));
+    run.classList.toggle('bnwas-stage1',bnwas.stage==='stage1');
+    run.classList.toggle('bnwas-stage2',bnwas.stage==='stage2');
+    var fl=document.getElementById('bnwas-flash');
+    if(fl){ fl.classList.toggle('on',(bnwas.stage==='stage1'&&bnwas.nightMode&&bnwas.flash)||bnwas.stage==='stage2'); fl.classList.toggle('hard',bnwas.stage==='stage2'); }
+}
+// Full runner re-render (on state transitions that change buttons/presets).
+function bnwasRenderRunner(){
+    if(!appsState.bnwasOpen) return;
+    if(shouldUseMobileShell()) mobileMainHtml(bnwasRunnerHtml());
+    else { var c=document.getElementById('scr-content'); if(c) c.innerHTML=bnwasRunnerHtml(); }
+    bnwasUpdateRunnerDom();
+}
+
+// Shared permissions/privacy panel (theme-aware, used by desktop + mobile).
+function appsPermissionsHtml(app){
+    var p=app&&app.permissions;
+    if(!p) return '';
+    var rows=[
+        ['Server access', p.server_access],
+        ['Documents access', p.documents_access],
+        ['Account required', p.account_required],
+        ['Analytics', p.analytics]
+    ];
+    var h='<div class="apps-perm"><div class="apps-perm-title">Permissions &amp; privacy</div>';
+    rows.forEach(function(r){
+        var used=!!r[1];
+        h+='<div class="apps-perm-row '+(used?'used':'clear')+'">'
+          +'<span class="apps-perm-dot">'+(used?'●':'✓')+'</span>'
+          +'<span>'+(used?esc(r[0])+' used':'No '+esc(String(r[0]).toLowerCase()))+'</span></div>';
+    });
+    if(p.local_only){
+        h+='<div class="apps-perm-row clear"><span class="apps-perm-dot">✓</span><span>Runs locally inside Skipi — no internet, no external app</span></div>';
+    }
+    h+='</div>';
+    return h;
+}
+
+// ---- Desktop renderers ----
+function showApps(){
+    var content=document.getElementById('scr-content');
+    if(!content) return;
+    if(appsState.bnwasOpen) content.innerHTML=bnwasRunnerHtml();
+    else if(appsState.selectedId) content.innerHTML=appsDetailHtml(appsById(appsState.selectedId));
+    else content.innerHTML=appsListHtml();
+    show('scr-content');
+    updateTabs('Apps');
+    if(appsState.bnwasOpen) bnwasUpdateRunnerDom();
+}
+function appsTileHtml(a){
+    var soon=a.status==='coming_soon';
+    var badge=soon?'<span class="apps-badge soon">Coming soon</span>'
+        :(a.id===BNWAS_ID&&bnwasInstalled())?'<span class="apps-badge live">Installed</span>'
+        :'<span class="apps-badge live">Available</span>';
+    return '<button class="apps-tile'+(soon?' soon':'')+'" type="button" onclick="appsSelect(\''+a.id+'\')">'
+        + '<span class="apps-tile-icon">'+(a.icon||'▢')+'</span>'
+        + '<span class="apps-tile-body">'
+        +   '<span class="apps-tile-name">'+esc(a.name)+'</span>'
+        +   '<span class="apps-tile-sub">'+esc(a.short||'')+'</span>'
+        +   badge
+        + '</span></button>';
+}
+function appsListHtml(){
+    var h='<div class="apps-screen">';
+    h+='<div class="apps-head"><div class="apps-head-title">Apps</div>'
+      +'<div class="apps-head-sub">Installed / Available — official Skipi tools inside your Seafarer home. Not a marketplace and no third-party code.</div></div>';
+    SKIPI_APP_CATEGORIES.forEach(function(cat){
+        var apps=SKIPI_APPS.filter(function(a){return a.category===cat.key;});
+        if(!apps.length) return;
+        h+='<div class="apps-cat-title">'+esc(cat.label)+'</div><div class="apps-grid">';
+        apps.forEach(function(a){ h+=appsTileHtml(a); });
+        h+='</div>';
+    });
+    h+='</div>';
+    return h;
+}
+function appsDetailHtml(app){
+    if(!app) return appsListHtml();
+    var act=appsPrimaryAction(app);
+    var note=appsPlatformNote(app);
+    var h='<div class="apps-screen apps-detail">';
+    h+='<button class="apps-back" type="button" onclick="appsBack()">← Apps</button>';
+    h+='<div class="apps-detail-head"><span class="apps-tile-icon big">'+(app.icon||'▢')+'</span>'
+      +'<div><div class="apps-detail-name">'+esc(app.name)+'</div>'
+      +'<div class="apps-detail-cat">'+esc(appsCatLabel(app.category))+(app.status==='coming_soon'?' · Coming soon':'')+'</div></div></div>';
+    if(app.description) h+='<p class="apps-detail-desc">'+esc(app.description)+'</p>';
+    if(note) h+='<div class="apps-note">'+esc(note)+'</div>';
+    if(app.safety_note) h+='<div class="apps-safety"><b>Safety</b> — '+esc(app.safety_note)+'</div>';
+    h+=appsPermissionsHtml(app);
+    h+='<div class="apps-actions">';
+    if(act.disabled) h+='<button class="btn btn-outline" disabled>'+esc(act.label)+'</button>';
+    else h+='<button class="btn btn-accent" onclick="'+act.onclick+'">'+esc(act.label)+'</button>';
+    if(app.id===BNWAS_ID&&bnwasInstalled()) h+=' <button class="btn btn-outline" onclick="appsUninstallBnwas()">Remove</button>';
+    h+='</div></div>';
+    return h;
+}
+
+// ---- Mobile renderers ----
+function renderMobileApps(){
+    if(appsState.bnwasOpen){ mobileMainHtml(bnwasRunnerHtml()); bnwasUpdateRunnerDom(); return; }
+    if(appsState.selectedId) return appsMobileDetail(appsById(appsState.selectedId));
+    var h='<div class="mobile-section-title">Apps — Installed / Available</div>';
+    h+='<div class="mobile-card-sub" style="margin:-4px 0 12px;">Official Skipi tools inside your Seafarer home. Not a marketplace and no third-party code.</div>';
+    SKIPI_APP_CATEGORIES.forEach(function(cat){
+        var apps=SKIPI_APPS.filter(function(a){return a.category===cat.key;});
+        if(!apps.length) return;
+        h+='<div class="mobile-section-title">'+esc(cat.label)+'</div>';
+        apps.forEach(function(a){
+            var soon=a.status==='coming_soon';
+            h+='<button class="mobile-primary-action" type="button" onclick="appsSelect(\''+a.id+'\')">'
+              +'<span class="mobile-action-icon">'+(a.icon||'▢')+'</span>'
+              +'<span class="mobile-action-copy"><span class="mobile-action-title">'+esc(a.name)+(soon?' <span class="apps-badge soon">soon</span>':(a.id===BNWAS_ID&&bnwasInstalled()?' <span class="apps-badge live">installed</span>':''))+'</span>'
+              +'<span class="mobile-action-sub">'+esc(a.short||'')+'</span></span></button>';
+        });
+    });
+    mobileMainHtml(mobileWithHomeButton(h));
+}
+function appsMobileDetail(app){
+    if(!app){ appsState.selectedId=null; return renderMobileApps(); }
+    var act=appsPrimaryAction(app);
+    var note=appsPlatformNote(app);
+    var h='<button class="mobile-home-btn" type="button" onclick="appsBack()"><span class="mobile-home-btn-icon">←</span><span>Apps</span></button>';
+    h+='<div class="mobile-primary-action" style="cursor:default;">'
+      +'<span class="mobile-action-icon">'+(app.icon||'▢')+'</span>'
+      +'<span class="mobile-action-copy"><span class="mobile-action-title">'+esc(app.name)+'</span>'
+      +'<span class="mobile-action-sub">'+esc(appsCatLabel(app.category))+(app.status==='coming_soon'?' · Coming soon':'')+'</span></span></div>';
+    if(app.description) h+='<div class="mobile-card"><div class="mobile-card-sub">'+esc(app.description)+'</div></div>';
+    if(note) h+='<div class="apps-note">'+esc(note)+'</div>';
+    if(app.safety_note) h+='<div class="apps-safety"><b>Safety</b> — '+esc(app.safety_note)+'</div>';
+    h+=appsPermissionsHtml(app);
+    h+='<div class="apps-actions">';
+    if(act.disabled) h+='<button class="btn btn-outline" style="width:100%;" disabled>'+esc(act.label)+'</button>';
+    else h+='<button class="btn btn-accent" style="width:100%;" onclick="'+act.onclick+'">'+esc(act.label)+'</button>';
+    if(app.id===BNWAS_ID&&bnwasInstalled()) h+='<button class="btn btn-outline" style="width:100%;margin-top:8px;" onclick="appsUninstallBnwas()">Remove</button>';
+    h+='</div>';
+    mobileMainHtml(h);
 }
 
 // ------------- Inbox (E2E messages with crewings) -------------
