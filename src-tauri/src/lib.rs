@@ -112,10 +112,6 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_process::init())
-        // Cross-platform URL opener (desktop + Android + iOS). The desktop
-        // open_external_url path still uses a direct OS spawn; mobile routes
-        // through this plugin so the BNWAS tile can open the App Store on iOS.
-        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             #[cfg(desktop)]
             app.handle()
