@@ -8106,9 +8106,10 @@ function appsBack(){
 }
 
 // =================== BNWAS embedded watch engine ===================
-// Mirrors /home/linux/time-anchor-app TimerViewModel: IDLE -> WATCHING ->
-// STAGE1 (visual/soft alert, 60s grace) -> STAGE2 (loud alarm) until
-// acknowledged. Local-only; never touches server, account or documents.
+// Mirrors /home/linux/time-anchor-app TimerViewModel, adapted for Skipi:
+// IDLE -> WATCHING -> ALARM until acknowledged. When the interval expires,
+// the alarm starts immediately and keeps repeating until the user confirms
+// presence. Local-only; never touches server, account or documents.
 var BNWAS_PRESETS=[1,2,3,5,10,15,30];
 var BNWAS_GRACE=60;
 var bnwas={ stage:'idle', intervalMin:3, remaining:180, grace:BNWAS_GRACE, cycles:0,
@@ -8158,7 +8159,15 @@ function bnwasTick(){
     if(bnwas.startedMs) bnwas.totalSec=Math.floor((Date.now()-bnwas.startedMs)/1000);
     if(bnwas.stage==='watching'){
         bnwas.remaining-=1;
-        if(bnwas.remaining<=0){ bnwas.stage='stage1'; bnwas.remaining=0; bnwas.grace=BNWAS_GRACE; bnwas.flash=bnwas.nightMode; bnwasStage1Sound(); }
+        if(bnwas.remaining<=0){
+            bnwas.stage='stage2';
+            bnwas.remaining=0;
+            bnwas.grace=0;
+            bnwas.flash=false;
+            bnwasStage2Start();
+            bnwasRenderRunner();
+            return;
+        }
     } else if(bnwas.stage==='stage1'){
         bnwas.grace-=1;
         if(bnwas.grace<=0){ bnwas.stage='stage2'; bnwas.grace=0; bnwas.flash=false; bnwasStage2Start(); }
@@ -8183,9 +8192,9 @@ function bnwasEnd(){
 
 // ---- Runner rendering ----
 function bnwasFmt(sec){ sec=Math.max(0,sec|0); var m=Math.floor(sec/60), s=sec%60; return (m<10?'0':'')+m+':'+(s<10?'0':'')+s; }
-function bnwasStatusText(){ return bnwas.stage==='idle'?'Ready':bnwas.stage==='watching'?'Watching':bnwas.stage==='stage1'?'Alert — acknowledge':'Alarm — acknowledge'; }
+function bnwasStatusText(){ return bnwas.stage==='idle'?'Ready':bnwas.stage==='watching'?'Watching':bnwas.stage==='stage1'?'Alarm — acknowledge':'Alarm — acknowledge'; }
 function bnwasBigTime(){ return bnwas.stage==='watching'?bnwasFmt(bnwas.remaining):bnwas.stage==='stage1'?bnwasFmt(bnwas.grace):'00:00'; }
-function bnwasCaption(){ return bnwas.stage==='watching'?'until next check':bnwas.stage==='stage1'?'grace — acknowledge':bnwas.stage==='stage2'?'acknowledge now':'interval '+bnwas.intervalMin+' min'; }
+function bnwasCaption(){ return bnwas.stage==='watching'?'until next check':bnwas.stage==='stage1'?'alarm — acknowledge now':bnwas.stage==='stage2'?'alarm — acknowledge now':'interval '+bnwas.intervalMin+' min'; }
 function bnwasRunnerHtml(){
     var night=bnwas.nightMode, alerting=(bnwas.stage==='stage1'||bnwas.stage==='stage2');
     var presets='';
