@@ -1,0 +1,35 @@
+{
+  "id": "app.skipi.plugins.bnwas-time-anchor",
+  "slug": "bnwas-time-anchor",
+  "name": "BNWAS / Time Anchor",
+  "version": "0.1.0",
+  "developer": "Tymur Rudov / Skipi",
+  "kind": "utility",
+  "category": "safety_watchkeeping",
+  "distribution": {
+    "mode": "bundled_first_party",
+    "bundled": true,
+    "remote_code": false
+  },
+  "hosts": ["seafarer", "onboard"],
+  "entrypoints": {
+    "ui": "index.js",
+    "style": "index.css"
+  },
+  "permissions": [
+    "local_storage",
+    "audio_alert"
+  ],
+  "capabilities": {
+    "network": "none",
+    "documents": "none",
+    "account": "none",
+    "analytics": "none",
+    "server_upload": false
+  },
+  "safety": {
+    "certified_equipment": false,
+    "requires_disclaimer": true,
+    "disclaimer": "Personal watchkeeping reminder and training aid only. Not certified bridge equipment. Does not replace vessel BNWAS, lookout duties, bridge procedures, SMS, or master's standing orders."
+  }
+}
