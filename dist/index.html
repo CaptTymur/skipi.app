@@ -903,16 +903,20 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .mobile-profile-meter-value { font-size:12px; font-weight:900; color:var(--green); min-width:38px; text-align:right; }
 .mobile-module-rail-wrap { position:relative; }
 .mobile-module-rail-wrap::before,
-.mobile-module-rail-wrap::after { position:absolute; top:0; bottom:1px; width:34px; display:flex; align-items:center; justify-content:center; color:var(--accent); font-size:24px; font-weight:900; pointer-events:none; z-index:2; opacity:0; transition:opacity .16s ease; }
-.mobile-module-rail-wrap::before { content:'‹'; left:0; background:linear-gradient(to right,var(--surface) 36%,rgba(255,255,255,0)); }
-.mobile-module-rail-wrap::after { content:'›'; right:0; background:linear-gradient(to left,var(--surface) 36%,rgba(255,255,255,0)); }
+.mobile-module-rail-wrap::after { position:absolute; top:0; bottom:1px; width:24px; display:flex; align-items:center; justify-content:center; color:var(--accent); font-size:22px; font-weight:900; pointer-events:none; z-index:2; opacity:0; transition:opacity .16s ease; }
+.mobile-module-rail-wrap::before { content:'‹'; left:0; background:linear-gradient(to right,var(--surface) 28%,rgba(255,255,255,0)); }
+.mobile-module-rail-wrap::after { content:'›'; right:0; background:linear-gradient(to left,var(--surface) 28%,rgba(255,255,255,0)); }
 .mobile-module-rail-wrap.has-before::before,
 .mobile-module-rail-wrap.has-more::after { opacity:.96; }
-.mobile-module-rail { display:flex; gap:6px; overflow-x:auto; overflow-y:hidden; padding:0 28px 1px 0; scrollbar-width:none; scroll-snap-type:x proximity; }
+.mobile-module-rail { display:flex; gap:5px; overflow-x:auto; overflow-y:hidden; padding:0 18px 1px 0; scrollbar-width:none; scroll-snap-type:x proximity; }
 .mobile-module-rail::-webkit-scrollbar { display:none; }
-.mobile-nav-btn { flex:0 0 76px; min-height:50px; border:1px solid transparent; border-radius:8px; background:transparent; color:var(--text2); font-size:10px; font-weight:800; display:flex; flex-direction:column; gap:3px; align-items:center; justify-content:center; scroll-snap-align:start; }
+.mobile-nav-btn { flex:0 0 70px; min-height:50px; border:1px solid transparent; border-radius:8px; background:transparent; color:var(--text2); font-size:10px; font-weight:800; display:flex; flex-direction:column; gap:3px; align-items:center; justify-content:center; scroll-snap-align:start; }
 .mobile-nav-btn span { font-size:17px; line-height:1; }
 .mobile-nav-btn.active { color:var(--accent); background:var(--accent-bg); border-color:var(--accent-bg2); }
+@media (max-width:380px){
+    .mobile-nav-btn { flex-basis:66px; font-size:9px; }
+    .mobile-module-rail { gap:4px; padding-right:16px; }
+}
 .mobile-home-btn { width:100%; min-height:42px; margin:0 0 10px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); display:flex; align-items:center; justify-content:center; gap:8px; font-size:14px; font-weight:900; }
 .mobile-home-btn:active { transform:translateY(1px); }
 .mobile-home-btn-icon { width:24px; height:24px; border-radius:7px; background:var(--accent-bg); color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:15px; line-height:1; }
@@ -1099,6 +1103,11 @@ input, select, textarea, button { font-family:var(--font-ui); }
 body.mobile-mode .apps-screen { padding:2px 0 24px; max-width:none; }
 body.mobile-mode .apps-grid { grid-template-columns:1fr; }
 body.mobile-mode .plugin-screen { max-width:none; }
+body.mobile-mode .plugin-host-bar { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:8px; margin:0 0 8px; }
+body.mobile-mode .plugin-host-bar .apps-back { min-height:38px; margin:0; padding:8px 10px; border:1px solid var(--border); border-radius:8px; background:var(--surface); max-width:98px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+body.mobile-mode .plugin-host-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:center; font-size:12px; }
+body.mobile-mode .plugin-host-bar .btn { min-height:38px; padding:7px 10px; }
+body.mobile-mode .plugin-host-container { overflow:hidden; border-radius:10px; }
 body.mobile-mode .apps-safety, body.mobile-mode .apps-perm { margin-left:0; margin-right:0; }
 .mobile-action-title .apps-badge { margin:0 0 0 6px; vertical-align:middle; padding:1px 6px; }
 .mobile-search { width:100%; height:42px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); padding:0 12px; font-size:15px; margin-bottom:8px; }
@@ -8289,8 +8298,7 @@ function pluginMountInto(id){
 // ---- mobile renderers ----
 function renderMobileApps(){
     if(pluginHostState.openId){
-        mobileMainHtml('<button class="mobile-home-btn" type="button" onclick="pluginBack()"><span class="mobile-home-btn-icon">←</span><span>Apps</span></button>'
-            + pluginScreenHtml(pluginById(pluginHostState.openId)));
+        mobileMainHtml(pluginMobileScreenHtml(pluginById(pluginHostState.openId)));
         setTimeout(function(){ pluginMountInto(pluginHostState.openId); },0);
         return;
     }
@@ -8310,7 +8318,16 @@ function renderMobileApps(){
               +'<span class="mobile-action-sub">'+esc(p.short||'')+'</span></span></button>';
         });
     });
-    mobileMainHtml(mobileWithHomeButton(h));
+    mobileMainHtml(h);
+}
+function pluginMobileScreenHtml(p){
+    if(!p) return '';
+    return '<div class="apps-screen plugin-screen">'
+      + '<div class="plugin-host-bar"><button class="apps-back" type="button" onclick="pluginBack()">← Apps</button>'
+      + '<span class="plugin-host-title" id="plugin-host-title">'+esc(p.name||'')+'</span>'
+      + '<button class="btn btn-outline btn-sm" onclick="pluginDisable(\''+p.id+'\')">Disable</button></div>'
+      + '<div class="plugin-host-container" id="plugin-host-container"><div class="plugin-host-loading">Loading…</div></div>'
+      + '</div>';
 }
 function pluginMobileDetail(p){
     if(!p){ pluginHostState.selectedId=null; return renderMobileApps(); }
