@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -23,7 +23,7 @@ var UI_STRINGS={
 	        'app.name':'Skipi Seafarer',
 	        'nav.files':'Documents','nav.experience':'Experience','nav.dashboard':'Dashboard','nav.cv':'CV','nav.packages':'Packages','nav.dispatch':'Mailings','nav.jobs':'Jobs','nav.information':'Information','nav.vessels':'Vessel DB',
 	        'title.files':'Documents','title.experience':'Sea Service','title.dashboard':'Dashboard','title.cv':'CV','title.packages':'Packages','title.dispatch':'Mailings','title.jobs':'Jobs','title.information':'Information','title.vessels':'Vessel DB','title.settings':'Settings',
-	        'welcome.subtitle':'Skipi - United Seafarers','welcome.create':'Create Seafarer Vault','welcome.open':'Open Existing Vault','welcome.hint':'New vault folders are named clearly, for example Skipi Seafarer - Tymur Rudov. When opening a vault, select that named folder.','welcome.demo_prefix':'Just exploring?','welcome.demo':'Load demo seafarer',
+	        'welcome.subtitle':'Skipi - United Seafarers','welcome.create':'Create profile','welcome.open':'Open existing profile','welcome.hint':'New vault folders are named clearly, for example Skipi Seafarer - Tymur Rudov. When opening a vault, select that named folder.','welcome.demo_prefix':'Just exploring?','welcome.demo':'Show demo',
 	        'settings.general':'General','settings.general_desc':'Basic application settings.','settings.language':'Language','settings.language_desc':'Interface language.','settings.autovault':'Auto-open last vault','settings.autovault_desc':'Automatically open the last used vault on startup.',
 	        'settings.nav_title':'Settings','settings.vaults':'Vaults','settings.seafarer_profile':'Seafarer Profile','settings.email':'Email sending','settings.appearance':'Appearance','settings.about_group':'About','settings.about':'About Skipi Seafarer',
 	        'common.settings':'Settings','common.vault':'Vault','common.switch_vault':'Switch vault','jobs.languages':'Languages',
@@ -35,7 +35,7 @@ var UI_STRINGS={
 	        'app.name':'Скипи Моряк',
 	        'nav.files':'Документы','nav.experience':'Опыт работы','nav.dashboard':'Панель','nav.cv':'CV','nav.packages':'Пакеты','nav.dispatch':'Рассылки','nav.jobs':'Вакансии','nav.information':'Информация','nav.vessels':'База судов',
 	        'title.files':'Документы','title.experience':'Морской опыт','title.dashboard':'Панель','title.cv':'CV','title.packages':'Пакеты','title.dispatch':'Рассылки','title.jobs':'Вакансии','title.information':'Информация','title.vessels':'База судов','title.settings':'Настройки',
-	        'welcome.subtitle':'Skipi - United Seafarers','welcome.create':'Создать профиль моряка','welcome.open':'Открыть существующий профиль','welcome.hint':'Новые папки профиля называются понятно, например Скипи Моряк - Tymur Rudov. При открытии выбирайте именно эту папку.','welcome.demo_prefix':'Просто посмотреть?','welcome.demo':'Открыть демо-профиль',
+	        'welcome.subtitle':'Skipi - United Seafarers','welcome.create':'Создать профиль','welcome.open':'Открыть существующий профиль','welcome.hint':'Новые папки профиля называются понятно, например Скипи Моряк - Tymur Rudov. При открытии выбирайте именно эту папку.','welcome.demo_prefix':'Просто посмотреть?','welcome.demo':'Показать демонстрацию',
 	        'settings.general':'Общие','settings.general_desc':'Основные настройки приложения.','settings.language':'Язык','settings.language_desc':'Язык интерфейса.','settings.autovault':'Открывать последний профиль','settings.autovault_desc':'Автоматически открывать последний использованный профиль при запуске.',
 	        'settings.nav_title':'Настройки','settings.vaults':'Профили','settings.seafarer_profile':'Профиль моряка','settings.email':'Отправка email','settings.appearance':'Внешний вид','settings.about_group':'О приложении','settings.about':'О Скипи Моряк',
 	        'common.settings':'Настройки','common.vault':'Профиль','common.switch_vault':'Сменить профиль','jobs.languages':'Языки',
@@ -774,6 +774,46 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .welcome h1 { font-size:32px; color:var(--accent); margin-bottom:8px; }
 .welcome p { color:var(--text2); margin-bottom:32px; font-size:14px; }
 .welcome .btn { margin:0 6px; padding:8px 20px; font-size:14px; }
+/* Unified launch actions (three equal primary buttons, #004564) */
+.launch-actions { display:flex; flex-direction:column; gap:10px; width:100%; max-width:380px; margin:6px auto 4px; }
+.welcome .launch-actions .btn.launch-btn, .launch-btn { margin:0; width:100%; padding:13px 18px; font-size:15px; font-weight:700; border-radius:10px; white-space:normal; line-height:1.25; }
+body.mobile-mode .launch-actions { max-width:none; }
+/* Connect dialog: segmented token/QR tabs */
+.connect-sub { font-size:12.5px; color:var(--text2); line-height:1.45; margin-bottom:14px; }
+.seg-tabs { display:flex; gap:6px; background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:4px; margin-bottom:14px; }
+.seg-tab { flex:1; border:none; background:transparent; color:var(--text2); font-size:13px; font-weight:700; padding:8px 10px; border-radius:7px; cursor:pointer; }
+.seg-tab.on { background:var(--accent); color:#fff; }
+.connect-pane { display:flex; flex-direction:column; }
+.connect-label { font-size:12px; font-weight:700; color:var(--text2); margin-bottom:6px; }
+.connect-input-row { display:flex; gap:8px; align-items:stretch; }
+.connect-input { flex:1; min-width:0; height:42px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); padding:0 12px; font-size:14px; }
+.connect-input:focus { outline:none; border-color:var(--accent); }
+.connect-clear { flex:0 0 auto; }
+.connect-help { font-size:11.5px; color:var(--text2); line-height:1.45; margin:8px 0 0; }
+.connect-error { font-size:12.5px; color:var(--red); line-height:1.4; margin-top:10px; background:rgba(229,85,97,.1); border:1px solid rgba(229,85,97,.35); border-radius:8px; padding:9px 11px; }
+.connect-submit { margin-top:14px; }
+.connect-foot { display:flex; flex-wrap:wrap; gap:8px; justify-content:space-between; align-items:center; margin-top:16px; }
+.btn-ghost { background:transparent; border:1px solid transparent; color:var(--accent); }
+.btn-ghost:hover { background:var(--accent-bg); }
+.connect-local { font-weight:700; }
+/* QR scanner placeholder (no native camera bridge yet) */
+.qr-scan-box { border:1px dashed var(--border); border-radius:12px; background:var(--bg); padding:26px 18px; text-align:center; }
+.qr-scan-icon { font-size:40px; color:var(--accent); opacity:.85; line-height:1; }
+.qr-scan-title { font-size:15px; font-weight:800; color:var(--text); margin-top:10px; }
+.qr-scan-note { font-size:12px; color:var(--text2); line-height:1.5; margin-top:6px; max-width:380px; margin-left:auto; margin-right:auto; }
+/* Settings → Paired devices */
+.devices-note { font-size:12.5px; color:var(--text); line-height:1.5; background:var(--accent-bg); border:1px solid var(--accent-bg2); border-radius:8px; padding:11px 13px; margin:0 0 16px; }
+.devices-actions { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:6px; }
+.devices-title { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:var(--text2); margin:18px 0 8px; }
+.devices-empty { font-size:12.5px; color:var(--text2); line-height:1.45; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:12px 14px; }
+.device-row { display:flex; align-items:center; gap:12px; border:1px solid var(--border); border-radius:10px; background:var(--surface); padding:12px 14px; margin-top:8px; }
+.device-row.preview { opacity:.8; }
+.device-main { flex:1; min-width:0; }
+.device-name { font-size:14px; font-weight:700; color:var(--text); }
+.device-meta { font-size:11.5px; color:var(--text2); margin-top:2px; }
+.device-badge { flex:0 0 auto; font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; padding:3px 8px; border-radius:999px; background:var(--accent-bg); color:var(--accent); }
+.device-preview-tag { font-size:10px; font-weight:700; color:var(--text2); background:var(--hover); padding:1px 6px; border-radius:999px; margin-left:6px; vertical-align:middle; }
+body.mobile-mode .devices-actions .btn { flex:1 1 100%; }
 
 /* Setup */
 .setup { max-width:360px; margin:40px auto; }
@@ -1256,16 +1296,15 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
                 <h1 id="welcome-title">Скипи Моряк</h1>
                 <p id="welcome-subtitle">Skipi - United Seafarers</p>
                 <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">EMBED-TEST</span></p>
-                <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
-                <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
-                <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
+                <div class="launch-actions">
+                    <button class="btn btn-accent launch-btn" id="btn-open-vault" onclick="openConnectDialog()">Открыть существующий профиль</button>
+                    <button class="btn btn-accent launch-btn" id="btn-create-vault" onclick="showSetup()">Создать профиль</button>
+                    <button class="btn btn-accent launch-btn" id="welcome-demo-link" onclick="loadDemoVault();return false;"><span id="welcome-demo-link-text">Показать демонстрацию</span></button>
+                </div>
+                <div id="welcome-recent" style="margin-top:16px;max-width:420px;width:100%;"></div>
                 <div id="welcome-folder-hint" style="margin-top:12px;font-size:11px;color:var(--text2);line-height:1.45;max-width:360px;">
                     New vault folders are named clearly, for example <code>Skipi Seafarer - Tymur Rudov</code>. When opening a vault, select that named folder.
                 </div>
-                <div style="display:flex;align-items:center;gap:10px;max-width:360px;width:100%;margin:18px 0 10px;color:var(--text2);opacity:.65;font-size:11px;">
-                    <span style="flex:1;height:1px;background:var(--border);"></span><span id="welcome-demo-prefix">Just exploring?</span><span style="flex:1;height:1px;background:var(--border);"></span>
-                </div>
-                <button class="btn btn-outline" id="welcome-demo-link" onclick="loadDemoVault();return false;" style="border-color:var(--accent);color:var(--accent);"><span style="margin-right:6px;">🎬</span><span id="welcome-demo-link-text">Load demo seafarer</span></button>
             </div>
             <div id="scr-setup" style="display:none;"></div>
             <div id="scr-content" style="display:none;"></div>
@@ -3321,10 +3360,10 @@ function renderMobileWelcome(){
     var h='<div class="mobile-hero">';
     h+='<h1>'+mobileEsc(tr('app.name'))+'</h1>';
     h+='<p>'+mobileEsc(ru?'Создайте или откройте профиль моряка, затем добавляйте сертификаты камерой телефона или из файлов.':'Create or open your seafarer vault, then add certificates from your phone camera or files.')+'</p>';
-    h+='<div class="mobile-stack">';
-    h+='<button class="mobile-primary-action" type="button" onclick="mobileStartVaultWizard()"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(ru?'Создать профиль':'Create mobile vault')+'</span><span class="mobile-action-sub">'+mobileEsc(ru?'Сначала выберите департамент, тип судна и должность.':'Choose department, vessel type and rank first.')+'</span></span></button>';
-    h+='<button class="btn btn-outline" onclick="mobileOpenExistingVault()">'+mobileEsc(ru?'Открыть существующий':'Open existing vault')+'</button>';
-    h+='<button class="btn btn-outline" onclick="loadDemoVault()">'+mobileEsc(ru?'Открыть демо':'Open demo vault')+'</button>';
+    h+='<div class="mobile-stack launch-actions">';
+    h+='<button class="btn btn-accent launch-btn" type="button" onclick="openConnectDialog()">'+mobileEsc(tr('welcome.open'))+'</button>';
+    h+='<button class="btn btn-accent launch-btn" type="button" onclick="mobileStartVaultWizard()">'+mobileEsc(tr('welcome.create'))+'</button>';
+    h+='<button class="btn btn-accent launch-btn" type="button" onclick="loadDemoVault()">'+mobileEsc(tr('welcome.demo'))+'</button>';
     h+='</div></div>';
     mobileMainHtml(h);
 }
@@ -7539,6 +7578,105 @@ async function browseExistingVault(){
     var dir=await open({directory:true,title:'Select a Skipi vault folder (the folder containing skipi.db)'});if(!dir)return;
     try{var info=await invoke('open_vault',{path:dir});await loadVault(info);}catch(e){showToast('Could not open vault: '+e+'. Select the named folder that contains skipi.db, for example "Skipi Seafarer - Your Name".','error');logError('open_vault',e);}
 }
+
+// ===================== Device pairing / connect (token + QR) =====================
+// Common "Open existing profile" connect dialog: connect to a profile shown on
+// ANOTHER device by token or QR. The backend pairing API (/api/devices/*, see
+// the 2026-06-25 pairing handoff) is NOT yet implemented in skipi-server, so the
+// token/QR flow is an HONEST UI shell — it never fakes a successful pairing.
+// A local-folder fallback opens an existing on-disk vault (the working flow).
+var connectDialogTab = 'token'; // 'token' | 'qr'
+function openConnectDialog(initialTab){
+    closeConnectDialog();
+    connectDialogTab = (initialTab==='qr')?'qr':'token';
+    var h='<div id="connect-overlay" class="modal-overlay open" onclick="if(event.target===this)closeConnectDialog();">';
+    h+='<div class="modal-panel connect-panel" style="width:min(560px,94vw);">';
+    h+='<h3 style="margin-top:0;margin-bottom:4px;">'+esc(tr('welcome.open'))+'</h3>';
+    h+='<div class="connect-sub">Подключитесь к профилю, показанному на другом устройстве — по токену или QR-коду.</div>';
+    h+='<div class="seg-tabs" role="tablist">';
+    h+='<button class="seg-tab'+(connectDialogTab==='token'?' on':'')+'" type="button" data-tab="token" onclick="connectSetTab(\'token\')">Токен</button>';
+    h+='<button class="seg-tab'+(connectDialogTab==='qr'?' on':'')+'" type="button" data-tab="qr" onclick="connectSetTab(\'qr\')">QR-код</button>';
+    h+='</div>';
+    h+='<div id="connect-tabbody"></div>';
+    h+='<div class="connect-foot">';
+    h+='<button class="btn btn-ghost connect-local" type="button" onclick="closeConnectDialog();connectOpenLocalFolder()">Открыть локальную папку профиля</button>';
+    h+='<button class="btn btn-outline" type="button" onclick="closeConnectDialog()">Отмена</button>';
+    h+='</div>';
+    h+='</div></div>';
+    document.body.insertAdjacentHTML('beforeend',h);
+    connectRenderTab();
+}
+function closeConnectDialog(){ var el=document.getElementById('connect-overlay'); if(el)el.remove(); }
+function connectSetTab(t){
+    connectDialogTab=(t==='qr')?'qr':'token';
+    var tabs=document.querySelectorAll('#connect-overlay .seg-tab');
+    tabs.forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-tab')===connectDialogTab); });
+    connectRenderTab();
+}
+function connectRenderTab(){
+    var body=document.getElementById('connect-tabbody'); if(!body) return;
+    body.innerHTML=(connectDialogTab==='token')?connectTokenTabHtml():connectQrTabHtml();
+    if(connectDialogTab==='token'){ var i=document.getElementById('connect-token'); if(i) try{i.focus();}catch(e){} }
+}
+function connectTokenTabHtml(){
+    return '<div class="connect-pane">'
+      + '<label class="connect-label" for="connect-token">Токен подключения</label>'
+      + '<div class="connect-input-row">'
+      +   '<input id="connect-token" class="connect-input" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Вставьте токен с другого устройства" oninput="connectClearError()">'
+      +   '<button class="btn btn-outline connect-clear" type="button" onclick="connectClearToken()">Очистить</button>'
+      + '</div>'
+      + '<div class="connect-help">Токен показывается на другом устройстве внутри Skipi: Настройки → Сопряжённые устройства → «Показать QR/токен». Это не пароль.</div>'
+      + '<div id="connect-error" class="connect-error" style="display:none;"></div>'
+      + '<button class="btn btn-accent connect-submit" type="button" onclick="connectSubmitToken()">Подключить</button>'
+      + '</div>';
+}
+function connectQrTabHtml(){
+    return '<div class="connect-pane">'
+      + '<div class="qr-scan-box">'
+      +   '<div class="qr-scan-icon">▣</div>'
+      +   '<div class="qr-scan-title">Сканер QR-кода</div>'
+      +   '<div class="qr-scan-note">Сканирование камерой требует нативного доступа к камере (native camera bridge), которого пока нет в этой сборке.</div>'
+      + '</div>'
+      + '<div class="connect-help">Камера недоступна — введите токен вручную.</div>'
+      + '<button class="btn btn-outline" type="button" onclick="connectSetTab(\'token\')">Ввести токен вручную</button>'
+      + '</div>';
+}
+function connectClearToken(){ var i=document.getElementById('connect-token'); if(i){ i.value=''; try{i.focus();}catch(e){} } connectClearError(); }
+function connectClearError(){ var e=document.getElementById('connect-error'); if(e){ e.style.display='none'; e.textContent=''; } }
+function connectShowError(msg){ var e=document.getElementById('connect-error'); if(e){ e.textContent=msg; e.style.display='block'; } }
+function connectSubmitToken(){
+    var i=document.getElementById('connect-token');
+    var v=i?String(i.value||'').trim():'';
+    if(!v){ connectShowError('Введите токен подключения.'); return; }
+    // Backend pairing API (/api/devices/pair) is NOT implemented yet → do NOT
+    // fake success. We never log or re-display the raw token after submit.
+    connectShowError('Подключение по токену пока недоступно: серверная часть сопряжения (pairing API) ещё не реализована. Реальное подключение появится после бэкенда. Пока используйте «Открыть локальную папку профиля».');
+    if(i) i.value=''; // never keep the raw token in the field after submit
+}
+async function connectOpenLocalFolder(){
+    // Preserve the working Seafarer flow: open an existing on-disk vault folder.
+    try{ if(typeof openExisting==='function'){ openExisting(); return; } }catch(e){}
+    try{ if(typeof browseExistingVault==='function'){ browseExistingVault(); } }
+    catch(e){ showToast('Could not open local profile: '+e,'error'); }
+}
+// Settings → Paired devices → "Показать QR/токен на этом устройстве" (honest shell)
+function showPairingCodeDialog(){
+    var el=document.getElementById('pairing-code-overlay'); if(el)el.remove();
+    var h='<div id="pairing-code-overlay" class="modal-overlay open" onclick="if(event.target===this)closePairingCodeDialog();">';
+    h+='<div class="modal-panel" style="width:min(480px,94vw);">';
+    h+='<h3 style="margin-top:0;margin-bottom:4px;">Показать QR/токен на этом устройстве</h3>';
+    h+='<div class="connect-sub">Другое устройство введёт этот токен или отсканирует QR в «Открыть существующий профиль».</div>';
+    h+='<div class="qr-scan-box" style="margin-top:12px;">'
+      +'<div class="qr-scan-icon">⌗</div>'
+      +'<div class="qr-scan-title">Генерация QR/токена недоступна</div>'
+      +'<div class="qr-scan-note">Одноразовый токен сопряжения выпускается сервером (pairing API), которого пока нет. Когда бэкенд появится, здесь будет QR + короткоживущий токен (TTL 5–15 мин).</div>'
+      +'</div>';
+    h+='<div style="display:flex;justify-content:flex-end;margin-top:14px;"><button class="btn btn-outline" type="button" onclick="closePairingCodeDialog()">Закрыть</button></div>';
+    h+='</div></div>';
+    document.body.insertAdjacentHTML('beforeend',h);
+}
+function closePairingCodeDialog(){ var el=document.getElementById('pairing-code-overlay'); if(el)el.remove(); }
+function devicesRevokePreview(){ showToast('Отзыв устройства недоступен: серверная часть сопряжения (pairing API) ещё не реализована.','info'); }
 
 async function loadVault(info){
     hide('scr-welcome');hide('scr-setup');show('scr-content');show('left-panel');hide('tabs');show('statusbar');
@@ -14400,13 +14538,14 @@ function closeSettings(){
 function renderSettingsNav(){
     var h = '';
     if(isMobileMode()){
-        if(['vaults','seafarer','appearance','about'].indexOf(settingsTab)<0) settingsTab='vaults';
+        if(['vaults','seafarer','appearance','devices','about'].indexOf(settingsTab)<0) settingsTab='vaults';
         h += '<div class="settings-nav-title">'+tr('settings.nav_title')+'</div>';
         h += '<div class="settings-nav-item'+(settingsTab==='vaults'?' active':'')+'" onclick="openSettings(\'vaults\')"><span class="nav-icon">&#128451;</span> Vault</div>';
         if(currentAccountType==='seafarer'||currentAccountType===''||!currentAccountType){
             h += '<div class="settings-nav-item'+(settingsTab==='seafarer'?' active':'')+'" onclick="openSettings(\'seafarer\')"><span class="nav-icon">&#128100;</span> Profile</div>';
         }
         h += '<div class="settings-nav-item'+(settingsTab==='appearance'?' active':'')+'" onclick="openSettings(\'appearance\')"><span class="nav-icon">&#127912;</span> Look</div>';
+        h += '<div class="settings-nav-item'+(settingsTab==='devices'?' active':'')+'" onclick="openSettings(\'devices\')"><span class="nav-icon">&#128279;</span> Устройства</div>';
         h += '<div class="settings-nav-item'+(settingsTab==='about'?' active':'')+'" onclick="openSettings(\'about\')"><span class="nav-icon">&#9432;</span> About</div>';
         document.getElementById('settings-nav').innerHTML = h;
         return;
@@ -14419,6 +14558,7 @@ function renderSettingsNav(){
     }
     h += '<div class="settings-nav-item'+(settingsTab==='email'?' active':'')+'" onclick="openSettings(\'email\')"><span class="nav-icon">&#9993;</span> '+tr('settings.email')+'</div>';
     h += '<div class="settings-nav-item'+(settingsTab==='appearance'?' active':'')+'" onclick="openSettings(\'appearance\')"><span class="nav-icon">&#127912;</span> '+tr('settings.appearance')+'</div>';
+    h += '<div class="settings-nav-item'+(settingsTab==='devices'?' active':'')+'" onclick="openSettings(\'devices\')"><span class="nav-icon">&#128279;</span> Сопряжённые устройства</div>';
     // AI Recognition tab intentionally hidden — beta users shouldn't see AI provider/key config yet.
     h += '<div class="settings-nav-title" style="margin-top:12px;">'+tr('settings.about_group')+'</div>';
     h += '<div class="settings-nav-item'+(settingsTab==='about'?' active':'')+'" onclick="openSettings(\'about\')"><span class="nav-icon">&#9432;</span> '+tr('settings.about')+'</div>';
@@ -14476,7 +14616,7 @@ async function mobileSettingsDeleteVaultPath(path){
 }
 
 function renderSettingsBody(){
-    var cur = document.documentElement.getAttribute('data-theme')||'dark';
+    var cur = document.documentElement.getAttribute('data-theme')||'light';
     var h = '';
 
     if(settingsTab === 'general'){
@@ -14485,6 +14625,23 @@ function renderSettingsBody(){
         h += '<div class="setting-control">'+uiLanguageSelectHtml()+'</div></div>';
         h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">'+tr('settings.autovault')+'</div><div class="setting-desc">'+tr('settings.autovault_desc')+'</div></div>';
         h += '<div class="setting-control"><label class="toggle"><input type="checkbox" checked disabled><span class="slider"></span></label></div></div>';
+        h += '</div>';
+    }
+
+    if(settingsTab === 'devices'){
+        var plat=(typeof hostPlatform!=='undefined' && hostPlatform && hostPlatform!=='unknown') ? hostPlatform : 'desktop';
+        h += '<div class="settings-section"><h3>Сопряжённые устройства</h3><div class="section-desc">Подключайте другие устройства к этому профилю по QR-коду или токену и управляйте их доступом.</div>';
+        h += '<div class="devices-note">Серверная часть сопряжения (pairing API) ещё не реализована — это честная интерфейс-заготовка. Кнопки показывают рабочий интерфейс, но реального подключения/отзыва пока не выполняют. Полноценное сопряжение появится после бэкенда.</div>';
+        h += '<div class="devices-actions">';
+        h += '<button class="btn btn-accent" type="button" onclick="closeSettings();openConnectDialog(\'token\')">Подключить новое устройство</button>';
+        h += '<button class="btn btn-outline" type="button" onclick="showPairingCodeDialog()">Показать QR/токен на этом устройстве</button>';
+        h += '<button class="btn btn-outline" type="button" onclick="closeSettings();openConnectDialog(\'qr\')">Сканировать QR с другого устройства</button>';
+        h += '</div>';
+        h += '<div class="devices-title">Это устройство</div>';
+        h += '<div class="device-row current"><div class="device-main"><div class="device-name">Текущее устройство</div><div class="device-meta">Платформа: '+esc(plat)+' · активно сейчас</div></div><span class="device-badge">Текущее</span></div>';
+        h += '<div class="devices-title">Сопряжённые устройства</div>';
+        h += '<div class="devices-empty">Пока нет реально сопряжённых устройств.</div>';
+        h += '<div class="device-row preview"><div class="device-main"><div class="device-name">iPhone — каюта <span class="device-preview-tag">пример</span></div><div class="device-meta">iOS · последняя активность: только что</div></div><button class="btn btn-outline btn-sm" type="button" onclick="devicesRevokePreview()">Отозвать</button></div>';
         h += '</div>';
     }
 
@@ -14607,7 +14764,7 @@ function renderSettingsBody(){
     }
 
     if(settingsTab === 'appearance'){
-        var themeChoice = localStorage.getItem('skipi-theme') || 'dark';
+        var themeChoice = localStorage.getItem('skipi-theme') || 'light';
         var resolvedTheme = _resolvedTheme(themeChoice);
         var accentVal = localStorage.getItem('skipi-accent') ||
                         (resolvedTheme==='light' ? DEFAULT_ACCENT_LIGHT : DEFAULT_ACCENT_DARK);
@@ -15535,11 +15692,11 @@ function _resolvedTheme(choice){
     if(choice!=='system') return choice;
     try{
         return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    }catch(e){ return 'dark'; }
+    }catch(e){ return 'light'; }
 }
 
 function applyAppearance(){
-    var choice=localStorage.getItem('skipi-theme')||'dark';
+    var choice=localStorage.getItem('skipi-theme')||'light';
     var resolved=_resolvedTheme(choice);
     document.documentElement.setAttribute('data-theme', resolved);
 
@@ -15581,7 +15738,7 @@ function applyAppearance(){
         try{
             var mq=window.matchMedia('(prefers-color-scheme: dark)');
             _systemThemeListener=function(){
-                if((localStorage.getItem('skipi-theme')||'dark')==='system'){
+                if((localStorage.getItem('skipi-theme')||'light')==='system'){
                     applyAppearance();
                 }
             };
