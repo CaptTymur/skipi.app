@@ -5,6 +5,10 @@
    STAGING ONLY. TEST KEY ONLY. No production catalog. No production key. */
 
 window.FEATURE_REMOTE_PLUGIN_DELIVERY = false;   // <-- default OFF (kill switch)
+try {
+  // QA/staging override only. This does not enable production delivery for normal users.
+  window.FEATURE_REMOTE_PLUGIN_DELIVERY = localStorage.getItem('skipi.remotePluginDelivery') === 'staging';
+} catch (e) {}
 
 window.SKIPI_REMOTE_CONFIG = {
   // Staging catalog only (production plugins.skipi.app is NOT used here).
