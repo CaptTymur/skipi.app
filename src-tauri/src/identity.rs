@@ -95,6 +95,68 @@ fn derive_user_id(pubkey: &[u8; 32]) -> String {
     encoded.chars().take(16).collect::<String>().to_lowercase()
 }
 
+/// Public derivation of the vault user_id from an Ed25519 public key, using the
+/// exact same scheme the app uses everywhere. Exposed for the On Board crew
+/// accept signer so it returns a `vault_user_id` consistent with this identity.
+pub fn user_id_for_pubkey(pubkey: &[u8; 32]) -> String {
+    derive_user_id(pubkey)
+}
+
+/// Load (or first-time create) the vault's Ed25519 signing key WITHOUT needing a
+/// db connection. Mirrors the key half of `ensure_vault_identity`. Used only by
+/// the On Board crew accept signer.
+pub fn vault_signing_key(vault_path: &Path) -> Result<SigningKey, String> {
+    let dir = identity_dir(vault_path);
+    fs::create_dir_all(&dir).map_err(|e| format!("identity dir: {}", e))?;
+    let sk_path = secret_key_path(vault_path);
+    if sk_path.exists() {
+        let bytes = fs::read(&sk_path).map_err(|e| format!("read sk.bin: {}", e))?;
+        if bytes.len() != 32 {
+            return Err(format!("sk.bin is {} bytes, expected 32", bytes.len()));
+        }
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(&bytes);
+        Ok(SigningKey::from_bytes(&arr))
+    } else {
+        let mut csprng = OsRng;
+        let sk = SigningKey::generate(&mut csprng);
+        let tmp = sk_path.with_extension("tmp");
+        fs::write(&tmp, sk.to_bytes()).map_err(|e| format!("write sk.tmp: {}", e))?;
+        fs::rename(&tmp, &sk_path).map_err(|e| format!("rename sk.bin: {}", e))?;
+        Ok(sk)
+    }
+}
+
+/// Canonicalise a crew invite code EXACTLY as the backend's `_canon` does
+/// (`(raw or "").strip().upper()`), so the signed message matches byte-for-byte.
+/// The valid code charset is ASCII, where Rust `to_uppercase()` == Python
+/// `str.upper()`.
+fn canon_crew_code(code: &str) -> String {
+    code.trim().to_uppercase()
+}
+
+/// Build the canonical On Board crew-accept message the seafarer signs. Must be
+/// byte-for-byte identical to the backend `accept_message()` in
+/// `app/onboard_crew.py`:
+///   skipi-onboard-crew:v1:accept:<public_seafarer_id>:<vault_user_id>:<CANON(code)>:<ts>
+/// vessel_imo is intentionally NOT in the message (the server resolves it from
+/// the code). This is the ONLY thing this signer will ever sign — there is no
+/// generic arbitrary-bytes signer.
+pub fn onboard_crew_accept_message(
+    public_seafarer_id: &str,
+    vault_user_id: &str,
+    code: &str,
+    ts: i64,
+) -> String {
+    format!(
+        "skipi-onboard-crew:v1:accept:{}:{}:{}:{}",
+        public_seafarer_id,
+        vault_user_id,
+        canon_crew_code(code),
+        ts
+    )
+}
+
 fn normalize_identity_part(value: Option<String>) -> Option<String> {
     let normalized = value?
         .trim()
@@ -520,5 +582,82 @@ mod tests {
         drop(conn_b);
         let _ = fs::remove_dir_all(a);
         let _ = fs::remove_dir_all(b);
+    }
+
+    // --- On Board crew accept signer (PR C) ---
+
+    #[test]
+    fn crew_accept_message_is_byte_for_byte_canonical() {
+        // Lower-case + surrounding whitespace in the code must be canonicalised
+        // (strip + UPPER) exactly like the backend `_canon`.
+        let msg = onboard_crew_accept_message(
+            "SKP-SF-ABC123",
+            "abcd1234ef567890",
+            "  k7p49qxz  ",
+            1750000000,
+        );
+        assert_eq!(
+            msg,
+            "skipi-onboard-crew:v1:accept:SKP-SF-ABC123:abcd1234ef567890:K7P49QXZ:1750000000"
+        );
+    }
+
+    #[test]
+    fn crew_accept_message_omits_vessel_imo_and_keeps_field_order() {
+        // No vessel_imo segment; exactly 7 colon-separated head fields + ts.
+        let msg = onboard_crew_accept_message("SKP-SF-X", "vault01", "ABCD", 42);
+        assert_eq!(msg, "skipi-onboard-crew:v1:accept:SKP-SF-X:vault01:ABCD:42");
+        assert!(!msg.contains("9415271"));
+    }
+
+    #[test]
+    fn crew_accept_signature_verifies_against_returned_pubkey() {
+        use ed25519_dalek::{Signer, Verifier};
+        // Deterministic key for the test (the real command loads the vault key).
+        let sk = SigningKey::from_bytes(&[7u8; 32]);
+        let vk: VerifyingKey = sk.verifying_key();
+        let pub_bytes = vk.to_bytes();
+        let vault_user_id = user_id_for_pubkey(&pub_bytes);
+
+        let ts = 1750000123i64;
+        let msg = onboard_crew_accept_message("SKP-SF-TEST", &vault_user_id, "k7p49qxz", ts);
+        let sig = sk.sign(msg.as_bytes());
+
+        // The server verifies the SAME bytes against the registered pubkey.
+        assert!(vk.verify(msg.as_bytes(), &sig).is_ok());
+
+        // A tampered timestamp must NOT verify (consent is bound to the message).
+        let bad = onboard_crew_accept_message("SKP-SF-TEST", &vault_user_id, "k7p49qxz", ts + 1);
+        assert!(vk.verify(bad.as_bytes(), &sig).is_err());
+    }
+
+    // Emits a real Rust signature for cross-verification against the Python
+    // backend's verify_vault_signature(). Run: `cargo test --lib crew_emit -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn crew_accept_emit_for_interop() {
+        use ed25519_dalek::Signer;
+        let sk = SigningKey::from_bytes(&[7u8; 32]);
+        let pub_bytes = sk.verifying_key().to_bytes();
+        let vault_user_id = user_id_for_pubkey(&pub_bytes);
+        let ts = 1750000123i64;
+        let msg = onboard_crew_accept_message("SKP-SF-TEST", &vault_user_id, "k7p49qxz", ts);
+        let sig = sk.sign(msg.as_bytes());
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD;
+        println!("INTEROP pubkey_b64={}", b64.encode(pub_bytes));
+        println!("INTEROP vault_user_id={}", vault_user_id);
+        println!("INTEROP message={}", msg);
+        println!("INTEROP signature_b64={}", b64.encode(sig.to_bytes()));
+    }
+
+    #[test]
+    fn vault_user_id_derivation_matches_identity_scheme() {
+        // user_id_for_pubkey must equal the canonical derive_user_id (16 lc base32).
+        let pubkey = [9u8; 32];
+        let id = user_id_for_pubkey(&pubkey);
+        assert_eq!(id, derive_user_id(&pubkey));
+        assert_eq!(id.len(), 16);
+        assert_eq!(id, id.to_lowercase());
     }
 }

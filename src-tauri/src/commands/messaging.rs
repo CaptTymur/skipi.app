@@ -111,6 +111,40 @@ pub fn register_my_pubkey(state: State<AppState>) -> Result<MyIdentity, String> 
     Ok(me)
 }
 
+/// On Board crew accept signer (PR C) — the ONLY thing it signs is the crew
+/// accept message. NOT a generic signer: it builds the canonical string itself
+/// from fixed parts and the vault's own Ed25519 identity, so the vault key can
+/// never be used as an arbitrary signing oracle.
+///
+/// `vault_user_id` is derived from THIS vault's Ed25519 identity (not taken from
+/// the caller), so the returned signature is bound to the identity whose pubkey
+/// the server will verify against. Returns the fields POST
+/// `/api/onboard/crew/accept` needs from the client. Performs NO network call
+/// and does NOT join — accept orchestration is a later step.
+#[tauri::command]
+pub fn onboard_crew_sign_accept(
+    state: State<AppState>,
+    public_seafarer_id: String,
+    code: String,
+    ts: i64,
+) -> Result<serde_json::Value, String> {
+    use ed25519_dalek::Signer;
+    let vault = current_vault_path(&state)?;
+    let signing = crate::identity::vault_signing_key(&vault)?;
+    let pub_bytes = signing.verifying_key().to_bytes();
+    let vault_user_id = crate::identity::user_id_for_pubkey(&pub_bytes);
+    let message =
+        crate::identity::onboard_crew_accept_message(&public_seafarer_id, &vault_user_id, &code, ts);
+    let signature = signing.sign(message.as_bytes());
+    let b64 = base64::engine::general_purpose::STANDARD;
+    Ok(serde_json::json!({
+        "vault_user_id": vault_user_id,
+        "pubkey_b64": b64.encode(pub_bytes),
+        "signature": b64.encode(signature.to_bytes()),
+        "timestamp": ts,
+    }))
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct PubkeyResp {
     pubkey_b64: String,
