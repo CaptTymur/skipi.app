@@ -1237,6 +1237,7 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
 .mv-share-no{color:#b23b3b;}
 .mv-list{margin:6px 0 0;padding-left:18px;}
 .mv-list li{font-size:13px;color:var(--text);line-height:1.5;}
+.mv-status-pill{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:#fff;background:#1f7a4d;border-radius:999px;padding:3px 10px;white-space:nowrap;}
 </style>
 </head>
 <body>
@@ -8126,6 +8127,32 @@ function myVesselInnerHtml(){
         h+='<div class="mv-sub">'+esc(ru?'Запрашиваю данные судна. Ничего ещё не отправлено и не подтверждено.':'Fetching vessel details. Nothing is sent or confirmed yet.')+'</div></div>';
         return h;
     }
+    if(st==='joining'){
+        h+='<div class="mv-card"><div class="mv-title">'+esc(ru?'Присоединяю к экипажу…':'Joining the crew…')+'</div>';
+        h+='<div class="mv-sub">'+esc(ru?'Подписываю согласие и отправляю на сервер.':'Signing consent and sending to the server.')+'</div></div>';
+        return h;
+    }
+    if(st==='blocked'){
+        h+='<div class="mv-card"><div class="mv-title">'+esc(ru?'Присоединение недоступно':'Joining unavailable')+'</div>';
+        h+='<div class="mv-note">'+esc(myVessel.error||'')+'</div>';
+        h+='<div class="mv-row"><button class="btn btn-accent mv-btn" onclick="myVesselGo(\'enter\')">'+esc(ru?'Ввести код заново':'Re-enter code')+'</button>'
+          +'<button class="btn btn-outline mv-btn" onclick="myVesselGo(\'home\')">'+esc(ru?'Назад':'Back')+'</button></div></div>';
+        return h;
+    }
+    if(st==='joined'){
+        var m=myVessel.membership||{};
+        h+='<div class="mv-card">';
+        h+='<div class="mv-row" style="justify-content:space-between;align-items:center;margin-top:0;"><div class="mv-title" style="margin-bottom:0;">'+esc(ru?'Моё судно':'My Vessel')+'</div><span class="mv-status-pill">'+esc(ru?'В экипаже':'Linked')+'</span></div>';
+        h+='<div class="mv-vessel"><div class="mv-vessel-name">'+esc(m.vessel_name?m.vessel_name:(ru?'Судно':'Vessel'))+'</div><div class="mv-vessel-meta">IMO '+esc(String(m.vessel_imo||'—'))+'</div></div>';
+        var when=m.linked_at?myVesselFmtTime(m.linked_at):'';
+        if(when)h+='<div class="mv-help" style="margin-top:8px;">'+esc((ru?'Присоединено: ':'Joined: ')+when)+'</div>';
+        h+='<div class="mv-help">'+esc(ru?'Судну доступны только ваш публичный ID, имя и должность. Документы и личный архив НЕ переданы.':'The vessel only sees your public ID, name and rank. Documents and personal vault are NOT shared.')+'</div>';
+        h+='<div class="mv-row"><button class="btn btn-outline mv-btn" onclick="myVesselRefreshStatus()">'+esc(ru?'Обновить статус':'Refresh status')+'</button>'
+          +'<button class="btn btn-outline mv-btn" onclick="myVesselLeave()">'+esc(ru?'Покинуть судно':'Leave vessel')+'</button></div>';
+        h+='</div>';
+        h+='<div class="mv-card"><div class="mv-grid-title">'+esc(ru?'Рабочие модули судна':'Vessel workflows')+'</div>'+myVesselGridHtml(ru)+'</div>';
+        return h;
+    }
     if(st==='error'){
         h+='<div class="mv-card"><div class="mv-title">'+esc(ru?'Не удалось продолжить':'Could not continue')+'</div>';
         h+='<div class="mv-error" style="margin-top:6px;">'+esc(myVessel.error||'')+'</div>';
@@ -8158,9 +8185,9 @@ function myVesselInnerHtml(){
           +'<li>'+esc(ru?'долгоживущие учётные данные / вход':'any long-lived credential / login')+'</li></ul></div>';
         if(d.scopes&&d.scopes.length)h+='<div class="mv-help" style="margin-top:8px;">'+esc((ru?'Возможности судна: ':'Vessel scopes: ')+d.scopes.join(', '))+'</div>';
         if(d.privacy)h+='<div class="mv-note" style="margin-top:12px;">'+esc(d.privacy)+'</div>';
-        h+='<div class="mv-row"><button class="btn btn-accent mv-btn" onclick="myVesselJoinPending()">'+esc(ru?'Присоединиться к экипажу':'Join the crew')+'</button>'
+        h+='<div class="mv-row"><button class="btn btn-accent mv-btn" onclick="myVesselAccept()">'+esc(ru?'Присоединиться к экипажу':'Join the crew')+'</button>'
           +'<button class="btn btn-outline mv-btn" onclick="myVesselGo(\'home\')">'+esc(ru?'Отмена':'Cancel')+'</button></div>';
-        h+='<div class="mv-help">'+esc(ru?'Подтверждение подписывается вашим ключом моряка на следующем шаге — судно не может добавить вас без согласия.':'Confirmation is signed with your seafarer key in the next step — the vessel cannot add you without consent.')+'</div>';
+        h+='<div class="mv-help">'+esc(ru?'Подтверждение подписывается вашим ключом моряка — судно не может добавить вас без согласия.':'Confirmation is signed with your seafarer key — the vessel cannot add you without consent.')+'</div>';
         h+='</div>';
         return h;
     }
@@ -8180,10 +8207,12 @@ function showMyVessel(){
     content.innerHTML='<div class="mv-wrap">'+myVesselInnerHtml()+'</div>';
     show('scr-content');
     if(myVessel.stage==='enter')setTimeout(myVesselFocus,30);
+    if(myVessel.stage==='home'||myVessel.stage==='joined')myVesselLoadMembership();
 }
 function renderMobileMyVessel(){
     mobileMainHtml('<div class="mv-wrap mv-mobile">'+myVesselInnerHtml()+'</div>');
     if(myVessel.stage==='enter')setTimeout(myVesselFocus,30);
+    if(myVessel.stage==='home'||myVessel.stage==='joined')myVesselLoadMembership();
 }
 function myVesselRerender(){ if(isMobileMode())renderMobileMyVessel(); else showMyVessel(); }
 function myVesselGo(stage){ myVessel.stage=stage; myVessel.error=''; myVesselRerender(); }
@@ -8235,20 +8264,92 @@ async function myVesselResolve(code){
             else m2=ru?'Код недействителен.':'The code is not valid.';
             myVessel.stage='error'; myVessel.error=m2; myVesselRerender(); return;
         }
-        myVessel.resolved=data; myVessel.stage='consent'; myVessel.error=''; myVesselRerender();
+        myVessel.acceptCode=code; myVessel.resolved=data; myVessel.stage='consent'; myVessel.error=''; myVesselRerender();
     }catch(e){
         myVessel.stage='error';
         myVessel.error=ru?'Сервер недоступен. Проверьте интернет и попробуйте снова.':'Server unavailable. Check your connection and try again.';
         myVesselRerender();
     }
 }
-// PR B is resolve + consent ONLY. Accept signing is PR C/D — do NOT fake a join,
-// do NOT cache membership, do NOT mutate the server.
-function myVesselJoinPending(){
+// PR D — accept orchestration. Crew linking only; never /api/devices, never
+// skipi-pair, no document/CV/vault sharing. On any provisioning/error path it
+// shows an honest blocked state — it never fakes a join.
+function myVesselBlock(msg){ myVessel.stage='blocked'; myVessel.error=msg||''; myVesselRerender(); }
+function myVesselMembershipKey(uid){ return 'mv:membership:'+(uid||''); }
+function myVesselSaveMembership(mem){ try{ if(mem&&mem.vault_user_id) localStorage.setItem(myVesselMembershipKey(mem.vault_user_id), JSON.stringify(mem)); }catch(e){} }
+function myVesselClearMembership(){ var m=myVessel.membership; try{ if(m&&m.vault_user_id) localStorage.removeItem(myVesselMembershipKey(m.vault_user_id)); }catch(e){} myVessel.membership=null; }
+// Per-vault membership load: re-checks when the open vault's identity changes,
+// so vault A's membership never shows in vault B.
+async function myVesselLoadMembership(){
+    var uid=null; try{ var p=await invoke('get_matchable_profile'); uid=p&&p.user_id; }catch(e){}
+    if(uid===myVessel._loadedUid)return;
+    myVessel._loadedUid=uid;
+    var mem=null;
+    if(uid){ try{ var raw=localStorage.getItem(myVesselMembershipKey(uid)); if(raw)mem=JSON.parse(raw); }catch(e){} }
+    if(mem&&mem.crew_member_id&&mem.status!=='left'){
+        myVessel.membership=mem;
+        if(myVessel.stage==='home'){ myVessel.stage='joined'; myVesselRerender(); }
+    }else if(myVessel.stage==='joined'){
+        myVessel.membership=null; myVessel.stage='home'; myVesselRerender();
+    }
+}
+async function myVesselAccept(){
     var ru=getUiLang()==='ru';
-    showToast(ru
-        ?'Подпись и присоединение появятся в следующем обновлении (этап подписи ещё не подключён). Ничего не отправлено.'
-        :'Signing and joining arrive in the next update (the signing step is not wired yet). Nothing was sent.','info');
+    var d=myVessel.resolved||{}; var code=myVessel.acceptCode||'';
+    if(!code){ myVesselBlock(ru?'Код потерян, начните заново. Ничего не присоединено.':'Code lost, start over. Nothing joined.'); return; }
+    var profile=null; try{ profile=await invoke('get_matchable_profile'); }catch(e){}
+    var psid=profile&&profile.public_seafarer_id;
+    if(!psid){ myVesselBlock(ru
+        ?'Чтобы присоединиться к экипажу, сначала создайте морскую личность Skipi (Skipi ID) в профиле. Ничего не присоединено.'
+        :'To join a crew, first create your Skipi identity (Skipi ID) in the profile. Nothing was joined.'); return; }
+    myVessel.stage='joining'; myVessel.error=''; myVesselRerender();
+    // Ensure the vault's Ed25519 identity pubkey is registered server-side, so
+    // the accept signature can be verified. Safe + idempotent.
+    try{ await invoke('register_my_identity_pubkey'); }
+    catch(e){ myVesselBlock(ru?'Не удалось подготовить личность на сервере (нет сети?). Ничего не присоединено.':'Could not prepare identity on the server (offline?). Nothing was joined.'); return; }
+    var ts=Math.floor(Date.now()/1000), sign=null;
+    try{ sign=await invoke('onboard_crew_sign_accept',{publicSeafarerId:psid, code:code, ts:ts}); }
+    catch(e){ myVesselBlock(ru?'Не удалось подписать согласие. Ничего не присоединено.':'Could not sign consent. Nothing was joined.'); return; }
+    if(!sign||!sign.signature||!sign.vault_user_id){ myVesselBlock(ru?'Подпись недоступна. Ничего не присоединено.':'Signature unavailable. Nothing was joined.'); return; }
+    var dn=null, rank=(profile&&(profile.rank_id||profile.position_id))||null;
+    try{ var sp=await invoke('get_seafarer_personal'); if(sp){ var nm=[sp.first_name||sp.personal_first_name, sp.surname||sp.personal_surname].filter(Boolean).join(' ').trim(); if(nm)dn=nm; } }catch(e){}
+    var body={ code_or_qr_payload:code, public_seafarer_id:psid, vault_user_id:sign.vault_user_id, timestamp:ts, signature:sign.signature };
+    if(dn)body.display_name=dn; if(rank)body.rank=String(rank);
+    try{
+        var r=await apiFetch('/api/onboard/crew/accept',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},15000);
+        if(r.ok){
+            var data={}; try{ data=await r.json(); }catch(e){}
+            var mem={ crew_member_id:data.crew_member_id||null, vessel_imo:data.vessel_imo||d.vessel_imo||null,
+                status:data.status||'linked', linked_at:new Date().toISOString(),
+                vessel_name:d.vessel_name||null, vault_user_id:sign.vault_user_id };
+            myVesselSaveMembership(mem); myVessel.membership=mem; myVessel._loadedUid=sign.vault_user_id;
+            myVessel.stage='joined'; myVessel.error=''; myVesselRerender(); return;
+        }
+        var msg;
+        if(r.status===403)msg=ru?'Присоединение пока недоступно: серверная привязка вашей морской личности к экипажу ещё не настроена (provisioning). Ничего не присоединено.':'Joining is not available yet: server-side linking of your seafarer identity is not provisioned. Nothing was joined.';
+        else if(r.status===404)msg=ru?'Личность или приглашение не найдены на сервере. Ничего не присоединено.':'Identity or invite not found on the server. Nothing was joined.';
+        else if(r.status===401)msg=ru?'Не удалось подтвердить подпись/согласие. Ничего не присоединено.':'Could not verify signature/consent. Nothing was joined.';
+        else if(r.status===409)msg=ru?'Код уже использован. Ничего не присоединено.':'Code already used. Nothing was joined.';
+        else if(r.status===400)msg=ru?'Код истёк или недействителен. Ничего не присоединено.':'Code expired or invalid. Nothing was joined.';
+        else if(r.status===429)msg=ru?'Слишком много попыток. Попробуйте позже.':'Too many attempts. Try later.';
+        else msg=(ru?'Сервер вернул ошибку: ':'Server error: ')+r.status;
+        myVesselBlock(msg);
+    }catch(e){ myVesselBlock(ru?'Сервер недоступен. Ничего не присоединено.':'Server unavailable. Nothing was joined.'); }
+}
+function myVesselRefreshStatus(){
+    // No seafarer-side membership-status endpoint exists yet → re-render from the
+    // local cache only and say so honestly (no fake server check).
+    var ru=getUiLang()==='ru';
+    myVesselRerender();
+    showToast(ru?'Серверная проверка статуса появится позже. Показан локальный статус.':'Server-side status check will come later. Showing local status.','info');
+}
+function myVesselLeave(){
+    // No /api/onboard/crew/leave endpoint yet → local-only clear, honest note.
+    // The vessel still lists you until it revokes; this only removes local state.
+    var ru=getUiLang()==='ru';
+    myVesselClearMembership();
+    myVessel.stage='home'; myVessel.error=''; myVessel._loadedUid='__left__'; myVesselRerender();
+    showToast(ru?'Удалено локально. Серверный выход из экипажа появится позже — судно по-прежнему видит вас, пока не отзовёт доступ.':'Removed locally. Server-side leave will come later — the vessel still sees you until it revokes access.','info');
 }
 
 // ===================== Skipi Plugin Host (generic scaffold) =====================
