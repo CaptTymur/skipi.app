@@ -1227,6 +1227,16 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
 .mv-tile-sub{font-size:11.5px;color:var(--text2);margin-top:3px;line-height:1.35;}
 .mv-grid-note{font-size:12px;color:var(--text2);margin-top:12px;line-height:1.45;}
 @media (max-width:430px){ .mv-grid{grid-template-columns:1fr;} }
+/* consent (PR B) */
+.mv-vessel{margin-top:12px;border:1px solid var(--border);border-radius:10px;padding:12px 14px;background:rgba(0,69,100,.05);}
+.mv-vessel-name{font-weight:800;font-size:16px;color:var(--text);line-height:1.25;word-break:break-word;}
+.mv-vessel-meta{font-size:12px;color:var(--text2);margin-top:2px;}
+.mv-share{margin-top:14px;}
+.mv-share-title{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;}
+.mv-share-yes{color:#1f7a4d;}
+.mv-share-no{color:#b23b3b;}
+.mv-list{margin:6px 0 0;padding-left:18px;}
+.mv-list li{font-size:13px;color:var(--text);line-height:1.5;}
 </style>
 </head>
 <body>
@@ -8036,9 +8046,10 @@ function showView(v, opts){
 // This is CREW LINKING, not device pairing. Namespace: skipi-crew:1:onboard:<code>.
 // PR A is a local-only shell: NO backend calls, NO /api/devices, NO skipi-pair, and it is
 // deliberately separate from Settings -> Сопряжённые устройства (which is device pairing).
-// Resolve / consent / Ed25519 accept / membership cache / leave-revoke are later PRs.
+// PR B adds non-consuming resolve + consent (POST /api/onboard/crew/resolve).
+// Ed25519 accept / membership cache / leave-revoke are still later PRs (C/D).
 var CREW_NS='skipi-crew:1:onboard:';
-var myVessel={ stage:'home', error:'' }; // stage: home | enter | scan | blocked
+var myVessel={ stage:'home', error:'', resolved:null }; // stage: home|enter|scan|resolving|consent|error
 
 // Accept a bare <code> or the opaque skipi-crew:1:onboard:<code>. Reject skipi-pair:* and any
 // other namespace (fail closed). Returns {ok:true,code} or {ok:false,reason}. No network.
@@ -8110,11 +8121,46 @@ function myVesselInnerHtml(){
         h+='</div>';
         return h;
     }
-    if(st==='blocked'){
+    if(st==='resolving'){
+        h+='<div class="mv-card"><div class="mv-title">'+esc(ru?'Проверяю код…':'Checking code…')+'</div>';
+        h+='<div class="mv-sub">'+esc(ru?'Запрашиваю данные судна. Ничего ещё не отправлено и не подтверждено.':'Fetching vessel details. Nothing is sent or confirmed yet.')+'</div></div>';
+        return h;
+    }
+    if(st==='error'){
+        h+='<div class="mv-card"><div class="mv-title">'+esc(ru?'Не удалось продолжить':'Could not continue')+'</div>';
+        h+='<div class="mv-error" style="margin-top:6px;">'+esc(myVessel.error||'')+'</div>';
+        h+='<div class="mv-row"><button class="btn btn-accent mv-btn" onclick="myVesselGo(\'enter\')">'+esc(ru?'Ввести код заново':'Re-enter code')+'</button>'
+          +'<button class="btn btn-outline mv-btn" onclick="myVesselGo(\'home\')">'+esc(ru?'Назад':'Back')+'</button></div></div>';
+        return h;
+    }
+    if(st==='consent'){
+        var d=myVessel.resolved||{};
         h+='<div class="mv-card">';
-        h+='<div class="mv-title">'+esc(ru?'Код распознан':'Code recognized')+'</div>';
-        h+='<div class="mv-note">'+esc(ru?'Серверная часть сопряжения экипажа ещё не подключена — присоединение появится после backend. Ничего не отправлено.':'The crew-linking backend is not connected yet — joining will appear after backend. Nothing was sent.')+'</div>';
-        h+='<div class="mv-row"><button class="btn btn-outline mv-btn" onclick="myVesselGo(\'home\')">'+esc(ru?'Назад':'Back')+'</button></div>';
+        h+='<div class="mv-title">'+esc(ru?'Присоединиться к экипажу':'Join the crew')+'</div>';
+        h+='<div class="mv-vessel"><div class="mv-vessel-name">'+esc(d.vessel_name?d.vessel_name:(ru?'Судно (название не указано)':'Vessel (name not set)'))+'</div>'
+          +'<div class="mv-vessel-meta">IMO '+esc(String(d.vessel_imo||'—'))+'</div></div>';
+        var meta=[];
+        if(d.expires_at)meta.push((ru?'Код действует до: ':'Code valid until: ')+myVesselFmtTime(d.expires_at));
+        if(typeof d.remaining_uses==='number')meta.push((ru?'Осталось использований: ':'Uses left: ')+d.remaining_uses);
+        if(meta.length)h+='<div class="mv-help" style="margin-top:8px;">'+esc(meta.join(' · '))+'</div>';
+        h+='<div class="mv-share"><div class="mv-share-title mv-share-yes">'+esc(ru?'Судно увидит':'The vessel will see')+'</div><ul class="mv-list">'
+          +'<li>'+esc(ru?'ваш публичный ID моряка':'your public seafarer ID')+'</li>'
+          +'<li>'+esc(ru?'имя для отображения':'display name')+'</li>'
+          +'<li>'+esc(ru?'должность / ранг':'rank / position')+'</li>'
+          +'<li>'+esc(ru?'что вы в списке экипажа этого судна':'that you are on this vessel’s crew list')+'</li></ul></div>';
+        h+='<div class="mv-share"><div class="mv-share-title mv-share-no">'+esc(ru?'Судно НЕ увидит':'The vessel will NOT see')+'</div><ul class="mv-list">'
+          +'<li>'+esc(ru?'ваш личный архив и все документы':'your personal vault and all documents')+'</li>'
+          +'<li>'+esc(ru?'ваше CV':'your CV')+'</li>'
+          +'<li>'+esc(ru?'сертификаты, медицину, визы, контракты':'certificates, medical, visa, contract documents')+'</li>'
+          +'<li>'+esc(ru?'личные заметки':'private notes')+'</li>'
+          +'<li>'+esc(ru?'геолокацию':'your location')+'</li>'
+          +'<li>'+esc(ru?'историю обучения':'learning history')+'</li>'
+          +'<li>'+esc(ru?'долгоживущие учётные данные / вход':'any long-lived credential / login')+'</li></ul></div>';
+        if(d.scopes&&d.scopes.length)h+='<div class="mv-help" style="margin-top:8px;">'+esc((ru?'Возможности судна: ':'Vessel scopes: ')+d.scopes.join(', '))+'</div>';
+        if(d.privacy)h+='<div class="mv-note" style="margin-top:12px;">'+esc(d.privacy)+'</div>';
+        h+='<div class="mv-row"><button class="btn btn-accent mv-btn" onclick="myVesselJoinPending()">'+esc(ru?'Присоединиться к экипажу':'Join the crew')+'</button>'
+          +'<button class="btn btn-outline mv-btn" onclick="myVesselGo(\'home\')">'+esc(ru?'Отмена':'Cancel')+'</button></div>';
+        h+='<div class="mv-help">'+esc(ru?'Подтверждение подписывается вашим ключом моряка на следующем шаге — судно не может добавить вас без согласия.':'Confirmation is signed with your seafarer key in the next step — the vessel cannot add you without consent.')+'</div>';
         h+='</div>';
         return h;
     }
@@ -8155,8 +8201,54 @@ function myVesselSubmitCode(){
     var i=document.getElementById('mv-code');
     var res=parseCrewCode(i?i.value:'');
     if(!res.ok){ myVesselShowError(myVesselErrText(res.reason,ru)); myVesselFocus(); return; }
-    // Valid crew code (locally). PR A: NO backend call — resolve/accept are later PRs.
-    myVessel.stage='blocked'; myVessel.error=''; myVesselRerender();
+    // Valid crew code locally → non-consuming resolve for the consent preview.
+    myVesselResolve(res.code);
+}
+function myVesselFmtTime(v){
+    try{ var d=new Date(v); if(isNaN(d.getTime()))return String(v); return d.toLocaleString(); }
+    catch(e){ return String(v); }
+}
+// POST /api/onboard/crew/resolve — non-consuming consent preview. NOT device pairing,
+// never /api/devices. The body carries the code (not a URL). No mutation, no accept.
+async function myVesselResolve(code){
+    var ru=getUiLang()==='ru';
+    myVessel.stage='resolving'; myVessel.error=''; myVessel.resolved=null; myVesselRerender();
+    try{
+        var r=await apiFetch('/api/onboard/crew/resolve',{
+            method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({code_or_qr_payload:code})
+        },12000);
+        if(!r.ok){
+            var msg;
+            if(r.status===409)msg=ru?'Это не код экипажа судна (неверный формат или неймспейс).':'This is not a vessel crew code (wrong format or namespace).';
+            else if(r.status===404)msg=ru?'Код не найден. Проверьте код или попросите новый на судне.':'Code not found. Check it or ask for a new one on the vessel.';
+            else if(r.status===429)msg=ru?'Слишком много попыток. Подождите и попробуйте позже.':'Too many attempts. Please wait and try again later.';
+            else msg=(ru?'Сервер вернул ошибку: ':'Server error: ')+r.status;
+            myVessel.stage='error'; myVessel.error=msg; myVesselRerender(); return;
+        }
+        var data=await r.json();
+        if(!data||data.valid!==true){
+            var st=data&&data.status, m2;
+            if(st==='expired')m2=ru?'Код истёк. Попросите новый код на судовом компьютере.':'The code has expired. Ask for a new one on the vessel computer.';
+            else if(st==='consumed')m2=ru?'Код уже использован.':'This code has already been used.';
+            else if(st==='revoked')m2=ru?'Приглашение отозвано судном.':'The invite was revoked by the vessel.';
+            else m2=ru?'Код недействителен.':'The code is not valid.';
+            myVessel.stage='error'; myVessel.error=m2; myVesselRerender(); return;
+        }
+        myVessel.resolved=data; myVessel.stage='consent'; myVessel.error=''; myVesselRerender();
+    }catch(e){
+        myVessel.stage='error';
+        myVessel.error=ru?'Сервер недоступен. Проверьте интернет и попробуйте снова.':'Server unavailable. Check your connection and try again.';
+        myVesselRerender();
+    }
+}
+// PR B is resolve + consent ONLY. Accept signing is PR C/D — do NOT fake a join,
+// do NOT cache membership, do NOT mutate the server.
+function myVesselJoinPending(){
+    var ru=getUiLang()==='ru';
+    showToast(ru
+        ?'Подпись и присоединение появятся в следующем обновлении (этап подписи ещё не подключён). Ничего не отправлено.'
+        :'Signing and joining arrive in the next update (the signing step is not wired yet). Nothing was sent.','info');
 }
 
 // ===================== Skipi Plugin Host (generic scaffold) =====================
