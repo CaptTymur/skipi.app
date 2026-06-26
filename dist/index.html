@@ -21,8 +21,8 @@ var UI_LANG_OPTIONS=[
 var UI_STRINGS={
 	    en:{
 	        'app.name':'Skipi Seafarer',
-	        'nav.files':'Documents','nav.experience':'Experience','nav.dashboard':'Dashboard','nav.cv':'CV','nav.packages':'Packages','nav.dispatch':'Mailings','nav.jobs':'Jobs','nav.information':'Information','nav.vessels':'Vessel DB',
-	        'title.files':'Documents','title.experience':'Sea Service','title.dashboard':'Dashboard','title.cv':'CV','title.packages':'Packages','title.dispatch':'Mailings','title.jobs':'Jobs','title.information':'Information','title.vessels':'Vessel DB','title.settings':'Settings',
+	        'nav.files':'Documents','nav.experience':'Experience','nav.dashboard':'Dashboard','nav.cv':'CV','nav.packages':'Packages','nav.dispatch':'Mailings','nav.jobs':'Jobs','nav.information':'Information','nav.vessels':'Vessel DB','nav.myvessel':'My Vessel',
+	        'title.files':'Documents','title.experience':'Sea Service','title.dashboard':'Dashboard','title.cv':'CV','title.packages':'Packages','title.dispatch':'Mailings','title.jobs':'Jobs','title.information':'Information','title.vessels':'Vessel DB','title.myvessel':'My Vessel','title.settings':'Settings',
 	        'welcome.subtitle':'Skipi - United Seafarers','welcome.create':'Create Seafarer Vault','welcome.open':'Open Existing Vault','welcome.hint':'New vault folders are named clearly, for example Skipi Seafarer - Tymur Rudov. When opening a vault, select that named folder.','welcome.demo_prefix':'Just exploring?','welcome.demo':'Load demo seafarer',
 	        'settings.general':'General','settings.general_desc':'Basic application settings.','settings.language':'Language','settings.language_desc':'Interface language.','settings.autovault':'Auto-open last vault','settings.autovault_desc':'Automatically open the last used vault on startup.',
 	        'settings.nav_title':'Settings','settings.vaults':'Vaults','settings.seafarer_profile':'Seafarer Profile','settings.email':'Email sending','settings.appearance':'Appearance','settings.about_group':'About','settings.about':'About Skipi Seafarer',
@@ -33,8 +33,8 @@ var UI_STRINGS={
 	    },
 	    ru:{
 	        'app.name':'Скипи Моряк',
-	        'nav.files':'Документы','nav.experience':'Опыт работы','nav.dashboard':'Панель','nav.cv':'CV','nav.packages':'Пакеты','nav.dispatch':'Рассылки','nav.jobs':'Вакансии','nav.information':'Информация','nav.vessels':'База судов',
-	        'title.files':'Документы','title.experience':'Морской опыт','title.dashboard':'Панель','title.cv':'CV','title.packages':'Пакеты','title.dispatch':'Рассылки','title.jobs':'Вакансии','title.information':'Информация','title.vessels':'База судов','title.settings':'Настройки',
+	        'nav.files':'Документы','nav.experience':'Опыт работы','nav.dashboard':'Панель','nav.cv':'CV','nav.packages':'Пакеты','nav.dispatch':'Рассылки','nav.jobs':'Вакансии','nav.information':'Информация','nav.vessels':'База судов','nav.myvessel':'Моё судно',
+	        'title.files':'Документы','title.experience':'Морской опыт','title.dashboard':'Панель','title.cv':'CV','title.packages':'Пакеты','title.dispatch':'Рассылки','title.jobs':'Вакансии','title.information':'Информация','title.vessels':'База судов','title.myvessel':'Моё судно','title.settings':'Настройки',
 	        'welcome.subtitle':'Skipi - United Seafarers','welcome.create':'Создать профиль моряка','welcome.open':'Открыть существующий профиль','welcome.hint':'Новые папки профиля называются понятно, например Скипи Моряк - Tymur Rudov. При открытии выбирайте именно эту папку.','welcome.demo_prefix':'Просто посмотреть?','welcome.demo':'Открыть демо-профиль',
 	        'settings.general':'Общие','settings.general_desc':'Основные настройки приложения.','settings.language':'Язык','settings.language_desc':'Язык интерфейса.','settings.autovault':'Открывать последний профиль','settings.autovault_desc':'Автоматически открывать последний использованный профиль при запуске.',
 	        'settings.nav_title':'Настройки','settings.vaults':'Профили','settings.seafarer_profile':'Профиль моряка','settings.email':'Отправка email','settings.appearance':'Внешний вид','settings.about_group':'О приложении','settings.about':'О Скипи Моряк',
@@ -92,7 +92,7 @@ function uiLanguageSelectHtml(){
 function applyI18nChrome(){
     document.documentElement.lang=getUiLang();
     var pairs=[
-        ['mt-files','nav.files'],['mt-exp','nav.experience'],['mt-cv','nav.cv'],['mt-pkg','nav.packages'],['mt-disp','nav.dispatch'],['mt-jobs','nav.jobs'],['mt-info','nav.information'],['mt-vessels','nav.vessels'],
+        ['mt-files','nav.files'],['mt-exp','nav.experience'],['mt-cv','nav.cv'],['mt-pkg','nav.packages'],['mt-disp','nav.dispatch'],['mt-jobs','nav.jobs'],['mt-info','nav.information'],['mt-vessels','nav.vessels'],['mt-myvessel','nav.myvessel'],
         ['welcome-title','app.name'],
         ['mobile-brand-title','app.name'],
         ['welcome-subtitle','welcome.subtitle'],['btn-create-vault','welcome.create'],['btn-open-vault','welcome.open'],['welcome-folder-hint','welcome.hint'],['welcome-demo-prefix','welcome.demo_prefix'],['welcome-demo-link-text','welcome.demo']
@@ -1139,6 +1139,35 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
     body:not(.desktop-forced) .statusbar { display:none !important; }
     body:not(.desktop-forced) .mobile-shell { display:flex; }
 }
+/* ===== «Моё судно» (crew linking shell — PR A) ===== */
+.mv-wrap{max-width:560px;margin:0 auto;padding:28px 18px 40px;display:flex;flex-direction:column;gap:16px;box-sizing:border-box;width:100%;}
+.mv-mobile{max-width:none;padding:14px 12px 28px;}
+.mv-card{border:1px solid var(--border);border-radius:12px;padding:18px;background:var(--bg);box-shadow:0 1px 2px rgba(0,0,0,.04);min-width:0;}
+.mv-title{font-size:20px;font-weight:800;color:var(--text);margin-bottom:6px;line-height:1.25;}
+.mv-sub{font-size:13px;color:var(--text2);line-height:1.45;}
+.mv-actions{display:flex;flex-direction:column;gap:10px;margin-top:16px;}
+.mv-btn{padding:12px 16px;font-size:14px;}
+.mv-actions .mv-btn{width:100%;}
+.mv-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;}
+.mv-row .mv-btn{flex:1 1 140px;}
+.mv-input{width:100%;box-sizing:border-box;min-width:0;margin-top:14px;padding:11px 12px;font-size:14px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);}
+.mv-error{margin-top:10px;font-size:12.5px;color:#c0392b;line-height:1.4;}
+.mv-help{margin-top:12px;font-size:12px;color:var(--text2);line-height:1.4;}
+.mv-note{margin-top:6px;background:rgba(0,69,100,.07);border:1px solid rgba(0,69,100,.18);border-radius:10px;padding:12px 14px;font-size:13px;color:var(--text);line-height:1.5;}
+.mv-scan-box{margin-top:14px;border:1px dashed var(--border);border-radius:12px;padding:26px 16px;text-align:center;}
+.mv-scan-ic{font-size:30px;color:var(--text2);line-height:1;}
+.mv-scan-title{font-weight:800;font-size:15px;margin-top:8px;color:var(--text);}
+.mv-scan-note{font-size:12px;color:var(--text2);margin-top:6px;line-height:1.4;}
+.mv-grid-title{font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--text2);margin-bottom:12px;}
+.mv-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.mv-tile{border:1px solid var(--border);border-radius:10px;padding:12px;background:var(--bg);opacity:.6;cursor:not-allowed;min-width:0;}
+.mv-tile-top{display:flex;justify-content:space-between;align-items:center;}
+.mv-tile-ic{font-size:20px;line-height:1;}
+.mv-tile-lock{font-size:13px;opacity:.7;}
+.mv-tile-title{font-weight:800;font-size:13px;margin-top:8px;color:var(--text);}
+.mv-tile-sub{font-size:11.5px;color:var(--text2);margin-top:3px;line-height:1.35;}
+.mv-grid-note{font-size:12px;color:var(--text2);margin-top:12px;line-height:1.45;}
+@media (max-width:430px){ .mv-grid{grid-template-columns:1fr;} }
 </style>
 </head>
 <body>
@@ -1173,6 +1202,7 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
             <button class="mobile-nav-btn" type="button" data-mview="jobs" onclick="mobileShow('jobs')"><span>J</span>Jobs</button>
             <button class="mobile-nav-btn" type="button" data-mview="information" onclick="mobileShow('information')"><span>i</span>Info</button>
             <button class="mobile-nav-btn" type="button" data-mview="vessels" onclick="mobileShow('vessels')"><span>&#9872;&#65038;</span>Vessels</button>
+            <button class="mobile-nav-btn" type="button" data-mview="myvessel" onclick="mobileShow('myvessel')"><span>&#9875;&#65038;</span>Моё судно</button>
         </div>
         </div>
     </nav>
@@ -1192,6 +1222,7 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
     <div class="mod-tab" onclick="showView('jobs')" id="mt-jobs" title="Jobs — receive matching offers"><span>Jobs</span></div>
     <div class="mod-tab" onclick="showView('information')" id="mt-info" title="Information - market pulse"><span>Information</span></div>
     <div class="mod-tab" onclick="showView('vessels')" id="mt-vessels" title="Суда"><span>Суда</span></div>
+    <div class="mod-tab" onclick="showView('myvessel')" id="mt-myvessel" title="Моё судно — экипаж судна, на которое вы поднялись"><span>Моё судно</span></div>
     <div class="mb-spacer"></div>
     <div class="profile-completion-chip" id="profile-completion-chip" onclick="openProfileDashboard()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openProfileDashboard();}" role="button" tabindex="0" title="Profile completeness">
         <span class="pc-dot" id="pc-dot"></span>
@@ -5349,6 +5380,7 @@ function renderMobileShell(){
     if(mobileView==='jobs')return renderMobileJobs();
     if(mobileView==='information')return renderMobileInformation();
     if(mobileView==='vessels')return renderMobileVessels();
+    if(mobileView==='myvessel')return renderMobileMyVessel();
     if(mobileView==='assistant')return renderMobileAssistant();
     if(mobileView==='doc')return renderMobileDoc();
     if(mobileView==='pdf')return renderMobilePdfBuilder();
@@ -7579,6 +7611,7 @@ async function loadVault(info){
     var mtCv=document.getElementById('mt-cv');if(mtCv)mtCv.style.display=isSeafarer?'flex':'none';
     var mtDisp=document.getElementById('mt-disp');if(mtDisp)mtDisp.style.display=isSeafarer?'flex':'none';
     var mtVessels=document.getElementById('mt-vessels');if(mtVessels)mtVessels.style.display=isSeafarer?'flex':'none';
+    var mtMyVessel=document.getElementById('mt-myvessel');if(mtMyVessel)mtMyVessel.style.display=isSeafarer?'flex':'none';
     var mtInfo=document.getElementById('mt-info');if(mtInfo)mtInfo.style.display=isSeafarer?'flex':'none';
     await loadOptionalCategories();
     await loadConditionalTemplateIds();
@@ -7882,7 +7915,7 @@ function showView(v, opts){
     updateProfileCompletionChip();
     document.querySelectorAll('.ribbon-icon').forEach(function(el){el.classList.remove('active');});
     document.querySelectorAll('.modules-bar .mod-tab').forEach(function(el){el.classList.remove('active');});
-    var shortMap={files:'files',dashboard:'dash',cv:'cv',experience:'exp',vessels:'vessels',packages:'pkg',dispatch:'disp',jobs:'jobs',information:'info',settings:'set'};
+    var shortMap={files:'files',dashboard:'dash',cv:'cv',experience:'exp',vessels:'vessels',myvessel:'myvessel',packages:'pkg',dispatch:'disp',jobs:'jobs',information:'info',settings:'set'};
     var ri=document.getElementById('ri-'+shortMap[v]);
     if(ri)ri.classList.add('active');
     var mt=document.getElementById('mt-'+shortMap[v]);
@@ -7891,10 +7924,10 @@ function showView(v, opts){
     if(pcNav)pcNav.classList.toggle('active',v==='dashboard');
     document.getElementById('panel-title').textContent={
         files:tr('title.files'),dashboard:tr('title.dashboard'),cv:tr('title.cv'),experience:tr('title.experience'),
-        vessels:tr('title.vessels'),packages:tr('title.packages'),dispatch:tr('title.dispatch'),jobs:tr('title.jobs'),
+        vessels:tr('title.vessels'),myvessel:tr('title.myvessel'),packages:tr('title.packages'),dispatch:tr('title.dispatch'),jobs:tr('title.jobs'),
         information:tr('title.information'),settings:tr('title.settings')
     }[v]||v;
-    document.getElementById('left-panel').style.display=(v==='dashboard'||v==='cv'||v==='experience'||v==='vessels'||v==='dispatch'||v==='jobs'||v==='information')?'none':'';
+    document.getElementById('left-panel').style.display=(v==='dashboard'||v==='cv'||v==='experience'||v==='vessels'||v==='myvessel'||v==='dispatch'||v==='jobs'||v==='information')?'none':'';
     // The old second tabs row duplicated the selected document title.
     // Keep it disabled; the document name is already visible in the tree and editor.
     var tabsEl=document.getElementById('tabs');
@@ -7915,11 +7948,139 @@ function showView(v, opts){
     else if(v==='cv')showCv();
     else if(v==='experience')showWorkHistory();
     else if(v==='vessels')showVesselDatabase();
+    else if(v==='myvessel')showMyVessel();
     else if(v==='packages')showPackages();
     else if(v==='dispatch')showDispatch();
     else if(v==='jobs')showJobs();
     else if(v==='information')showInformation();
     else if(v==='settings')openSettings();
+}
+
+// ===================== «Моё судно» (crew linking — PR A honest shell) =====================
+// This is CREW LINKING, not device pairing. Namespace: skipi-crew:1:onboard:<code>.
+// PR A is a local-only shell: NO backend calls, NO /api/devices, NO skipi-pair, and it is
+// deliberately separate from Settings -> Сопряжённые устройства (which is device pairing).
+// Resolve / consent / Ed25519 accept / membership cache / leave-revoke are later PRs.
+var CREW_NS='skipi-crew:1:onboard:';
+var myVessel={ stage:'home', error:'' }; // stage: home | enter | scan | blocked
+
+// Accept a bare <code> or the opaque skipi-crew:1:onboard:<code>. Reject skipi-pair:* and any
+// other namespace (fail closed). Returns {ok:true,code} or {ok:false,reason}. No network.
+function parseCrewCode(raw){
+    var s=String(raw==null?'':raw).trim();
+    if(!s)return {ok:false,reason:'empty'};
+    var low=s.toLowerCase();
+    if(low.indexOf('skipi-pair:')===0)return {ok:false,reason:'wrong_namespace'}; // device pairing — not here
+    var code=s;
+    if(low.indexOf('skipi-')===0){
+        if(low.indexOf(CREW_NS)!==0)return {ok:false,reason:'wrong_namespace'};
+        code=s.slice(CREW_NS.length).trim();
+    }
+    if(!code)return {ok:false,reason:'empty'};
+    if(!/^[A-Za-z0-9-]{4,64}$/.test(code))return {ok:false,reason:'invalid'};
+    return {ok:true,code:code};
+}
+function myVesselErrText(reason,ru){
+    if(reason==='empty')return ru?'Введите код экипажа.':'Enter a crew code.';
+    if(reason==='wrong_namespace')return ru
+        ?'Это не код экипажа судна. Нужен код вида skipi-crew:1:onboard:… (код устройства сюда не подходит).'
+        :'This is not a vessel crew code. Expected skipi-crew:1:onboard:… (a device code does not belong here).';
+    return ru?'Код выглядит некорректно. Проверьте символы.':'The code looks invalid. Check the characters.';
+}
+function myVesselGridHtml(ru){
+    var cards=[
+        {ic:'📷',t:ru?'Фотообмен':'Photo Exchange',s:ru?'Отправка фото-отчётов на судно':'Send photo reports to the vessel'},
+        {ic:'📋',t:ru?'Инструкции посадки':'Joining instructions',s:ru?'Что сделать при посадке':'What to do when joining'},
+        {ic:'✅',t:ru?'Чеклисты':'Checklists',s:ru?'Ознакомление и проверки':'Familiarization & checks'},
+        {ic:'📢',t:ru?'Объявления':'Announcements',s:ru?'Сообщения судовой администрации':'Messages from the vessel'},
+        {ic:'📄',t:ru?'Документы судна':'Vessel documents',s:ru?'Материалы судна, доступные вам':'Vessel materials shared with you'},
+        {ic:'⚠️',t:ru?'Отчёт о дефекте':'Defect report',s:ru?'Сообщить о неисправности':'Report a defect'}
+    ];
+    var lockTitle=esc(ru?'Откроется после присоединения к судну':'Unlocks after joining a vessel');
+    var h='<div class="mv-grid">';
+    cards.forEach(function(c){
+        h+='<div class="mv-tile" aria-disabled="true">'
+          +'<div class="mv-tile-top"><span class="mv-tile-ic">'+c.ic+'</span><span class="mv-tile-lock" title="'+lockTitle+'">🔒</span></div>'
+          +'<div class="mv-tile-title">'+esc(c.t)+'</div>'
+          +'<div class="mv-tile-sub">'+esc(c.s)+'</div>'
+          +'</div>';
+    });
+    h+='</div>';
+    h+='<div class="mv-grid-note">'+esc(ru?'Плагины откроются после присоединения к экипажу судна. Загрузка фото и отправка на судно появятся после backend — сейчас ничего не отправляется.':'Plugins unlock after you join a vessel crew. Photo upload and sending to the vessel appear after backend — nothing is sent now.')+'</div>';
+    return h;
+}
+function myVesselInnerHtml(){
+    var ru=getUiLang()==='ru';
+    var st=myVessel.stage, h='';
+    if(st==='enter'){
+        h+='<div class="mv-card">';
+        h+='<div class="mv-title">'+esc(ru?'Ввести код экипажа':'Enter crew code')+'</div>';
+        h+='<div class="mv-sub">'+esc(ru?'Код показывает судовой компьютер Skipi On Board (раздел «Экипаж»).':'The code is shown on the ship’s Skipi On Board computer (“Crew”).')+'</div>';
+        h+='<input id="mv-code" class="mv-input" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="'+esc(ru?'Код или skipi-crew:1:onboard:…':'Code or skipi-crew:1:onboard:…')+'" oninput="myVesselClearError()" onkeydown="if(event.key===\'Enter\'){myVesselSubmitCode();}">';
+        if(myVessel.error)h+='<div class="mv-error">'+esc(myVessel.error)+'</div>';
+        h+='<div class="mv-row"><button class="btn btn-accent mv-btn" onclick="myVesselSubmitCode()">'+esc(ru?'Проверить код':'Check code')+'</button>'
+          +'<button class="btn btn-outline mv-btn" onclick="myVesselGo(\'home\')">'+esc(ru?'Назад':'Back')+'</button></div>';
+        h+='<div class="mv-help">'+esc(ru?'Это присоединение к экипажу судна — не вход и не привязка устройства.':'This joins a vessel crew — it is not a login or a device link.')+'</div>';
+        h+='</div>';
+        return h;
+    }
+    if(st==='scan'){
+        h+='<div class="mv-card">';
+        h+='<div class="mv-title">'+esc(ru?'Сканировать QR':'Scan QR')+'</div>';
+        h+='<div class="mv-scan-box"><div class="mv-scan-ic">⌗</div><div class="mv-scan-title">'+esc(ru?'Сканер QR-кода':'QR scanner')+'</div><div class="mv-scan-note">'+esc(ru?'Сканирование камерой требует нативного доступа к камере (native camera bridge), которого пока нет в этой сборке.':'Camera scanning needs a native camera bridge, which is not in this build yet.')+'</div></div>';
+        h+='<div class="mv-help">'+esc(ru?'Камера недоступна — введите код вручную.':'Camera unavailable — enter the code manually.')+'</div>';
+        h+='<div class="mv-row"><button class="btn btn-accent mv-btn" onclick="myVesselGo(\'enter\')">'+esc(ru?'Ввести код вручную':'Enter code manually')+'</button>'
+          +'<button class="btn btn-outline mv-btn" onclick="myVesselGo(\'home\')">'+esc(ru?'Назад':'Back')+'</button></div>';
+        h+='</div>';
+        return h;
+    }
+    if(st==='blocked'){
+        h+='<div class="mv-card">';
+        h+='<div class="mv-title">'+esc(ru?'Код распознан':'Code recognized')+'</div>';
+        h+='<div class="mv-note">'+esc(ru?'Серверная часть сопряжения экипажа ещё не подключена — присоединение появится после backend. Ничего не отправлено.':'The crew-linking backend is not connected yet — joining will appear after backend. Nothing was sent.')+'</div>';
+        h+='<div class="mv-row"><button class="btn btn-outline mv-btn" onclick="myVesselGo(\'home\')">'+esc(ru?'Назад':'Back')+'</button></div>';
+        h+='</div>';
+        return h;
+    }
+    // home — not linked
+    h+='<div class="mv-card">';
+    h+='<div class="mv-title">'+esc(ru?'Моё судно':'My Vessel')+'</div>';
+    h+='<div class="mv-sub">'+esc(ru?'Присоединитесь к экипажу судна, на которое вы поднялись, по коду со судового компьютера Skipi On Board. Это связывает вас с экипажем судна, а не с другим устройством.':'Join the crew of the vessel you boarded, using a code from the ship’s Skipi On Board computer. This links you to a vessel crew, not to another device.')+'</div>';
+    h+='<div class="mv-actions"><button class="btn btn-accent mv-btn" onclick="myVesselGo(\'scan\')">'+esc(ru?'Сканировать QR':'Scan QR')+'</button>'
+      +'<button class="btn btn-accent mv-btn" onclick="myVesselGo(\'enter\')">'+esc(ru?'Ввести код':'Enter code')+'</button></div>';
+    h+='</div>';
+    h+='<div class="mv-card"><div class="mv-grid-title">'+esc(ru?'Рабочие модули судна':'Vessel workflows')+'</div>'+myVesselGridHtml(ru)+'</div>';
+    return h;
+}
+function showMyVessel(){
+    var content=document.getElementById('scr-content');
+    if(!content)return;
+    content.innerHTML='<div class="mv-wrap">'+myVesselInnerHtml()+'</div>';
+    show('scr-content');
+    if(myVessel.stage==='enter')setTimeout(myVesselFocus,30);
+}
+function renderMobileMyVessel(){
+    mobileMainHtml('<div class="mv-wrap mv-mobile">'+myVesselInnerHtml()+'</div>');
+    if(myVessel.stage==='enter')setTimeout(myVesselFocus,30);
+}
+function myVesselRerender(){ if(isMobileMode())renderMobileMyVessel(); else showMyVessel(); }
+function myVesselGo(stage){ myVessel.stage=stage; myVessel.error=''; myVesselRerender(); }
+function myVesselFocus(){ var i=document.getElementById('mv-code'); if(i){try{i.focus();}catch(e){}} }
+function myVesselClearError(){ myVessel.error=''; var e=document.querySelector('.mv-error'); if(e)e.remove(); }
+function myVesselShowError(msg){
+    myVessel.error=msg;
+    var box=document.getElementById('mv-code'); if(!box)return;
+    var ex=document.querySelector('.mv-error'); if(ex){ex.textContent=msg;return;}
+    var node=document.createElement('div'); node.className='mv-error'; node.textContent=msg;
+    box.parentNode.insertBefore(node, box.nextSibling);
+}
+function myVesselSubmitCode(){
+    var ru=getUiLang()==='ru';
+    var i=document.getElementById('mv-code');
+    var res=parseCrewCode(i?i.value:'');
+    if(!res.ok){ myVesselShowError(myVesselErrText(res.reason,ru)); myVesselFocus(); return; }
+    // Valid crew code (locally). PR A: NO backend call — resolve/accept are later PRs.
+    myVessel.stage='blocked'; myVessel.error=''; myVesselRerender();
 }
 
 // ------------- Inbox (E2E messages with crewings) -------------
