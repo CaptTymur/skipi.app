@@ -16136,5 +16136,11 @@ function hide(id){document.getElementById(id).style.display='none';}
 try{loadTheme();}catch(e){if(window.__earlyErr)window.__earlyErr('loadTheme failed: '+e);}
 try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() rejected: '+(e&&e.message?e.message:e));});}catch(e){if(window.__earlyErr)window.__earlyErr('init() threw: '+e);}
 </script>
+<!-- Remote plugin delivery (behind FEATURE_REMOTE_PLUGIN_DELIVERY, default OFF).
+     Inert when OFF. Loads after the app so it can wrap the plugin-host globals. -->
+<script src="plugin-host-config.js"></script>
+<script src="plugin-loader.js"></script>
+<script src="plugin-host-bridge.js"></script>
+<script src="plugin-remote-boot.js"></script>
 </body>
 </html>
