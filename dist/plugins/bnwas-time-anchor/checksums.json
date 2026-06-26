@@ -1,0 +1,29 @@
+{
+  "algorithm": "sha256",
+  "generated": "2026-06-24",
+  "plugin": "app.skipi.plugins.bnwas-time-anchor",
+  "version": "0.1.0",
+  "note": "assets/ is empty; alarm tones are synthesised at runtime (Web Audio). checksums.json excludes itself.",
+  "files": {
+    "plugin.json": {
+      "sha256": "f76c616257e391e2715ade495447eadadc43c9a8d6471a1d8c7cfe8556af8e4c",
+      "bytes": 948
+    },
+    "index.js": {
+      "sha256": "63241ff2a910e96d2a1eaad4efd217f61f6b69c4666767a6f27b3a99e6afc46e",
+      "bytes": 22799
+    },
+    "index.css": {
+      "sha256": "ae6fbb902941e27d1798930e91f3276b185d9e481d9aab67ab81a7f2440c983f",
+      "bytes": 7051
+    },
+    "CHANGELOG.md": {
+      "sha256": "cea1a4d4638e76a8f7e2cf7275b932c82618a05b36fdb371380a400ce08b6fde",
+      "bytes": 1992
+    },
+    "REPORT.md": {
+      "sha256": "cd75f02346ffb0af11194234cf3ce3a54ddd37337067b0d4c8d19802d5ea2048",
+      "bytes": 5348
+    }
+  }
+}

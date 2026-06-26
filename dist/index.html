@@ -903,16 +903,20 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .mobile-profile-meter-value { font-size:12px; font-weight:900; color:var(--green); min-width:38px; text-align:right; }
 .mobile-module-rail-wrap { position:relative; }
 .mobile-module-rail-wrap::before,
-.mobile-module-rail-wrap::after { position:absolute; top:0; bottom:1px; width:34px; display:flex; align-items:center; justify-content:center; color:var(--accent); font-size:24px; font-weight:900; pointer-events:none; z-index:2; opacity:0; transition:opacity .16s ease; }
-.mobile-module-rail-wrap::before { content:'‹'; left:0; background:linear-gradient(to right,var(--surface) 36%,rgba(255,255,255,0)); }
-.mobile-module-rail-wrap::after { content:'›'; right:0; background:linear-gradient(to left,var(--surface) 36%,rgba(255,255,255,0)); }
+.mobile-module-rail-wrap::after { position:absolute; top:0; bottom:1px; width:24px; display:flex; align-items:center; justify-content:center; color:var(--accent); font-size:22px; font-weight:900; pointer-events:none; z-index:2; opacity:0; transition:opacity .16s ease; }
+.mobile-module-rail-wrap::before { content:'‹'; left:0; background:linear-gradient(to right,var(--surface) 28%,rgba(255,255,255,0)); }
+.mobile-module-rail-wrap::after { content:'›'; right:0; background:linear-gradient(to left,var(--surface) 28%,rgba(255,255,255,0)); }
 .mobile-module-rail-wrap.has-before::before,
 .mobile-module-rail-wrap.has-more::after { opacity:.96; }
-.mobile-module-rail { display:flex; gap:6px; overflow-x:auto; overflow-y:hidden; padding:0 28px 1px 0; scrollbar-width:none; scroll-snap-type:x proximity; }
+.mobile-module-rail { display:flex; gap:5px; overflow-x:auto; overflow-y:hidden; padding:0 18px 1px 0; scrollbar-width:none; scroll-snap-type:x proximity; }
 .mobile-module-rail::-webkit-scrollbar { display:none; }
-.mobile-nav-btn { flex:0 0 76px; min-height:50px; border:1px solid transparent; border-radius:8px; background:transparent; color:var(--text2); font-size:10px; font-weight:800; display:flex; flex-direction:column; gap:3px; align-items:center; justify-content:center; scroll-snap-align:start; }
+.mobile-nav-btn { flex:0 0 70px; min-height:50px; border:1px solid transparent; border-radius:8px; background:transparent; color:var(--text2); font-size:10px; font-weight:800; display:flex; flex-direction:column; gap:3px; align-items:center; justify-content:center; scroll-snap-align:start; }
 .mobile-nav-btn span { font-size:17px; line-height:1; }
 .mobile-nav-btn.active { color:var(--accent); background:var(--accent-bg); border-color:var(--accent-bg2); }
+@media (max-width:380px){
+    .mobile-nav-btn { flex-basis:66px; font-size:9px; }
+    .mobile-module-rail { gap:4px; padding-right:16px; }
+}
 .mobile-home-btn { width:100%; min-height:42px; margin:0 0 10px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); display:flex; align-items:center; justify-content:center; gap:8px; font-size:14px; font-weight:900; }
 .mobile-home-btn:active { transform:translateY(1px); }
 .mobile-home-btn-icon { width:24px; height:24px; border-radius:7px; background:var(--accent-bg); color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:15px; line-height:1; }
@@ -1051,6 +1055,61 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .mobile-doc-thumb.empty { height:42px; }
 .mobile-doc-content { min-width:0; flex:1; }
 .mobile-section-title { font-size:12px; color:var(--text2); font-weight:800; text-transform:uppercase; margin:14px 0 8px; }
+/* ---- Apps / plugin host (theme-aware via CSS variables; light/dark, mobile-safe) ---- */
+.apps-screen { padding:22px 26px 40px; max-width:920px; }
+.apps-head { margin-bottom:6px; }
+.apps-head-title { font-size:22px; font-weight:800; color:var(--text); }
+.apps-head-sub { font-size:12.5px; color:var(--text2); margin-top:4px; line-height:1.4; max-width:640px; }
+.apps-cat-title { font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:var(--text2); margin:22px 0 10px; }
+.apps-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:12px; }
+.apps-tile { display:flex; gap:12px; text-align:left; align-items:flex-start; padding:14px; border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--text); cursor:pointer; transition:border-color .12s, transform .05s; }
+.apps-tile:hover { border-color:var(--accent); }
+.apps-tile:active { transform:translateY(1px); }
+.apps-tile.soon { opacity:.72; }
+.apps-tile-icon { width:46px; height:46px; flex:0 0 auto; border-radius:11px; background:var(--accent-bg); color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:24px; }
+.apps-tile-icon.big { width:58px; height:58px; font-size:30px; border-radius:14px; }
+.apps-tile-body { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.apps-tile-name { font-size:15px; font-weight:800; line-height:1.2; }
+.apps-tile-sub { font-size:12px; color:var(--text2); line-height:1.35; }
+.apps-badge { display:inline-block; align-self:flex-start; margin-top:5px; font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; padding:2px 7px; border-radius:999px; }
+.apps-badge.live { background:var(--accent-bg); color:var(--accent); }
+.apps-badge.soon { background:var(--hover); color:var(--text2); }
+.apps-back { background:transparent; border:none; color:var(--accent); font-size:13px; font-weight:700; cursor:pointer; padding:4px 0; margin-bottom:8px; }
+.apps-detail { max-width:640px; }
+.apps-detail-head { display:flex; gap:14px; align-items:center; margin-bottom:6px; }
+.apps-detail-name { font-size:20px; font-weight:800; color:var(--text); }
+.apps-detail-cat { font-size:12px; color:var(--text2); margin-top:2px; }
+.apps-detail-desc { font-size:13.5px; color:var(--text); line-height:1.5; }
+.apps-safety { font-size:12.5px; color:var(--text); background:var(--accent-bg); border:1px solid var(--accent-bg2); border-radius:8px; padding:10px 12px; margin:10px 0; line-height:1.45; }
+.apps-perm { border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin:14px 0; background:var(--surface); }
+.apps-perm-title { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:var(--text2); margin-bottom:8px; }
+.apps-perm-row { display:flex; align-items:center; gap:9px; font-size:13px; padding:3px 0; color:var(--text); }
+.apps-perm-dot { width:18px; height:18px; flex:0 0 auto; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; line-height:1; }
+.apps-perm-row.clear .apps-perm-dot { background:rgba(78,201,112,.16); color:var(--green); }
+.apps-perm-row.used .apps-perm-dot { background:rgba(216,155,101,.18); color:var(--orange); }
+.apps-actions { margin-top:18px; }
+.apps-actions .btn { margin-right:8px; }
+/* plugin runtime screen + placeholder */
+.plugin-screen { max-width:680px; }
+.plugin-host-bar { display:flex; align-items:center; gap:12px; margin-bottom:10px; }
+.plugin-host-bar .apps-back { margin-bottom:0; flex:1; }
+.plugin-host-title { font-size:12px; color:var(--text2); }
+.plugin-host-container { border:1px solid var(--border); border-radius:12px; background:var(--surface); min-height:280px; padding:0; overflow:visible; }
+.plugin-host-loading { padding:40px; text-align:center; color:var(--text2); font-size:13px; }
+.plugin-placeholder { padding:34px 24px; text-align:center; }
+.plugin-placeholder-icon { font-size:40px; opacity:.85; }
+.plugin-placeholder-title { font-size:17px; font-weight:800; color:var(--text); margin-top:10px; }
+.plugin-placeholder-note { font-size:13px; color:var(--text2); line-height:1.5; margin-top:6px; max-width:440px; margin-left:auto; margin-right:auto; }
+body.mobile-mode .apps-screen { padding:2px 0 24px; max-width:none; }
+body.mobile-mode .apps-grid { grid-template-columns:1fr; }
+body.mobile-mode .plugin-screen { max-width:none; }
+body.mobile-mode .plugin-host-bar { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:8px; margin:0 0 8px; }
+body.mobile-mode .plugin-host-bar .apps-back { min-height:38px; margin:0; padding:8px 10px; border:1px solid var(--border); border-radius:8px; background:var(--surface); max-width:98px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+body.mobile-mode .plugin-host-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:center; font-size:12px; }
+body.mobile-mode .plugin-host-bar .btn { min-height:38px; padding:7px 10px; }
+body.mobile-mode .plugin-host-container { overflow:hidden; border-radius:10px; }
+body.mobile-mode .apps-safety, body.mobile-mode .apps-perm { margin-left:0; margin-right:0; }
+.mobile-action-title .apps-badge { margin:0 0 0 6px; vertical-align:middle; padding:1px 6px; }
 .mobile-search { width:100%; height:42px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); padding:0 12px; font-size:15px; margin-bottom:8px; }
 .mobile-filter-row { display:flex; gap:7px; overflow-x:auto; padding-bottom:8px; margin-bottom:2px; }
 .mobile-filter-chip { flex:0 0 auto; border:1px solid var(--border); border-radius:999px; background:var(--surface); color:var(--text2); min-height:34px; padding:0 12px; font-size:12px; font-weight:800; }
@@ -1202,7 +1261,11 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
             <button class="mobile-nav-btn" type="button" data-mview="jobs" onclick="mobileShow('jobs')"><span>J</span>Jobs</button>
             <button class="mobile-nav-btn" type="button" data-mview="information" onclick="mobileShow('information')"><span>i</span>Info</button>
             <button class="mobile-nav-btn" type="button" data-mview="vessels" onclick="mobileShow('vessels')"><span>&#9872;&#65038;</span>Vessels</button>
+
             <button class="mobile-nav-btn" type="button" data-mview="myvessel" onclick="mobileShow('myvessel')"><span>&#9875;&#65038;</span>Моё судно</button>
+
+            <button class="mobile-nav-btn" type="button" data-mview="apps" onclick="mobileShow('apps')"><span>&#9638;</span>Apps</button>
+
         </div>
         </div>
     </nav>
@@ -1222,7 +1285,11 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
     <div class="mod-tab" onclick="showView('jobs')" id="mt-jobs" title="Jobs — receive matching offers"><span>Jobs</span></div>
     <div class="mod-tab" onclick="showView('information')" id="mt-info" title="Information - market pulse"><span>Information</span></div>
     <div class="mod-tab" onclick="showView('vessels')" id="mt-vessels" title="Суда"><span>Суда</span></div>
+
     <div class="mod-tab" onclick="showView('myvessel')" id="mt-myvessel" title="Моё судно — экипаж судна, на которое вы поднялись"><span>Моё судно</span></div>
+
+    <div class="mod-tab" onclick="showView('apps')" id="mt-apps" title="Apps — plugins and tools"><span>Apps</span></div>
+
     <div class="mb-spacer"></div>
     <div class="profile-completion-chip" id="profile-completion-chip" onclick="openProfileDashboard()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openProfileDashboard();}" role="button" tabindex="0" title="Profile completeness">
         <span class="pc-dot" id="pc-dot"></span>
@@ -2959,7 +3026,7 @@ function mobileShouldShowHomeButton(){
     if(!shouldUseMobileShell())return false;
     if(mobileView==='home')return false;
     if(mobileView==='dispatch')return false;
-    return ['docs','doc','add','pdf','profile','experience','cv','jobs','information','vessels','assistant'].indexOf(mobileView)>=0;
+    return ['docs','doc','add','pdf','profile','experience','cv','jobs','information','vessels','apps','assistant'].indexOf(mobileView)>=0;
 }
 function mobileHomeButtonHtml(){
     var ru=getUiLang()==='ru';
@@ -3526,6 +3593,7 @@ function mobileShow(view){
     mobileView=view||'home';
     if(mobileView==='add'&&mobileAddMode!=='attach_single'&&mobileAddMode!=='attach_pdf')mobileAddMode='choose';
     if(mobileView==='dispatch')mobileDispatchStep='choose';
+    if(mobileView==='apps'){pluginHostState.selectedId=null;pluginHostState.openId=null;}
     renderMobileShell();
     setTimeout(mobileScrollMainTop,0);
     setTimeout(mobileScrollMainTop,140);
@@ -5380,7 +5448,11 @@ function renderMobileShell(){
     if(mobileView==='jobs')return renderMobileJobs();
     if(mobileView==='information')return renderMobileInformation();
     if(mobileView==='vessels')return renderMobileVessels();
+
     if(mobileView==='myvessel')return renderMobileMyVessel();
+
+    if(mobileView==='apps')return renderMobileApps();
+
     if(mobileView==='assistant')return renderMobileAssistant();
     if(mobileView==='doc')return renderMobileDoc();
     if(mobileView==='pdf')return renderMobilePdfBuilder();
@@ -7915,7 +7987,8 @@ function showView(v, opts){
     updateProfileCompletionChip();
     document.querySelectorAll('.ribbon-icon').forEach(function(el){el.classList.remove('active');});
     document.querySelectorAll('.modules-bar .mod-tab').forEach(function(el){el.classList.remove('active');});
-    var shortMap={files:'files',dashboard:'dash',cv:'cv',experience:'exp',vessels:'vessels',myvessel:'myvessel',packages:'pkg',dispatch:'disp',jobs:'jobs',information:'info',settings:'set'};
+    var shortMap={files:'files',dashboard:'dash',cv:'cv',experience:'exp',vessels:'vessels',myvessel:'myvessel',packages:'pkg',dispatch:'disp',jobs:'jobs',information:'info',apps:'apps',settings:'set'};
+
     var ri=document.getElementById('ri-'+shortMap[v]);
     if(ri)ri.classList.add('active');
     var mt=document.getElementById('mt-'+shortMap[v]);
@@ -7927,7 +8000,8 @@ function showView(v, opts){
         vessels:tr('title.vessels'),myvessel:tr('title.myvessel'),packages:tr('title.packages'),dispatch:tr('title.dispatch'),jobs:tr('title.jobs'),
         information:tr('title.information'),settings:tr('title.settings')
     }[v]||v;
-    document.getElementById('left-panel').style.display=(v==='dashboard'||v==='cv'||v==='experience'||v==='vessels'||v==='myvessel'||v==='dispatch'||v==='jobs'||v==='information')?'none':'';
+    document.getElementById('left-panel').style.display=(v==='dashboard'||v==='cv'||v==='experience'||v==='vessels'||v==='myvessel'||v==='dispatch'||v==='jobs'||v==='information'||v==='apps')?'none':'';
+
     // The old second tabs row duplicated the selected document title.
     // Keep it disabled; the document name is already visible in the tree and editor.
     var tabsEl=document.getElementById('tabs');
@@ -7953,10 +8027,12 @@ function showView(v, opts){
     else if(v==='dispatch')showDispatch();
     else if(v==='jobs')showJobs();
     else if(v==='information')showInformation();
+    else if(v==='apps'){pluginHostState.selectedId=null;pluginHostState.openId=null;showApps();}
     else if(v==='settings')openSettings();
 }
 
-// ===================== «Моё судно» (crew linking — PR A honest shell) =====================
+
+// ============== «Моё судно» (crew linking — PR A honest shell) =====================
 // This is CREW LINKING, not device pairing. Namespace: skipi-crew:1:onboard:<code>.
 // PR A is a local-only shell: NO backend calls, NO /api/devices, NO skipi-pair, and it is
 // deliberately separate from Settings -> Сопряжённые устройства (which is device pairing).
@@ -8081,6 +8157,375 @@ function myVesselSubmitCode(){
     if(!res.ok){ myVesselShowError(myVesselErrText(res.reason,ru)); myVesselFocus(); return; }
     // Valid crew code (locally). PR A: NO backend call — resolve/accept are later PRs.
     myVessel.stage='blocked'; myVessel.error=''; myVesselRerender();
+}
+
+// ===================== Skipi Plugin Host (generic scaffold) =====================
+// Thin host layer that makes Skipi Seafarer a HOST for bundled first-party
+// plugins (Apps). The host owns ONLY integration: a local registry, the Apps
+// tile/list/detail, Install/Open/Disable local state, a narrow hostApi, and the
+// load/mount/unmount lifecycle for an artifact bundled under dist/plugins/<id>/.
+// It contains NO plugin domain logic — a plugin's internals (e.g. the BNWAS
+// timer/alarm state machine) live in the plugin lab and ship as a separate
+// reviewed artifact. If an artifact is not bundled yet, Open shows a clean
+// placeholder instead of failing.
+// Refs: "Skipi Plugin Update Mechanism — bundled first-party MVP",
+//       "Skipi Plugin Lab", "2026-06-23 — Skipi Plugins — coordination protocol".
+
+var SKIPI_PLUGIN_CATEGORIES = [
+    {key:'safety',    label:'Safety / Watchkeeping'},
+    {key:'utils',     label:'Utils'},
+    {key:'education', label:'Education'},
+    {key:'reports',   label:'Reports'}
+];
+
+// Local/static registry of bundled first-party plugins — tile metadata only,
+// NO plugin logic. `bundle` points at the artifact folder under dist/plugins/.
+var SKIPI_PLUGIN_REGISTRY = [
+    {
+        id:'bnwas-time-anchor',
+        manifestId:'app.skipi.plugins.bnwas-time-anchor',
+        name:'BNWAS / Time Anchor',
+        category:'safety',
+        icon:'⏱️',
+        short:'Personal watchkeeping timer and time-anchor. Bundled first-party plugin.',
+        description:'Personal watchkeeping timer and time-anchor tool for mariners. A bundled first-party plugin that runs inside Skipi Seafarer. Offline, no account. Timer/alarm logic is built and validated in the BNWAS plugin lab and ships as a reviewed artifact.',
+        safety_note:'Not certified bridge equipment. Does not replace vessel BNWAS, lookout duties, bridge procedures or company SMS.',
+        permissions:{ server_access:false, documents_access:false, account_required:false, analytics:false, audio_alert:true, local_only:true },
+        bundle:'plugins/bnwas-time-anchor/',
+        firstParty:true
+    },
+    // Future bundled plugins register here as their reviewed artifacts land.
+    { id:'distance-tables', name:'Distance Tables', category:'utils', icon:'📏', short:'Port-to-port distance and voyage-time helper.', comingSoon:true },
+    { id:'draft-survey',    name:'Draft Survey',    category:'utils', icon:'⚖️', short:'Draft survey calculation and report.', comingSoon:true },
+    { id:'education',       name:'Education',        category:'education', icon:'🎓', short:'Courses, trainers, interview prep.', comingSoon:true },
+    { id:'reports',         name:'Complaints / Reports', category:'reports', icon:'📝', short:'Safety reports and signals.', comingSoon:true }
+];
+
+var pluginHostState = { selectedId:null, openId:null };
+
+function pluginById(id){ return SKIPI_PLUGIN_REGISTRY.find(function(p){return p.id===id;})||null; }
+function pluginCatLabel(key){ var c=SKIPI_PLUGIN_CATEGORIES.find(function(x){return x.key===key;}); return c?c.label:key; }
+function pluginNowIso(){ try{ return new Date().toISOString(); }catch(e){ return ''; } }
+
+// ---- per-plugin local install state (no server, no account) ----
+function pluginStateAll(){ try{ return JSON.parse(localStorage.getItem('skipi_plugins_state')||'{}'); }catch(e){ return {}; } }
+function pluginStateSaveAll(s){ try{ localStorage.setItem('skipi_plugins_state', JSON.stringify(s)); }catch(e){} }
+function pluginSetState(id, patch){ var all=pluginStateAll(); all[id]=Object.assign({}, all[id]||{}, patch); pluginStateSaveAll(all); }
+function pluginGetState(id){ var s=pluginStateAll()[id]||{}; return { installed:!!s.installed, enabled:s.enabled!==false }; }
+// status: available (not installed) | installed (installed+enabled) | disabled (installed, disabled)
+function pluginStatus(id){ var st=pluginGetState(id); if(!st.installed) return 'available'; return st.enabled?'installed':'disabled'; }
+
+function pluginInstall(id){
+    var p=pluginById(id); if(!p||p.comingSoon) return;
+    pluginSetState(id,{ installed:true, enabled:true, installed_at:pluginNowIso() });
+    showToast(p.name+' installed.','success');
+    pluginRerender();
+}
+function pluginUninstall(id){
+    if(pluginHostState.openId===id) pluginClose();
+    pluginSetState(id,{ installed:false, enabled:false });
+    showToast((pluginById(id)||{}).name+' removed.','info');
+    pluginRerender();
+}
+function pluginDisable(id){
+    if(pluginHostState.openId===id) pluginClose();
+    pluginSetState(id,{ enabled:false });
+    showToast((pluginById(id)||{}).name+' disabled.','info');
+    pluginRerender();
+}
+function pluginEnable(id){ pluginSetState(id,{ enabled:true }); showToast((pluginById(id)||{}).name+' enabled.','success'); pluginRerender(); }
+
+function pluginRerender(){
+    if(shouldUseMobileShell()) renderMobileApps();
+    else showApps();
+}
+function pluginSelect(id){ pluginHostState.selectedId=id; pluginHostState.openId=null; pluginRerender(); }
+function pluginBack(){
+    if(pluginHostState.openId){ pluginClose(); }      // plugin screen -> detail
+    else { pluginHostState.selectedId=null; pluginRerender(); } // detail -> list
+}
+function pluginOpen(id){
+    var p=pluginById(id); if(!p||p.comingSoon) return;
+    if(pluginStatus(id)==='available') pluginInstall(id);
+    if(pluginStatus(id)==='disabled') pluginSetState(id,{ enabled:true });
+    pluginHostState.openId=id;
+    pluginRerender(); // renders the host screen; mount is kicked off there
+}
+function pluginClose(){
+    SkipiPluginHost.unmount();
+    pluginHostState.openId=null;
+    pluginRerender();
+}
+
+// ---- generic SkipiPluginHost: load / mount / unmount a bundled artifact ----
+window.SkipiPlugins = window.SkipiPlugins || {};
+var SkipiPluginHost = {
+    manifests:{},
+    loaded:{},
+    current:null,
+    // Load dist/plugins/<id>/ artifact. Resolves {ok:true,manifest} or
+    // {ok:false,reason}. Never rejects.
+    load:function(id){
+        var p=pluginById(id);
+        if(!p||!p.bundle) return Promise.resolve({ok:false, reason:'no_bundle'});
+        if(SkipiPluginHost.loaded[id] && window.SkipiPlugins[id]) return Promise.resolve({ok:true, manifest:SkipiPluginHost.manifests[id]});
+        var base=p.bundle;
+        return fetch(base+'plugin.json').then(function(r){
+            if(!r.ok) throw new Error('manifest http '+r.status);
+            return r.json();
+        }).then(function(manifest){
+            SkipiPluginHost.manifests[id]=manifest;
+            var ep=manifest.entrypoints||{};
+            return pluginInjectCss(base+(ep.style||'index.css')).then(function(){
+                return pluginInjectScript(base+(ep.ui||'index.js'));
+            }).then(function(){
+                SkipiPluginHost.loaded[id]=true;
+                if(!window.SkipiPlugins[id]) return {ok:false, reason:'no_register'};
+                return {ok:true, manifest:manifest};
+            });
+        }).catch(function(e){ return {ok:false, reason:'not_bundled', error:''+e}; });
+    },
+    mount:function(id, container){
+        return SkipiPluginHost.load(id).then(function(res){
+            if(!res.ok) return res;
+            var plugin=window.SkipiPlugins[id];
+            if(!plugin||typeof plugin.mount!=='function') return {ok:false, reason:'no_mount'};
+            try{
+                container.innerHTML='';
+                plugin.mount(container, makeHostApi(id));
+                SkipiPluginHost.current={id:id};
+                pluginSetState(id,{ last_opened_at:pluginNowIso() });
+                return {ok:true};
+            }catch(e){ logError('plugin.mount',e); return {ok:false, reason:'mount_error', error:''+e}; }
+        });
+    },
+    unmount:function(){
+        var cur=SkipiPluginHost.current;
+        if(cur && window.SkipiPlugins[cur.id] && typeof window.SkipiPlugins[cur.id].unmount==='function'){
+            try{ window.SkipiPlugins[cur.id].unmount(); }catch(e){ logError('plugin.unmount',e); }
+        }
+        SkipiPluginHost.current=null;
+    }
+};
+function pluginInjectCss(href){
+    return new Promise(function(resolve){
+        if(document.querySelector('link[data-plugin-css="'+href+'"]')) return resolve();
+        var l=document.createElement('link'); l.rel='stylesheet'; l.href=href; l.setAttribute('data-plugin-css',href);
+        l.onload=function(){resolve();}; l.onerror=function(){resolve();}; // style optional
+        document.head.appendChild(l);
+    });
+}
+function pluginInjectScript(src){
+    return new Promise(function(resolve,reject){
+        if(document.querySelector('script[data-plugin-js="'+src+'"]')) return resolve();
+        var s=document.createElement('script'); s.src=src; s.setAttribute('data-plugin-js',src);
+        s.onload=function(){resolve();}; s.onerror=function(){reject(new Error('script load failed'));};
+        document.head.appendChild(s);
+    });
+}
+
+// ---- narrow host API handed to a mounted plugin ----
+function makeHostApi(pluginId){
+    var ns='skipi_plugin_'+pluginId+'_';
+    return {
+        theme:{
+            get:function(){ try{ return document.documentElement.getAttribute('data-theme')||'dark'; }catch(e){ return 'dark'; } },
+            subscribe:function(cb){
+                var obs=null;
+                try{ obs=new MutationObserver(function(){ try{ cb(document.documentElement.getAttribute('data-theme')||'dark'); }catch(e){} });
+                    obs.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']}); }catch(e){}
+                return function(){ try{ obs&&obs.disconnect(); }catch(e){} };
+            }
+        },
+        storage:{
+            get:function(k){ try{ return localStorage.getItem(ns+k); }catch(e){ return null; } },
+            set:function(k,v){ try{ localStorage.setItem(ns+k,v); }catch(e){} },
+            remove:function(k){ try{ localStorage.removeItem(ns+k); }catch(e){} }
+        },
+        audio:{
+            // Host native audio bridge is not implemented yet; for the MVP a
+            // plugin may implement its own audio internally (Web Audio).
+            playLoop:function(){ return false; },
+            stop:function(){ return false; }
+        },
+        navigation:{
+            closePlugin:function(){ pluginClose(); },
+            setTitle:function(t){ var el=document.getElementById('plugin-host-title'); if(el) el.textContent=t||''; }
+        },
+        permissions:{
+            listGranted:function(){ var p=pluginById(pluginId); var perm=p&&p.permissions||{}; return Object.keys(perm).filter(function(k){return perm[k]===true;}); }
+        }
+    };
+}
+
+// ---- shared permissions/safety panel ----
+function pluginPermsHtml(p){
+    var perm=p&&p.permissions; if(!perm) return '';
+    var rows=[ ['Server access',perm.server_access], ['Documents access',perm.documents_access], ['Account required',perm.account_required], ['Analytics',perm.analytics] ];
+    var h='<div class="apps-perm"><div class="apps-perm-title">Permissions &amp; privacy</div>';
+    rows.forEach(function(r){ var used=!!r[1];
+        h+='<div class="apps-perm-row '+(used?'used':'clear')+'"><span class="apps-perm-dot">'+(used?'●':'✓')+'</span><span>'+(used?esc(r[0])+' used':'No '+esc(String(r[0]).toLowerCase()))+'</span></div>'; });
+    if(perm.audio_alert) h+='<div class="apps-perm-row used"><span class="apps-perm-dot">♪</span><span>Plays audio alerts</span></div>';
+    if(perm.local_only) h+='<div class="apps-perm-row clear"><span class="apps-perm-dot">✓</span><span>Runs locally inside Skipi — no internet, no external app</span></div>';
+    h+='</div>';
+    return h;
+}
+
+// ---- desktop renderers ----
+function showApps(){
+    var content=document.getElementById('scr-content'); if(!content) return;
+    if(pluginHostState.openId) content.innerHTML=pluginScreenHtml(pluginById(pluginHostState.openId));
+    else if(pluginHostState.selectedId) content.innerHTML=pluginDetailHtml(pluginById(pluginHostState.selectedId));
+    else content.innerHTML=pluginListHtml();
+    show('scr-content'); updateTabs('Apps');
+    if(pluginHostState.openId) setTimeout(function(){ pluginMountInto(pluginHostState.openId); },0);
+}
+function pluginBadge(id){
+    var p=pluginById(id);
+    if(p&&p.comingSoon) return '<span class="apps-badge soon">Coming soon</span>';
+    var s=pluginStatus(id);
+    if(s==='installed') return '<span class="apps-badge live">Installed</span>';
+    if(s==='disabled') return '<span class="apps-badge soon">Disabled</span>';
+    return '<span class="apps-badge live">Available</span>';
+}
+function pluginTileHtml(p){
+    var soon=!!p.comingSoon;
+    return '<button class="apps-tile'+(soon?' soon':'')+'" type="button" onclick="pluginSelect(\''+p.id+'\')">'
+        + '<span class="apps-tile-icon">'+(p.icon||'▢')+'</span>'
+        + '<span class="apps-tile-body"><span class="apps-tile-name">'+esc(p.name)+'</span>'
+        + '<span class="apps-tile-sub">'+esc(p.short||'')+'</span>'+pluginBadge(p.id)+'</span></button>';
+}
+function pluginListHtml(){
+    var h='<div class="apps-screen"><div class="apps-head"><div class="apps-head-title">Apps</div>'
+      +'<div class="apps-head-sub">Bundled first-party plugins inside your Seafarer home. Not a marketplace and no third-party code.</div></div>';
+    SKIPI_PLUGIN_CATEGORIES.forEach(function(cat){
+        var items=SKIPI_PLUGIN_REGISTRY.filter(function(p){return p.category===cat.key;});
+        if(!items.length) return;
+        h+='<div class="apps-cat-title">'+esc(cat.label)+'</div><div class="apps-grid">';
+        items.forEach(function(p){ h+=pluginTileHtml(p); });
+        h+='</div>';
+    });
+    h+='</div>';
+    return h;
+}
+function pluginDetailHtml(p){
+    if(!p) return pluginListHtml();
+    var st=pluginStatus(p.id);
+    var h='<div class="apps-screen apps-detail">';
+    h+='<button class="apps-back" type="button" onclick="pluginBack()">← Apps</button>';
+    h+='<div class="apps-detail-head"><span class="apps-tile-icon big">'+(p.icon||'▢')+'</span>'
+      +'<div><div class="apps-detail-name">'+esc(p.name)+'</div>'
+      +'<div class="apps-detail-cat">'+esc(pluginCatLabel(p.category))+(p.comingSoon?' · Coming soon':(p.firstParty?' · First-party plugin':''))+'</div></div></div>';
+    if(p.description) h+='<p class="apps-detail-desc">'+esc(p.description)+'</p>';
+    if(p.safety_note) h+='<div class="apps-safety"><b>Safety</b> — '+esc(p.safety_note)+'</div>';
+    h+=pluginPermsHtml(p);
+    h+='<div class="apps-actions">';
+    if(p.comingSoon){ h+='<button class="btn btn-outline" disabled>Coming soon</button>'; }
+    else if(st==='available'){ h+='<button class="btn btn-accent" onclick="pluginInstall(\''+p.id+'\')">Install</button>'; }
+    else if(st==='installed'){
+        h+='<button class="btn btn-accent" onclick="pluginOpen(\''+p.id+'\')">Open</button>';
+        h+=' <button class="btn btn-outline" onclick="pluginDisable(\''+p.id+'\')">Disable</button>';
+        h+=' <button class="btn btn-outline" onclick="pluginUninstall(\''+p.id+'\')">Remove</button>';
+    } else { // disabled
+        h+='<button class="btn btn-accent" onclick="pluginEnable(\''+p.id+'\')">Enable</button>';
+        h+=' <button class="btn btn-outline" onclick="pluginUninstall(\''+p.id+'\')">Remove</button>';
+    }
+    h+='</div></div>';
+    return h;
+}
+// The plugin screen: host chrome (back + title) + mount container. The bundled
+// artifact renders INTO #plugin-host-container; if absent, a placeholder shows.
+function pluginScreenHtml(p){
+    if(!p) return pluginListHtml();
+    return '<div class="apps-screen plugin-screen">'
+      + '<div class="plugin-host-bar"><button class="apps-back" type="button" onclick="pluginBack()">← '+esc(p.name)+'</button>'
+      + '<span class="plugin-host-title" id="plugin-host-title"></span>'
+      + '<button class="btn btn-outline btn-sm" onclick="pluginDisable(\''+p.id+'\')">Disable</button></div>'
+      + '<div class="plugin-host-container" id="plugin-host-container"><div class="plugin-host-loading">Loading…</div></div>'
+      + '</div>';
+}
+function pluginPlaceholderHtml(p, reason){
+    var note = (reason==='not_bundled'||reason==='no_bundle'||reason==='no_register')
+        ? 'Plugin artifact is not bundled yet — it is being prepared in the Skipi plugin lab.'
+        : 'This plugin could not be loaded ('+esc(reason||'unknown')+').';
+    var h='<div class="plugin-placeholder">';
+    h+='<div class="plugin-placeholder-icon">'+(p&&p.icon||'▢')+'</div>';
+    h+='<div class="plugin-placeholder-title">Preparing in plugin lab</div>';
+    h+='<div class="plugin-placeholder-note">'+note+'</div>';
+    if(p&&p.safety_note) h+='<div class="apps-safety" style="margin-top:14px;text-align:left;"><b>Safety</b> — '+esc(p.safety_note)+'</div>';
+    if(p) h+=pluginPermsHtml(p);
+    h+='</div>';
+    return h;
+}
+// Mount the artifact into the host container; falls back to placeholder.
+function pluginMountInto(id){
+    var container=document.getElementById('plugin-host-container');
+    if(!container) return;
+    if(SkipiPluginHost.current && SkipiPluginHost.current.id===id) return; // already mounted
+    SkipiPluginHost.mount(id, container).then(function(res){
+        if(res && res.ok) return; // plugin took over the container
+        container.innerHTML=pluginPlaceholderHtml(pluginById(id), res&&res.reason);
+    });
+}
+
+// ---- mobile renderers ----
+function renderMobileApps(){
+    if(pluginHostState.openId){
+        mobileMainHtml(pluginMobileScreenHtml(pluginById(pluginHostState.openId)));
+        setTimeout(function(){ pluginMountInto(pluginHostState.openId); },0);
+        return;
+    }
+    if(pluginHostState.selectedId) return pluginMobileDetail(pluginById(pluginHostState.selectedId));
+    var h='<div class="mobile-section-title">Apps — bundled plugins</div>';
+    h+='<div class="mobile-card-sub" style="margin:-4px 0 12px;">First-party plugins inside your Seafarer home. Not a marketplace and no third-party code.</div>';
+    SKIPI_PLUGIN_CATEGORIES.forEach(function(cat){
+        var items=SKIPI_PLUGIN_REGISTRY.filter(function(p){return p.category===cat.key;});
+        if(!items.length) return;
+        h+='<div class="mobile-section-title">'+esc(cat.label)+'</div>';
+        items.forEach(function(p){
+            var soon=!!p.comingSoon, st=pluginStatus(p.id);
+            var tag=soon?' <span class="apps-badge soon">soon</span>':(st==='installed'?' <span class="apps-badge live">installed</span>':(st==='disabled'?' <span class="apps-badge soon">disabled</span>':''));
+            h+='<button class="mobile-primary-action" type="button" onclick="pluginSelect(\''+p.id+'\')">'
+              +'<span class="mobile-action-icon">'+(p.icon||'▢')+'</span>'
+              +'<span class="mobile-action-copy"><span class="mobile-action-title">'+esc(p.name)+tag+'</span>'
+              +'<span class="mobile-action-sub">'+esc(p.short||'')+'</span></span></button>';
+        });
+    });
+    mobileMainHtml(h);
+}
+function pluginMobileScreenHtml(p){
+    if(!p) return '';
+    return '<div class="apps-screen plugin-screen">'
+      + '<div class="plugin-host-bar"><button class="apps-back" type="button" onclick="pluginBack()">← Apps</button>'
+      + '<span class="plugin-host-title" id="plugin-host-title">'+esc(p.name||'')+'</span>'
+      + '<button class="btn btn-outline btn-sm" onclick="pluginDisable(\''+p.id+'\')">Disable</button></div>'
+      + '<div class="plugin-host-container" id="plugin-host-container"><div class="plugin-host-loading">Loading…</div></div>'
+      + '</div>';
+}
+function pluginMobileDetail(p){
+    if(!p){ pluginHostState.selectedId=null; return renderMobileApps(); }
+    var st=pluginStatus(p.id);
+    var h='<button class="mobile-home-btn" type="button" onclick="pluginBack()"><span class="mobile-home-btn-icon">←</span><span>Apps</span></button>';
+    h+='<div class="mobile-primary-action" style="cursor:default;"><span class="mobile-action-icon">'+(p.icon||'▢')+'</span>'
+      +'<span class="mobile-action-copy"><span class="mobile-action-title">'+esc(p.name)+'</span>'
+      +'<span class="mobile-action-sub">'+esc(pluginCatLabel(p.category))+(p.comingSoon?' · Coming soon':(p.firstParty?' · First-party plugin':''))+'</span></span></div>';
+    if(p.description) h+='<div class="mobile-card"><div class="mobile-card-sub">'+esc(p.description)+'</div></div>';
+    if(p.safety_note) h+='<div class="apps-safety"><b>Safety</b> — '+esc(p.safety_note)+'</div>';
+    h+=pluginPermsHtml(p);
+    h+='<div class="apps-actions">';
+    if(p.comingSoon){ h+='<button class="btn btn-outline" style="width:100%;" disabled>Coming soon</button>'; }
+    else if(st==='available'){ h+='<button class="btn btn-accent" style="width:100%;" onclick="pluginInstall(\''+p.id+'\')">Install</button>'; }
+    else if(st==='installed'){
+        h+='<button class="btn btn-accent" style="width:100%;" onclick="pluginOpen(\''+p.id+'\')">Open</button>';
+        h+='<button class="btn btn-outline" style="width:100%;margin-top:8px;" onclick="pluginDisable(\''+p.id+'\')">Disable</button>';
+        h+='<button class="btn btn-outline" style="width:100%;margin-top:8px;" onclick="pluginUninstall(\''+p.id+'\')">Remove</button>';
+    } else {
+        h+='<button class="btn btn-accent" style="width:100%;" onclick="pluginEnable(\''+p.id+'\')">Enable</button>';
+        h+='<button class="btn btn-outline" style="width:100%;margin-top:8px;" onclick="pluginUninstall(\''+p.id+'\')">Remove</button>';
+    }
+    h+='</div>';
+    mobileMainHtml(h);
+
 }
 
 // ------------- Inbox (E2E messages with crewings) -------------
@@ -15865,5 +16310,11 @@ function hide(id){document.getElementById(id).style.display='none';}
 try{loadTheme();}catch(e){if(window.__earlyErr)window.__earlyErr('loadTheme failed: '+e);}
 try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() rejected: '+(e&&e.message?e.message:e));});}catch(e){if(window.__earlyErr)window.__earlyErr('init() threw: '+e);}
 </script>
+<!-- Remote plugin delivery (behind FEATURE_REMOTE_PLUGIN_DELIVERY, default OFF).
+     Inert when OFF. Loads after the app so it can wrap the plugin-host globals. -->
+<script src="plugin-host-config.js"></script>
+<script src="plugin-loader.js"></script>
+<script src="plugin-host-bridge.js"></script>
+<script src="plugin-remote-boot.js"></script>
 </body>
 </html>
