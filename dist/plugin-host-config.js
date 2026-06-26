@@ -8,7 +8,7 @@ window.FEATURE_REMOTE_PLUGIN_DELIVERY = false;   // <-- default OFF (kill switch
 
 window.SKIPI_REMOTE_CONFIG = {
   // Staging catalog only (production plugins.skipi.app is NOT used here).
-  catalogUrl: 'https://staging-plugins.skipi.app/v1/catalog.json',
+  catalogUrl: 'https://api.skipi.app/seafarer/releases/plugins/staging/v1/catalog.json',
 
   // Which catalog plugins are routed through the isolated remote runtime when ON.
   remoteSlugs: ['bnwas-time-anchor'],
