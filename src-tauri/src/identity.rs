@@ -157,6 +157,19 @@ pub fn onboard_crew_accept_message(
     )
 }
 
+/// Build the canonical self-signature message for registering the vault's
+/// Ed25519 identity key. Must match the backend `identity_key_register_message()`
+/// in `app/identity_service.py` byte-for-byte:
+///   skipi-seafarer-identity-key:v1:<vault_user_id>:<identity_pubkey_b64>
+/// Signing it with the vault key proves the registrant controls the private key.
+/// A second specific message (not a generic signer).
+pub fn identity_key_register_message(vault_user_id: &str, identity_pubkey_b64: &str) -> String {
+    format!(
+        "skipi-seafarer-identity-key:v1:{}:{}",
+        vault_user_id, identity_pubkey_b64
+    )
+}
+
 fn normalize_identity_part(value: Option<String>) -> Option<String> {
     let normalized = value?
         .trim()
@@ -600,6 +613,50 @@ mod tests {
             msg,
             "skipi-onboard-crew:v1:accept:SKP-SF-ABC123:abcd1234ef567890:K7P49QXZ:1750000000"
         );
+    }
+
+    #[test]
+    fn identity_key_register_message_is_byte_for_byte_canonical() {
+        // Must match backend identity_key_register_message() exactly.
+        let msg = identity_key_register_message("abcd1234ef567890", "Aa+/Bb==");
+        assert_eq!(
+            msg,
+            "skipi-seafarer-identity-key:v1:abcd1234ef567890:Aa+/Bb=="
+        );
+    }
+
+    #[test]
+    fn identity_key_self_signature_verifies() {
+        use ed25519_dalek::{Signer, Verifier};
+        use base64::Engine;
+        let sk = SigningKey::from_bytes(&[7u8; 32]);
+        let vk: VerifyingKey = sk.verifying_key();
+        let b64 = base64::engine::general_purpose::STANDARD;
+        let pub_b64 = b64.encode(vk.to_bytes());
+        let uid = user_id_for_pubkey(&vk.to_bytes());
+        let msg = identity_key_register_message(&uid, &pub_b64);
+        let sig = sk.sign(msg.as_bytes());
+        assert!(vk.verify(msg.as_bytes(), &sig).is_ok());
+    }
+
+    // Emits a real identity-key registration self-signature for a LIVE smoke
+    // against POST /api/seafarer-identity/identity-key.
+    // Run: `cargo test --lib identkey_emit -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn identkey_emit_for_live_smoke() {
+        use ed25519_dalek::Signer;
+        use base64::Engine;
+        let sk = SigningKey::from_bytes(&[11u8; 32]);
+        let vk = sk.verifying_key();
+        let b64 = base64::engine::general_purpose::STANDARD;
+        let pub_b64 = b64.encode(vk.to_bytes());
+        let uid = user_id_for_pubkey(&vk.to_bytes());
+        let msg = identity_key_register_message(&uid, &pub_b64);
+        let sig = b64.encode(sk.sign(msg.as_bytes()).to_bytes());
+        println!("IDK vault_user_id={}", uid);
+        println!("IDK identity_pubkey_b64={}", pub_b64);
+        println!("IDK signature={}", sig);
     }
 
     #[test]

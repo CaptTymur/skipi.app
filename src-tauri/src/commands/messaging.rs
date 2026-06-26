@@ -145,32 +145,41 @@ pub fn onboard_crew_sign_accept(
     }))
 }
 
-/// Register the vault's **Ed25519 identity** public key under its identity
-/// user_id (`vault_info["user_id"]`). This is the "ensure vault identity is known
-/// server-side" step the On Board crew accept needs: the server verifies the
-/// accept signature against `user_pubkeys[vault_user_id]`, and that row only
-/// exists once the identity key is registered. Mirrors `register_my_pubkey`, but
-/// for the signing identity instead of the X25519 messaging key. Idempotent
-/// (the server upserts; same key → no-op, different key → 409).
+/// Register the vault's **Ed25519 identity** public key with the dedicated
+/// backend endpoint `POST /api/seafarer-identity/identity-key` (stored in
+/// `seafarer_identity_keys`, separate from the X25519 messaging key in
+/// `user_pubkeys`). The On Board crew accept verifies the accept signature
+/// against THIS key, so it must be provisioned first.
+///
+/// The endpoint requires a self-signature over
+/// `skipi-seafarer-identity-key:v1:<vault_user_id>:<identity_pubkey_b64>`,
+/// proving the caller holds the Ed25519 private key. `vault_user_id` is the same
+/// identity user_id used by the claim, the signer and the accept. First-writer-
+/// wins / immutable: same key re-post → `exists`; a different key → 409.
 #[tauri::command]
 pub fn register_my_identity_pubkey(state: State<AppState>) -> Result<serde_json::Value, String> {
+    use ed25519_dalek::Signer;
     let vault = current_vault_path(&state)?;
     let signing = crate::identity::vault_signing_key(&vault)?;
     let pub_bytes = signing.verifying_key().to_bytes();
     let user_id = crate::identity::user_id_for_pubkey(&pub_bytes);
-    let pubkey_b64 = base64::engine::general_purpose::STANDARD.encode(pub_bytes);
+    let b64 = base64::engine::general_purpose::STANDARD;
+    let identity_pubkey_b64 = b64.encode(pub_bytes);
+    // Self-signature over the registration message (proves key control).
+    let reg_msg = crate::identity::identity_key_register_message(&user_id, &identity_pubkey_b64);
+    let signature = b64.encode(signing.sign(reg_msg.as_bytes()).to_bytes());
     let body = serde_json::json!({
-        "user_id": user_id,
-        "pubkey_b64": pubkey_b64,
-        "role": "seafarer",
+        "vault_user_id": user_id,
+        "identity_pubkey_b64": identity_pubkey_b64,
+        "signature": signature,
     });
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .connect_timeout(std::time::Duration::from_secs(4))
         .build()
         .map_err(|e| e.to_string())?;
-    api::post_json_empty(&client, "/api/messaging/pubkey", &body)?;
-    Ok(serde_json::json!({ "user_id": user_id, "pubkey_b64": pubkey_b64 }))
+    api::post_json_empty(&client, "/api/seafarer-identity/identity-key", &body)?;
+    Ok(serde_json::json!({ "vault_user_id": user_id, "identity_pubkey_b64": identity_pubkey_b64 }))
 }
 
 #[derive(Debug, Clone, Deserialize)]
