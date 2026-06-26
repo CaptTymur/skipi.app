@@ -266,6 +266,7 @@ pub fn run() {
             messaging::get_api_base_override,
             messaging::get_my_identity,
             messaging::register_my_pubkey,
+            messaging::onboard_crew_sign_accept,
             messaging::send_encrypted_message,
             messaging::fetch_messages,
             messaging::apply_via_e2e,
