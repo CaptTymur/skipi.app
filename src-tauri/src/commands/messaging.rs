@@ -145,6 +145,34 @@ pub fn onboard_crew_sign_accept(
     }))
 }
 
+/// Register the vault's **Ed25519 identity** public key under its identity
+/// user_id (`vault_info["user_id"]`). This is the "ensure vault identity is known
+/// server-side" step the On Board crew accept needs: the server verifies the
+/// accept signature against `user_pubkeys[vault_user_id]`, and that row only
+/// exists once the identity key is registered. Mirrors `register_my_pubkey`, but
+/// for the signing identity instead of the X25519 messaging key. Idempotent
+/// (the server upserts; same key → no-op, different key → 409).
+#[tauri::command]
+pub fn register_my_identity_pubkey(state: State<AppState>) -> Result<serde_json::Value, String> {
+    let vault = current_vault_path(&state)?;
+    let signing = crate::identity::vault_signing_key(&vault)?;
+    let pub_bytes = signing.verifying_key().to_bytes();
+    let user_id = crate::identity::user_id_for_pubkey(&pub_bytes);
+    let pubkey_b64 = base64::engine::general_purpose::STANDARD.encode(pub_bytes);
+    let body = serde_json::json!({
+        "user_id": user_id,
+        "pubkey_b64": pubkey_b64,
+        "role": "seafarer",
+    });
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .connect_timeout(std::time::Duration::from_secs(4))
+        .build()
+        .map_err(|e| e.to_string())?;
+    api::post_json_empty(&client, "/api/messaging/pubkey", &body)?;
+    Ok(serde_json::json!({ "user_id": user_id, "pubkey_b64": pubkey_b64 }))
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct PubkeyResp {
     pubkey_b64: String,
