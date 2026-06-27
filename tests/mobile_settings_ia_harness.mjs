@@ -121,4 +121,11 @@ assert.ok(body.includes('mobileStartVaultWizard()'), 'Create new action missing'
 assert.ok(body.includes('loadDemoVault()'), 'Open demo action missing');
 console.log('  ✓ root actions call the expected flows');
 
+assert.ok(body.includes('<svg viewBox="0 0 24 24"'), 'Obsidian-like line icons should render as inline SVG');
+assert.equal(body.includes('<span>Скипи Моряк</span>'), false, 'root settings title should not show app subtitle');
+assert.ok(html.includes('.mobile-settings-ic svg'), 'line-icon CSS missing');
+assert.ok(html.includes(".mobile-settings-value::after { content:'›'"), 'chevron CSS missing');
+assert.ok(html.includes('.mobile-settings-ic {') && html.includes('background:transparent'), 'settings icons must not use filled square badges');
+console.log('  ✓ Obsidian-like root shell markers are present');
+
 console.log('mobile_settings_ia_harness: GREEN');
