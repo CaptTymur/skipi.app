@@ -42,6 +42,12 @@
   var loader = window.SkipiPluginLoader.create({
     catalogUrl: CFG.catalogUrl, host: CFG.host, policy: CFG.policy, pinnedPublicKey: CFG.pinnedPublicKey
   });
+  // Read-only helper so the Apps UI can LIST remote/staging catalog entries when
+  // ON (display only — opening still goes through the verified runtime). Resolves
+  // to [] on any failure so the UI degrades to slug names.
+  window.SkipiRemoteList = function () {
+    return loader.getCatalog().then(function (c) { return (c && c.catalog && c.catalog.plugins) || []; }, function () { return []; });
+  };
   var runtime = window.SkipiPluginRuntime.create({
     enabled: true, loader: loader,
     host: {
