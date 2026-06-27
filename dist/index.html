@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -877,9 +877,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .mobile-shell { display:none; min-height:100dvh; background:var(--bg); color:var(--text); flex-direction:column; overflow:hidden; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); }
 .mobile-top { min-height:54px; flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:7px 10px; border-bottom:1px solid var(--border); background:var(--surface); }
 .mobile-brand-wrap { min-width:0; flex:1; display:flex; align-items:center; gap:7px; }
-.mobile-top-home { width:40px; height:40px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:20px; line-height:1; }
-.mobile-top-home.active { border-color:var(--accent-bg2); background:var(--accent-bg); color:var(--accent); }
-.mobile-top-home:active { transform:translateY(1px); }
+.mobile-app-mark { width:40px; height:40px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; border-radius:10px; border:1px solid var(--accent-bg2); background:var(--accent); color:#fff; font-size:17px; line-height:1; font-weight:900; }
 .mobile-feedback-btn { width:40px; height:40px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); padding:0; font-size:12px; line-height:1; font-weight:900; }
 .mobile-feedback-btn:active { transform:translateY(1px); }
 .mobile-feedback-mark { width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:var(--accent-bg); color:var(--accent); font-size:14px; font-weight:900; line-height:1; }
@@ -893,29 +891,31 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .mobile-brand-sub { font-size:10px; color:var(--text2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:58vw; margin-top:2px; }
 .mobile-icon-btn { width:40px; height:40px; display:flex; align-items:center; justify-content:center; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:18px; }
 .mobile-main { flex:1; overflow:auto; -webkit-overflow-scrolling:touch; padding:14px; padding-bottom:16px; }
-.mobile-bottom-nav { min-height:104px; flex-shrink:0; display:flex; flex-direction:column; gap:7px; padding:7px 8px calc(7px + env(safe-area-inset-bottom,0px)); border-top:1px solid var(--border); background:var(--surface); }
-.mobile-profile-meter { width:100%; min-height:34px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); display:flex; align-items:center; gap:9px; padding:6px 9px; text-align:left; }
+.mobile-bottom-nav { min-height:70px; flex-shrink:0; display:flex; align-items:center; gap:6px; padding:8px 10px calc(8px + env(safe-area-inset-bottom,0px)); border-top:1px solid var(--border); background:var(--surface); }
+.mobile-profile-meter { display:none; width:100%; min-height:34px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); align-items:center; gap:9px; padding:6px 9px; text-align:left; }
 .mobile-profile-meter.active { border-color:var(--accent-bg2); background:var(--accent-bg); }
 .mobile-profile-meter-dot { width:8px; height:8px; border-radius:50%; background:var(--green); flex:0 0 auto; }
 .mobile-profile-meter-label { font-size:11px; font-weight:800; white-space:nowrap; }
 .mobile-profile-meter-track { flex:1; min-width:54px; height:7px; border-radius:999px; background:rgba(39,174,96,.16); overflow:hidden; border:1px solid rgba(39,174,96,.18); }
 .mobile-profile-meter-fill { display:block; height:100%; width:0%; border-radius:999px; background:var(--green); transition:width .18s ease; }
 .mobile-profile-meter-value { font-size:12px; font-weight:900; color:var(--green); min-width:38px; text-align:right; }
-.mobile-module-rail-wrap { position:relative; }
+.mobile-module-rail-wrap { flex:1; position:relative; }
 .mobile-module-rail-wrap::before,
 .mobile-module-rail-wrap::after { position:absolute; top:0; bottom:1px; width:24px; display:flex; align-items:center; justify-content:center; color:var(--accent); font-size:22px; font-weight:900; pointer-events:none; z-index:2; opacity:0; transition:opacity .16s ease; }
 .mobile-module-rail-wrap::before { content:'‹'; left:0; background:linear-gradient(to right,var(--surface) 28%,rgba(255,255,255,0)); }
 .mobile-module-rail-wrap::after { content:'›'; right:0; background:linear-gradient(to left,var(--surface) 28%,rgba(255,255,255,0)); }
 .mobile-module-rail-wrap.has-before::before,
 .mobile-module-rail-wrap.has-more::after { opacity:.96; }
-.mobile-module-rail { display:flex; gap:5px; overflow-x:auto; overflow-y:hidden; padding:0 18px 1px 0; scrollbar-width:none; scroll-snap-type:x proximity; }
+.mobile-module-rail { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; overflow:visible; padding:0; scrollbar-width:none; }
 .mobile-module-rail::-webkit-scrollbar { display:none; }
-.mobile-nav-btn { flex:0 0 70px; min-height:50px; border:1px solid transparent; border-radius:8px; background:transparent; color:var(--text2); font-size:10px; font-weight:800; display:flex; flex-direction:column; gap:3px; align-items:center; justify-content:center; scroll-snap-align:start; }
-.mobile-nav-btn span { font-size:17px; line-height:1; }
+.mobile-nav-btn { min-width:0; min-height:52px; border:1px solid transparent; border-radius:10px; background:transparent; color:var(--text2); font-size:11px; font-weight:850; display:flex; flex-direction:column; gap:4px; align-items:center; justify-content:center; }
+.mobile-nav-btn > span:first-child, .mobile-nav-btn .mobile-nav-icon { font-size:18px; line-height:1; }
+.mobile-nav-btn .mobile-nav-label { font-size:11px; line-height:1.1; }
 .mobile-nav-btn.active { color:var(--accent); background:var(--accent-bg); border-color:var(--accent-bg2); }
 @media (max-width:380px){
-    .mobile-nav-btn { flex-basis:66px; font-size:9px; }
-    .mobile-module-rail { gap:4px; padding-right:16px; }
+    .mobile-nav-btn { font-size:10px; }
+    .mobile-nav-btn .mobile-nav-label { font-size:10px; }
+    .mobile-module-rail { gap:4px; }
 }
 .mobile-home-btn { width:100%; min-height:42px; margin:0 0 10px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); display:flex; align-items:center; justify-content:center; gap:8px; font-size:14px; font-weight:900; }
 .mobile-home-btn:active { transform:translateY(1px); }
@@ -928,6 +928,13 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .mobile-home-lead .mobile-action-icon { background:var(--accent); color:#fff; }
 .mobile-home-action-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px; }
 .mobile-home-action-grid .mobile-primary-action { min-height:86px; margin:0; align-items:flex-start; padding:12px; }
+.mobile-more-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
+.mobile-more-tile { min-height:92px; border:1px solid var(--border); border-radius:10px; background:var(--surface); color:var(--text); padding:12px; display:flex; flex-direction:column; align-items:flex-start; justify-content:space-between; gap:8px; text-align:left; }
+.mobile-more-tile:active { transform:translateY(1px); }
+.mobile-more-tile .ic { width:34px; height:34px; border-radius:9px; background:var(--accent-bg); color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:900; }
+.mobile-more-tile > span:not(.ic) { display:flex; flex-direction:column; gap:4px; min-width:0; }
+.mobile-more-tile .t { display:block; font-size:14px; font-weight:900; line-height:1.2; }
+.mobile-more-tile .s { display:block; color:var(--text2); font-size:11px; line-height:1.25; }
 .mobile-home-action-grid .mobile-action-icon { width:34px; height:34px; font-size:17px; border-radius:8px; }
 .mobile-home-action-grid .mobile-action-title { font-size:14px; }
 .mobile-home-action-grid .mobile-action-sub { font-size:11px; line-height:1.28; }
@@ -1175,14 +1182,14 @@ body.mobile-mode .skipi-toast-container { top:auto; left:12px; right:12px; botto
 body.mobile-mode .skipi-toast-container > div { max-width:none !important; }
 body.mobile-mode .update-banner { top:calc(56px + env(safe-area-inset-top,0px)); left:8px; right:8px; border-radius:8px; }
 body.mobile-mode #err { top:calc(56px + env(safe-area-inset-top,0px)) !important; left:8px !important; right:8px !important; border-radius:8px; }
-body.mobile-mode .settings-overlay { align-items:stretch; justify-content:stretch; padding:56px 0 0; box-sizing:border-box; }
-body.mobile-mode .settings-modal { width:100vw; height:calc(100dvh - 56px); max-height:none; border-radius:0; flex-direction:column; }
-body.mobile-mode .settings-nav { width:100%; display:flex; gap:4px; overflow-x:auto; overflow-y:hidden; border-right:none; border-bottom:1px solid var(--border); padding:8px 10px; }
+body.mobile-mode .settings-overlay { align-items:stretch; justify-content:stretch; padding:0; box-sizing:border-box; background:var(--bg); }
+body.mobile-mode .settings-modal { width:100vw; height:100dvh; max-height:none; border-radius:0; flex-direction:column; border:0; box-shadow:none; background:var(--bg); }
+body.mobile-mode .settings-nav { display:none; }
 body.mobile-mode .settings-nav-title { display:none; }
 body.mobile-mode .settings-nav-item { flex:0 0 auto; border-radius:8px; padding:9px 11px; white-space:nowrap; font-size:13px; }
 body.mobile-mode .settings-nav-item .nav-icon { width:auto; }
-body.mobile-mode .settings-body { flex:1; padding:18px 14px calc(24px + env(safe-area-inset-bottom,0px)); }
-body.mobile-mode .settings-close { top:10px; right:10px; width:40px; height:40px; border:1px solid var(--border); border-radius:8px; background:var(--surface); font-size:22px; }
+body.mobile-mode .settings-body { flex:1; padding:calc(66px + env(safe-area-inset-top,0px)) 18px calc(24px + env(safe-area-inset-bottom,0px)); background:var(--bg); }
+body.mobile-mode .settings-close { top:calc(12px + env(safe-area-inset-top,0px)); right:16px; width:40px; height:40px; border:1px solid var(--border); border-radius:50%; background:var(--surface); font-size:26px; font-weight:300; color:var(--text2); }
 body.mobile-mode .settings-section h3 { padding-right:48px; }
 body.mobile-mode .setting-row { flex-direction:column; align-items:stretch; gap:10px; padding:12px; }
 body.mobile-mode .setting-info { margin-right:0; }
@@ -1192,6 +1199,34 @@ body.mobile-mode .setting-control input[type="text"],
 body.mobile-mode .setting-control input[type="password"] { width:100%; max-width:100%; }
 body.mobile-mode .field-grid { grid-template-columns:1fr; }
 body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][style*="gap:20px"] { flex-direction:column; gap:12px !important; }
+.mobile-settings-ios { max-width:390px; margin:0 auto; color:var(--text); }
+.mobile-settings-top { position:relative; min-height:34px; display:flex; align-items:center; justify-content:center; margin:-40px 0 58px; }
+.mobile-settings-back { position:absolute; left:0; top:50%; transform:translateY(-50%); width:42px; height:42px; border:1px solid var(--border); border-radius:50%; background:var(--surface); color:var(--text2); font-size:24px; font-weight:400; display:flex; align-items:center; justify-content:center; }
+.mobile-settings-title { text-align:center; min-width:0; }
+.mobile-settings-title strong { display:block; font-size:17px; font-weight:850; line-height:1.2; }
+.mobile-settings-title span { display:block; margin-top:3px; font-size:12px; color:var(--text2); line-height:1.2; }
+.mobile-settings-title span:empty { display:none; }
+.mobile-settings-group-label { margin:0 0 12px 16px; color:var(--text2); font-size:15px; line-height:1.2; font-weight:850; text-transform:none; letter-spacing:0; }
+.mobile-settings-group + .mobile-settings-group-label { margin-top:38px; }
+.mobile-settings-group { border:0; border-radius:28px; background:var(--surface); overflow:hidden; }
+.mobile-settings-row { width:100%; min-height:64px; border:0; border-bottom:1px solid var(--border); background:transparent; color:var(--text); display:grid; grid-template-columns:42px minmax(0,1fr) 24px; gap:8px; align-items:center; padding:0 18px; text-align:left; }
+.mobile-settings-row:last-child { border-bottom:0; }
+.mobile-settings-row:active { background:var(--hover); }
+.mobile-settings-ic { width:34px; height:34px; border-radius:0; background:transparent; color:var(--text); display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:400; opacity:.88; }
+.mobile-settings-ic svg { width:24px; height:24px; stroke:currentColor; stroke-width:2.05; fill:none; stroke-linecap:round; stroke-linejoin:round; }
+.mobile-settings-copy { min-width:0; }
+.mobile-settings-copy .t { display:block; font-size:16px; font-weight:500; line-height:1.2; white-space:normal; }
+.mobile-settings-copy .s { display:none; }
+.mobile-settings-value { color:var(--text2); font-size:0; line-height:1; justify-self:end; display:flex; align-items:center; justify-content:center; width:24px; height:24px; }
+.mobile-settings-value::after { content:'›'; font-size:30px; line-height:1; font-weight:300; color:var(--text2); opacity:.78; }
+.mobile-settings-badge { display:inline-flex; align-items:center; min-height:18px; border-radius:999px; padding:2px 7px; background:rgba(226,185,61,.16); color:#8a5c00; font-size:9px; font-weight:900; text-transform:lowercase; }
+.mobile-settings-note { margin-top:14px; border:1px solid rgba(0,69,100,.16); border-left:3px solid var(--accent); border-radius:10px; background:rgba(0,69,100,.06); padding:11px 12px; color:var(--text2); font-size:11px; line-height:1.4; }
+[data-theme="dark"] body.mobile-mode,
+[data-theme="dark"] body.mobile-mode .settings-overlay,
+[data-theme="dark"] body.mobile-mode .settings-modal,
+[data-theme="dark"] body.mobile-mode .settings-body { background:#000; }
+[data-theme="dark"] .mobile-settings-group { background:#1f1f1f; }
+[data-theme="dark"] body.mobile-mode .settings-close { background:#303030; border-color:#3f3f3f; }
 @media (max-width: 720px) {
     body:not(.desktop-forced) .modules-bar,
     body:not(.desktop-forced) .app,
@@ -1238,6 +1273,15 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
 .mv-list{margin:6px 0 0;padding-left:18px;}
 .mv-list li{font-size:13px;color:var(--text);line-height:1.5;}
 .mv-status-pill{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:#fff;background:#1f7a4d;border-radius:999px;padding:3px 10px;white-space:nowrap;}
+.spc-dev-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;}
+.spc-dev-grid .mv-input{margin-top:0;}
+.spc-dev-textarea{min-height:74px;resize:vertical;line-height:1.35;}
+.spc-dev-picked{display:flex;align-items:center;gap:10px;margin-top:12px;border:1px solid var(--border);border-radius:10px;padding:10px;background:var(--surface);}
+.spc-dev-thumb{width:54px;height:54px;flex:0 0 54px;border-radius:8px;background:rgba(0,69,100,.08);object-fit:cover;border:1px solid rgba(0,69,100,.16);}
+.spc-dev-file{min-width:0;font-size:12px;color:var(--text2);line-height:1.35;word-break:break-word;}
+.spc-dev-result{margin-top:12px;border:1px solid rgba(39,174,96,.35);background:rgba(39,174,96,.08);border-radius:10px;padding:11px 12px;font-size:12px;color:var(--text);line-height:1.45;}
+.spc-dev-error{margin-top:12px;border:1px solid rgba(231,76,60,.35);background:rgba(231,76,60,.08);border-radius:10px;padding:11px 12px;font-size:12px;color:var(--red);line-height:1.45;}
+@media (max-width:560px){ .spc-dev-grid{grid-template-columns:1fr;} }
 </style>
 </head>
 <body>
@@ -1245,7 +1289,7 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
 <div class="mobile-shell" id="mobile-shell">
     <div class="mobile-top">
         <div class="mobile-brand-wrap">
-            <button class="mobile-top-home" id="mobile-top-home" type="button" onclick="mobileShow('home')" title="Home" aria-label="Home">&#8962;</button>
+            <div class="mobile-app-mark" id="mobile-app-mark" aria-hidden="true">⚓</div>
             <button class="mobile-feedback-btn" id="mobile-feedback-btn" type="button" onclick="openMobileFeedbackMenu()" title="Отправить отзыв или сообщить о проблеме" aria-label="Отправить отзыв или сообщить о проблеме"><span class="mobile-feedback-mark">!</span><span class="mobile-feedback-text">Отзыв</span></button>
             <div class="mobile-brand">
                 <div class="mobile-brand-title" id="mobile-brand-title">Скипи Моряк</div>
@@ -1256,31 +1300,17 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
     </div>
     <main class="mobile-main" id="mobile-main"></main>
     <nav class="mobile-bottom-nav" id="mobile-bottom-nav" style="display:none;">
-        <button class="mobile-profile-meter" id="mobile-profile-meter" type="button" onclick="mobileShow('profile')" title="Profile completeness">
-            <span class="mobile-profile-meter-dot"></span>
-            <span class="mobile-profile-meter-label">Profile</span>
-            <span class="mobile-profile-meter-track"><span class="mobile-profile-meter-fill" id="mobile-profile-meter-fill"></span></span>
-            <span class="mobile-profile-meter-value" id="mobile-profile-meter-value">0%</span>
-        </button>
-        <div class="mobile-module-rail-wrap has-more" id="mobile-module-rail-wrap">
+        <div class="mobile-module-rail-wrap" id="mobile-module-rail-wrap">
         <div class="mobile-module-rail" id="mobile-module-rail" onscroll="mobileUpdateModuleRailHint()">
-            <button class="mobile-nav-btn active" type="button" data-mview="docs" onclick="mobileShow('docs')"><span>&#9633;</span>Documents</button>
-            <button class="mobile-nav-btn" type="button" data-mview="assistant" onclick="mobileShow('assistant')"><span>&#128172;</span>Assistant</button>
-            <button class="mobile-nav-btn" type="button" data-mview="experience" onclick="mobileShow('experience')"><span>&#9873;&#65038;</span>Experience</button>
-            <button class="mobile-nav-btn" type="button" data-mview="cv" onclick="mobileShow('cv')"><span>CV</span>CV</button>
-            <button class="mobile-nav-btn" type="button" data-mview="dispatch" onclick="mobileShow('dispatch')"><span>&#9993;&#65038;</span>Mailings</button>
-            <button class="mobile-nav-btn" type="button" data-mview="jobs" onclick="mobileShow('jobs')"><span>J</span>Jobs</button>
-            <button class="mobile-nav-btn" type="button" data-mview="information" onclick="mobileShow('information')"><span>i</span>Info</button>
-            <button class="mobile-nav-btn" type="button" data-mview="vessels" onclick="mobileShow('vessels')"><span>&#9872;&#65038;</span>Vessels</button>
-
-            <button class="mobile-nav-btn" type="button" data-mview="myvessel" onclick="mobileShow('myvessel')"><span>&#9875;&#65038;</span>Моё судно</button>
-
-            <button class="mobile-nav-btn" type="button" data-mview="apps" onclick="mobileShow('apps')"><span>&#9638;</span>Apps</button>
-
+            <button class="mobile-nav-btn active" type="button" data-mview="home" data-qa="bottom-nav-home" onclick="mobileShow('home')"><span>&#8962;</span>Дом</button>
+            <button class="mobile-nav-btn" type="button" data-mview="workspace" data-qa="bottom-nav-workspace" onclick="mobileShow('workspace')"><span class="mobile-nav-icon">&#128451;</span><span class="mobile-nav-label">Vault</span></button>
+            <button class="mobile-nav-btn" type="button" data-mview="apps" data-qa="bottom-nav-apps" onclick="mobileShow('apps')"><span>&#9638;</span>Apps</button>
+            <button class="mobile-nav-btn" type="button" data-mview="more" data-qa="bottom-nav-more" onclick="mobileShow('more')"><span>&#8942;</span>Ещё</button>
         </div>
         </div>
     </nav>
     <input id="mobile-file-input" type="file" accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png" style="display:none;" onchange="mobileHandleFilePicked(this.files)">
+    <input id="spc-dev-photo-input" type="file" accept="image/*,.jpg,.jpeg,.png,.webp" capture="environment" style="display:none;" onchange="spcDevHandlePhotoPicked(this.files)">
 </div>
 
 <!-- Top horizontal modules bar. The OS titlebar now carries the vault
@@ -2995,9 +3025,8 @@ function mobileUpdateModuleRailHint(){
     var rail=document.getElementById('mobile-module-rail');
     var wrap=document.getElementById('mobile-module-rail-wrap');
     if(!rail||!wrap)return;
-    var max=Math.max(0,rail.scrollWidth-rail.clientWidth);
-    wrap.classList.toggle('has-before',max>2&&rail.scrollLeft>2);
-    wrap.classList.toggle('has-more',max>2&&rail.scrollLeft<max-2);
+    wrap.classList.remove('has-before');
+    wrap.classList.remove('has-more');
 }
 function mobileSyncModuleRail(){
     var rail=document.getElementById('mobile-module-rail');
@@ -3008,20 +3037,55 @@ function mobileSyncModuleRail(){
     }
     setTimeout(mobileUpdateModuleRailHint,60);
 }
+function mobileHasVesselWorkspace(){
+    return !!(typeof myVessel!=='undefined' && (myVessel.stage==='joined' || (myVessel.membership && myVessel.membership.status && myVessel.membership.status!=='left')));
+}
+function mobileWorkspaceView(){
+    return mobileHasVesselWorkspace() ? 'myvessel' : 'docs';
+}
+function mobileWorkspaceMeta(){
+    var ru=getUiLang()==='ru';
+    if(mobileWorkspaceView()==='myvessel') return { view:'myvessel', icon:'⚓', label:ru?'Моё судно':'My Vessel' };
+    return { view:'docs', icon:'&#128451;', label:'Vault' };
+}
+function mobileSyncBottomNavWorkspace(){
+    var btn=document.querySelector('[data-qa="bottom-nav-workspace"]');
+    if(!btn)return;
+    var meta=mobileWorkspaceMeta();
+    btn.setAttribute('data-workspace-view',meta.view);
+    var ic=btn.querySelector('.mobile-nav-icon'), lab=btn.querySelector('.mobile-nav-label');
+    if(ic)ic.innerHTML=meta.icon;
+    if(lab)lab.textContent=meta.label;
+}
+var mobileWorkspacePrimePending=false;
+function mobilePrimeVesselWorkspace(){
+    if(!isMobileMode() || mobileWorkspacePrimePending || mobileHasVesselWorkspace())return;
+    if(typeof myVesselLoadMembership!=='function')return;
+    mobileWorkspacePrimePending=true;
+    Promise.resolve(myVesselLoadMembership({silent:true})).then(function(){
+        mobileWorkspacePrimePending=false;
+        mobileSetBottomNav(true);
+    },function(){
+        mobileWorkspacePrimePending=false;
+    });
+}
 function mobileSetBottomNav(showNav){
     var nav=document.getElementById('mobile-bottom-nav');
     if(nav)nav.style.display=showNav?'flex':'none';
-    var topHome=document.getElementById('mobile-top-home');
-    if(topHome){
-        topHome.classList.toggle('active',mobileView==='home');
-        topHome.setAttribute('aria-current',mobileView==='home'?'page':'false');
-    }
+    if(showNav)mobilePrimeVesselWorkspace();
+    mobileSyncBottomNavWorkspace();
     var meter=document.getElementById('mobile-profile-meter');
     if(meter)meter.classList.toggle('active',mobileView==='home'||mobileView==='profile');
     document.querySelectorAll('.mobile-nav-btn').forEach(function(btn){
         var v=btn.getAttribute('data-mview');
         var docViews=['docs','doc','add','pdf'];
-        var active=(mobileView===v)||(v==='docs'&&docViews.indexOf(mobileView)>=0);
+        var workspace=mobileWorkspaceView();
+        var moreViews=['profile','assistant','experience','cv','dispatch','jobs','information','vessels','more'];
+        if(workspace==='docs')moreViews.push('myvessel');
+        else moreViews=moreViews.concat(docViews);
+        var active=(mobileView===v)
+            ||(v==='workspace'&&((workspace==='docs'&&docViews.indexOf(mobileView)>=0)||(workspace==='myvessel'&&mobileView==='myvessel')))
+            ||(v==='more'&&moreViews.indexOf(mobileView)>=0);
         btn.classList.toggle('active',active);
     });
     if(showNav){
@@ -3037,7 +3101,7 @@ function mobileShouldShowHomeButton(){
     if(!shouldUseMobileShell())return false;
     if(mobileView==='home')return false;
     if(mobileView==='dispatch')return false;
-    return ['docs','doc','add','pdf','profile','experience','cv','jobs','information','vessels','apps','assistant'].indexOf(mobileView)>=0;
+    return ['docs','doc','add','pdf','profile','experience','cv','jobs','information','vessels','myvessel','apps','assistant','more'].indexOf(mobileView)>=0;
 }
 function mobileHomeButtonHtml(){
     var ru=getUiLang()==='ru';
@@ -3601,6 +3665,8 @@ function mobileScrollMainTop(){
     try{window.scrollTo(0,0);}catch(e){}
 }
 function mobileShow(view){
+    if(view==='workspace')view=mobileWorkspaceView();
+    if(view==='settings'){ openSettings(); return; }
     mobileView=view||'home';
     if(mobileView==='add'&&mobileAddMode!=='attach_single'&&mobileAddMode!=='attach_pdf')mobileAddMode='choose';
     if(mobileView==='dispatch')mobileDispatchStep='choose';
@@ -5464,6 +5530,8 @@ function renderMobileShell(){
 
     if(mobileView==='apps')return renderMobileApps();
 
+    if(mobileView==='more')return renderMobileMore();
+
     if(mobileView==='assistant')return renderMobileAssistant();
     if(mobileView==='doc')return renderMobileDoc();
     if(mobileView==='pdf')return renderMobilePdfBuilder();
@@ -5523,6 +5591,30 @@ function renderMobileHome(){
             h+='<button class="btn btn-outline" style="width:100%;margin-top:2px;" onclick="mobileShow(\'docs\')">'+mobileEsc(ru?'Все документы':'All documents')+'</button>';
         }
     }
+    mobileMainHtml(h);
+}
+function mobileMoreTile(icon,title,sub,view){
+    return '<button class="mobile-more-tile" type="button" onclick="mobileShow(\''+view+'\')">'
+        + '<span class="ic">'+icon+'</span>'
+        + '<span><span class="t">'+mobileEsc(title)+'</span><span class="s">'+mobileEsc(sub)+'</span></span></button>';
+}
+function renderMobileMore(){
+    var ru=getUiLang()==='ru';
+    var h='<div class="mobile-card mobile-home-lead"><div class="mobile-card-title">'+mobileEsc(ru?'Ещё':'More')+'</div>'
+        + '<div class="mobile-card-sub">'+mobileEsc(ru?'Все разделы Скипи Моряк остаются здесь. Нижнее меню показывает только основные точки: Дом, рабочий контекст, Apps, Ещё.':'All Skipi Seafarer sections stay here. The bottom rail keeps only the primary destinations: Home, workspace, Apps, More.')+'</div></div>';
+    h+='<div class="mobile-more-grid">';
+    if(mobileWorkspaceView()==='myvessel')h+=mobileMoreTile('▣','Vault',ru?'Документы и данные моряка':'Seafarer documents and data','docs');
+    h+=mobileMoreTile('●',ru?'Профиль':'Profile',ru?'Готовность и данные моряка':'Readiness and seafarer data','profile');
+    h+=mobileMoreTile('💬','Assistant',ru?'Помощник по профилю':'Profile assistant','assistant');
+    h+=mobileMoreTile('⚑',ru?'Опыт':'Experience',ru?'Морской опыт и суда':'Sea service and vessels','experience');
+    h+=mobileMoreTile('CV','CV',ru?'Что увидит получатель':'What the recipient sees','cv');
+    h+=mobileMoreTile('✉',ru?'Рассылки':'Mailings',ru?'Email или поделиться':'Email or share','dispatch');
+    h+=mobileMoreTile('J',ru?'Вакансии':'Jobs',ru?'Готовность и офферы':'Readiness and offers','jobs');
+    h+=mobileMoreTile('i','Info',ru?'Индексы и справка':'Indexes and references','information');
+    h+=mobileMoreTile('⚐',ru?'База судов':'Vessels',ru?'Поиск судов и отзывы':'Vessel search and reviews','vessels');
+    if(mobileWorkspaceView()==='docs')h+=mobileMoreTile('⚓',ru?'Моё судно':'My Vessel',ru?'Связь с текущим судном':'Current vessel link','myvessel');
+    h+=mobileMoreTile('⚙',ru?'Настройки':'Settings',ru?'Vault, профиль и внешний вид':'Vault, profile and look','settings');
+    h+='</div>';
     mobileMainHtml(h);
 }
 function renderMobileDocs(){
@@ -5703,8 +5795,9 @@ function identityTrustHtml(data, compact){
         h+='<div class="mobile-summary-row" style="margin-top:12px;"><div><strong>Skipi ID</strong><span>'+mobileEsc(server.public_seafarer_id)+' · '+mobileEsc(server.trust_level||'identity_claimed')+'</span></div><span class="mobile-pill ok">Registered</span></div>';
     }else if(server.claim_status==='possible_duplicate'){
         h+='<div class="mobile-summary-row" style="margin-top:12px;"><div><strong>Server identity</strong><span>'+mobileEsc(server.message||'A matching identity already exists. Recovery or manual merge is required.')+'</span></div><span class="mobile-pill warn">Duplicate</span></div>';
-    }else if(!compact){
-        h+='<div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-accent btn-sm" type="button" onclick="claimSkipiIdentity()">Claim Skipi Seafarer ID</button></div>';
+    }else{
+        var claimLabel=(typeof getUiLang==='function'&&getUiLang()==='ru')?'Создать Skipi ID':'Claim Skipi Seafarer ID';
+        h+='<div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-accent btn-sm" type="button" onclick="claimSkipiIdentity()">'+mobileEsc(claimLabel)+'</button></div>';
     }
     if(server.message&&server.claim_status!=='possible_duplicate'&&!compact){
         h+='<div class="mobile-card-sub" style="margin-top:8px;">'+mobileEsc(server.message)+'</div>';
@@ -8097,6 +8190,230 @@ function myVesselGridHtml(ru){
     h+='<div class="mv-grid-note">'+esc(ru?'Плагины откроются после присоединения к экипажу судна. Загрузка фото и отправка на судно появятся после backend — сейчас ничего не отправляется.':'Plugins unlock after you join a vessel crew. Photo upload and sending to the vessel appear after backend — nothing is sent now.')+'</div>';
     return h;
 }
+var SPC_DEV_SENDER_GATE_KEY='skipi.spcDevSender';
+var SPC_DEV_SENDER_MAX_BYTES=12*1024*1024;
+var spcDevSender={file:null,previewUrl:'',sending:false,result:null,error:'',draft:{}};
+
+function spcDevSenderEnabled(){
+    try{
+        if(window.SKIPI_SPC_DEV_SENDER===true)return true;
+        var v=String(localStorage.getItem(SPC_DEV_SENDER_GATE_KEY)||'').toLowerCase();
+        return v==='1'||v==='true'||v==='on'||v==='yes';
+    }catch(e){return false;}
+}
+function spcDevSenderSurfaceAllowed(){
+    try{
+        if(window.SKIPI_SPC_DEV_MOBILE_TEST===true)return true;
+        return hostPlatform==='android'||hostPlatform==='ios';
+    }catch(e){return false;}
+}
+function spcDevSenderAvailable(){
+    return spcDevSenderSurfaceAllowed()&&spcDevSenderEnabled();
+}
+function spcDevStored(key, fallback){
+    try{var v=localStorage.getItem('spc.dev.'+key); return v==null?fallback:v;}catch(e){return fallback;}
+}
+function spcDevStoreConfig(cfg){
+    try{
+        localStorage.setItem('spc.dev.apiBase', cfg.apiBase||'');
+        localStorage.setItem('spc.dev.imo', cfg.imo||'');
+        localStorage.setItem('spc.dev.vesselName', cfg.vesselName||'');
+        localStorage.setItem('spc.dev.title', cfg.title||'');
+        localStorage.setItem('spc.dev.location', cfg.location||'');
+        localStorage.setItem('spc.dev.caption', cfg.caption||'');
+    }catch(e){}
+}
+function spcDevMembershipDefaults(){
+    var m=myVessel.membership||{};
+    return {
+        imo: m.vessel_imo?String(m.vessel_imo):'',
+        vesselName: m.vessel_name||''
+    };
+}
+function spcDevDefaults(){
+    var mem=spcDevMembershipDefaults(), d=spcDevSender.draft||{};
+    return {
+        apiBase: d.apiBase || spcDevStored('apiBase','http://127.0.0.1:8817'),
+        token: d.token || '',
+        imo: d.imo || spcDevStored('imo',mem.imo||''),
+        vesselName: d.vesselName || spcDevStored('vesselName',mem.vesselName||''),
+        title: d.title || spcDevStored('title','Seafarer photo report'),
+        location: d.location || spcDevStored('location',''),
+        caption: d.caption || spcDevStored('caption','')
+    };
+}
+function spcDevVal(id, fallback){
+    var el=document.getElementById(id);
+    return el?String(el.value||'').trim():(fallback||'');
+}
+function spcDevReadForm(){
+    var d=spcDevDefaults();
+    return {
+        apiBase: spcDevVal('spc-dev-api',d.apiBase),
+        token: spcDevVal('spc-dev-token',d.token),
+        imo: spcDevVal('spc-dev-imo',d.imo).replace(/\D/g,'').slice(0,7),
+        vesselName: spcDevVal('spc-dev-vessel',d.vesselName),
+        title: spcDevVal('spc-dev-title',d.title),
+        location: spcDevVal('spc-dev-location',d.location),
+        caption: spcDevVal('spc-dev-caption',d.caption)
+    };
+}
+function spcDevRememberDraft(){
+    spcDevSender.draft=spcDevReadForm();
+    spcDevStoreConfig(spcDevSender.draft);
+}
+function spcDevShortId(id){
+    id=String(id||'');
+    return id.length>12?id.slice(0,8)+'…'+id.slice(-4):id;
+}
+function spcDevSafeErr(msg){
+    return String(msg||'Upload failed')
+        .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/g,'Bearer [redacted]')
+        .replace(/token[=: ]+[A-Za-z0-9._~+/=-]{8,}/ig,'token=[redacted]')
+        .slice(0,220);
+}
+function spcDevValidate(cfg,file){
+    if(!spcDevSenderSurfaceAllowed())return {ok:false,state:'mobile_only',message:'Photo sender is mobile-only. Seafarer desktop does not send photos.'};
+    var base=normalizeApiBase(cfg.apiBase||'');
+    if(!isLoopbackApiBase(base))return {ok:false,state:'local_only',message:'Dev sender accepts only localhost / 127.0.0.1 API base.'};
+    if(!cfg.token)return {ok:false,state:'missing_token',message:'Enter the local reports bearer token.'};
+    if(!/^\d{7}$/.test(cfg.imo||''))return {ok:false,state:'bad_imo',message:'Enter a 7-digit vessel IMO.'};
+    if(!file)return {ok:false,state:'no_file',message:'Choose or take one photo first.'};
+    if(file.size>SPC_DEV_SENDER_MAX_BYTES)return {ok:false,state:'too_large',message:'Photo is too large for this dev sender (12 MB max).'};
+    if(file.type&&String(file.type).indexOf('image/')!==0)return {ok:false,state:'not_image',message:'Choose an image file.'};
+    return {ok:true,base:base};
+}
+function spcDevReportPayload(cfg,file){
+    return {
+        imo: Number(cfg.imo),
+        vessel_name: cfg.vesselName||('IMO '+cfg.imo),
+        work_type: 'ship-photo-collection',
+        title: cfg.title||'Seafarer photo report',
+        location: cfg.location||null,
+        performed_by: 'Skipi Seafarer dev sender',
+        notes: cfg.caption||null,
+        channel: 'online',
+        fields: {
+            source: 'ship-photo-collection-seafarer-dev',
+            file_name: file&&file.name||'photo',
+            file_size: file&&file.size||0
+        }
+    };
+}
+async function spcDevFetchJson(base,path,options){
+    var r=await fetchWithTimeout(base+path,options,15000);
+    var data=null;
+    try{data=await r.json();}catch(e){}
+    if(!r.ok){
+        var detail=(data&&(data.detail||data.message))||('HTTP '+r.status);
+        throw new Error(detail);
+    }
+    return data||{};
+}
+async function spcDevSend(cfg,file){
+    var gate=spcDevValidate(cfg,file);
+    if(!gate.ok)return {ok:false,state:gate.state,message:gate.message};
+    var headers={'Authorization':'Bearer '+cfg.token};
+    var report=await spcDevFetchJson(gate.base,'/api/reports',{
+        method:'POST',
+        headers:Object.assign({'Content-Type':'application/json'},headers),
+        body:JSON.stringify(spcDevReportPayload(cfg,file))
+    });
+    var reportId=report&&report.id;
+    if(!reportId)throw new Error('backend returned no report id');
+    var fd=new FormData();
+    fd.append('file',file,file.name||'photo.jpg');
+    fd.append('phase','after');
+    if(cfg.location)fd.append('location',cfg.location);
+    if(cfg.caption)fd.append('caption',cfg.caption);
+    var photo=await spcDevFetchJson(gate.base,'/api/reports/'+encodeURIComponent(reportId)+'/photos',{
+        method:'POST',
+        headers:headers,
+        body:fd
+    });
+    var inboxVerified=false;
+    try{
+        var listed=await spcDevFetchJson(gate.base,'/api/reports?imo='+encodeURIComponent(cfg.imo)+'&limit=50',{
+            method:'GET',
+            headers:headers
+        });
+        inboxVerified=!!((listed.items||[]).find(function(x){return x&&x.id===reportId;}));
+    }catch(e){}
+    return {ok:true,state:'uploaded',report:{id:reportId,status:report.status||'submitted'},photo:{id:photo.id||'',storage_url:photo.storage_url||''},inboxVerified:inboxVerified};
+}
+function spcDevPickPhoto(){
+    spcDevRememberDraft();
+    var input=document.getElementById('spc-dev-photo-input');
+    if(!input){spcDevSender.error='Photo picker is unavailable in this shell.'; myVesselRerender(); return;}
+    input.value='';
+    input.click();
+}
+function spcDevHandlePhotoPicked(files){
+    spcDevRememberDraft();
+    var file=files&&files[0];
+    if(!file)return;
+    if(spcDevSender.previewUrl){try{URL.revokeObjectURL(spcDevSender.previewUrl);}catch(e){}}
+    spcDevSender.file=file;
+    spcDevSender.previewUrl='';
+    try{if(window.URL&&URL.createObjectURL)spcDevSender.previewUrl=URL.createObjectURL(file);}catch(e){}
+    spcDevSender.result=null;
+    spcDevSender.error='';
+    myVesselRerender();
+}
+async function spcDevSubmit(){
+    spcDevRememberDraft();
+    var cfg=spcDevReadForm(), file=spcDevSender.file;
+    spcDevStoreConfig(cfg);
+    var gate=spcDevValidate(cfg,file);
+    if(!gate.ok){spcDevSender.error=gate.message;spcDevSender.result=null;myVesselRerender();return;}
+    spcDevSender.sending=true; spcDevSender.error=''; spcDevSender.result=null; myVesselRerender();
+    try{
+        spcDevSender.result=await spcDevSend(cfg,file);
+        spcDevSender.error='';
+        showToast('Photo uploaded to local vessel inbox','success');
+    }catch(e){
+        spcDevSender.result=null;
+        spcDevSender.error=spcDevSafeErr(e&&e.message?e.message:e);
+        showToast('Photo upload failed','error');
+    }finally{
+        spcDevSender.sending=false;
+        myVesselRerender();
+    }
+}
+function spcDevSenderCardHtml(ru){
+    if(!spcDevSenderAvailable())return '';
+    var d=spcDevDefaults(), f=spcDevSender.file, res=spcDevSender.result;
+    var h='<div class="mv-card" data-qa="spc-dev-sender">';
+    h+='<div class="mv-row" style="align-items:center;justify-content:space-between;margin-top:0;"><div><div class="mv-grid-title" style="margin-bottom:6px;">Ship Photo Collection · local dev sender</div><div class="mv-title" style="font-size:18px;margin-bottom:0;">'+esc(ru?'Фото на судно':'Send photo to vessel')+'</div></div><span class="mobile-pill warn">'+esc(ru?'Локальный тест':'Local dev')+'</span></div>';
+    h+='<div class="mv-sub" style="margin-top:8px;">'+esc(ru?'Мобильный Android/iOS dev-тест: отправляет одну явно выбранную фотографию в локальный backend /api/reports. Seafarer desktop фотографии не отправляет.':'Mobile Android/iOS dev test: sends one explicitly selected photo to a local /api/reports backend. Seafarer desktop does not send photos.')+'</div>';
+    h+='<div class="spc-dev-grid">';
+    h+='<input id="spc-dev-api" class="mv-input" value="'+esc(d.apiBase)+'" placeholder="http://127.0.0.1:8817" onchange="spcDevRememberDraft()">';
+    h+='<input id="spc-dev-token" class="mv-input" type="password" value="'+esc(d.token)+'" placeholder="local bearer token" onchange="spcDevRememberDraft()">';
+    h+='<input id="spc-dev-imo" class="mv-input" inputmode="numeric" maxlength="7" value="'+esc(d.imo)+'" placeholder="Vessel IMO" onchange="spcDevRememberDraft()">';
+    h+='<input id="spc-dev-vessel" class="mv-input" value="'+esc(d.vesselName)+'" placeholder="Vessel name" onchange="spcDevRememberDraft()">';
+    h+='<input id="spc-dev-title" class="mv-input" value="'+esc(d.title)+'" placeholder="Report title" onchange="spcDevRememberDraft()">';
+    h+='<input id="spc-dev-location" class="mv-input" value="'+esc(d.location)+'" placeholder="Location on vessel" onchange="spcDevRememberDraft()">';
+    h+='</div>';
+    h+='<textarea id="spc-dev-caption" class="mv-input spc-dev-textarea" placeholder="'+esc(ru?'Подпись к фото':'Photo caption')+'" onchange="spcDevRememberDraft()">'+esc(d.caption)+'</textarea>';
+    if(f){
+        h+='<div class="spc-dev-picked">';
+        if(spcDevSender.previewUrl)h+='<img class="spc-dev-thumb" src="'+escAttr(spcDevSender.previewUrl)+'" alt="">';
+        else h+='<div class="spc-dev-thumb"></div>';
+        h+='<div class="spc-dev-file"><strong>'+esc(f.name||'photo')+'</strong><br>'+esc(formatBytes(f.size)||'')+'</div></div>';
+    }
+    h+='<div class="mv-row"><button class="btn btn-outline mv-btn" type="button" onclick="spcDevPickPhoto()">'+esc(f?(ru?'Выбрать другое фото':'Choose another photo'):(ru?'Выбрать / снять фото':'Choose / take photo'))+'</button>';
+    h+='<button class="btn btn-accent mv-btn" type="button" '+(spcDevSender.sending?'disabled ':'')+'onclick="spcDevSubmit()">'+esc(spcDevSender.sending?(ru?'Отправляю…':'Uploading…'):(ru?'Отправить в On Board':'Send to On Board'))+'</button></div>';
+    h+='<div class="mv-help">'+esc(ru?'Успех показывается только после реального POST report + POST photo. Судовое получение не подделывается: проверка inbox-list отмечается отдельно.':'Success appears only after a real POST report + POST photo. Ship receipt is not faked: inbox-list verification is shown separately.')+'</div>';
+    if(spcDevSender.error)h+='<div class="spc-dev-error">'+esc(spcDevSender.error)+'</div>';
+    if(res&&res.ok){
+        h+='<div class="spc-dev-result"><strong>'+esc(ru?'Backend принял фото':'Backend accepted the photo')+'</strong><br>'
+          +'report '+esc(spcDevShortId(res.report&&res.report.id))+' · photo '+esc(spcDevShortId(res.photo&&res.photo.id))+' · status '+esc((res.report&&res.report.status)||'submitted')+'<br>'
+          +esc(res.inboxVerified?(ru?'Этот report найден в списке inbox по IMO. Обновите On Board receiver.':'This report is visible in the IMO inbox list. Refresh the On Board receiver.'):(ru?'Upload завершён, но list-проверка inbox не подтвердилась. Обновите On Board receiver вручную.':'Upload completed, but inbox list verification did not confirm it. Refresh the On Board receiver manually.'))
+          +'</div>';
+    }
+    h+='</div>';
+    return h;
+}
 function myVesselInnerHtml(){
     var ru=getUiLang()==='ru';
     var st=myVessel.stage, h='';
@@ -8139,6 +8456,18 @@ function myVesselInnerHtml(){
           +'<button class="btn btn-outline mv-btn" onclick="myVesselGo(\'home\')">'+esc(ru?'Назад':'Back')+'</button></div></div>';
         return h;
     }
+    if(st==='identity_required'){
+        h+='<div class="mv-card"><div class="mv-title">'+esc(ru?'Нужен Skipi ID':'Skipi ID required')+'</div>';
+        h+='<div class="mv-note">'+esc(ru
+            ?'Профиль заполнен локально, но публичный Skipi ID ещё не создан на сервере. Создайте Skipi ID, затем Скипи Моряк продолжит присоединение к экипажу этого судна.'
+            :'Your profile is filled locally, but the public Skipi ID has not been created on the server yet. Claim Skipi ID, then Skipi Seafarer will continue joining this vessel crew.')+'</div>';
+        h+='<div class="mv-help">'+esc(ru
+            ?'Перед отправкой будет отдельное подтверждение: имя, фамилия и дата рождения используются сервером только для приватной проверки дубликатов. Документы и Vault не отправляются.'
+            :'You will confirm before sending: first name, surname and date of birth are used only for private duplicate checking. Documents and the Vault are not sent.')+'</div>';
+        h+='<div class="mv-row"><button class="btn btn-accent mv-btn" onclick="myVesselClaimIdentityAndContinue()">'+esc(ru?'Создать Skipi ID и продолжить':'Claim Skipi ID and continue')+'</button>'
+          +'<button class="btn btn-outline mv-btn" onclick="myVesselGo(\'enter\')">'+esc(ru?'Ввести код заново':'Re-enter code')+'</button></div></div>';
+        return h;
+    }
     if(st==='joined'){
         var m=myVessel.membership||{};
         h+='<div class="mv-card">';
@@ -8151,6 +8480,7 @@ function myVesselInnerHtml(){
           +'<button class="btn btn-outline mv-btn" onclick="myVesselLeave()">'+esc(ru?'Покинуть судно':'Leave vessel')+'</button></div>';
         h+='</div>';
         h+='<div class="mv-card"><div class="mv-grid-title">'+esc(ru?'Рабочие модули судна':'Vessel workflows')+'</div>'+myVesselGridHtml(ru)+'</div>';
+        h+=spcDevSenderCardHtml(ru);
         return h;
     }
     if(st==='error'){
@@ -8199,6 +8529,7 @@ function myVesselInnerHtml(){
       +'<button class="btn btn-accent mv-btn" onclick="myVesselGo(\'enter\')">'+esc(ru?'Ввести код':'Enter code')+'</button></div>';
     h+='</div>';
     h+='<div class="mv-card"><div class="mv-grid-title">'+esc(ru?'Рабочие модули судна':'Vessel workflows')+'</div>'+myVesselGridHtml(ru)+'</div>';
+    h+=spcDevSenderCardHtml(ru);
     return h;
 }
 function showMyVessel(){
@@ -8280,7 +8611,8 @@ function myVesselSaveMembership(mem){ try{ if(mem&&mem.vault_user_id) localStora
 function myVesselClearMembership(){ var m=myVessel.membership; try{ if(m&&m.vault_user_id) localStorage.removeItem(myVesselMembershipKey(m.vault_user_id)); }catch(e){} myVessel.membership=null; }
 // Per-vault membership load: re-checks when the open vault's identity changes,
 // so vault A's membership never shows in vault B.
-async function myVesselLoadMembership(){
+async function myVesselLoadMembership(opts){
+    var silent=!!(opts&&opts.silent);
     var uid=null; try{ var p=await invoke('get_matchable_profile'); uid=p&&p.user_id; }catch(e){}
     if(uid===myVessel._loadedUid)return;
     myVessel._loadedUid=uid;
@@ -8288,9 +8620,9 @@ async function myVesselLoadMembership(){
     if(uid){ try{ var raw=localStorage.getItem(myVesselMembershipKey(uid)); if(raw)mem=JSON.parse(raw); }catch(e){} }
     if(mem&&mem.crew_member_id&&mem.status!=='left'){
         myVessel.membership=mem;
-        if(myVessel.stage==='home'){ myVessel.stage='joined'; myVesselRerender(); }
+        if(myVessel.stage==='home'){ myVessel.stage='joined'; if(!silent||mobileView==='myvessel')myVesselRerender(); }
     }else if(myVessel.stage==='joined'){
-        myVessel.membership=null; myVessel.stage='home'; myVesselRerender();
+        myVessel.membership=null; myVessel.stage='home'; if(!silent||mobileView==='myvessel')myVesselRerender();
     }
 }
 async function myVesselAccept(){
@@ -8299,9 +8631,7 @@ async function myVesselAccept(){
     if(!code){ myVesselBlock(ru?'Код потерян, начните заново. Ничего не присоединено.':'Code lost, start over. Nothing joined.'); return; }
     var profile=null; try{ profile=await invoke('get_matchable_profile'); }catch(e){}
     var psid=profile&&profile.public_seafarer_id;
-    if(!psid){ myVesselBlock(ru
-        ?'Чтобы присоединиться к экипажу, сначала создайте морскую личность Skipi (Skipi ID) в профиле. Ничего не присоединено.'
-        :'To join a crew, first create your Skipi identity (Skipi ID) in the profile. Nothing was joined.'); return; }
+    if(!psid){ myVessel.stage='identity_required'; myVessel.error=''; myVesselRerender(); return; }
     myVessel.stage='joining'; myVessel.error=''; myVesselRerender();
     // Ensure the vault's Ed25519 identity pubkey is registered server-side, so
     // the accept signature can be verified. Safe + idempotent.
@@ -8335,6 +8665,19 @@ async function myVesselAccept(){
         else msg=(ru?'Сервер вернул ошибку: ':'Server error: ')+r.status;
         myVesselBlock(msg);
     }catch(e){ myVesselBlock(ru?'Сервер недоступен. Ничего не присоединено.':'Server unavailable. Nothing was joined.'); }
+}
+async function myVesselClaimIdentityAndContinue(){
+    var ru=getUiLang()==='ru';
+    var result=await claimSkipiIdentityWithConsent();
+    if(!result)return;
+    var profile=null; try{ profile=await invoke('get_matchable_profile'); }catch(e){}
+    if(!(profile&&profile.public_seafarer_id)){
+        myVesselBlock(ru
+            ?'Skipi ID не создан. Если сервер сообщил о дубликате, используйте recovery key или ручное восстановление личности. Ничего не присоединено.'
+            :'Skipi ID was not created. If the server reported a duplicate, use the recovery key or manual identity recovery. Nothing was joined.');
+        return;
+    }
+    await myVesselAccept();
 }
 function myVesselRefreshStatus(){
     // No seafarer-side membership-status endpoint exists yet → re-render from the
@@ -8522,10 +8865,10 @@ function makeHostApi(pluginId){
     var ns='skipi_plugin_'+pluginId+'_';
     return {
         theme:{
-            get:function(){ try{ return document.documentElement.getAttribute('data-theme')||'dark'; }catch(e){ return 'dark'; } },
+            get:function(){ try{ return document.documentElement.getAttribute('data-theme')||DEFAULT_THEME; }catch(e){ return DEFAULT_THEME; } },
             subscribe:function(cb){
                 var obs=null;
-                try{ obs=new MutationObserver(function(){ try{ cb(document.documentElement.getAttribute('data-theme')||'dark'); }catch(e){} });
+                try{ obs=new MutationObserver(function(){ try{ cb(document.documentElement.getAttribute('data-theme')||DEFAULT_THEME); }catch(e){} });
                     obs.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']}); }catch(e){}
                 return function(){ try{ obs&&obs.disconnect(); }catch(e){} };
             }
@@ -15244,8 +15587,9 @@ var vaultIdentityVisible = false;
 function openSettings(tab){
     if(tab) settingsTab = tab;
     if(isMobileMode()){
-        if(!tab) settingsTab = 'vaults';
-        if(settingsTab==='general' || settingsTab==='email') settingsTab = 'vaults';
+        if(!tab) settingsTab = 'mobile-home';
+        if(settingsTab==='general' || settingsTab==='email') settingsTab = 'mobile-home';
+        if(settingsTab==='devices') settingsTab = 'paired_devices';
     }
     // Guard: Seafarer tab only makes sense for seafarer vaults
     if(settingsTab==='seafarer' && currentAccountType!=='' && currentAccountType && currentAccountType!=='seafarer'){
@@ -15267,14 +15611,6 @@ function closeSettings(){
 function renderSettingsNav(){
     var h = '';
     if(isMobileMode()){
-        if(['vaults','seafarer','appearance','about'].indexOf(settingsTab)<0) settingsTab='vaults';
-        h += '<div class="settings-nav-title">'+tr('settings.nav_title')+'</div>';
-        h += '<div class="settings-nav-item'+(settingsTab==='vaults'?' active':'')+'" onclick="openSettings(\'vaults\')"><span class="nav-icon">&#128451;</span> Vault</div>';
-        if(currentAccountType==='seafarer'||currentAccountType===''||!currentAccountType){
-            h += '<div class="settings-nav-item'+(settingsTab==='seafarer'?' active':'')+'" onclick="openSettings(\'seafarer\')"><span class="nav-icon">&#128100;</span> Profile</div>';
-        }
-        h += '<div class="settings-nav-item'+(settingsTab==='appearance'?' active':'')+'" onclick="openSettings(\'appearance\')"><span class="nav-icon">&#127912;</span> Look</div>';
-        h += '<div class="settings-nav-item'+(settingsTab==='about'?' active':'')+'" onclick="openSettings(\'about\')"><span class="nav-icon">&#9432;</span> About</div>';
         document.getElementById('settings-nav').innerHTML = h;
         return;
     }
@@ -15342,9 +15678,89 @@ async function mobileSettingsDeleteVaultPath(path){
     await mobileDeleteVaultPath(path);
 }
 
+function mobileSettingsTop(title, subtitle, backTarget){
+    var h='<div class="mobile-settings-top">';
+    if(backTarget) h+='<button class="mobile-settings-back" type="button" data-qa="nav-back" onclick="openSettings(&quot;'+jsString(backTarget)+'&quot;)">&#8249;</button>';
+    h+='<div class="mobile-settings-title"><strong>'+mobileEsc(title)+'</strong>';
+    if(subtitle) h+='<span>'+mobileEsc(subtitle)+'</span>';
+    h+='</div></div>';
+    return h;
+}
+function mobileSettingsIcon(name){
+    var icons={
+        vault:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"></rect><rect x="9" y="9" width="6" height="6" rx="1"></rect></svg>',
+        switch:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10"></path><path d="M14 4l3 3-3 3"></path><path d="M17 17H7"></path><path d="M10 14l-3 3 3 3"></path></svg>',
+        export:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5"></path><path d="M8 9l4-4 4 4"></path><path d="M6 14v4a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-4"></path></svg>',
+        plus:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>',
+        demo:'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"></circle><circle cx="12" cy="12" r="2"></circle></svg>',
+        profile:'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 20a8 8 0 0 1 16 0"></path></svg>',
+        appearance:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18h1.5a2.5 2.5 0 0 0 0-5H12a2 2 0 0 1 0-4h2a3 3 0 0 0 0-6h-2z"></path><circle cx="7.5" cy="10" r=".8"></circle><circle cx="10" cy="7" r=".8"></circle><circle cx="14.5" cy="7.5" r=".8"></circle></svg>',
+        about:'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v5"></path><path d="M12 8h.01"></path></svg>',
+        link:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"></path><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"></path></svg>',
+        info:'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 10v6"></path><path d="M12 7h.01"></path></svg>'
+    };
+    return icons[name] || mobileEsc(name || '');
+}
+function mobileSettingsRow(icon,title,sub,value,qa,onClick,badge){
+    var attrs=qa?' data-qa="'+mobileEsc(qa)+'"':'';
+    var action=onClick?' onclick="'+onClick+'"':'';
+    var val='';
+    if(badge) val='<span class="mobile-settings-badge">'+mobileEsc(badge)+'</span>';
+    else if(value) val=mobileEsc(value);
+    return '<button class="mobile-settings-row" type="button"'+attrs+action+'>'
+        + '<span class="mobile-settings-ic">'+mobileSettingsIcon(icon)+'</span>'
+        + '<span class="mobile-settings-copy"><span class="t">'+mobileEsc(title)+'</span><span class="s">'+mobileEsc(sub||'')+'</span></span>'
+        + '<span class="mobile-settings-value">'+val+'</span></button>';
+}
+function mobileSettingsGroup(label, rows){
+    return '<div class="mobile-settings-group-label">'+mobileEsc(label)+'</div><div class="mobile-settings-group">'+rows+'</div>';
+}
+function renderMobileSettingsHome(){
+    var h='<div class="mobile-settings-ios" data-qa="mobile-settings-ios-restyle">';
+    h+=mobileSettingsTop('Настройки','','');
+    h+=mobileSettingsGroup('Vault',
+        mobileSettingsRow('vault','Vault','Локальный профиль моряка на этом телефоне.','Open','seafarer-nav-vault',"openSettings('vaults')")+
+        mobileSettingsRow('switch','Switch vault','Выбрать другой уже открытый vault.','','settings-vault-switch',"closeSettings();mobileOpenExistingVault(true)")+
+        mobileSettingsRow('export','Export / share backup','ZIP backup для переноса на desktop или другой телефон.','','settings-vault-export',"mobileExportVaultBackup(true)")+
+        mobileSettingsRow('plus','Create new','Создать новый профиль моряка.','','settings-vault-create',"closeSettings();mobileStartVaultWizard()")+
+        mobileSettingsRow('demo','Open demo','Открыть демо-профиль для проверки интерфейса.','','settings-vault-demo',"closeSettings();loadDemoVault()")
+    );
+    h+=mobileSettingsGroup('Профиль',
+        mobileSettingsRow('profile','Профиль моряка','Данные моряка, должность, судовой опыт и готовность.','','seafarer-nav-profile',"openSettings('seafarer')")
+    );
+    h+=mobileSettingsGroup('Приложение',
+        mobileSettingsRow('appearance','Внешний вид','Светлая/тёмная тема, шрифт, акцент и язык.','','seafarer-nav-appearance',"openSettings('appearance')")+
+        mobileSettingsRow('about','О программе','Версия, платформа, обновления и обратная связь.','','seafarer-nav-about',"openSettings('about')")
+    );
+    h+='</div>';
+    document.getElementById('settings-body').innerHTML=h;
+}
+function renderMobileSettingsPairedDevicesBoundary(){
+    var h='<div class="mobile-settings-ios" data-qa="settings-paired-devices">';
+    h+=mobileSettingsTop('Сопряжённые устройства','Скипи Моряк','mobile-home');
+    h+=mobileSettingsGroup('Сопряжённые устройства',
+        mobileSettingsRow('link','Сопряжённые устройства','Accepted shell; не проектировать pairing touch.','','settings-paired-devices','','accepted')
+    );
+    h+=mobileSettingsGroup('Граница',
+        mobileSettingsRow('info','Граница трека','Accepted shell only; controls/settings copy не входят в этот restyle.','Do not build','','')+
+        mobileSettingsRow('info','Ссылка на IA','Pairing controls остаются в отдельном flow.','Keep','','')+
+        mobileSettingsRow('info','Следующая работа','Когда pairing API/flow получит отдельный GO.','Separate','','')
+    );
+    h+='<div class="mobile-settings-note"><strong>Не проектировать pairing controls</strong><br>В этом разделе не добавлять QR, token, revoke, pair, connect. Settings restyle меняет только структуру и визуальный shell.</div>';
+    h+='</div>';
+    document.getElementById('settings-body').innerHTML=h;
+}
+function renderMobileSettingsBody(){
+    if(settingsTab==='paired_devices') return renderMobileSettingsPairedDevicesBoundary();
+    if(settingsTab==='mobile-home' || settingsTab==='general' || settingsTab==='email') return renderMobileSettingsHome();
+    // Existing functional subpages are kept intact; they render below with the new mobile chrome and no top tab strip.
+    return false;
+}
+
 function renderSettingsBody(){
-    var cur = document.documentElement.getAttribute('data-theme')||'dark';
+    var cur = document.documentElement.getAttribute('data-theme')||DEFAULT_THEME;
     var h = '';
+    if(isMobileMode() && renderMobileSettingsBody() !== false) return;
 
     if(settingsTab === 'general'){
         h += '<div class="settings-section"><h3>'+tr('settings.general')+'</h3><div class="section-desc">'+tr('settings.general_desc')+'</div>';
@@ -15474,7 +15890,7 @@ function renderSettingsBody(){
     }
 
     if(settingsTab === 'appearance'){
-        var themeChoice = localStorage.getItem('skipi-theme') || 'dark';
+        var themeChoice = localStorage.getItem('skipi-theme') || DEFAULT_THEME;
         var resolvedTheme = _resolvedTheme(themeChoice);
         var accentVal = localStorage.getItem('skipi-accent') ||
                         (resolvedTheme==='light' ? DEFAULT_ACCENT_LIGHT : DEFAULT_ACCENT_DARK);
@@ -15676,11 +16092,17 @@ async function loadIdentityTrustStatus(){
     }
 }
 
-async function claimSkipiIdentity(){
-    var ok=await uiConfirm('Claim a Skipi Seafarer ID for this profile?\n\n'+tr('app.name')+' sends first name, surname and date of birth to the server only to compute a private duplicate fingerprint. Raw identity fields are not stored by the server.',{confirmLabel:'Claim Skipi Seafarer ID'});
+async function claimSkipiIdentityWithConsent(){
+    var ru=(typeof getUiLang==='function'&&getUiLang()==='ru');
+    var ok=await uiConfirm(
+        ru
+            ? 'Создать Skipi ID для этого профиля?\n\nСкипи Моряк отправит имя, фамилию и дату рождения на сервер только для приватного duplicate fingerprint. Raw identity-поля сервер не хранит.'
+            : 'Claim a Skipi Seafarer ID for this profile?\n\n'+tr('app.name')+' sends first name, surname and date of birth to the server only to compute a private duplicate fingerprint. Raw identity fields are not stored by the server.',
+        {confirmLabel:ru?'Создать Skipi ID':'Claim Skipi Seafarer ID'}
+    );
     if(!ok)return;
     try{
-        showToast('Claiming Skipi ID...','info');
+        showToast(ru?'Создаю Skipi ID...':'Claiming Skipi ID...','info');
         var result=await invoke('claim_seafarer_identity');
         if(result&&result.duplicate){
             showToast(result.message||'Possible duplicate identity found.','error');
@@ -15689,10 +16111,13 @@ async function claimSkipiIdentity(){
         }
         await loadIdentityTrustStatus();
         await mobileRefreshIdentityTrust();
+        return result||{};
     }catch(e){
-        showToast('Could not claim Skipi ID: '+String(e||''),'error');
+        showToast((ru?'Не удалось создать Skipi ID: ':'Could not claim Skipi ID: ')+String(e||''),'error');
+        return null;
     }
 }
+async function claimSkipiIdentity(){ await claimSkipiIdentityWithConsent(); }
 
 async function toggleVaultRecoveryKey(){
     if(!vaultIdentityCache || !vaultIdentityCache.recovery_key){
@@ -16342,6 +16767,7 @@ async function importVaultBackup(){
 
 var DEFAULT_ACCENT_DARK  = '#004564';
 var DEFAULT_ACCENT_LIGHT = '#004564';
+var DEFAULT_THEME = 'light';
 var LEGACY_DEFAULT_ACCENTS = ['#7c6ff7','#6c5ce7'];
 var DEFAULT_FONT_SIZE_UI = 13;
 var DEFAULT_FONT_UI = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
@@ -16402,11 +16828,11 @@ function _resolvedTheme(choice){
     if(choice!=='system') return choice;
     try{
         return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    }catch(e){ return 'dark'; }
+    }catch(e){ return DEFAULT_THEME; }
 }
 
 function applyAppearance(){
-    var choice=localStorage.getItem('skipi-theme')||'dark';
+    var choice=localStorage.getItem('skipi-theme')||DEFAULT_THEME;
     var resolved=_resolvedTheme(choice);
     document.documentElement.setAttribute('data-theme', resolved);
 
@@ -16448,7 +16874,7 @@ function applyAppearance(){
         try{
             var mq=window.matchMedia('(prefers-color-scheme: dark)');
             _systemThemeListener=function(){
-                if((localStorage.getItem('skipi-theme')||'dark')==='system'){
+                if((localStorage.getItem('skipi-theme')||DEFAULT_THEME)==='system'){
                     applyAppearance();
                 }
             };
