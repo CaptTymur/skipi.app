@@ -47,7 +47,11 @@
     host: {
       theme: { get: getTheme },
       storage: hostStore,
-      navigation: { setTitle: function () {}, closePlugin: function () {} }
+      navigation: { setTitle: function () {}, closePlugin: function () {} },
+      // Non-secret host identity so a plugin can resolve its role (e.g.
+      // ship-photo-collection: seafarer -> "sender"). No vault, no token, no
+      // public_seafarer_id, no crew/vessel context.
+      id: (CFG.host && CFG.host.id) || 'seafarer'
     }
   });
   window.SkipiRemoteRuntime = runtime; // exposed for QA/debug
