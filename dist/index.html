@@ -893,29 +893,29 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .mobile-brand-sub { font-size:10px; color:var(--text2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:58vw; margin-top:2px; }
 .mobile-icon-btn { width:40px; height:40px; display:flex; align-items:center; justify-content:center; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:18px; }
 .mobile-main { flex:1; overflow:auto; -webkit-overflow-scrolling:touch; padding:14px; padding-bottom:16px; }
-.mobile-bottom-nav { min-height:104px; flex-shrink:0; display:flex; flex-direction:column; gap:7px; padding:7px 8px calc(7px + env(safe-area-inset-bottom,0px)); border-top:1px solid var(--border); background:var(--surface); }
-.mobile-profile-meter { width:100%; min-height:34px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); display:flex; align-items:center; gap:9px; padding:6px 9px; text-align:left; }
+.mobile-bottom-nav { min-height:70px; flex-shrink:0; display:flex; align-items:center; gap:6px; padding:8px 10px calc(8px + env(safe-area-inset-bottom,0px)); border-top:1px solid var(--border); background:var(--surface); }
+.mobile-profile-meter { display:none; width:100%; min-height:34px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); align-items:center; gap:9px; padding:6px 9px; text-align:left; }
 .mobile-profile-meter.active { border-color:var(--accent-bg2); background:var(--accent-bg); }
 .mobile-profile-meter-dot { width:8px; height:8px; border-radius:50%; background:var(--green); flex:0 0 auto; }
 .mobile-profile-meter-label { font-size:11px; font-weight:800; white-space:nowrap; }
 .mobile-profile-meter-track { flex:1; min-width:54px; height:7px; border-radius:999px; background:rgba(39,174,96,.16); overflow:hidden; border:1px solid rgba(39,174,96,.18); }
 .mobile-profile-meter-fill { display:block; height:100%; width:0%; border-radius:999px; background:var(--green); transition:width .18s ease; }
 .mobile-profile-meter-value { font-size:12px; font-weight:900; color:var(--green); min-width:38px; text-align:right; }
-.mobile-module-rail-wrap { position:relative; }
+.mobile-module-rail-wrap { flex:1; position:relative; }
 .mobile-module-rail-wrap::before,
 .mobile-module-rail-wrap::after { position:absolute; top:0; bottom:1px; width:24px; display:flex; align-items:center; justify-content:center; color:var(--accent); font-size:22px; font-weight:900; pointer-events:none; z-index:2; opacity:0; transition:opacity .16s ease; }
 .mobile-module-rail-wrap::before { content:'‹'; left:0; background:linear-gradient(to right,var(--surface) 28%,rgba(255,255,255,0)); }
 .mobile-module-rail-wrap::after { content:'›'; right:0; background:linear-gradient(to left,var(--surface) 28%,rgba(255,255,255,0)); }
 .mobile-module-rail-wrap.has-before::before,
 .mobile-module-rail-wrap.has-more::after { opacity:.96; }
-.mobile-module-rail { display:flex; gap:5px; overflow-x:auto; overflow-y:hidden; padding:0 18px 1px 0; scrollbar-width:none; scroll-snap-type:x proximity; }
+.mobile-module-rail { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; overflow:visible; padding:0; scrollbar-width:none; }
 .mobile-module-rail::-webkit-scrollbar { display:none; }
-.mobile-nav-btn { flex:0 0 70px; min-height:50px; border:1px solid transparent; border-radius:8px; background:transparent; color:var(--text2); font-size:10px; font-weight:800; display:flex; flex-direction:column; gap:3px; align-items:center; justify-content:center; scroll-snap-align:start; }
-.mobile-nav-btn span { font-size:17px; line-height:1; }
+.mobile-nav-btn { min-width:0; min-height:52px; border:1px solid transparent; border-radius:10px; background:transparent; color:var(--text2); font-size:11px; font-weight:850; display:flex; flex-direction:column; gap:4px; align-items:center; justify-content:center; }
+.mobile-nav-btn span { font-size:18px; line-height:1; }
 .mobile-nav-btn.active { color:var(--accent); background:var(--accent-bg); border-color:var(--accent-bg2); }
 @media (max-width:380px){
-    .mobile-nav-btn { flex-basis:66px; font-size:9px; }
-    .mobile-module-rail { gap:4px; padding-right:16px; }
+    .mobile-nav-btn { font-size:10px; }
+    .mobile-module-rail { gap:4px; }
 }
 .mobile-home-btn { width:100%; min-height:42px; margin:0 0 10px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); display:flex; align-items:center; justify-content:center; gap:8px; font-size:14px; font-weight:900; }
 .mobile-home-btn:active { transform:translateY(1px); }
@@ -928,6 +928,13 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .mobile-home-lead .mobile-action-icon { background:var(--accent); color:#fff; }
 .mobile-home-action-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px; }
 .mobile-home-action-grid .mobile-primary-action { min-height:86px; margin:0; align-items:flex-start; padding:12px; }
+.mobile-more-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
+.mobile-more-tile { min-height:92px; border:1px solid var(--border); border-radius:10px; background:var(--surface); color:var(--text); padding:12px; display:flex; flex-direction:column; align-items:flex-start; justify-content:space-between; gap:8px; text-align:left; }
+.mobile-more-tile:active { transform:translateY(1px); }
+.mobile-more-tile .ic { width:34px; height:34px; border-radius:9px; background:var(--accent-bg); color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:900; }
+.mobile-more-tile > span:not(.ic) { display:flex; flex-direction:column; gap:4px; min-width:0; }
+.mobile-more-tile .t { display:block; font-size:14px; font-weight:900; line-height:1.2; }
+.mobile-more-tile .s { display:block; color:var(--text2); font-size:11px; line-height:1.25; }
 .mobile-home-action-grid .mobile-action-icon { width:34px; height:34px; font-size:17px; border-radius:8px; }
 .mobile-home-action-grid .mobile-action-title { font-size:14px; }
 .mobile-home-action-grid .mobile-action-sub { font-size:11px; line-height:1.28; }
@@ -1256,27 +1263,12 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
     </div>
     <main class="mobile-main" id="mobile-main"></main>
     <nav class="mobile-bottom-nav" id="mobile-bottom-nav" style="display:none;">
-        <button class="mobile-profile-meter" id="mobile-profile-meter" type="button" onclick="mobileShow('profile')" title="Profile completeness">
-            <span class="mobile-profile-meter-dot"></span>
-            <span class="mobile-profile-meter-label">Profile</span>
-            <span class="mobile-profile-meter-track"><span class="mobile-profile-meter-fill" id="mobile-profile-meter-fill"></span></span>
-            <span class="mobile-profile-meter-value" id="mobile-profile-meter-value">0%</span>
-        </button>
-        <div class="mobile-module-rail-wrap has-more" id="mobile-module-rail-wrap">
+        <div class="mobile-module-rail-wrap" id="mobile-module-rail-wrap">
         <div class="mobile-module-rail" id="mobile-module-rail" onscroll="mobileUpdateModuleRailHint()">
-            <button class="mobile-nav-btn active" type="button" data-mview="docs" onclick="mobileShow('docs')"><span>&#9633;</span>Documents</button>
-            <button class="mobile-nav-btn" type="button" data-mview="assistant" onclick="mobileShow('assistant')"><span>&#128172;</span>Assistant</button>
-            <button class="mobile-nav-btn" type="button" data-mview="experience" onclick="mobileShow('experience')"><span>&#9873;&#65038;</span>Experience</button>
-            <button class="mobile-nav-btn" type="button" data-mview="cv" onclick="mobileShow('cv')"><span>CV</span>CV</button>
-            <button class="mobile-nav-btn" type="button" data-mview="dispatch" onclick="mobileShow('dispatch')"><span>&#9993;&#65038;</span>Mailings</button>
-            <button class="mobile-nav-btn" type="button" data-mview="jobs" onclick="mobileShow('jobs')"><span>J</span>Jobs</button>
-            <button class="mobile-nav-btn" type="button" data-mview="information" onclick="mobileShow('information')"><span>i</span>Info</button>
-            <button class="mobile-nav-btn" type="button" data-mview="vessels" onclick="mobileShow('vessels')"><span>&#9872;&#65038;</span>Vessels</button>
-
-            <button class="mobile-nav-btn" type="button" data-mview="myvessel" onclick="mobileShow('myvessel')"><span>&#9875;&#65038;</span>Моё судно</button>
-
-            <button class="mobile-nav-btn" type="button" data-mview="apps" onclick="mobileShow('apps')"><span>&#9638;</span>Apps</button>
-
+            <button class="mobile-nav-btn active" type="button" data-mview="home" data-qa="bottom-nav-home" onclick="mobileShow('home')"><span>&#8962;</span>Дом</button>
+            <button class="mobile-nav-btn" type="button" data-mview="docs" data-qa="bottom-nav-workspace" onclick="mobileShow('docs')"><span>&#128451;</span>Vault</button>
+            <button class="mobile-nav-btn" type="button" data-mview="apps" data-qa="bottom-nav-apps" onclick="mobileShow('apps')"><span>&#9638;</span>Apps</button>
+            <button class="mobile-nav-btn" type="button" data-mview="more" data-qa="bottom-nav-more" onclick="mobileShow('more')"><span>&#8942;</span>Ещё</button>
         </div>
         </div>
     </nav>
@@ -2995,9 +2987,8 @@ function mobileUpdateModuleRailHint(){
     var rail=document.getElementById('mobile-module-rail');
     var wrap=document.getElementById('mobile-module-rail-wrap');
     if(!rail||!wrap)return;
-    var max=Math.max(0,rail.scrollWidth-rail.clientWidth);
-    wrap.classList.toggle('has-before',max>2&&rail.scrollLeft>2);
-    wrap.classList.toggle('has-more',max>2&&rail.scrollLeft<max-2);
+    wrap.classList.remove('has-before');
+    wrap.classList.remove('has-more');
 }
 function mobileSyncModuleRail(){
     var rail=document.getElementById('mobile-module-rail');
@@ -3021,7 +3012,10 @@ function mobileSetBottomNav(showNav){
     document.querySelectorAll('.mobile-nav-btn').forEach(function(btn){
         var v=btn.getAttribute('data-mview');
         var docViews=['docs','doc','add','pdf'];
-        var active=(mobileView===v)||(v==='docs'&&docViews.indexOf(mobileView)>=0);
+        var moreViews=['profile','assistant','experience','cv','dispatch','jobs','information','vessels','myvessel','more'];
+        var active=(mobileView===v)
+            ||(v==='docs'&&docViews.indexOf(mobileView)>=0)
+            ||(v==='more'&&moreViews.indexOf(mobileView)>=0);
         btn.classList.toggle('active',active);
     });
     if(showNav){
@@ -3037,7 +3031,7 @@ function mobileShouldShowHomeButton(){
     if(!shouldUseMobileShell())return false;
     if(mobileView==='home')return false;
     if(mobileView==='dispatch')return false;
-    return ['docs','doc','add','pdf','profile','experience','cv','jobs','information','vessels','apps','assistant'].indexOf(mobileView)>=0;
+    return ['docs','doc','add','pdf','profile','experience','cv','jobs','information','vessels','myvessel','apps','assistant','more'].indexOf(mobileView)>=0;
 }
 function mobileHomeButtonHtml(){
     var ru=getUiLang()==='ru';
@@ -3601,6 +3595,7 @@ function mobileScrollMainTop(){
     try{window.scrollTo(0,0);}catch(e){}
 }
 function mobileShow(view){
+    if(view==='settings'){ openSettings(); return; }
     mobileView=view||'home';
     if(mobileView==='add'&&mobileAddMode!=='attach_single'&&mobileAddMode!=='attach_pdf')mobileAddMode='choose';
     if(mobileView==='dispatch')mobileDispatchStep='choose';
@@ -5464,6 +5459,8 @@ function renderMobileShell(){
 
     if(mobileView==='apps')return renderMobileApps();
 
+    if(mobileView==='more')return renderMobileMore();
+
     if(mobileView==='assistant')return renderMobileAssistant();
     if(mobileView==='doc')return renderMobileDoc();
     if(mobileView==='pdf')return renderMobilePdfBuilder();
@@ -5523,6 +5520,29 @@ function renderMobileHome(){
             h+='<button class="btn btn-outline" style="width:100%;margin-top:2px;" onclick="mobileShow(\'docs\')">'+mobileEsc(ru?'Все документы':'All documents')+'</button>';
         }
     }
+    mobileMainHtml(h);
+}
+function mobileMoreTile(icon,title,sub,view){
+    return '<button class="mobile-more-tile" type="button" onclick="mobileShow(\''+view+'\')">'
+        + '<span class="ic">'+icon+'</span>'
+        + '<span><span class="t">'+mobileEsc(title)+'</span><span class="s">'+mobileEsc(sub)+'</span></span></button>';
+}
+function renderMobileMore(){
+    var ru=getUiLang()==='ru';
+    var h='<div class="mobile-card mobile-home-lead"><div class="mobile-card-title">'+mobileEsc(ru?'Ещё':'More')+'</div>'
+        + '<div class="mobile-card-sub">'+mobileEsc(ru?'Все разделы Скипи Моряк остаются здесь. Нижнее меню показывает только основные точки: Дом, Vault, Apps, Ещё.':'All Skipi Seafarer sections stay here. The bottom rail keeps only the primary destinations: Home, Vault, Apps, More.')+'</div></div>';
+    h+='<div class="mobile-more-grid">';
+    h+=mobileMoreTile('●',ru?'Профиль':'Profile',ru?'Готовность и данные моряка':'Readiness and seafarer data','profile');
+    h+=mobileMoreTile('💬','Assistant',ru?'Помощник по профилю':'Profile assistant','assistant');
+    h+=mobileMoreTile('⚑',ru?'Опыт':'Experience',ru?'Морской опыт и суда':'Sea service and vessels','experience');
+    h+=mobileMoreTile('CV','CV',ru?'Что увидит получатель':'What the recipient sees','cv');
+    h+=mobileMoreTile('✉',ru?'Рассылки':'Mailings',ru?'Email или поделиться':'Email or share','dispatch');
+    h+=mobileMoreTile('J',ru?'Вакансии':'Jobs',ru?'Готовность и офферы':'Readiness and offers','jobs');
+    h+=mobileMoreTile('i','Info',ru?'Индексы и справка':'Indexes and references','information');
+    h+=mobileMoreTile('⚐',ru?'База судов':'Vessels',ru?'Поиск судов и отзывы':'Vessel search and reviews','vessels');
+    h+=mobileMoreTile('⚓',ru?'Моё судно':'My Vessel',ru?'Связь с текущим судном':'Current vessel link','myvessel');
+    h+=mobileMoreTile('⚙',ru?'Настройки':'Settings',ru?'Vault, профиль и внешний вид':'Vault, profile and look','settings');
+    h+='</div>';
     mobileMainHtml(h);
 }
 function renderMobileDocs(){
