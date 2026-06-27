@@ -21,8 +21,14 @@ window.SKIPI_REMOTE_CONFIG = {
   host: { id: 'seafarer', version: '0.4.163' },
 
   // First-party utility policy (v1). Plugins exceeding this are rejected.
+  // The new permissions back the «Моё судно» host-mediated capability skeleton
+  // (vessel/crew context, media pick, workflow submit). DEFAULT-DENIED: a
+  // permission only applies if the plugin DECLARES it AND it is on this
+  // allowlist — and even then every call is host-mediated + audited. The plugin
+  // still gets NO raw network (capabilities.network stays 'none') and NO raw
+  // files; upload is host-mediated only and currently a not-connected stub.
   policy: {
-    maxPermissions: ['local_storage', 'audio_alert'],
+    maxPermissions: ['local_storage', 'audio_alert', 'vessel.context.read', 'crew.membership.read', 'media.pick', 'workflow.submit'],
     requireCapabilities: { network: 'none', documents: 'none', account: 'none', analytics: 'none', server_upload: false }
   },
 
