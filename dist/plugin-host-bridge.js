@@ -38,9 +38,11 @@
   function injectStyle(css) { var s = document.createElement('style'); s.nonce = nonce; s.textContent = css || ''; document.head.appendChild(s); }
   function injectScript(js) { var s = document.createElement('script'); s.nonce = nonce; s.textContent = js; document.head.appendChild(s); }
 
-  function proxy(perms) {
+  function proxy(perms, hostId) {
     var has = function (p) { return perms.indexOf(p) >= 0; };
     return {
+      // Non-secret host identity (so the plugin can resolve its role). No PII.
+      host: { id: hostId || null },
       theme: { get: function () { return theme; }, subscribe: function (cb) { themeSubs.push(cb); return function () { themeSubs = themeSubs.filter(function (f) { return f !== cb; }); }; } },
       storage: {
         get: function (k, cb) { if (!has('local_storage')) { if (cb) cb(null); return; } var id = ++seq; pending[id] = cb || function () {}; send({ type: 'storage.get', id: id, key: k }); },
@@ -70,7 +72,7 @@
         try { injectStyle(m.css); injectScript(m.js); } catch (e) { send({ type: 'error', message: 'inject: ' + e.message }); return; }
         var reg = window.SkipiPlugins && window.SkipiPlugins[slug];
         if (!reg || typeof reg.mount !== 'function') { send({ type: 'error', message: 'plugin code did not register (CSP block?)' }); return; }
-        try { reg.mount(document.body, proxy(m.permissions || [])); }
+        try { reg.mount(document.body, proxy(m.permissions || [], m.hostId)); }
         catch (e) { send({ type: 'error', message: 'mount: ' + e.message }); return; }
         send({ type: 'mounted', height: document.body.scrollHeight, selfcheck: sc });
         try { var ro = new ResizeObserver(function () { send({ type: 'resize', height: document.body.scrollHeight }); }); ro.observe(document.body); } catch (e) {}
@@ -120,6 +122,7 @@
     var store = (cfg.host && cfg.host.storage) || defaultStore();
     var themeApi = (cfg.host && cfg.host.theme) || { get: function () { return 'dark'; } };
     var nav = (cfg.host && cfg.host.navigation) || { setTitle: function () {}, closePlugin: function () {} };
+    var hostId = (cfg.host && cfg.host.id) || null;   // non-secret host app id (e.g. 'seafarer')
     var active = null;   // single active plugin frame
     var audit = [];
     var dbg = [];
@@ -127,7 +130,7 @@
     function granted(p) { return active && active.perms.indexOf(p) >= 0; }
     function toFrame(msg) { try { active.iframe.contentWindow.postMessage(Object.assign({ ch: 'skipi-plugin', v: 1, token: active.token }, msg), '*'); } catch (e) {} }
     function respond(id, value) { toFrame({ type: 'storage.result', id: id, value: value }); }
-    function sendInit() { toFrame({ type: 'init', slug: active.slug, manifest: active.manifest, css: active.css, js: active.js, theme: themeApi.get(), permissions: active.perms, nonce: active.nonce }); }
+    function sendInit() { toFrame({ type: 'init', slug: active.slug, manifest: active.manifest, css: active.css, js: active.js, theme: themeApi.get(), permissions: active.perms, nonce: active.nonce, hostId: hostId }); }
 
     function onMessage(ev) {
       var md = ev.data;
