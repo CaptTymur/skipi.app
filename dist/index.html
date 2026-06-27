@@ -1238,6 +1238,15 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
 .mv-list{margin:6px 0 0;padding-left:18px;}
 .mv-list li{font-size:13px;color:var(--text);line-height:1.5;}
 .mv-status-pill{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:#fff;background:#1f7a4d;border-radius:999px;padding:3px 10px;white-space:nowrap;}
+.spc-dev-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;}
+.spc-dev-grid .mv-input{margin-top:0;}
+.spc-dev-textarea{min-height:74px;resize:vertical;line-height:1.35;}
+.spc-dev-picked{display:flex;align-items:center;gap:10px;margin-top:12px;border:1px solid var(--border);border-radius:10px;padding:10px;background:var(--surface);}
+.spc-dev-thumb{width:54px;height:54px;flex:0 0 54px;border-radius:8px;background:rgba(0,69,100,.08);object-fit:cover;border:1px solid rgba(0,69,100,.16);}
+.spc-dev-file{min-width:0;font-size:12px;color:var(--text2);line-height:1.35;word-break:break-word;}
+.spc-dev-result{margin-top:12px;border:1px solid rgba(39,174,96,.35);background:rgba(39,174,96,.08);border-radius:10px;padding:11px 12px;font-size:12px;color:var(--text);line-height:1.45;}
+.spc-dev-error{margin-top:12px;border:1px solid rgba(231,76,60,.35);background:rgba(231,76,60,.08);border-radius:10px;padding:11px 12px;font-size:12px;color:var(--red);line-height:1.45;}
+@media (max-width:560px){ .spc-dev-grid{grid-template-columns:1fr;} }
 </style>
 </head>
 <body>
@@ -1281,6 +1290,7 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
         </div>
     </nav>
     <input id="mobile-file-input" type="file" accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png" style="display:none;" onchange="mobileHandleFilePicked(this.files)">
+    <input id="spc-dev-photo-input" type="file" accept="image/*,.jpg,.jpeg,.png,.webp" capture="environment" style="display:none;" onchange="spcDevHandlePhotoPicked(this.files)">
 </div>
 
 <!-- Top horizontal modules bar. The OS titlebar now carries the vault
@@ -3037,7 +3047,7 @@ function mobileShouldShowHomeButton(){
     if(!shouldUseMobileShell())return false;
     if(mobileView==='home')return false;
     if(mobileView==='dispatch')return false;
-    return ['docs','doc','add','pdf','profile','experience','cv','jobs','information','vessels','apps','assistant'].indexOf(mobileView)>=0;
+    return ['docs','doc','add','pdf','profile','experience','cv','jobs','information','vessels','myvessel','apps','assistant'].indexOf(mobileView)>=0;
 }
 function mobileHomeButtonHtml(){
     var ru=getUiLang()==='ru';
@@ -8097,6 +8107,220 @@ function myVesselGridHtml(ru){
     h+='<div class="mv-grid-note">'+esc(ru?'Плагины откроются после присоединения к экипажу судна. Загрузка фото и отправка на судно появятся после backend — сейчас ничего не отправляется.':'Plugins unlock after you join a vessel crew. Photo upload and sending to the vessel appear after backend — nothing is sent now.')+'</div>';
     return h;
 }
+var SPC_DEV_SENDER_GATE_KEY='skipi.spcDevSender';
+var SPC_DEV_SENDER_MAX_BYTES=12*1024*1024;
+var spcDevSender={file:null,previewUrl:'',sending:false,result:null,error:'',draft:{}};
+
+function spcDevSenderEnabled(){
+    try{
+        if(window.SKIPI_SPC_DEV_SENDER===true)return true;
+        var v=String(localStorage.getItem(SPC_DEV_SENDER_GATE_KEY)||'').toLowerCase();
+        return v==='1'||v==='true'||v==='on'||v==='yes';
+    }catch(e){return false;}
+}
+function spcDevStored(key, fallback){
+    try{var v=localStorage.getItem('spc.dev.'+key); return v==null?fallback:v;}catch(e){return fallback;}
+}
+function spcDevStoreConfig(cfg){
+    try{
+        localStorage.setItem('spc.dev.apiBase', cfg.apiBase||'');
+        localStorage.setItem('spc.dev.imo', cfg.imo||'');
+        localStorage.setItem('spc.dev.vesselName', cfg.vesselName||'');
+        localStorage.setItem('spc.dev.title', cfg.title||'');
+        localStorage.setItem('spc.dev.location', cfg.location||'');
+        localStorage.setItem('spc.dev.caption', cfg.caption||'');
+    }catch(e){}
+}
+function spcDevMembershipDefaults(){
+    var m=myVessel.membership||{};
+    return {
+        imo: m.vessel_imo?String(m.vessel_imo):'',
+        vesselName: m.vessel_name||''
+    };
+}
+function spcDevDefaults(){
+    var mem=spcDevMembershipDefaults(), d=spcDevSender.draft||{};
+    return {
+        apiBase: d.apiBase || spcDevStored('apiBase','http://127.0.0.1:8817'),
+        token: d.token || '',
+        imo: d.imo || spcDevStored('imo',mem.imo||''),
+        vesselName: d.vesselName || spcDevStored('vesselName',mem.vesselName||''),
+        title: d.title || spcDevStored('title','Seafarer photo report'),
+        location: d.location || spcDevStored('location',''),
+        caption: d.caption || spcDevStored('caption','')
+    };
+}
+function spcDevVal(id, fallback){
+    var el=document.getElementById(id);
+    return el?String(el.value||'').trim():(fallback||'');
+}
+function spcDevReadForm(){
+    var d=spcDevDefaults();
+    return {
+        apiBase: spcDevVal('spc-dev-api',d.apiBase),
+        token: spcDevVal('spc-dev-token',d.token),
+        imo: spcDevVal('spc-dev-imo',d.imo).replace(/\D/g,'').slice(0,7),
+        vesselName: spcDevVal('spc-dev-vessel',d.vesselName),
+        title: spcDevVal('spc-dev-title',d.title),
+        location: spcDevVal('spc-dev-location',d.location),
+        caption: spcDevVal('spc-dev-caption',d.caption)
+    };
+}
+function spcDevRememberDraft(){
+    spcDevSender.draft=spcDevReadForm();
+    spcDevStoreConfig(spcDevSender.draft);
+}
+function spcDevShortId(id){
+    id=String(id||'');
+    return id.length>12?id.slice(0,8)+'…'+id.slice(-4):id;
+}
+function spcDevSafeErr(msg){
+    return String(msg||'Upload failed')
+        .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/g,'Bearer [redacted]')
+        .replace(/token[=: ]+[A-Za-z0-9._~+/=-]{8,}/ig,'token=[redacted]')
+        .slice(0,220);
+}
+function spcDevValidate(cfg,file){
+    var base=normalizeApiBase(cfg.apiBase||'');
+    if(!isLoopbackApiBase(base))return {ok:false,state:'local_only',message:'Dev sender accepts only localhost / 127.0.0.1 API base.'};
+    if(!cfg.token)return {ok:false,state:'missing_token',message:'Enter the local reports bearer token.'};
+    if(!/^\d{7}$/.test(cfg.imo||''))return {ok:false,state:'bad_imo',message:'Enter a 7-digit vessel IMO.'};
+    if(!file)return {ok:false,state:'no_file',message:'Choose or take one photo first.'};
+    if(file.size>SPC_DEV_SENDER_MAX_BYTES)return {ok:false,state:'too_large',message:'Photo is too large for this dev sender (12 MB max).'};
+    if(file.type&&String(file.type).indexOf('image/')!==0)return {ok:false,state:'not_image',message:'Choose an image file.'};
+    return {ok:true,base:base};
+}
+function spcDevReportPayload(cfg,file){
+    return {
+        imo: Number(cfg.imo),
+        vessel_name: cfg.vesselName||('IMO '+cfg.imo),
+        work_type: 'ship-photo-collection',
+        title: cfg.title||'Seafarer photo report',
+        location: cfg.location||null,
+        performed_by: 'Skipi Seafarer dev sender',
+        notes: cfg.caption||null,
+        channel: 'online',
+        fields: {
+            source: 'ship-photo-collection-seafarer-dev',
+            file_name: file&&file.name||'photo',
+            file_size: file&&file.size||0
+        }
+    };
+}
+async function spcDevFetchJson(base,path,options){
+    var r=await fetchWithTimeout(base+path,options,15000);
+    var data=null;
+    try{data=await r.json();}catch(e){}
+    if(!r.ok){
+        var detail=(data&&(data.detail||data.message))||('HTTP '+r.status);
+        throw new Error(detail);
+    }
+    return data||{};
+}
+async function spcDevSend(cfg,file){
+    var gate=spcDevValidate(cfg,file);
+    if(!gate.ok)return {ok:false,state:gate.state,message:gate.message};
+    var headers={'Authorization':'Bearer '+cfg.token};
+    var report=await spcDevFetchJson(gate.base,'/api/reports',{
+        method:'POST',
+        headers:Object.assign({'Content-Type':'application/json'},headers),
+        body:JSON.stringify(spcDevReportPayload(cfg,file))
+    });
+    var reportId=report&&report.id;
+    if(!reportId)throw new Error('backend returned no report id');
+    var fd=new FormData();
+    fd.append('file',file,file.name||'photo.jpg');
+    fd.append('phase','after');
+    if(cfg.location)fd.append('location',cfg.location);
+    if(cfg.caption)fd.append('caption',cfg.caption);
+    var photo=await spcDevFetchJson(gate.base,'/api/reports/'+encodeURIComponent(reportId)+'/photos',{
+        method:'POST',
+        headers:headers,
+        body:fd
+    });
+    var inboxVerified=false;
+    try{
+        var listed=await spcDevFetchJson(gate.base,'/api/reports?imo='+encodeURIComponent(cfg.imo)+'&limit=50',{
+            method:'GET',
+            headers:headers
+        });
+        inboxVerified=!!((listed.items||[]).find(function(x){return x&&x.id===reportId;}));
+    }catch(e){}
+    return {ok:true,state:'uploaded',report:{id:reportId,status:report.status||'submitted'},photo:{id:photo.id||'',storage_url:photo.storage_url||''},inboxVerified:inboxVerified};
+}
+function spcDevPickPhoto(){
+    spcDevRememberDraft();
+    var input=document.getElementById('spc-dev-photo-input');
+    if(!input){spcDevSender.error='Photo picker is unavailable in this shell.'; myVesselRerender(); return;}
+    input.value='';
+    input.click();
+}
+function spcDevHandlePhotoPicked(files){
+    spcDevRememberDraft();
+    var file=files&&files[0];
+    if(!file)return;
+    if(spcDevSender.previewUrl){try{URL.revokeObjectURL(spcDevSender.previewUrl);}catch(e){}}
+    spcDevSender.file=file;
+    spcDevSender.previewUrl='';
+    try{if(window.URL&&URL.createObjectURL)spcDevSender.previewUrl=URL.createObjectURL(file);}catch(e){}
+    spcDevSender.result=null;
+    spcDevSender.error='';
+    myVesselRerender();
+}
+async function spcDevSubmit(){
+    spcDevRememberDraft();
+    var cfg=spcDevReadForm(), file=spcDevSender.file;
+    spcDevStoreConfig(cfg);
+    var gate=spcDevValidate(cfg,file);
+    if(!gate.ok){spcDevSender.error=gate.message;spcDevSender.result=null;myVesselRerender();return;}
+    spcDevSender.sending=true; spcDevSender.error=''; spcDevSender.result=null; myVesselRerender();
+    try{
+        spcDevSender.result=await spcDevSend(cfg,file);
+        spcDevSender.error='';
+        showToast('Photo uploaded to local vessel inbox','success');
+    }catch(e){
+        spcDevSender.result=null;
+        spcDevSender.error=spcDevSafeErr(e&&e.message?e.message:e);
+        showToast('Photo upload failed','error');
+    }finally{
+        spcDevSender.sending=false;
+        myVesselRerender();
+    }
+}
+function spcDevSenderCardHtml(ru){
+    if(!spcDevSenderEnabled())return '';
+    var d=spcDevDefaults(), f=spcDevSender.file, res=spcDevSender.result;
+    var h='<div class="mv-card" data-qa="spc-dev-sender">';
+    h+='<div class="mv-row" style="align-items:center;justify-content:space-between;margin-top:0;"><div><div class="mv-grid-title" style="margin-bottom:6px;">Ship Photo Collection · local dev sender</div><div class="mv-title" style="font-size:18px;margin-bottom:0;">'+esc(ru?'Фото на судно':'Send photo to vessel')+'</div></div><span class="mobile-pill warn">'+esc(ru?'Локальный тест':'Local dev')+'</span></div>';
+    h+='<div class="mv-sub" style="margin-top:8px;">'+esc(ru?'Отправляет одну явно выбранную фотографию в локальный backend /api/reports. Только localhost/127.0.0.1; production и staging-каталог не трогаются.':'Sends one explicitly selected photo to a local /api/reports backend. Localhost/127.0.0.1 only; production and the staging catalog are untouched.')+'</div>';
+    h+='<div class="spc-dev-grid">';
+    h+='<input id="spc-dev-api" class="mv-input" value="'+esc(d.apiBase)+'" placeholder="http://127.0.0.1:8817" onchange="spcDevRememberDraft()">';
+    h+='<input id="spc-dev-token" class="mv-input" type="password" value="'+esc(d.token)+'" placeholder="local bearer token" onchange="spcDevRememberDraft()">';
+    h+='<input id="spc-dev-imo" class="mv-input" inputmode="numeric" maxlength="7" value="'+esc(d.imo)+'" placeholder="Vessel IMO" onchange="spcDevRememberDraft()">';
+    h+='<input id="spc-dev-vessel" class="mv-input" value="'+esc(d.vesselName)+'" placeholder="Vessel name" onchange="spcDevRememberDraft()">';
+    h+='<input id="spc-dev-title" class="mv-input" value="'+esc(d.title)+'" placeholder="Report title" onchange="spcDevRememberDraft()">';
+    h+='<input id="spc-dev-location" class="mv-input" value="'+esc(d.location)+'" placeholder="Location on vessel" onchange="spcDevRememberDraft()">';
+    h+='</div>';
+    h+='<textarea id="spc-dev-caption" class="mv-input spc-dev-textarea" placeholder="'+esc(ru?'Подпись к фото':'Photo caption')+'" onchange="spcDevRememberDraft()">'+esc(d.caption)+'</textarea>';
+    if(f){
+        h+='<div class="spc-dev-picked">';
+        if(spcDevSender.previewUrl)h+='<img class="spc-dev-thumb" src="'+escAttr(spcDevSender.previewUrl)+'" alt="">';
+        else h+='<div class="spc-dev-thumb"></div>';
+        h+='<div class="spc-dev-file"><strong>'+esc(f.name||'photo')+'</strong><br>'+esc(formatBytes(f.size)||'')+'</div></div>';
+    }
+    h+='<div class="mv-row"><button class="btn btn-outline mv-btn" type="button" onclick="spcDevPickPhoto()">'+esc(f?(ru?'Выбрать другое фото':'Choose another photo'):(ru?'Выбрать / снять фото':'Choose / take photo'))+'</button>';
+    h+='<button class="btn btn-accent mv-btn" type="button" '+(spcDevSender.sending?'disabled ':'')+'onclick="spcDevSubmit()">'+esc(spcDevSender.sending?(ru?'Отправляю…':'Uploading…'):(ru?'Отправить в On Board':'Send to On Board'))+'</button></div>';
+    h+='<div class="mv-help">'+esc(ru?'Успех показывается только после реального POST report + POST photo. Судовое получение не подделывается: проверка inbox-list отмечается отдельно.':'Success appears only after a real POST report + POST photo. Ship receipt is not faked: inbox-list verification is shown separately.')+'</div>';
+    if(spcDevSender.error)h+='<div class="spc-dev-error">'+esc(spcDevSender.error)+'</div>';
+    if(res&&res.ok){
+        h+='<div class="spc-dev-result"><strong>'+esc(ru?'Backend принял фото':'Backend accepted the photo')+'</strong><br>'
+          +'report '+esc(spcDevShortId(res.report&&res.report.id))+' · photo '+esc(spcDevShortId(res.photo&&res.photo.id))+' · status '+esc((res.report&&res.report.status)||'submitted')+'<br>'
+          +esc(res.inboxVerified?(ru?'Этот report найден в списке inbox по IMO. Обновите On Board receiver.':'This report is visible in the IMO inbox list. Refresh the On Board receiver.'):(ru?'Upload завершён, но list-проверка inbox не подтвердилась. Обновите On Board receiver вручную.':'Upload completed, but inbox list verification did not confirm it. Refresh the On Board receiver manually.'))
+          +'</div>';
+    }
+    h+='</div>';
+    return h;
+}
 function myVesselInnerHtml(){
     var ru=getUiLang()==='ru';
     var st=myVessel.stage, h='';
@@ -8151,6 +8375,7 @@ function myVesselInnerHtml(){
           +'<button class="btn btn-outline mv-btn" onclick="myVesselLeave()">'+esc(ru?'Покинуть судно':'Leave vessel')+'</button></div>';
         h+='</div>';
         h+='<div class="mv-card"><div class="mv-grid-title">'+esc(ru?'Рабочие модули судна':'Vessel workflows')+'</div>'+myVesselGridHtml(ru)+'</div>';
+        h+=spcDevSenderCardHtml(ru);
         return h;
     }
     if(st==='error'){
@@ -8199,6 +8424,7 @@ function myVesselInnerHtml(){
       +'<button class="btn btn-accent mv-btn" onclick="myVesselGo(\'enter\')">'+esc(ru?'Ввести код':'Enter code')+'</button></div>';
     h+='</div>';
     h+='<div class="mv-card"><div class="mv-grid-title">'+esc(ru?'Рабочие модули судна':'Vessel workflows')+'</div>'+myVesselGridHtml(ru)+'</div>';
+    h+=spcDevSenderCardHtml(ru);
     return h;
 }
 function showMyVessel(){
