@@ -108,6 +108,9 @@ console.log('  ✓ required QA hooks are present');
   'Сопряжённые устройства',
   'Приватность / безопасность',
   'Pairing-flow отдельно',
+  'Pairing-flow',
+  'Структура настроек',
+  'backend controls',
 ].forEach((wrong) => assert.equal(body.includes(wrong), false, `${wrong} must not be on root settings menu`));
 console.log('  ✓ non-canonical root sections are absent');
 
