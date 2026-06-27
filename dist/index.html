@@ -5751,8 +5751,9 @@ function identityTrustHtml(data, compact){
         h+='<div class="mobile-summary-row" style="margin-top:12px;"><div><strong>Skipi ID</strong><span>'+mobileEsc(server.public_seafarer_id)+' · '+mobileEsc(server.trust_level||'identity_claimed')+'</span></div><span class="mobile-pill ok">Registered</span></div>';
     }else if(server.claim_status==='possible_duplicate'){
         h+='<div class="mobile-summary-row" style="margin-top:12px;"><div><strong>Server identity</strong><span>'+mobileEsc(server.message||'A matching identity already exists. Recovery or manual merge is required.')+'</span></div><span class="mobile-pill warn">Duplicate</span></div>';
-    }else if(!compact){
-        h+='<div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-accent btn-sm" type="button" onclick="claimSkipiIdentity()">Claim Skipi Seafarer ID</button></div>';
+    }else{
+        var claimLabel=(typeof getUiLang==='function'&&getUiLang()==='ru')?'Создать Skipi ID':'Claim Skipi Seafarer ID';
+        h+='<div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-accent btn-sm" type="button" onclick="claimSkipiIdentity()">'+mobileEsc(claimLabel)+'</button></div>';
     }
     if(server.message&&server.claim_status!=='possible_duplicate'&&!compact){
         h+='<div class="mobile-card-sub" style="margin-top:8px;">'+mobileEsc(server.message)+'</div>';
@@ -8411,6 +8412,18 @@ function myVesselInnerHtml(){
           +'<button class="btn btn-outline mv-btn" onclick="myVesselGo(\'home\')">'+esc(ru?'Назад':'Back')+'</button></div></div>';
         return h;
     }
+    if(st==='identity_required'){
+        h+='<div class="mv-card"><div class="mv-title">'+esc(ru?'Нужен Skipi ID':'Skipi ID required')+'</div>';
+        h+='<div class="mv-note">'+esc(ru
+            ?'Профиль заполнен локально, но публичный Skipi ID ещё не создан на сервере. Создайте Skipi ID, затем Скипи Моряк продолжит присоединение к экипажу этого судна.'
+            :'Your profile is filled locally, but the public Skipi ID has not been created on the server yet. Claim Skipi ID, then Skipi Seafarer will continue joining this vessel crew.')+'</div>';
+        h+='<div class="mv-help">'+esc(ru
+            ?'Перед отправкой будет отдельное подтверждение: имя, фамилия и дата рождения используются сервером только для приватной проверки дубликатов. Документы и Vault не отправляются.'
+            :'You will confirm before sending: first name, surname and date of birth are used only for private duplicate checking. Documents and the Vault are not sent.')+'</div>';
+        h+='<div class="mv-row"><button class="btn btn-accent mv-btn" onclick="myVesselClaimIdentityAndContinue()">'+esc(ru?'Создать Skipi ID и продолжить':'Claim Skipi ID and continue')+'</button>'
+          +'<button class="btn btn-outline mv-btn" onclick="myVesselGo(\'enter\')">'+esc(ru?'Ввести код заново':'Re-enter code')+'</button></div></div>';
+        return h;
+    }
     if(st==='joined'){
         var m=myVessel.membership||{};
         h+='<div class="mv-card">';
@@ -8573,9 +8586,7 @@ async function myVesselAccept(){
     if(!code){ myVesselBlock(ru?'Код потерян, начните заново. Ничего не присоединено.':'Code lost, start over. Nothing joined.'); return; }
     var profile=null; try{ profile=await invoke('get_matchable_profile'); }catch(e){}
     var psid=profile&&profile.public_seafarer_id;
-    if(!psid){ myVesselBlock(ru
-        ?'Чтобы присоединиться к экипажу, сначала создайте морскую личность Skipi (Skipi ID) в профиле. Ничего не присоединено.'
-        :'To join a crew, first create your Skipi identity (Skipi ID) in the profile. Nothing was joined.'); return; }
+    if(!psid){ myVessel.stage='identity_required'; myVessel.error=''; myVesselRerender(); return; }
     myVessel.stage='joining'; myVessel.error=''; myVesselRerender();
     // Ensure the vault's Ed25519 identity pubkey is registered server-side, so
     // the accept signature can be verified. Safe + idempotent.
@@ -8609,6 +8620,19 @@ async function myVesselAccept(){
         else msg=(ru?'Сервер вернул ошибку: ':'Server error: ')+r.status;
         myVesselBlock(msg);
     }catch(e){ myVesselBlock(ru?'Сервер недоступен. Ничего не присоединено.':'Server unavailable. Nothing was joined.'); }
+}
+async function myVesselClaimIdentityAndContinue(){
+    var ru=getUiLang()==='ru';
+    var result=await claimSkipiIdentityWithConsent();
+    if(!result)return;
+    var profile=null; try{ profile=await invoke('get_matchable_profile'); }catch(e){}
+    if(!(profile&&profile.public_seafarer_id)){
+        myVesselBlock(ru
+            ?'Skipi ID не создан. Если сервер сообщил о дубликате, используйте recovery key или ручное восстановление личности. Ничего не присоединено.'
+            :'Skipi ID was not created. If the server reported a duplicate, use the recovery key or manual identity recovery. Nothing was joined.');
+        return;
+    }
+    await myVesselAccept();
 }
 function myVesselRefreshStatus(){
     // No seafarer-side membership-status endpoint exists yet → re-render from the
@@ -16002,11 +16026,17 @@ async function loadIdentityTrustStatus(){
     }
 }
 
-async function claimSkipiIdentity(){
-    var ok=await uiConfirm('Claim a Skipi Seafarer ID for this profile?\n\n'+tr('app.name')+' sends first name, surname and date of birth to the server only to compute a private duplicate fingerprint. Raw identity fields are not stored by the server.',{confirmLabel:'Claim Skipi Seafarer ID'});
+async function claimSkipiIdentityWithConsent(){
+    var ru=(typeof getUiLang==='function'&&getUiLang()==='ru');
+    var ok=await uiConfirm(
+        ru
+            ? 'Создать Skipi ID для этого профиля?\n\nСкипи Моряк отправит имя, фамилию и дату рождения на сервер только для приватного duplicate fingerprint. Raw identity-поля сервер не хранит.'
+            : 'Claim a Skipi Seafarer ID for this profile?\n\n'+tr('app.name')+' sends first name, surname and date of birth to the server only to compute a private duplicate fingerprint. Raw identity fields are not stored by the server.',
+        {confirmLabel:ru?'Создать Skipi ID':'Claim Skipi Seafarer ID'}
+    );
     if(!ok)return;
     try{
-        showToast('Claiming Skipi ID...','info');
+        showToast(ru?'Создаю Skipi ID...':'Claiming Skipi ID...','info');
         var result=await invoke('claim_seafarer_identity');
         if(result&&result.duplicate){
             showToast(result.message||'Possible duplicate identity found.','error');
@@ -16015,10 +16045,13 @@ async function claimSkipiIdentity(){
         }
         await loadIdentityTrustStatus();
         await mobileRefreshIdentityTrust();
+        return result||{};
     }catch(e){
-        showToast('Could not claim Skipi ID: '+String(e||''),'error');
+        showToast((ru?'Не удалось создать Skipi ID: ':'Could not claim Skipi ID: ')+String(e||''),'error');
+        return null;
     }
 }
+async function claimSkipiIdentity(){ await claimSkipiIdentityWithConsent(); }
 
 async function toggleVaultRecoveryKey(){
     if(!vaultIdentityCache || !vaultIdentityCache.recovery_key){
