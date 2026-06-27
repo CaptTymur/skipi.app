@@ -8572,6 +8572,13 @@ function showApps(){
     else content.innerHTML=pluginListHtml();
     show('scr-content'); updateTabs('Apps');
     if(pluginHostState.openId) setTimeout(function(){ pluginMountInto(pluginHostState.openId); },0);
+    // when the dev gate is ON, fetch remote catalog names once, then refresh the
+    // list so the staging tile shows its real name (degrades to the slug meanwhile).
+    if(!pluginHostState.openId && !pluginHostState.selectedId && remoteStagingOn() && !__remoteCatalogCache){
+        remoteLoadCatalogOnce(function(){
+            if(!pluginHostState.openId && !pluginHostState.selectedId){ var c=document.getElementById('scr-content'); if(c) c.innerHTML=pluginListHtml(); }
+        });
+    }
 }
 function pluginBadge(id){
     var p=pluginById(id);
@@ -8598,8 +8605,69 @@ function pluginListHtml(){
         items.forEach(function(p){ h+=pluginTileHtml(p); });
         h+='</div>';
     });
+    h+=remoteStagingSectionHtml();   // only renders when the dev/staging gate is ON
     h+='</div>';
     return h;
+}
+// ---- remote/staging plugin entry point (visible ONLY when the localStorage
+// dev gate FEATURE_REMOTE_PLUGIN_DELIVERY is ON; nothing here on default OFF) ----
+var __remoteCatalogCache = null;
+function remoteStagingOn(){ return !!window.FEATURE_REMOTE_PLUGIN_DELIVERY; }
+function remoteStagingSlugs(){
+    if(!remoteStagingOn()) return [];
+    var cfg=window.SKIPI_REMOTE_CONFIG||{}, slugs=cfg.remoteSlugs||[];
+    return slugs.filter(function(s){ return !pluginById(s); }); // only NON-bundled remote slugs
+}
+function remoteCatalogName(slug){
+    if(__remoteCatalogCache){ var e=__remoteCatalogCache.find(function(p){return p.slug===slug;}); if(e&&(e.name||e.title)) return e.name||e.title; }
+    return null;
+}
+function remoteEntryFor(slug){
+    return { id:slug, name:remoteCatalogName(slug)||slug, icon:'📷',
+             short:'Remote · staging · transport not connected' };
+}
+function remoteLoadCatalogOnce(cb){
+    if(__remoteCatalogCache){ cb&&cb(); return; }
+    if(typeof window.SkipiRemoteList!=='function'){ __remoteCatalogCache=[]; cb&&cb(); return; }
+    window.SkipiRemoteList().then(function(list){ __remoteCatalogCache=list||[]; cb&&cb(); }, function(){ __remoteCatalogCache=[]; cb&&cb(); });
+}
+function remoteTileHtml(slug){
+    var e=remoteEntryFor(slug);
+    return '<button class="apps-tile" type="button" onclick="remotePluginOpen(\''+jsString(slug)+'\')">'
+        + '<span class="apps-tile-icon">'+e.icon+'</span>'
+        + '<span class="apps-tile-body"><span class="apps-tile-name">'+esc(e.name)+'</span>'
+        + '<span class="apps-tile-sub">'+esc(e.short)+'</span><span class="apps-badge soon">Remote · staging</span></span></button>';
+}
+function remoteStagingSectionHtml(){
+    var slugs=remoteStagingSlugs(); if(!slugs.length) return '';
+    var h='<div class="apps-cat-title">Staging · remote (dev gate)</div>'
+        + '<div class="apps-head-sub" style="margin:-6px 0 8px;">Loaded from the staging catalog via the verified, sandboxed plugin runtime. Dev/staging only — not shown by default.</div>'
+        + '<div class="apps-grid">';
+    slugs.forEach(function(s){ h+=remoteTileHtml(s); });
+    h+='</div>';
+    return h;
+}
+function remotePluginScreenHtml(slug){
+    var e=remoteEntryFor(slug);
+    return '<div class="apps-screen plugin-screen">'
+      + '<div class="plugin-host-bar"><button class="apps-back" type="button" onclick="remotePluginBack()">&larr; '+esc(e.name)+'</button>'
+      + '<span class="plugin-host-title" id="plugin-host-title"></span>'
+      + '<span class="apps-badge soon">Remote · staging</span></div>'
+      + '<div class="apps-safety" style="margin:10px 0;"><b>Remote staging plugin</b> — dev gate only · transport not connected · no photo upload. Signed &amp; sandboxed; no access to your vault.</div>'
+      + '<div class="plugin-host-container" id="plugin-host-container"><div class="plugin-host-loading">Loading…</div></div>'
+      + '</div>';
+}
+function remotePluginOpen(slug){
+    var content=document.getElementById('scr-content'); if(!content) return;
+    content.innerHTML=remotePluginScreenHtml(slug);
+    show('scr-content'); updateTabs('Apps');
+    setTimeout(function(){ try{ pluginMountInto(slug); }catch(e){ logError('remotePlugin.mount',e); } },0);
+}
+function remotePluginBack(){
+    // close the isolated remote frame via the host's single unmount entry, then list.
+    try{ if(window.SkipiPluginHost && typeof window.SkipiPluginHost.unmount==='function') window.SkipiPluginHost.unmount(); }catch(e){}
+    pluginHostState.openId=null; pluginHostState.selectedId=null;
+    showApps();
 }
 function pluginDetailHtml(p){
     if(!p) return pluginListHtml();
