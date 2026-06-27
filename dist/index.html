@@ -8118,6 +8118,15 @@ function spcDevSenderEnabled(){
         return v==='1'||v==='true'||v==='on'||v==='yes';
     }catch(e){return false;}
 }
+function spcDevSenderSurfaceAllowed(){
+    try{
+        if(window.SKIPI_SPC_DEV_MOBILE_TEST===true)return true;
+        return hostPlatform==='android'||hostPlatform==='ios';
+    }catch(e){return false;}
+}
+function spcDevSenderAvailable(){
+    return spcDevSenderSurfaceAllowed()&&spcDevSenderEnabled();
+}
 function spcDevStored(key, fallback){
     try{var v=localStorage.getItem('spc.dev.'+key); return v==null?fallback:v;}catch(e){return fallback;}
 }
@@ -8181,6 +8190,7 @@ function spcDevSafeErr(msg){
         .slice(0,220);
 }
 function spcDevValidate(cfg,file){
+    if(!spcDevSenderSurfaceAllowed())return {ok:false,state:'mobile_only',message:'Photo sender is mobile-only. Seafarer desktop does not send photos.'};
     var base=normalizeApiBase(cfg.apiBase||'');
     if(!isLoopbackApiBase(base))return {ok:false,state:'local_only',message:'Dev sender accepts only localhost / 127.0.0.1 API base.'};
     if(!cfg.token)return {ok:false,state:'missing_token',message:'Enter the local reports bearer token.'};
@@ -8288,11 +8298,11 @@ async function spcDevSubmit(){
     }
 }
 function spcDevSenderCardHtml(ru){
-    if(!spcDevSenderEnabled())return '';
+    if(!spcDevSenderAvailable())return '';
     var d=spcDevDefaults(), f=spcDevSender.file, res=spcDevSender.result;
     var h='<div class="mv-card" data-qa="spc-dev-sender">';
     h+='<div class="mv-row" style="align-items:center;justify-content:space-between;margin-top:0;"><div><div class="mv-grid-title" style="margin-bottom:6px;">Ship Photo Collection · local dev sender</div><div class="mv-title" style="font-size:18px;margin-bottom:0;">'+esc(ru?'Фото на судно':'Send photo to vessel')+'</div></div><span class="mobile-pill warn">'+esc(ru?'Локальный тест':'Local dev')+'</span></div>';
-    h+='<div class="mv-sub" style="margin-top:8px;">'+esc(ru?'Отправляет одну явно выбранную фотографию в локальный backend /api/reports. Только localhost/127.0.0.1; production и staging-каталог не трогаются.':'Sends one explicitly selected photo to a local /api/reports backend. Localhost/127.0.0.1 only; production and the staging catalog are untouched.')+'</div>';
+    h+='<div class="mv-sub" style="margin-top:8px;">'+esc(ru?'Мобильный Android/iOS dev-тест: отправляет одну явно выбранную фотографию в локальный backend /api/reports. Seafarer desktop фотографии не отправляет.':'Mobile Android/iOS dev test: sends one explicitly selected photo to a local /api/reports backend. Seafarer desktop does not send photos.')+'</div>';
     h+='<div class="spc-dev-grid">';
     h+='<input id="spc-dev-api" class="mv-input" value="'+esc(d.apiBase)+'" placeholder="http://127.0.0.1:8817" onchange="spcDevRememberDraft()">';
     h+='<input id="spc-dev-token" class="mv-input" type="password" value="'+esc(d.token)+'" placeholder="local bearer token" onchange="spcDevRememberDraft()">';
