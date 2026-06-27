@@ -877,9 +877,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .mobile-shell { display:none; min-height:100dvh; background:var(--bg); color:var(--text); flex-direction:column; overflow:hidden; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); }
 .mobile-top { min-height:54px; flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:7px 10px; border-bottom:1px solid var(--border); background:var(--surface); }
 .mobile-brand-wrap { min-width:0; flex:1; display:flex; align-items:center; gap:7px; }
-.mobile-top-home { width:40px; height:40px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:20px; line-height:1; }
-.mobile-top-home.active { border-color:var(--accent-bg2); background:var(--accent-bg); color:var(--accent); }
-.mobile-top-home:active { transform:translateY(1px); }
+.mobile-app-mark { width:40px; height:40px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; border-radius:10px; border:1px solid var(--accent-bg2); background:var(--accent); color:#fff; font-size:17px; line-height:1; font-weight:900; }
 .mobile-feedback-btn { width:40px; height:40px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); padding:0; font-size:12px; line-height:1; font-weight:900; }
 .mobile-feedback-btn:active { transform:translateY(1px); }
 .mobile-feedback-mark { width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:var(--accent-bg); color:var(--accent); font-size:14px; font-weight:900; line-height:1; }
@@ -911,10 +909,12 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .mobile-module-rail { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; overflow:visible; padding:0; scrollbar-width:none; }
 .mobile-module-rail::-webkit-scrollbar { display:none; }
 .mobile-nav-btn { min-width:0; min-height:52px; border:1px solid transparent; border-radius:10px; background:transparent; color:var(--text2); font-size:11px; font-weight:850; display:flex; flex-direction:column; gap:4px; align-items:center; justify-content:center; }
-.mobile-nav-btn span { font-size:18px; line-height:1; }
+.mobile-nav-btn > span:first-child, .mobile-nav-btn .mobile-nav-icon { font-size:18px; line-height:1; }
+.mobile-nav-btn .mobile-nav-label { font-size:11px; line-height:1.1; }
 .mobile-nav-btn.active { color:var(--accent); background:var(--accent-bg); border-color:var(--accent-bg2); }
 @media (max-width:380px){
     .mobile-nav-btn { font-size:10px; }
+    .mobile-nav-btn .mobile-nav-label { font-size:10px; }
     .mobile-module-rail { gap:4px; }
 }
 .mobile-home-btn { width:100%; min-height:42px; margin:0 0 10px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); display:flex; align-items:center; justify-content:center; gap:8px; font-size:14px; font-weight:900; }
@@ -1270,7 +1270,7 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
 <div class="mobile-shell" id="mobile-shell">
     <div class="mobile-top">
         <div class="mobile-brand-wrap">
-            <button class="mobile-top-home" id="mobile-top-home" type="button" onclick="mobileShow('home')" title="Home" aria-label="Home">&#8962;</button>
+            <div class="mobile-app-mark" id="mobile-app-mark" aria-hidden="true">⚓</div>
             <button class="mobile-feedback-btn" id="mobile-feedback-btn" type="button" onclick="openMobileFeedbackMenu()" title="Отправить отзыв или сообщить о проблеме" aria-label="Отправить отзыв или сообщить о проблеме"><span class="mobile-feedback-mark">!</span><span class="mobile-feedback-text">Отзыв</span></button>
             <div class="mobile-brand">
                 <div class="mobile-brand-title" id="mobile-brand-title">Скипи Моряк</div>
@@ -1284,7 +1284,7 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
         <div class="mobile-module-rail-wrap" id="mobile-module-rail-wrap">
         <div class="mobile-module-rail" id="mobile-module-rail" onscroll="mobileUpdateModuleRailHint()">
             <button class="mobile-nav-btn active" type="button" data-mview="home" data-qa="bottom-nav-home" onclick="mobileShow('home')"><span>&#8962;</span>Дом</button>
-            <button class="mobile-nav-btn" type="button" data-mview="docs" data-qa="bottom-nav-workspace" onclick="mobileShow('docs')"><span>&#128451;</span>Vault</button>
+            <button class="mobile-nav-btn" type="button" data-mview="workspace" data-qa="bottom-nav-workspace" onclick="mobileShow('workspace')"><span class="mobile-nav-icon">&#128451;</span><span class="mobile-nav-label">Vault</span></button>
             <button class="mobile-nav-btn" type="button" data-mview="apps" data-qa="bottom-nav-apps" onclick="mobileShow('apps')"><span>&#9638;</span>Apps</button>
             <button class="mobile-nav-btn" type="button" data-mview="more" data-qa="bottom-nav-more" onclick="mobileShow('more')"><span>&#8942;</span>Ещё</button>
         </div>
@@ -3017,22 +3017,41 @@ function mobileSyncModuleRail(){
     }
     setTimeout(mobileUpdateModuleRailHint,60);
 }
+function mobileHasVesselWorkspace(){
+    return !!(typeof myVessel!=='undefined' && (myVessel.stage==='joined' || (myVessel.membership && myVessel.membership.status && myVessel.membership.status!=='left')));
+}
+function mobileWorkspaceView(){
+    return mobileHasVesselWorkspace() ? 'myvessel' : 'docs';
+}
+function mobileWorkspaceMeta(){
+    var ru=getUiLang()==='ru';
+    if(mobileWorkspaceView()==='myvessel') return { view:'myvessel', icon:'⚓', label:ru?'Моё судно':'My Vessel' };
+    return { view:'docs', icon:'&#128451;', label:'Vault' };
+}
+function mobileSyncBottomNavWorkspace(){
+    var btn=document.querySelector('[data-qa="bottom-nav-workspace"]');
+    if(!btn)return;
+    var meta=mobileWorkspaceMeta();
+    btn.setAttribute('data-workspace-view',meta.view);
+    var ic=btn.querySelector('.mobile-nav-icon'), lab=btn.querySelector('.mobile-nav-label');
+    if(ic)ic.innerHTML=meta.icon;
+    if(lab)lab.textContent=meta.label;
+}
 function mobileSetBottomNav(showNav){
     var nav=document.getElementById('mobile-bottom-nav');
     if(nav)nav.style.display=showNav?'flex':'none';
-    var topHome=document.getElementById('mobile-top-home');
-    if(topHome){
-        topHome.classList.toggle('active',mobileView==='home');
-        topHome.setAttribute('aria-current',mobileView==='home'?'page':'false');
-    }
+    mobileSyncBottomNavWorkspace();
     var meter=document.getElementById('mobile-profile-meter');
     if(meter)meter.classList.toggle('active',mobileView==='home'||mobileView==='profile');
     document.querySelectorAll('.mobile-nav-btn').forEach(function(btn){
         var v=btn.getAttribute('data-mview');
         var docViews=['docs','doc','add','pdf'];
-        var moreViews=['profile','assistant','experience','cv','dispatch','jobs','information','vessels','myvessel','more'];
+        var workspace=mobileWorkspaceView();
+        var moreViews=['profile','assistant','experience','cv','dispatch','jobs','information','vessels','more'];
+        if(workspace==='docs')moreViews.push('myvessel');
+        else moreViews=moreViews.concat(docViews);
         var active=(mobileView===v)
-            ||(v==='docs'&&docViews.indexOf(mobileView)>=0)
+            ||(v==='workspace'&&((workspace==='docs'&&docViews.indexOf(mobileView)>=0)||(workspace==='myvessel'&&mobileView==='myvessel')))
             ||(v==='more'&&moreViews.indexOf(mobileView)>=0);
         btn.classList.toggle('active',active);
     });
@@ -3613,6 +3632,7 @@ function mobileScrollMainTop(){
     try{window.scrollTo(0,0);}catch(e){}
 }
 function mobileShow(view){
+    if(view==='workspace')view=mobileWorkspaceView();
     if(view==='settings'){ openSettings(); return; }
     mobileView=view||'home';
     if(mobileView==='add'&&mobileAddMode!=='attach_single'&&mobileAddMode!=='attach_pdf')mobileAddMode='choose';
@@ -5548,8 +5568,9 @@ function mobileMoreTile(icon,title,sub,view){
 function renderMobileMore(){
     var ru=getUiLang()==='ru';
     var h='<div class="mobile-card mobile-home-lead"><div class="mobile-card-title">'+mobileEsc(ru?'Ещё':'More')+'</div>'
-        + '<div class="mobile-card-sub">'+mobileEsc(ru?'Все разделы Скипи Моряк остаются здесь. Нижнее меню показывает только основные точки: Дом, Vault, Apps, Ещё.':'All Skipi Seafarer sections stay here. The bottom rail keeps only the primary destinations: Home, Vault, Apps, More.')+'</div></div>';
+        + '<div class="mobile-card-sub">'+mobileEsc(ru?'Все разделы Скипи Моряк остаются здесь. Нижнее меню показывает только основные точки: Дом, рабочий контекст, Apps, Ещё.':'All Skipi Seafarer sections stay here. The bottom rail keeps only the primary destinations: Home, workspace, Apps, More.')+'</div></div>';
     h+='<div class="mobile-more-grid">';
+    if(mobileWorkspaceView()==='myvessel')h+=mobileMoreTile('▣','Vault',ru?'Документы и данные моряка':'Seafarer documents and data','docs');
     h+=mobileMoreTile('●',ru?'Профиль':'Profile',ru?'Готовность и данные моряка':'Readiness and seafarer data','profile');
     h+=mobileMoreTile('💬','Assistant',ru?'Помощник по профилю':'Profile assistant','assistant');
     h+=mobileMoreTile('⚑',ru?'Опыт':'Experience',ru?'Морской опыт и суда':'Sea service and vessels','experience');
@@ -5558,7 +5579,7 @@ function renderMobileMore(){
     h+=mobileMoreTile('J',ru?'Вакансии':'Jobs',ru?'Готовность и офферы':'Readiness and offers','jobs');
     h+=mobileMoreTile('i','Info',ru?'Индексы и справка':'Indexes and references','information');
     h+=mobileMoreTile('⚐',ru?'База судов':'Vessels',ru?'Поиск судов и отзывы':'Vessel search and reviews','vessels');
-    h+=mobileMoreTile('⚓',ru?'Моё судно':'My Vessel',ru?'Связь с текущим судном':'Current vessel link','myvessel');
+    if(mobileWorkspaceView()==='docs')h+=mobileMoreTile('⚓',ru?'Моё судно':'My Vessel',ru?'Связь с текущим судном':'Current vessel link','myvessel');
     h+=mobileMoreTile('⚙',ru?'Настройки':'Settings',ru?'Vault, профиль и внешний вид':'Vault, profile and look','settings');
     h+='</div>';
     mobileMainHtml(h);
