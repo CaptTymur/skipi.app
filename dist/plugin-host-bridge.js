@@ -40,6 +40,7 @@
 
   function proxy(perms) {
     var has = function (p) { return perms.indexOf(p) >= 0; };
+    var call = function (type, extra) { return new Promise(function (res) { var id = ++seq; pending[id] = res; send(Object.assign({ type: type, id: id }, extra || {})); }); };
     return {
       theme: { get: function () { return theme; }, subscribe: function (cb) { themeSubs.push(cb); return function () { themeSubs = themeSubs.filter(function (f) { return f !== cb; }); }; } },
       storage: {
@@ -49,6 +50,12 @@
       },
       navigation: { setTitle: function (t) { send({ type: 'nav.setTitle', title: t }); }, closePlugin: function () { send({ type: 'nav.close' }); } },
       audio: { playLoop: function () {}, stop: function () {} },
+      // «Моё судно» (my_vessel) host-mediated capabilities — each gated by a
+      // declared permission; the host re-checks the grant and does the work.
+      vessel: { getContext: function () { return has('vessel.context.read') ? call('vessel.getContext') : Promise.resolve(null); } },
+      crew: { getMembership: function () { return has('crew.membership.read') ? call('crew.getMembership') : Promise.resolve(null); } },
+      media: { pickPhoto: function (o) { return has('media.pick') ? call('media.pickPhoto', { opts: o || {} }) : Promise.resolve({ ok: false, reason: 'permission' }); } },
+      workflow: { submit: function (meta) { return has('workflow.submit') ? call('workflow.submit', { meta: meta || {} }) : Promise.resolve({ ok: false, reason: 'permission' }); } },
       permissions: { listGranted: function () { return perms.slice(); } }
     };
   }
@@ -78,7 +85,7 @@
     } else if (m.type === 'theme') {
       theme = m.theme; themeSubs.forEach(function (cb) { try { cb(theme); } catch (e) {} });
       send({ type: 'resize', height: document.body.scrollHeight });
-    } else if (m.type === 'storage.result') {
+    } else if (m.type === 'storage.result' || m.type === 'call.result') {
       var cb = pending[m.id]; if (cb) { delete pending[m.id]; cb(m.value); }
     } else if (m.type === 'unmount') {
       var reg2 = window.SkipiPlugins && window.SkipiPlugins[slug];
@@ -120,6 +127,11 @@
     var store = (cfg.host && cfg.host.storage) || defaultStore();
     var themeApi = (cfg.host && cfg.host.theme) || { get: function () { return 'dark'; } };
     var nav = (cfg.host && cfg.host.navigation) || { setTitle: function () {}, closePlugin: function () {} };
+    // «Моё судно» (my_vessel) host-mediated capabilities (optional; null when not provided).
+    var vesselApi = (cfg.host && cfg.host.vessel) || null;
+    var crewApi = (cfg.host && cfg.host.crew) || null;
+    var mediaApi = (cfg.host && cfg.host.media) || null;
+    var workflowApi = (cfg.host && cfg.host.workflow) || null;
     var active = null;   // single active plugin frame
     var audit = [];
     var dbg = [];
@@ -127,6 +139,16 @@
     function granted(p) { return active && active.perms.indexOf(p) >= 0; }
     function toFrame(msg) { try { active.iframe.contentWindow.postMessage(Object.assign({ ch: 'skipi-plugin', v: 1, token: active.token }, msg), '*'); } catch (e) {} }
     function respond(id, value) { toFrame({ type: 'storage.result', id: id, value: value }); }
+    function callResult(id, value) { toFrame({ type: 'call.result', id: id, value: value }); }
+    // Resolve a host-mediated capability call (grant-gated, audited). `api` is the
+    // host object, `fn` the method; `deny` is the value returned when not granted.
+    function hostCall(perm, api, fn, m, deny) {
+      if (!granted(perm)) { audit.push('DENY ' + m.type); callResult(m.id, deny); return; }
+      var run;
+      try { run = (api && typeof api[fn] === 'function') ? api[fn](m.opts || m.meta) : null; }
+      catch (e) { callResult(m.id, deny); return; }
+      Promise.resolve(run).then(function (v) { callResult(m.id, v); }, function () { callResult(m.id, deny); });
+    }
     function sendInit() { toFrame({ type: 'init', slug: active.slug, manifest: active.manifest, css: active.css, js: active.js, theme: themeApi.get(), permissions: active.perms, nonce: active.nonce }); }
 
     function onMessage(ev) {
@@ -159,6 +181,12 @@
           store.remove(active.slug, m.key); break;
         case 'nav.setTitle': nav.setTitle(m.title); break;
         case 'nav.close': if (nav.closePlugin) nav.closePlugin(); active.api.close(); break;
+        // «Моё судно» host-mediated capabilities (default-denied; the plugin must
+        // have declared the permission). Each runs host-side and replies via callResult.
+        case 'vessel.getContext': hostCall('vessel.context.read', vesselApi, 'getContext', m, null); break;
+        case 'crew.getMembership': hostCall('crew.membership.read', crewApi, 'getMembership', m, { linked: false }); break;
+        case 'media.pickPhoto': hostCall('media.pick', mediaApi, 'pickPhoto', m, { ok: false, reason: 'permission' }); break;
+        case 'workflow.submit': hostCall('workflow.submit', workflowApi, 'submit', m, { ok: false, reason: 'permission' }); break;
         case 'error':
           active.error = m.message;
           if (active.resolve) { active.resolve({ ok: false, stage: 'mount', reason: m.message }); active.resolve = null; }

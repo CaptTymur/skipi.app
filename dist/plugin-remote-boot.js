@@ -39,6 +39,63 @@
   // use the live app version for compatibility checks when available
   if (window.APP_VERSION && CFG.host) CFG.host.version = String(window.APP_VERSION);
 
+  // --- «Моё судно» (my_vessel) host-mediated capability skeleton ---------------
+  // Minimal, host-side, grant-gated. NO raw vault data, NO tokens, NO raw files,
+  // NO real network for the plugin. media/workflow are honest stubs (no gallery
+  // access, no upload). Read the current vault identity + its per-vault My Vessel
+  // membership cache; return only what a sender needs.
+  function mvReadContext() {
+    var inv = (typeof window.invoke === 'function') ? window.invoke : null;
+    var prof = inv ? Promise.resolve(inv('get_matchable_profile')).catch(function () { return null; }) : Promise.resolve(null);
+    return prof.then(function (p) {
+      var uid = p && p.user_id, psid = (p && p.public_seafarer_id) || null, mem = null;
+      if (uid) { try { var raw = localStorage.getItem('mv:membership:' + uid); if (raw) mem = JSON.parse(raw); } catch (e) {} }
+      if (!mem && window.myVessel && window.myVessel.membership) mem = window.myVessel.membership;
+      return { mem: mem, psid: psid };
+    });
+  }
+  function mvLinked(m) { return !!(m && m.crew_member_id && m.vessel_imo && (!m.status || m.status === 'linked')); }
+  var mvHost = {
+    vessel: {
+      getContext: function () {
+        return mvReadContext().then(function (c) {
+          var m = c.mem;
+          if (!mvLinked(m)) return { linked: false, vessel_imo: null, vessel_name: null, status: (m && m.status) || 'not_linked', public_seafarer_id: c.psid || null };
+          return { linked: true, vessel_imo: m.vessel_imo, vessel_name: m.vessel_name || null, status: m.status || 'linked', public_seafarer_id: c.psid || null };
+        });
+      }
+    },
+    crew: {
+      getMembership: function () {
+        return mvReadContext().then(function (c) {
+          var m = c.mem;
+          if (!mvLinked(m)) return { linked: false };
+          // minimal — only the ids a sender needs for provenance. No vault_user_id,
+          // no tokens, no documents/profile.
+          return { linked: true, crew_member_id: m.crew_member_id, public_seafarer_id: c.psid || null, vessel_imo: m.vessel_imo, status: m.status || 'linked', linked_at: m.linked_at || null };
+        });
+      }
+    },
+    media: {
+      // STUB. Does NOT open the gallery/camera automatically. Default: not implemented.
+      // A mock handle is returned ONLY when a test harness sets window.__SKIPI_MEDIA_MOCK__.
+      pickPhoto: function () {
+        if (window.__SKIPI_MEDIA_MOCK__) return Promise.resolve({ ok: true, handle: { client_media_id: 'mock-photo', content_type: 'image/jpeg', size: 0, sha256: null, mock: true } });
+        return Promise.resolve({ ok: false, reason: 'not_implemented', message: 'Photo picker is not wired yet (no gallery/camera access).' });
+      }
+    },
+    workflow: {
+      // STUB. Validates vessel context exists, then returns an honest
+      // transport-not-connected / pending result. NEVER fakes "sent", NEVER uploads.
+      submit: function () {
+        return mvHost.vessel.getContext().then(function (v) {
+          if (!v || !v.linked || !v.vessel_imo) return { ok: false, stage: 'context', reason: 'not_linked', message: 'Join a vessel crew first.' };
+          return { ok: false, stage: 'transport', reason: 'transport_not_connected', pending: true, message: 'Kept as pending — sending to the vessel is not connected yet (capture API not available). Nothing was uploaded.' };
+        });
+      }
+    }
+  };
+
   var loader = window.SkipiPluginLoader.create({
     catalogUrl: CFG.catalogUrl, host: CFG.host, policy: CFG.policy, pinnedPublicKey: CFG.pinnedPublicKey
   });
@@ -47,10 +104,15 @@
     host: {
       theme: { get: getTheme },
       storage: hostStore,
-      navigation: { setTitle: function () {}, closePlugin: function () {} }
+      navigation: { setTitle: function () {}, closePlugin: function () {} },
+      vessel: mvHost.vessel,
+      crew: mvHost.crew,
+      media: mvHost.media,
+      workflow: mvHost.workflow
     }
   });
   window.SkipiRemoteRuntime = runtime; // exposed for QA/debug
+  window.__SKIPI_MV_HOST__ = mvHost;   // exposed for QA/debug (flag-gated; returns no secrets)
 
   var REMOTE = CFG.remoteSlugs || [];
   var currentRemote = null;
