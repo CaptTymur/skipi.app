@@ -113,6 +113,7 @@ context.addEventListener = () => {};
 vm.createContext(context);
 vm.runInContext(script, context, { filename: 'dist/index.html' });
 context.getUiLang = () => 'ru';
+context.isMobileMode = () => true;
 context.shouldUseMobileShell = () => true;
 context.mobileSyncModuleRail = () => {};
 context.mobileRefreshProfileMeter = () => {};
@@ -140,6 +141,27 @@ assert.equal(active(workspaceBtn), true);
 assert.equal(active(moreBtn), false);
 console.log('  ✓ workspace is Vault and active for document vault before vessel context');
 
+let primeCalls = 0;
+context.myVessel.stage = 'home';
+context.myVessel.membership = null;
+context.myVessel._loadedUid = undefined;
+context.mobileView = 'home';
+context.myVesselLoadMembership = async (opts) => {
+  primeCalls += 1;
+  assert.equal(opts?.silent, true);
+  context.myVessel.membership = { crew_member_id: 'cm-1', status: 'linked', vessel_imo: 7533197, vault_user_id: 'u-1' };
+  context.myVessel.stage = 'joined';
+};
+context.mobileSetBottomNav(true);
+await new Promise((resolve) => setTimeout(resolve, 0));
+assert.equal(primeCalls, 1);
+assert.equal(context.mobileView, 'home');
+assert.equal(context.mobileWorkspaceView(), 'myvessel');
+assert.equal(label(workspaceBtn), 'Моё судно');
+assert.equal(active(homeBtn), true);
+console.log('  ✓ cached vessel membership primes workspace without leaving Home');
+
+context.myVesselLoadMembership = async () => {};
 context.myVessel.stage = 'joined';
 context.myVessel.membership = { status: 'linked', vessel_imo: 7533197 };
 context.mobileView = 'myvessel';

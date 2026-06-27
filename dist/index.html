@@ -3047,9 +3047,22 @@ function mobileSyncBottomNavWorkspace(){
     if(ic)ic.innerHTML=meta.icon;
     if(lab)lab.textContent=meta.label;
 }
+var mobileWorkspacePrimePending=false;
+function mobilePrimeVesselWorkspace(){
+    if(!isMobileMode() || mobileWorkspacePrimePending || mobileHasVesselWorkspace())return;
+    if(typeof myVesselLoadMembership!=='function')return;
+    mobileWorkspacePrimePending=true;
+    Promise.resolve(myVesselLoadMembership({silent:true})).then(function(){
+        mobileWorkspacePrimePending=false;
+        mobileSetBottomNav(true);
+    },function(){
+        mobileWorkspacePrimePending=false;
+    });
+}
 function mobileSetBottomNav(showNav){
     var nav=document.getElementById('mobile-bottom-nav');
     if(nav)nav.style.display=showNav?'flex':'none';
+    if(showNav)mobilePrimeVesselWorkspace();
     mobileSyncBottomNavWorkspace();
     var meter=document.getElementById('mobile-profile-meter');
     if(meter)meter.classList.toggle('active',mobileView==='home'||mobileView==='profile');
@@ -8588,7 +8601,8 @@ function myVesselSaveMembership(mem){ try{ if(mem&&mem.vault_user_id) localStora
 function myVesselClearMembership(){ var m=myVessel.membership; try{ if(m&&m.vault_user_id) localStorage.removeItem(myVesselMembershipKey(m.vault_user_id)); }catch(e){} myVessel.membership=null; }
 // Per-vault membership load: re-checks when the open vault's identity changes,
 // so vault A's membership never shows in vault B.
-async function myVesselLoadMembership(){
+async function myVesselLoadMembership(opts){
+    var silent=!!(opts&&opts.silent);
     var uid=null; try{ var p=await invoke('get_matchable_profile'); uid=p&&p.user_id; }catch(e){}
     if(uid===myVessel._loadedUid)return;
     myVessel._loadedUid=uid;
@@ -8596,9 +8610,9 @@ async function myVesselLoadMembership(){
     if(uid){ try{ var raw=localStorage.getItem(myVesselMembershipKey(uid)); if(raw)mem=JSON.parse(raw); }catch(e){} }
     if(mem&&mem.crew_member_id&&mem.status!=='left'){
         myVessel.membership=mem;
-        if(myVessel.stage==='home'){ myVessel.stage='joined'; myVesselRerender(); }
+        if(myVessel.stage==='home'){ myVessel.stage='joined'; if(!silent||mobileView==='myvessel')myVesselRerender(); }
     }else if(myVessel.stage==='joined'){
-        myVessel.membership=null; myVessel.stage='home'; myVesselRerender();
+        myVessel.membership=null; myVessel.stage='home'; if(!silent||mobileView==='myvessel')myVesselRerender();
     }
 }
 async function myVesselAccept(){
