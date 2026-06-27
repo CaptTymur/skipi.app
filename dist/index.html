@@ -15691,16 +15691,21 @@ function mobileSettingsGroup(label, rows){
 function renderMobileSettingsHome(){
     var h='<div class="mobile-settings-ios" data-qa="mobile-settings-ios-restyle">';
     h+=mobileSettingsTop('Настройки','Скипи Моряк','');
-    h+=mobileSettingsGroup('Основное',
-        mobileSettingsRow('P','Профиль / Vault','Идентичность, текущие хранилища, Recovery key.','Vault','seafarer-nav-vault',"openSettings('seafarer')")+
-        mobileSettingsRow('D','Документы / данные','Сертификаты, CV, docs и опыт.','Docs','seafarer-nav-documents',"closeSettings();mobileShow('docs')")+
-        mobileSettingsRow('🔗','Сопряжённые устройства','Accepted shell, без pairing controls.','', 'settings-paired-devices',"openSettings('paired_devices')",'accepted')
+    h+=mobileSettingsGroup('Vault',
+        mobileSettingsRow('▣','Vault','Локальный профиль моряка на этом телефоне.','Open','seafarer-nav-vault',"openSettings('vaults')")+
+        mobileSettingsRow('⇄','Switch vault','Выбрать другой уже открытый vault.','','settings-vault-switch',"closeSettings();mobileOpenExistingVault(true)")+
+        mobileSettingsRow('⇪','Export / share backup','ZIP backup для переноса на desktop или другой телефон.','','settings-vault-export',"mobileExportVaultBackup(true)")+
+        mobileSettingsRow('+','Create new','Создать новый профиль моряка.','','settings-vault-create',"closeSettings();mobileStartVaultWizard()")+
+        mobileSettingsRow('◉','Open demo','Открыть демо-профиль для проверки интерфейса.','','settings-vault-demo',"closeSettings();loadDemoVault()")
     );
-    h+=mobileSettingsGroup('Разное / настройки',
-        mobileSettingsRow('S','Приватность / безопасность','Recovery key, локальные хранилища, trust state.','Sec','seafarer-nav-privacy',"openSettings('vaults')")+
-        mobileSettingsRow('A','Приложение','Тема, язык, версия и diagnostics.','App','seafarer-nav-app',"openSettings('appearance')")
+    h+=mobileSettingsGroup('Профиль',
+        mobileSettingsRow('P','Профиль моряка','Данные моряка, должность, судовой опыт и готовность.','','seafarer-nav-profile',"openSettings('seafarer')")
     );
-    h+='<div class="mobile-settings-note"><strong>Pairing-flow отдельно</strong><br>Launch + Token/QR + сопряжённые устройства не пересобираются этим settings restyle. Real device pairing controls остаются отдельной задачей.</div>';
+    h+=mobileSettingsGroup('Приложение',
+        mobileSettingsRow('A','Внешний вид','Светлая/тёмная тема, шрифт, акцент и язык.','','seafarer-nav-appearance',"openSettings('appearance')")+
+        mobileSettingsRow('i','О программе','Версия, платформа, обновления и обратная связь.','','seafarer-nav-about',"openSettings('about')")
+    );
+    h+='<div class="mobile-settings-note"><strong>Структура настроек</strong><br>Главное меню настроек содержит только Vault, профиль моряка, внешний вид и о программе. Pairing-flow, crew linking и backend controls остаются вне этого меню.</div>';
     h+='</div>';
     document.getElementById('settings-body').innerHTML=h;
 }
