@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1182,14 +1182,14 @@ body.mobile-mode .skipi-toast-container { top:auto; left:12px; right:12px; botto
 body.mobile-mode .skipi-toast-container > div { max-width:none !important; }
 body.mobile-mode .update-banner { top:calc(56px + env(safe-area-inset-top,0px)); left:8px; right:8px; border-radius:8px; }
 body.mobile-mode #err { top:calc(56px + env(safe-area-inset-top,0px)) !important; left:8px !important; right:8px !important; border-radius:8px; }
-body.mobile-mode .settings-overlay { align-items:stretch; justify-content:stretch; padding:56px 0 0; box-sizing:border-box; }
-body.mobile-mode .settings-modal { width:100vw; height:calc(100dvh - 56px); max-height:none; border-radius:0; flex-direction:column; }
-body.mobile-mode .settings-nav { width:100%; display:flex; gap:4px; overflow-x:auto; overflow-y:hidden; border-right:none; border-bottom:1px solid var(--border); padding:8px 10px; }
+body.mobile-mode .settings-overlay { align-items:stretch; justify-content:stretch; padding:0; box-sizing:border-box; background:var(--bg); }
+body.mobile-mode .settings-modal { width:100vw; height:100dvh; max-height:none; border-radius:0; flex-direction:column; border:0; box-shadow:none; background:var(--bg); }
+body.mobile-mode .settings-nav { display:none; }
 body.mobile-mode .settings-nav-title { display:none; }
 body.mobile-mode .settings-nav-item { flex:0 0 auto; border-radius:8px; padding:9px 11px; white-space:nowrap; font-size:13px; }
 body.mobile-mode .settings-nav-item .nav-icon { width:auto; }
-body.mobile-mode .settings-body { flex:1; padding:18px 14px calc(24px + env(safe-area-inset-bottom,0px)); }
-body.mobile-mode .settings-close { top:10px; right:10px; width:40px; height:40px; border:1px solid var(--border); border-radius:8px; background:var(--surface); font-size:22px; }
+body.mobile-mode .settings-body { flex:1; padding:calc(52px + env(safe-area-inset-top,0px)) 14px calc(24px + env(safe-area-inset-bottom,0px)); background:var(--bg); }
+body.mobile-mode .settings-close { top:calc(10px + env(safe-area-inset-top,0px)); right:10px; width:34px; height:34px; border:1px solid var(--border); border-radius:50%; background:var(--surface); font-size:18px; }
 body.mobile-mode .settings-section h3 { padding-right:48px; }
 body.mobile-mode .setting-row { flex-direction:column; align-items:stretch; gap:10px; padding:12px; }
 body.mobile-mode .setting-info { margin-right:0; }
@@ -1199,6 +1199,24 @@ body.mobile-mode .setting-control input[type="text"],
 body.mobile-mode .setting-control input[type="password"] { width:100%; max-width:100%; }
 body.mobile-mode .field-grid { grid-template-columns:1fr; }
 body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][style*="gap:20px"] { flex-direction:column; gap:12px !important; }
+.mobile-settings-ios { max-width:390px; margin:0 auto; color:var(--text); }
+.mobile-settings-top { position:relative; min-height:30px; display:flex; align-items:center; justify-content:center; margin:-40px 0 18px; }
+.mobile-settings-back { position:absolute; left:0; top:50%; transform:translateY(-50%); width:34px; height:34px; border:1px solid var(--border); border-radius:50%; background:var(--surface); color:var(--accent); font-size:18px; font-weight:900; display:flex; align-items:center; justify-content:center; }
+.mobile-settings-title { text-align:center; min-width:0; }
+.mobile-settings-title strong { display:block; font-size:13px; font-weight:900; line-height:1.2; }
+.mobile-settings-title span { display:block; margin-top:2px; font-size:10px; color:var(--text2); line-height:1.2; }
+.mobile-settings-group-label { margin:18px 0 7px 2px; color:var(--text2); font-size:10px; line-height:1.2; font-weight:900; text-transform:uppercase; letter-spacing:.04em; }
+.mobile-settings-group { border:1px solid var(--border); border-radius:14px; background:var(--surface); overflow:hidden; }
+.mobile-settings-row { width:100%; min-height:58px; border:0; border-bottom:1px solid var(--border); background:transparent; color:var(--text); display:grid; grid-template-columns:30px minmax(0,1fr) auto; gap:10px; align-items:center; padding:10px; text-align:left; }
+.mobile-settings-row:last-child { border-bottom:0; }
+.mobile-settings-row:active { background:var(--hover); }
+.mobile-settings-ic { width:26px; height:26px; border-radius:7px; background:var(--accent); color:#fff; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:900; }
+.mobile-settings-copy { min-width:0; }
+.mobile-settings-copy .t { display:block; font-size:13px; font-weight:900; line-height:1.2; white-space:normal; }
+.mobile-settings-copy .s { display:block; margin-top:2px; color:var(--text2); font-size:10.5px; line-height:1.25; white-space:normal; }
+.mobile-settings-value { color:var(--text2); font-size:10px; line-height:1.2; justify-self:end; display:flex; align-items:center; gap:6px; }
+.mobile-settings-badge { display:inline-flex; align-items:center; min-height:18px; border-radius:999px; padding:2px 7px; background:rgba(226,185,61,.16); color:#8a5c00; font-size:9px; font-weight:900; text-transform:lowercase; }
+.mobile-settings-note { margin-top:14px; border:1px solid rgba(0,69,100,.16); border-left:3px solid var(--accent); border-radius:10px; background:rgba(0,69,100,.06); padding:11px 12px; color:var(--text2); font-size:11px; line-height:1.4; }
 @media (max-width: 720px) {
     body:not(.desktop-forced) .modules-bar,
     body:not(.desktop-forced) .app,
@@ -8542,10 +8560,10 @@ function makeHostApi(pluginId){
     var ns='skipi_plugin_'+pluginId+'_';
     return {
         theme:{
-            get:function(){ try{ return document.documentElement.getAttribute('data-theme')||'dark'; }catch(e){ return 'dark'; } },
+            get:function(){ try{ return document.documentElement.getAttribute('data-theme')||DEFAULT_THEME; }catch(e){ return DEFAULT_THEME; } },
             subscribe:function(cb){
                 var obs=null;
-                try{ obs=new MutationObserver(function(){ try{ cb(document.documentElement.getAttribute('data-theme')||'dark'); }catch(e){} });
+                try{ obs=new MutationObserver(function(){ try{ cb(document.documentElement.getAttribute('data-theme')||DEFAULT_THEME); }catch(e){} });
                     obs.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']}); }catch(e){}
                 return function(){ try{ obs&&obs.disconnect(); }catch(e){} };
             }
@@ -15264,8 +15282,9 @@ var vaultIdentityVisible = false;
 function openSettings(tab){
     if(tab) settingsTab = tab;
     if(isMobileMode()){
-        if(!tab) settingsTab = 'vaults';
-        if(settingsTab==='general' || settingsTab==='email') settingsTab = 'vaults';
+        if(!tab) settingsTab = 'mobile-home';
+        if(settingsTab==='general' || settingsTab==='email') settingsTab = 'mobile-home';
+        if(settingsTab==='devices') settingsTab = 'paired_devices';
     }
     // Guard: Seafarer tab only makes sense for seafarer vaults
     if(settingsTab==='seafarer' && currentAccountType!=='' && currentAccountType && currentAccountType!=='seafarer'){
@@ -15287,14 +15306,6 @@ function closeSettings(){
 function renderSettingsNav(){
     var h = '';
     if(isMobileMode()){
-        if(['vaults','seafarer','appearance','about'].indexOf(settingsTab)<0) settingsTab='vaults';
-        h += '<div class="settings-nav-title">'+tr('settings.nav_title')+'</div>';
-        h += '<div class="settings-nav-item'+(settingsTab==='vaults'?' active':'')+'" onclick="openSettings(\'vaults\')"><span class="nav-icon">&#128451;</span> Vault</div>';
-        if(currentAccountType==='seafarer'||currentAccountType===''||!currentAccountType){
-            h += '<div class="settings-nav-item'+(settingsTab==='seafarer'?' active':'')+'" onclick="openSettings(\'seafarer\')"><span class="nav-icon">&#128100;</span> Profile</div>';
-        }
-        h += '<div class="settings-nav-item'+(settingsTab==='appearance'?' active':'')+'" onclick="openSettings(\'appearance\')"><span class="nav-icon">&#127912;</span> Look</div>';
-        h += '<div class="settings-nav-item'+(settingsTab==='about'?' active':'')+'" onclick="openSettings(\'about\')"><span class="nav-icon">&#9432;</span> About</div>';
         document.getElementById('settings-nav').innerHTML = h;
         return;
     }
@@ -15362,9 +15373,68 @@ async function mobileSettingsDeleteVaultPath(path){
     await mobileDeleteVaultPath(path);
 }
 
+function mobileSettingsTop(title, subtitle, backTarget){
+    var h='<div class="mobile-settings-top">';
+    if(backTarget) h+='<button class="mobile-settings-back" type="button" data-qa="nav-back" onclick="openSettings(&quot;'+jsString(backTarget)+'&quot;)">&#8249;</button>';
+    h+='<div class="mobile-settings-title"><strong>'+mobileEsc(title)+'</strong><span>'+mobileEsc(subtitle||'Скипи Моряк')+'</span></div></div>';
+    return h;
+}
+function mobileSettingsRow(icon,title,sub,value,qa,onClick,badge){
+    var attrs=qa?' data-qa="'+mobileEsc(qa)+'"':'';
+    var action=onClick?' onclick="'+onClick+'"':'';
+    var val='';
+    if(badge) val='<span class="mobile-settings-badge">'+mobileEsc(badge)+'</span>';
+    else if(value) val=mobileEsc(value);
+    return '<button class="mobile-settings-row" type="button"'+attrs+action+'>'
+        + '<span class="mobile-settings-ic">'+icon+'</span>'
+        + '<span class="mobile-settings-copy"><span class="t">'+mobileEsc(title)+'</span><span class="s">'+mobileEsc(sub||'')+'</span></span>'
+        + '<span class="mobile-settings-value">'+val+'</span></button>';
+}
+function mobileSettingsGroup(label, rows){
+    return '<div class="mobile-settings-group-label">'+mobileEsc(label)+'</div><div class="mobile-settings-group">'+rows+'</div>';
+}
+function renderMobileSettingsHome(){
+    var h='<div class="mobile-settings-ios" data-qa="mobile-settings-ios-restyle">';
+    h+=mobileSettingsTop('Настройки','Скипи Моряк','');
+    h+=mobileSettingsGroup('Основное',
+        mobileSettingsRow('P','Профиль / Vault','Идентичность, текущие хранилища, Recovery key.','Vault','seafarer-nav-vault',"openSettings('seafarer')")+
+        mobileSettingsRow('D','Документы / данные','Сертификаты, CV, docs и опыт.','Docs','seafarer-nav-documents',"closeSettings();mobileShow('docs')")+
+        mobileSettingsRow('🔗','Сопряжённые устройства','Accepted shell, без pairing controls.','', 'settings-paired-devices',"openSettings('paired_devices')",'accepted')
+    );
+    h+=mobileSettingsGroup('Разное / настройки',
+        mobileSettingsRow('S','Приватность / безопасность','Recovery key, локальные хранилища, trust state.','Sec','seafarer-nav-privacy',"openSettings('vaults')")+
+        mobileSettingsRow('A','Приложение','Тема, язык, версия и diagnostics.','App','seafarer-nav-app',"openSettings('appearance')")
+    );
+    h+='<div class="mobile-settings-note"><strong>Pairing-flow отдельно</strong><br>Launch + Token/QR + сопряжённые устройства не пересобираются этим settings restyle. Real device pairing controls остаются отдельной задачей.</div>';
+    h+='</div>';
+    document.getElementById('settings-body').innerHTML=h;
+}
+function renderMobileSettingsPairedDevicesBoundary(){
+    var h='<div class="mobile-settings-ios" data-qa="settings-paired-devices">';
+    h+=mobileSettingsTop('Сопряжённые устройства','Скипи Моряк','mobile-home');
+    h+=mobileSettingsGroup('Сопряжённые устройства',
+        mobileSettingsRow('🔗','Сопряжённые устройства','Accepted shell; не проектировать pairing touch.','','settings-paired-devices','','accepted')
+    );
+    h+=mobileSettingsGroup('Граница',
+        mobileSettingsRow('H','Граница трека','Accepted shell only; controls/settings copy не входят в этот restyle.','Do not build','','')+
+        mobileSettingsRow('U','Ссылка на IA','Pairing controls остаются в отдельном flow.','Keep','','')+
+        mobileSettingsRow('N','Следующая работа','Когда pairing API/flow получит отдельный GO.','Separate','','')
+    );
+    h+='<div class="mobile-settings-note"><strong>Не проектировать pairing controls</strong><br>В этом разделе не добавлять QR, token, revoke, pair, connect. Settings restyle меняет только структуру и визуальный shell.</div>';
+    h+='</div>';
+    document.getElementById('settings-body').innerHTML=h;
+}
+function renderMobileSettingsBody(){
+    if(settingsTab==='paired_devices') return renderMobileSettingsPairedDevicesBoundary();
+    if(settingsTab==='mobile-home' || settingsTab==='general' || settingsTab==='email') return renderMobileSettingsHome();
+    // Existing functional subpages are kept intact; they render below with the new mobile chrome and no top tab strip.
+    return false;
+}
+
 function renderSettingsBody(){
-    var cur = document.documentElement.getAttribute('data-theme')||'dark';
+    var cur = document.documentElement.getAttribute('data-theme')||DEFAULT_THEME;
     var h = '';
+    if(isMobileMode() && renderMobileSettingsBody() !== false) return;
 
     if(settingsTab === 'general'){
         h += '<div class="settings-section"><h3>'+tr('settings.general')+'</h3><div class="section-desc">'+tr('settings.general_desc')+'</div>';
@@ -15494,7 +15564,7 @@ function renderSettingsBody(){
     }
 
     if(settingsTab === 'appearance'){
-        var themeChoice = localStorage.getItem('skipi-theme') || 'dark';
+        var themeChoice = localStorage.getItem('skipi-theme') || DEFAULT_THEME;
         var resolvedTheme = _resolvedTheme(themeChoice);
         var accentVal = localStorage.getItem('skipi-accent') ||
                         (resolvedTheme==='light' ? DEFAULT_ACCENT_LIGHT : DEFAULT_ACCENT_DARK);
@@ -16362,6 +16432,7 @@ async function importVaultBackup(){
 
 var DEFAULT_ACCENT_DARK  = '#004564';
 var DEFAULT_ACCENT_LIGHT = '#004564';
+var DEFAULT_THEME = 'light';
 var LEGACY_DEFAULT_ACCENTS = ['#7c6ff7','#6c5ce7'];
 var DEFAULT_FONT_SIZE_UI = 13;
 var DEFAULT_FONT_UI = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
@@ -16422,11 +16493,11 @@ function _resolvedTheme(choice){
     if(choice!=='system') return choice;
     try{
         return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    }catch(e){ return 'dark'; }
+    }catch(e){ return DEFAULT_THEME; }
 }
 
 function applyAppearance(){
-    var choice=localStorage.getItem('skipi-theme')||'dark';
+    var choice=localStorage.getItem('skipi-theme')||DEFAULT_THEME;
     var resolved=_resolvedTheme(choice);
     document.documentElement.setAttribute('data-theme', resolved);
 
@@ -16468,7 +16539,7 @@ function applyAppearance(){
         try{
             var mq=window.matchMedia('(prefers-color-scheme: dark)');
             _systemThemeListener=function(){
-                if((localStorage.getItem('skipi-theme')||'dark')==='system'){
+                if((localStorage.getItem('skipi-theme')||DEFAULT_THEME)==='system'){
                     applyAppearance();
                 }
             };
