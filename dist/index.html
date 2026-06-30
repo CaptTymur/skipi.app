@@ -8450,106 +8450,121 @@ function pluginClose(){
     pluginRerender();
 }
 
-// ---- generic SkipiPluginHost: load / mount / unmount a bundled artifact ----
+// ---- bundled first-party plugin host — ISOLATED runtime (Plugin Host Spec v1 §1) ----
+// Bundled plugins run through the SAME isolated runtime as remote plugins
+// (SkipiPluginRuntime, dist/plugin-host-bridge.js): a sandboxed iframe
+// (sandbox="allow-scripts", NO allow-same-origin -> opaque cross-origin) that
+// carries its OWN strict CSP (default-src 'none'; connect-src 'none'). The plugin
+// therefore has NO host DOM, NO host localStorage/token, NO global app config and
+// NO network. The narrow host API is reachable ONLY through a per-mount,
+// token-gated postMessage bridge. NO plugin code executes in the host document:
+// verified bytes are injected into the frame, never into the host <head>.
 window.SkipiPlugins = window.SkipiPlugins || {};
-var SkipiPluginHost = {
+
+// Host-side storage for bundled plugins: namespaced per slug in the host's own
+// localStorage, reachable by the plugin ONLY via the bridge and ONLY when its
+// manifest grants 'local_storage'. The plugin can never read any other host key.
+// Namespace is preserved from the previous inline host API ('skipi_plugin_<slug>_<k>')
+// so plugin-local data survives the isolation migration.
+var SkipiBundledStore = {
+    _k:function(slug,k){ return 'skipi_plugin_'+slug+'_'+k; },
+    get:function(slug,k){ try{ return localStorage.getItem(SkipiBundledStore._k(slug,k)); }catch(e){ return null; } },
+    set:function(slug,k,v){ try{ localStorage.setItem(SkipiBundledStore._k(slug,k), String(v)); }catch(e){} },
+    remove:function(slug,k){ try{ localStorage.removeItem(SkipiBundledStore._k(slug,k)); }catch(e){} }
+};
+
+// SkipiBundledLoader.install(id): fetch + sha256 integrity-verify the bundled
+// artifact and return the verified CODE AS STRINGS (never injected into the
+// host). Shape matches the loader contract consumed by SkipiPluginRuntime.open():
+//   { ok:true, source:'bundled', pack:{ entrypoints, files:{<ui>,<style>}, permissions } }
+// On any failure: { ok:false, stage, reason }. Fail-closed on checksum mismatch.
+var SkipiBundledLoader = {
     manifests:{},
-    loaded:{},
-    current:null,
-    // Load dist/plugins/<id>/ artifact. Resolves {ok:true,manifest} or
-    // {ok:false,reason}. Never rejects.
-    load:function(id){
-        var p=pluginById(id);
-        if(!p||!p.bundle) return Promise.resolve({ok:false, reason:'no_bundle'});
-        if(SkipiPluginHost.loaded[id] && window.SkipiPlugins[id]) return Promise.resolve({ok:true, manifest:SkipiPluginHost.manifests[id]});
-        var base=p.bundle;
-        return fetch(base+'plugin.json').then(function(r){
-            if(!r.ok) throw new Error('manifest http '+r.status);
-            return r.json();
-        }).then(function(manifest){
-            SkipiPluginHost.manifests[id]=manifest;
-            var ep=manifest.entrypoints||{};
-            return pluginInjectCss(base+(ep.style||'index.css')).then(function(){
-                return pluginInjectScript(base+(ep.ui||'index.js'));
-            }).then(function(){
-                SkipiPluginHost.loaded[id]=true;
-                if(!window.SkipiPlugins[id]) return {ok:false, reason:'no_register'};
-                return {ok:true, manifest:manifest};
-            });
-        }).catch(function(e){ return {ok:false, reason:'not_bundled', error:''+e}; });
-    },
-    mount:function(id, container){
-        return SkipiPluginHost.load(id).then(function(res){
-            if(!res.ok) return res;
-            var plugin=window.SkipiPlugins[id];
-            if(!plugin||typeof plugin.mount!=='function') return {ok:false, reason:'no_mount'};
-            try{
-                container.innerHTML='';
-                plugin.mount(container, makeHostApi(id));
-                SkipiPluginHost.current={id:id};
-                pluginSetState(id,{ last_opened_at:pluginNowIso() });
-                return {ok:true};
-            }catch(e){ logError('plugin.mount',e); return {ok:false, reason:'mount_error', error:''+e}; }
+    _sha256Hex:function(buf){
+        return crypto.subtle.digest('SHA-256', buf).then(function(d){
+            var a=new Uint8Array(d), s=''; for(var i=0;i<a.length;i++) s+=('0'+a[i].toString(16)).slice(-2); return s;
         });
     },
-    unmount:function(){
-        var cur=SkipiPluginHost.current;
-        if(cur && window.SkipiPlugins[cur.id] && typeof window.SkipiPlugins[cur.id].unmount==='function'){
-            try{ window.SkipiPlugins[cur.id].unmount(); }catch(e){ logError('plugin.unmount',e); }
+    install:function(id){
+        var p=pluginById(id);
+        if(!p||!p.bundle) return Promise.resolve({ok:false, stage:'install', reason:'no_bundle'});
+        var base=p.bundle, UI='index.js', ST='index.css';
+        function buf(path,required){ return fetch(base+path).then(function(r){ if(!r.ok){ if(required) throw new Error('http '+r.status+' '+path); return null; } return r.arrayBuffer(); }, function(e){ if(required) throw e; return null; }); }
+        return Promise.all([ buf('plugin.json',true), buf(UI,true), buf(ST,true), buf('checksums.json',false) ])
+        .then(function(b){
+            var dec=new TextDecoder('utf-8');
+            var jsonText=dec.decode(b[0]), jsText=dec.decode(b[1]), cssText=dec.decode(b[2]);
+            var manifest; try{ manifest=JSON.parse(jsonText); }catch(e){ return {ok:false, stage:'manifest', reason:'bad plugin.json: '+e}; }
+            var ep=manifest.entrypoints||{}; var ui=ep.ui||UI, st=ep.style||ST;
+            // Integrity: verify sha256 of the EXACT fetched bytes vs checksums.json.
+            var verify=Promise.resolve(true);
+            if(b[3]){
+                var sums=null; try{ sums=JSON.parse(dec.decode(b[3])); }catch(e){}
+                var f=sums&&sums.files;
+                if(f){ verify=Promise.all([
+                    SkipiBundledLoader._sha256Hex(b[1]).then(function(h){ return !f[ui]||f[ui].sha256===h; }),
+                    SkipiBundledLoader._sha256Hex(b[2]).then(function(h){ return !f[st]||f[st].sha256===h; }),
+                    SkipiBundledLoader._sha256Hex(b[0]).then(function(h){ return !f['plugin.json']||f['plugin.json'].sha256===h; })
+                ]).then(function(o){ return o[0]&&o[1]&&o[2]; }); }
+            }
+            return verify.then(function(ok){
+                if(!ok) return {ok:false, stage:'integrity', reason:'checksum mismatch — not loaded'};
+                SkipiBundledLoader.manifests[id]=manifest;
+                var files={}; files[ui]=jsText; files[st]=cssText;
+                return { ok:true, source:'bundled', pack:{ entrypoints:{ui:ui, style:st}, files:files, permissions:(manifest.permissions||[]).slice() } };
+            });
+        }).catch(function(e){ return {ok:false, stage:'install', reason:''+e}; });
+    }
+};
+
+// One lazily-built bundled runtime (after plugin-host-bridge.js defines
+// SkipiPluginRuntime). enabled:true — bundled isolation is ALWAYS on and is
+// independent of FEATURE_REMOTE_PLUGIN_DELIVERY (which only gates remote
+// delivery). Returns null if the runtime script is unavailable (fail-safe).
+var _bundledRuntime=null;
+function bundledRuntime(){
+    if(_bundledRuntime) return _bundledRuntime;
+    if(!window.SkipiPluginRuntime || typeof window.SkipiPluginRuntime.create!=='function') return null;
+    _bundledRuntime=window.SkipiPluginRuntime.create({
+        enabled:true,
+        loader:SkipiBundledLoader,
+        host:{
+            id:'seafarer',
+            theme:{ get:function(){ try{ return document.documentElement.getAttribute('data-theme')||'dark'; }catch(e){ return 'dark'; } } },
+            storage:SkipiBundledStore,
+            navigation:{
+                setTitle:function(t){ var el=document.getElementById('plugin-host-title'); if(el) el.textContent=t||''; },
+                closePlugin:function(){ pluginClose(); }
+            }
         }
+    });
+    return _bundledRuntime;
+}
+
+var SkipiPluginHost = {
+    manifests:SkipiBundledLoader.manifests,
+    current:null,
+    // Mount the bundled artifact into `container` THROUGH the isolated runtime.
+    // Resolves {ok:true} or {ok:false, reason}. Never rejects.
+    mount:function(id, container){
+        var rt=bundledRuntime();
+        if(!rt) return Promise.resolve({ok:false, reason:'no_runtime'});
+        return rt.open(id, container).then(function(res){
+            if(res && res.ok){
+                SkipiPluginHost.current={id:id};
+                try{ pluginSetState(id,{ last_opened_at:pluginNowIso() }); }catch(e){}
+                return {ok:true};
+            }
+            SkipiPluginHost.current=null;
+            return {ok:false, reason:(res&&(res.reason||res.stage))||'mount_error'};
+        }, function(e){ SkipiPluginHost.current=null; logError('plugin.mount',e); return {ok:false, reason:''+e}; });
+    },
+    // Tear the isolated frame down through the runtime's single unmount entry.
+    unmount:function(){
+        if(_bundledRuntime && SkipiPluginHost.current){ try{ _bundledRuntime.close(); }catch(e){ logError('plugin.unmount',e); } }
         SkipiPluginHost.current=null;
     }
 };
-function pluginInjectCss(href){
-    return new Promise(function(resolve){
-        if(document.querySelector('link[data-plugin-css="'+href+'"]')) return resolve();
-        var l=document.createElement('link'); l.rel='stylesheet'; l.href=href; l.setAttribute('data-plugin-css',href);
-        l.onload=function(){resolve();}; l.onerror=function(){resolve();}; // style optional
-        document.head.appendChild(l);
-    });
-}
-function pluginInjectScript(src){
-    return new Promise(function(resolve,reject){
-        if(document.querySelector('script[data-plugin-js="'+src+'"]')) return resolve();
-        var s=document.createElement('script'); s.src=src; s.setAttribute('data-plugin-js',src);
-        s.onload=function(){resolve();}; s.onerror=function(){reject(new Error('script load failed'));};
-        document.head.appendChild(s);
-    });
-}
-
-// ---- narrow host API handed to a mounted plugin ----
-function makeHostApi(pluginId){
-    var ns='skipi_plugin_'+pluginId+'_';
-    return {
-        theme:{
-            get:function(){ try{ return document.documentElement.getAttribute('data-theme')||'dark'; }catch(e){ return 'dark'; } },
-            subscribe:function(cb){
-                var obs=null;
-                try{ obs=new MutationObserver(function(){ try{ cb(document.documentElement.getAttribute('data-theme')||'dark'); }catch(e){} });
-                    obs.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']}); }catch(e){}
-                return function(){ try{ obs&&obs.disconnect(); }catch(e){} };
-            }
-        },
-        storage:{
-            get:function(k){ try{ return localStorage.getItem(ns+k); }catch(e){ return null; } },
-            set:function(k,v){ try{ localStorage.setItem(ns+k,v); }catch(e){} },
-            remove:function(k){ try{ localStorage.removeItem(ns+k); }catch(e){} }
-        },
-        audio:{
-            // Host native audio bridge is not implemented yet; for the MVP a
-            // plugin may implement its own audio internally (Web Audio).
-            playLoop:function(){ return false; },
-            stop:function(){ return false; }
-        },
-        navigation:{
-            closePlugin:function(){ pluginClose(); },
-            setTitle:function(t){ var el=document.getElementById('plugin-host-title'); if(el) el.textContent=t||''; }
-        },
-        permissions:{
-            listGranted:function(){ var p=pluginById(pluginId); var perm=p&&p.permissions||{}; return Object.keys(perm).filter(function(k){return perm[k]===true;}); }
-        }
-    };
-}
 
 // ---- shared permissions/safety panel ----
 function pluginPermsHtml(p){
