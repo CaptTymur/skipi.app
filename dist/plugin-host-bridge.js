@@ -45,7 +45,16 @@
       host: { id: hostId || null },
       theme: { get: function () { return theme; }, subscribe: function (cb) { themeSubs.push(cb); return function () { themeSubs = themeSubs.filter(function (f) { return f !== cb; }); }; } },
       storage: {
-        get: function (k, cb) { if (!has('local_storage')) { if (cb) cb(null); return; } var id = ++seq; pending[id] = cb || function () {}; send({ type: 'storage.get', id: id, key: k }); },
+        // Returns a Promise AND honors an optional callback (back-compat): a
+        // plugin may 'var v = storage.get(k)' and use v.then(...), or pass a cb.
+        get: function (k, cb) {
+          if (!has('local_storage')) { if (cb) cb(null); return Promise.resolve(null); }
+          var id = ++seq, resolve;
+          var p = new Promise(function (r) { resolve = r; });
+          pending[id] = function (v) { if (cb) { try { cb(v); } catch (e) {} } resolve(v); };
+          send({ type: 'storage.get', id: id, key: k });
+          return p;
+        },
         set: function (k, v) { if (has('local_storage')) send({ type: 'storage.set', key: k, value: v }); },
         remove: function (k) { if (has('local_storage')) send({ type: 'storage.remove', key: k }); }
       },
