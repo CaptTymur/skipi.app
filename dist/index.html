@@ -6,6 +6,30 @@
 <title>Скипи Моряк - United Seafarers</title>
 <script>
 var APP_VERSION='0.4.164';
+var APP_BUILD_SHA='unknown';
+function buildShortSha(){
+    return APP_BUILD_SHA && APP_BUILD_SHA !== 'unknown' ? APP_BUILD_SHA.slice(0,7) : '';
+}
+function appVersionLabel(){
+    var sha=buildShortSha();
+    return APP_VERSION+(sha?' · '+sha:'');
+}
+function updateBuildLabels(){
+    var label=appVersionLabel();
+    var wv=document.getElementById('welcome-version');if(wv)wv.textContent=label;
+    var av=document.getElementById('about-version');if(av)av.textContent=label;
+    updateTitlebar();
+}
+function setBuildInfo(info){
+    if(info&&info.version)APP_VERSION=String(info.version);
+    if(info&&info.sha)APP_BUILD_SHA=String(info.sha);
+    else if(info&&info.short_sha)APP_BUILD_SHA=String(info.short_sha);
+    updateBuildLabels();
+}
+async function loadBuildInfo(){
+    try{if(typeof invoke==='function')setBuildInfo(await invoke('get_build_info'));}
+    catch(e){updateBuildLabels();}
+}
 var UI_LANG_KEY='skipi-ui-language';
 // NOTE: the assistant's system prompt and knowledge base are NOT bundled here.
 // They live only on the server (skipi-server) so they can't be extracted from
@@ -129,7 +153,7 @@ function updateTitlebar(vaultName,accountType){
     var label=accountType?(ACCOUNT_TYPE_LABELS[accountType]||accountType):'';
     // Format: "Skipi Seafarer 0.4.69 — Seafarer — Adrian V. Seaborne". Version always
     // visible for dev/QA — single source of truth = APP_VERSION.
-    var base=tr('app.name')+' '+APP_VERSION;
+    var base=tr('app.name')+' '+appVersionLabel();
     var os=label?base+' — '+label+(vaultName?' — '+vaultName:''):base;
     document.title=os;
     // Push it to the actual OS titlebar via the Rust helper. Fire-and-forget —
@@ -2558,7 +2582,7 @@ async function init() {
     if(!window.__TAURI__||!window.__TAURI__.core){err('Tauri API not available');return;}
     invoke=window.__TAURI__.core.invoke;
     if(window.__TAURI__.dialog){open=window.__TAURI__.dialog.open;saveDlg=window.__TAURI__.dialog.save;}
-    var wv=document.getElementById('welcome-version');if(wv)wv.textContent=APP_VERSION;
+    await loadBuildInfo();
     convertFileSrc=window.__TAURI__.core.convertFileSrc||function(p){return p;};
     try{hostPlatform=await invoke('get_platform');}catch(e){hostPlatform='unknown';}
     applyMobileMode();
@@ -15589,7 +15613,7 @@ function renderSettingsBody(){
     if(settingsTab === 'about'){
         h += '<div class="settings-section"><h3>'+tr('settings.about')+'</h3><div class="section-desc">'+tr('welcome.subtitle')+'</div>';
         h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Version</div><div class="setting-desc">Current application version.</div></div>';
-        h += '<div class="setting-control" style="font-size:13px;color:var(--text2);" id="about-version">'+APP_VERSION+'</div></div>';
+        h += '<div class="setting-control" style="font-size:13px;color:var(--text2);" id="about-version" data-qa="app-build-sha">'+appVersionLabel()+'</div></div>';
         h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Platform</div><div class="setting-desc">Detected host platform.</div></div>';
         h += '<div class="setting-control" style="font-size:13px;color:var(--text2);" id="about-platform">…</div></div>';
         h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Author</div><div class="setting-desc">Developed by Tymur Rudov, Master Mariner.</div></div>';
@@ -15619,10 +15643,7 @@ function renderSettingsBody(){
         loadIdentityTrustStatus();
     }
     if(settingsTab === 'about'){
-        invoke('get_app_version').then(function(v){
-            var el=document.getElementById('about-version');
-            if(el) el.textContent = v || '(unknown)';
-        }).catch(function(){});
+        loadBuildInfo();
         invoke('get_platform').then(function(p){
             var el=document.getElementById('about-platform');
             if(el) el.textContent = p || '(unknown)';

@@ -6,6 +6,13 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use tauri::State;
 
+#[derive(serde::Serialize)]
+pub struct BuildInfo {
+    pub version: String,
+    pub sha: String,
+    pub short_sha: String,
+}
+
 #[tauri::command]
 pub fn get_last_vault() -> Option<String> {
     crate::load_last_vault()
@@ -16,6 +23,21 @@ pub fn get_last_vault() -> Option<String> {
 #[tauri::command]
 pub fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[tauri::command]
+pub fn get_build_info() -> BuildInfo {
+    let sha = option_env!("SKIPI_BUILD_SHA").unwrap_or("unknown").to_string();
+    let short_sha = if sha == "unknown" {
+        "unknown".to_string()
+    } else {
+        sha.chars().take(7).collect()
+    };
+    BuildInfo {
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        sha,
+        short_sha,
+    }
 }
 
 /// Returns a short identifier for the host OS (mac/windows/linux/other).
