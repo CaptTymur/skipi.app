@@ -130,6 +130,7 @@ pub fn run() {
             vault::get_vault_types,
             vault::get_last_vault,
             vault::get_app_version,
+            vault::get_build_info,
             vault::get_platform,
             vault::get_default_vault_parent,
             vault::get_linux_install_type,
