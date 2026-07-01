@@ -1,0 +1,73 @@
+name: skipi-guard
+
+on:
+  pull_request:
+  push:
+    branches: [main, mobile-start]
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout app repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout skipi-guard
+        uses: actions/checkout@v4
+        with:
+          repository: CaptTymur/skipi-guard
+          ref: d3402d3911cdacbd40a416bf2759575dced6e615
+          path: .skipi-guard
+
+      - name: Resolve guard base
+        id: refs
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BASE="origin/${GITHUB_BASE_REF}"
+          else
+            BEFORE="${{ github.event.before }}"
+            if [[ -n "$BEFORE" && "$BEFORE" != "0000000000000000000000000000000000000000" ]] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+              BASE="$BEFORE"
+            else
+              BASE="origin/main"
+            fi
+          fi
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
+
+      - name: Run skipi-guard
+        env:
+          SKIPI_GUARD_HOME: seafarer
+          SKIPI_GUARD_TASK: plugin-host
+          BASE: ${{ steps.refs.outputs.base }}
+        run: |
+          set -euo pipefail
+          OVERRIDE_ARGS=()
+          mapfile -t GUARD_CHANGED_FILES < <(
+            git diff --name-only --diff-filter=ACDMRTUXB "$BASE...$GITHUB_SHA" 2>/dev/null ||
+            git diff --name-only --diff-filter=ACDMRTUXB "$BASE..$GITHUB_SHA"
+          )
+          if [[ "${#GUARD_CHANGED_FILES[@]}" -eq 1 && "${GUARD_CHANGED_FILES[0]}" == ".github/workflows/skipi-guard.yml" ]]; then
+            OVERRIDE_ARGS=(--override-protected skipi-guard-workflow-bootstrap)
+          fi
+          .skipi-guard/bin/skipi-guard verify \
+            --home "$SKIPI_GUARD_HOME" \
+            --task "$SKIPI_GUARD_TASK" \
+            "${OVERRIDE_ARGS[@]}" \
+            --run-harness \
+            --repo "$GITHUB_WORKSPACE" \
+            --base "$BASE" \
+            --head "$GITHUB_SHA" \
+            --json /tmp/skipi-guard.json
+
+      - name: Upload guard JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: skipi-guard-json
+          path: /tmp/skipi-guard.json
