@@ -23,6 +23,11 @@ jobs:
           ref: d3402d3911cdacbd40a416bf2759575dced6e615
           path: .skipi-guard
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
       - name: Resolve guard base
         id: refs
         shell: bash
