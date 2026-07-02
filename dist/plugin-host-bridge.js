@@ -170,7 +170,11 @@
           if (!granted('local_storage')) { audit.push('DENY storage.remove'); break; }
           store.remove(active.slug, m.key); break;
         case 'nav.setTitle': nav.setTitle(m.title); break;
-        case 'nav.close': if (nav.closePlugin) nav.closePlugin(); active.api.close(); break;
+        case 'nav.close':
+          var closeApi = active && active.api;
+          if (nav.closePlugin) nav.closePlugin();
+          if (closeApi && closeApi.close) closeApi.close();
+          break;
         case 'error':
           active.error = m.message;
           if (active.resolve) { active.resolve({ ok: false, stage: 'mount', reason: m.message }); active.resolve = null; }
