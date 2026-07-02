@@ -20,7 +20,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: CaptTymur/skipi-guard
-          ref: d3402d3911cdacbd40a416bf2759575dced6e615
+          ref: a2fd9a458d988fb7bee3593711e3ab9454b2fb06
           path: .skipi-guard
 
       - name: Setup Node
@@ -59,6 +59,30 @@ jobs:
           )
           if [[ "${#GUARD_CHANGED_FILES[@]}" -eq 1 && "${GUARD_CHANGED_FILES[0]}" == ".github/workflows/skipi-guard.yml" ]]; then
             OVERRIDE_ARGS=(--override-protected skipi-guard-workflow-bootstrap)
+          fi
+          # One-shot presence-contract bootstrap: the protected manifest may be
+          # INTRODUCED (diff-filter=A) together with its harness and this
+          # workflow pin, and nothing else. Once presence-manifest.json exists
+          # on main, edits to it are M-not-A and never get this override.
+          presence_bootstrap_candidate=1
+          presence_manifest_added=0
+          mapfile -t GUARD_ADDED_FILES < <(
+            git diff --name-only --diff-filter=A "$BASE...$GITHUB_SHA" 2>/dev/null ||
+            git diff --name-only --diff-filter=A "$BASE..$GITHUB_SHA"
+          )
+          for added_file in "${GUARD_ADDED_FILES[@]}"; do
+            if [[ "$added_file" == "presence-manifest.json" ]]; then
+              presence_manifest_added=1
+            fi
+          done
+          for changed_file in "${GUARD_CHANGED_FILES[@]}"; do
+            case "$changed_file" in
+              presence-manifest.json|tests/seafarer_presence_contract_harness.mjs|.github/workflows/skipi-guard.yml) ;;
+              *) presence_bootstrap_candidate=0 ;;
+            esac
+          done
+          if [[ "$presence_manifest_added" -eq 1 && "$presence_bootstrap_candidate" -eq 1 ]]; then
+            OVERRIDE_ARGS=(--override-protected seafarer-presence-contracts-bootstrap)
           fi
           .skipi-guard/bin/skipi-guard verify \
             --home "$SKIPI_GUARD_HOME" \
