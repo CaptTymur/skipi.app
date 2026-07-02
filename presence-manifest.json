@@ -1,0 +1,152 @@
+{
+  "schema_version": "skipi.presence-manifest.v1",
+  "home": "seafarer",
+  "artifact": "dist/index.html",
+  "required_modules": [
+    {
+      "id": "documents",
+      "name": "Documents",
+      "desktop_navigation": {
+        "route": "files",
+        "nav_selector": "#mt-files",
+        "render_function": "renderTree"
+      },
+      "mobile_navigation": {
+        "route": "docs",
+        "nav_selector": "[data-mview=\"docs\"]",
+        "render_function": "renderMobileDocs"
+      }
+    },
+    {
+      "id": "experience",
+      "name": "Experience",
+      "desktop_navigation": {
+        "route": "experience",
+        "nav_selector": "#mt-exp",
+        "render_function": "showWorkHistory"
+      },
+      "mobile_navigation": {
+        "route": "experience",
+        "nav_selector": "[data-mview=\"experience\"]",
+        "render_function": "renderMobileExperience"
+      }
+    },
+    {
+      "id": "cv",
+      "name": "CV",
+      "desktop_navigation": {
+        "route": "cv",
+        "nav_selector": "#mt-cv",
+        "render_function": "showCv"
+      },
+      "mobile_navigation": {
+        "route": "cv",
+        "nav_selector": "[data-mview=\"cv\"]",
+        "render_function": "renderMobileCv"
+      }
+    },
+    {
+      "id": "packages",
+      "name": "Packages",
+      "desktop_navigation": {
+        "route": "packages",
+        "nav_selector": "#mt-pkg",
+        "render_function": "showPackages"
+      }
+    },
+    {
+      "id": "mailings",
+      "name": "Mailings",
+      "desktop_navigation": {
+        "route": "dispatch",
+        "nav_selector": "#mt-disp",
+        "render_function": "showDispatch"
+      },
+      "mobile_navigation": {
+        "route": "dispatch",
+        "nav_selector": "[data-mview=\"dispatch\"]",
+        "render_function": "renderMobileDispatch",
+        "hides_bottom_nav": true
+      }
+    },
+    {
+      "id": "jobs",
+      "name": "Jobs",
+      "desktop_navigation": {
+        "route": "jobs",
+        "nav_selector": "#mt-jobs",
+        "render_function": "showJobs"
+      },
+      "mobile_navigation": {
+        "route": "jobs",
+        "nav_selector": "[data-mview=\"jobs\"]",
+        "render_function": "renderMobileJobs"
+      }
+    },
+    {
+      "id": "information",
+      "name": "Information",
+      "desktop_navigation": {
+        "route": "information",
+        "nav_selector": "#mt-info",
+        "render_function": "showInformation"
+      },
+      "mobile_navigation": {
+        "route": "information",
+        "nav_selector": "[data-mview=\"information\"]",
+        "render_function": "renderMobileInformation"
+      }
+    },
+    {
+      "id": "vessel-db",
+      "name": "Vessel DB",
+      "desktop_navigation": {
+        "route": "vessels",
+        "nav_selector": "#mt-vessels",
+        "render_function": "showVesselDatabase"
+      },
+      "mobile_navigation": {
+        "route": "vessels",
+        "nav_selector": "[data-mview=\"vessels\"]",
+        "render_function": "renderMobileVessels"
+      }
+    },
+    {
+      "id": "my-vessel",
+      "name": "My Vessel",
+      "desktop_navigation": {
+        "route": "myvessel",
+        "nav_selector": "#mt-myvessel",
+        "render_function": "showMyVessel"
+      },
+      "mobile_navigation": {
+        "route": "myvessel",
+        "nav_selector": "[data-mview=\"myvessel\"]",
+        "render_function": "renderMobileMyVessel"
+      }
+    },
+    {
+      "id": "apps",
+      "name": "Apps",
+      "desktop_navigation": {
+        "route": "apps",
+        "nav_selector": "#mt-apps",
+        "render_function": "showApps"
+      },
+      "mobile_navigation": {
+        "route": "apps",
+        "nav_selector": "[data-mview=\"apps\"]",
+        "render_function": "renderMobileApps"
+      }
+    },
+    {
+      "id": "assistant",
+      "name": "Assistant",
+      "mobile_navigation": {
+        "route": "assistant",
+        "nav_selector": "[data-mview=\"assistant\"]",
+        "render_function": "renderMobileAssistant"
+      }
+    }
+  ]
+}
