@@ -389,5 +389,153 @@ const appsHtml = (doc) => String((doc.getElementById('scr-content') || {}).inner
   ok(sandbox.pluginHostState.selectedId === null && sandbox.pluginHostState.surface === 'manage', 'detail back returns to the manage list');
 }
 
+// ---------------------------------------------------------------------------
+// Mobile compact launcher v2 + rail R2 (test matrix M1–M13; M10 is the visual
+// pass, M11/M12 are the whole-suite + guard runs — covered outside this file).
+// ---------------------------------------------------------------------------
+
+const mobileHtml = (doc) => String((doc.getElementById('mobile-main') || {}).innerHTML || '');
+
+function bootMobile(opts) {
+  const app = bootApp(opts);
+  app.sandbox.shouldUseMobileShell = () => true;
+  return app;
+}
+
+{
+  section('mobile v2 (M1) — canonical hooks through the real render path');
+  const { sandbox, doc } = bootMobile({ seed: BNWAS_INSTALLED });
+  await settleVm();
+  sandbox.mobileShow('apps');
+  const h = mobileHtml(doc);
+  ok(h.includes('data-qa="seafarer-module-apps"'), 'launcher root hook renders in #mobile-main');
+  ok(h.includes('data-qa="apps-search-input"'), 'apps-search-input renders');
+  ok(h.includes('data-qa="plugins-settings-open"'), 'plugins-settings-open (gear) renders');
+  ok(h.includes('data-qa="plugin-tile-bnwas-time-anchor"') && h.includes('data-qa="plugin-open-bnwas-time-anchor"'), 'plugin-tile-/plugin-open-<id> render for the installed plugin');
+  for (const qa of ['bottom-nav-home', 'bottom-nav-workspace', 'bottom-nav-apps', 'bottom-nav-more']) {
+    ok(doc.querySelectorAll(`[data-qa="${qa}"]`).length === 1, `${qa} exists exactly once in the rail`);
+  }
+  sandbox.pluginOpenManage();
+  ok(mobileHtml(doc).includes('data-qa="plugin-settings-bnwas-time-anchor"'), 'plugin-settings-<id> renders in manage');
+}
+
+{
+  section('mobile v2 (M2) — installed-only grid');
+  const { sandbox, doc } = bootMobile({ seed: BNWAS_INSTALLED });
+  await settleVm();
+  sandbox.mobileShow('apps');
+  const h = mobileHtml(doc);
+  ok(!h.includes('distance-tables') && !h.includes('draft-survey'), 'catalog/coming-soon never on the launcher');
+  ok(h.includes('apps-launcher-grid'), 'installed grid renders');
+  sandbox.pluginOpenManage();
+  const m = mobileHtml(doc);
+  ok(m.includes('plugin-settings-distance-tables') && m.includes('plugin-settings-draft-survey'), 'full catalog lives behind the gear');
+}
+
+{
+  section('mobile v2 (M3/M4) — search + states B/C semantics (language-agnostic)');
+  const empty = bootMobile({ seed: {} });
+  await settleVm();
+  empty.sandbox.mobileShow('apps');
+  const hB = mobileHtml(empty.doc);
+  ok(hB.includes('data-qa="plugin-empty-state"') && !hB.includes('data-context="search"'), 'State B renders the empty hook (not search context)');
+  ok(hB.includes('pluginOpenManage()'), 'State B CTA routes to manage');
+  const inst = bootMobile({ seed: BNWAS_INSTALLED });
+  await settleVm();
+  inst.sandbox.mobileShow('apps');
+  inst.sandbox.pluginHostState.search = 'no-such-plugin';
+  const hC = inst.sandbox.pluginLauncherResultsHtml();
+  ok(hC.includes('data-qa="plugin-empty-state"') && hC.includes('data-context="search"'), 'State C is a distinct search-context empty state');
+  inst.sandbox.pluginHostState.search = 'BNWAS';
+  ok(inst.sandbox.pluginLauncherResultsHtml().includes('plugin-tile-bnwas-time-anchor'), 'search match is case-insensitive on installed plugins');
+  inst.sandbox.pluginHostState.search = 'draft';
+  ok(!inst.sandbox.pluginLauncherResultsHtml().includes('draft-survey'), 'catalog-only names never match');
+}
+
+{
+  section('mobile v2 (M5) — honest offline state');
+  const off = bootMobile({ seed: BNWAS_INSTALLED, onLine: false });
+  await settleVm();
+  off.sandbox.mobileShow('apps');
+  ok(mobileHtml(off.doc).includes('data-qa="plugin-offline-state"'), 'offline hook renders from real navigator.onLine === false');
+  const on = bootMobile({ seed: BNWAS_INSTALLED, onLine: true });
+  await settleVm();
+  on.sandbox.mobileShow('apps');
+  ok(!mobileHtml(on.doc).includes('data-qa="plugin-offline-state"'), 'no offline hook while online');
+}
+
+{
+  section('mobile v2 (M6/M7) — gear/manage/detail routing + UHOST-11');
+  const { sandbox, doc } = bootMobile({ seed: BNWAS_INSTALLED });
+  await settleVm();
+  sandbox.mobileShow('apps');
+  ok(!/pluginInstall\(/.test(mobileHtml(doc)), 'no Install on the primary surface');
+  sandbox.pluginOpenManage();
+  sandbox.pluginSelect('bnwas-time-anchor');
+  const detail = mobileHtml(doc);
+  ok(/pluginOpen\(/.test(detail) && /pluginDisable\(/.test(detail) && /pluginUninstall\(/.test(detail), 'lifecycle buttons live on the manage detail');
+  sandbox.pluginOpen('bnwas-time-anchor');
+  ok(sandbox.pluginHostState.openId === 'bnwas-time-anchor', 'detail Open mounts the plugin screen');
+  ok(mobileHtml(doc).includes('plugin-host-container'), 'plugin screen renders the single host mount container');
+  sandbox.pluginClose();
+  ok(sandbox.pluginHostState.selectedId === 'bnwas-time-anchor' && sandbox.pluginHostState.surface === 'manage', 'UHOST-11: opened from detail -> closes to detail');
+  sandbox.pluginBack();
+  ok(sandbox.pluginHostState.selectedId === null && sandbox.pluginHostState.surface === 'manage', 'detail back -> manage list');
+  sandbox.pluginBackToLauncher();
+  ok(mobileHtml(doc).includes('data-qa="apps-search-input"'), '«← Apps» returns to the launcher');
+  sandbox.pluginLaunch('bnwas-time-anchor');
+  sandbox.pluginClose();
+  ok(sandbox.pluginHostState.surface === 'launcher', 'UHOST-11: opened from launcher -> closes to launcher');
+}
+
+{
+  section('mobile v2 (M8) — rail active state + unmount on leaving Apps');
+  const { sandbox, doc } = bootMobile({ seed: BNWAS_INSTALLED });
+  await settleVm();
+  sandbox.mobileShow('apps');
+  const btn = (qa) => doc.querySelector(`[data-qa="${qa}"]`);
+  ok(btn('bottom-nav-apps').classList.contains('active'), 'bottom-nav-apps is active on the launcher');
+  ok(!btn('bottom-nav-home').classList.contains('active'), 'home slot not active on Apps');
+  sandbox.pluginLaunch('bnwas-time-anchor');
+  ok(sandbox.pluginHostState.openId === 'bnwas-time-anchor', 'plugin open before leaving');
+  sandbox.mobileShow('home');
+  ok(sandbox.pluginHostState.openId === null, 'leaving Apps unmounts the open plugin');
+  ok(!btn('bottom-nav-apps').classList.contains('active') && btn('bottom-nav-home').classList.contains('active'), 'active moves from Apps to Home');
+  sandbox.mobileShow('docs');
+  ok(btn('bottom-nav-workspace').classList.contains('active'), 'workspace (Vault) active on docs');
+  sandbox.mobileShow('experience');
+  ok(btn('bottom-nav-more').classList.contains('active'), '«Ещё» active while a sheet module is current');
+}
+
+{
+  section('mobile v2 (M9) — R2 is additive, existing rail untouched');
+  const { sandbox, doc } = bootMobile({ seed: {} });
+  await settleVm();
+  for (const v of ['docs', 'assistant', 'experience', 'cv', 'dispatch', 'jobs', 'information', 'vessels', 'myvessel', 'apps']) {
+    ok(doc.querySelectorAll(`[data-mview="${v}"]`).length === 1, `existing data-mview="${v}" button still present`);
+  }
+  ok(!!doc.getElementById('mobile-module-rail') && !!doc.getElementById('mobile-bottom-nav') && !!doc.getElementById('mobile-profile-meter'), 'mobile-module-rail / mobile-bottom-nav / profile-meter ids kept');
+  ok(!!doc.getElementById('mobile-more-sheet') && !!doc.getElementById('mobile-primary-rail'), 'sheet + primary rail are new additive containers');
+  sandbox.mobileShow('home');
+  const sheet = doc.getElementById('mobile-more-sheet');
+  ok(sheet.style.display === 'none', '«Ещё» sheet is closed by default');
+  sandbox.mobileMoreToggle();
+  ok(sheet.style.display !== 'none', 'bottom-nav-more opens the sheet');
+  sandbox.mobileShow('docs');
+  ok(sheet.style.display === 'none', 'navigation closes the sheet');
+}
+
+{
+  section('mobile v2 (M13) — plugin opens only via the existing §1 mount path');
+  const { sandbox, doc } = bootMobile({ seed: BNWAS_INSTALLED });
+  await settleVm();
+  sandbox.mobileShow('apps');
+  sandbox.pluginLaunch('bnwas-time-anchor');
+  const h = mobileHtml(doc);
+  ok(h.includes('id="plugin-host-container"'), 'mobile plugin screen mounts into the single #plugin-host-container');
+  ok((HTML.match(/SkipiPluginHost\.mount\(/g) || []).length === 1, 'exactly one SkipiPluginHost.mount call site (pluginMountInto)');
+  ok(!/srcdoc\s*=/.test(HTML), 'host document builds no iframes of its own (runtime bridge owns the frame)');
+}
+
 console.log('\n' + (fail === 0 ? 'ALL GREEN' : 'FAILURES') + ': ' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail === 0 ? 0 : 1);

@@ -1104,6 +1104,19 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .apps-launcher-foot { font-size:11.5px; color:var(--text2); margin-top:16px; }
 body.mobile-mode .apps-launcher-grid { grid-template-columns:repeat(3,1fr); max-width:none; }
 @media (max-width:359px){ body.mobile-mode .apps-launcher-grid { grid-template-columns:repeat(2,1fr); } }
+/* mobile compact launcher v2 header */
+.mobile-apps-head { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+.mobile-apps-icon { width:38px; height:38px; border-radius:9px; background:var(--accent); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:18px; flex:0 0 auto; }
+.mobile-apps-head-copy { flex:1; min-width:0; }
+.mobile-apps-head-title { font-size:18px; font-weight:800; color:var(--text); }
+.mobile-apps-head-sub { font-size:11.5px; color:var(--text2); }
+/* R2 primary rail (4 slots) + «Ещё» sheet */
+.mobile-primary-rail { display:flex; gap:6px; }
+.mobile-rail-btn { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; padding:7px 4px; background:var(--bg); border:1px solid var(--border); border-radius:8px; color:var(--text2); font-size:11px; font-weight:700; cursor:pointer; }
+.mobile-rail-btn span { font-size:16px; line-height:1; }
+.mobile-rail-btn em { font-style:normal; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mobile-rail-btn.active { color:var(--accent); border-color:var(--accent-bg2); background:var(--accent-bg); }
+.mobile-more-sheet { border-bottom:1px solid var(--border); padding-bottom:7px; }
 .apps-tile { display:flex; gap:12px; text-align:left; align-items:flex-start; padding:14px; border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--text); cursor:pointer; transition:border-color .12s, transform .05s; }
 .apps-tile:hover { border-color:var(--accent); }
 .apps-tile:active { transform:translateY(1px); }
@@ -1304,6 +1317,10 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
             <span class="mobile-profile-meter-track"><span class="mobile-profile-meter-fill" id="mobile-profile-meter-fill"></span></span>
             <span class="mobile-profile-meter-value" id="mobile-profile-meter-value">0%</span>
         </button>
+        <!-- R2: the full module rail lives behind the «Ещё» sheet. The buttons
+             below keep their ids/classes/data-mview untouched — they stay the
+             real navigation for these modules, one tap deeper. -->
+        <div class="mobile-more-sheet" id="mobile-more-sheet" style="display:none;">
         <div class="mobile-module-rail-wrap has-more" id="mobile-module-rail-wrap">
         <div class="mobile-module-rail" id="mobile-module-rail" onscroll="mobileUpdateModuleRailHint()">
             <button class="mobile-nav-btn active" type="button" data-mview="docs" onclick="mobileShow('docs')"><span>&#9633;</span>Documents</button>
@@ -1320,6 +1337,15 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
             <button class="mobile-nav-btn" type="button" data-mview="apps" onclick="mobileShow('apps')"><span>&#9638;</span>Apps</button>
 
         </div>
+        </div>
+        </div>
+        <!-- R2 primary rail: exactly 4 slots (standard v2 §7). Hooks are
+             additive data-qa; labels are set per-language in mobileSetBottomNav. -->
+        <div class="mobile-primary-rail" id="mobile-primary-rail">
+            <button class="mobile-rail-btn" type="button" data-qa="bottom-nav-home" onclick="mobileShow('home')"><span>&#8962;</span><em id="mobile-rail-label-home">Дом</em></button>
+            <button class="mobile-rail-btn" type="button" data-qa="bottom-nav-workspace" onclick="mobileShow('docs')"><span>&#9636;</span><em id="mobile-rail-label-workspace">Vault</em></button>
+            <button class="mobile-rail-btn" type="button" data-qa="bottom-nav-apps" onclick="mobileShow('apps')"><span>&#9638;</span><em id="mobile-rail-label-apps">Apps</em></button>
+            <button class="mobile-rail-btn" type="button" data-qa="bottom-nav-more" onclick="mobileMoreToggle()"><span>&#8943;</span><em id="mobile-rail-label-more">Ещё</em></button>
         </div>
     </nav>
     <input id="mobile-file-input" type="file" accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png" style="display:none;" onchange="mobileHandleFilePicked(this.files)">
@@ -3066,10 +3092,42 @@ function mobileSetBottomNav(showNav){
         var active=(mobileView===v)||(v==='docs'&&docViews.indexOf(mobileView)>=0);
         btn.classList.toggle('active',active);
     });
+    // R2 primary rail: sheet visibility, active states and per-language labels.
+    var moreSheet=document.getElementById('mobile-more-sheet');
+    if(moreSheet)moreSheet.style.display=mobileMoreOpen?'':'none';
+    var ru=getUiLang()==='ru';
+    var docViews2=['docs','doc','add','pdf'];
+    var moreViews=['assistant','experience','cv','dispatch','jobs','information','vessels','myvessel'];
+    var railStates={
+        'bottom-nav-home': mobileView==='home',
+        'bottom-nav-workspace': docViews2.indexOf(mobileView)>=0,
+        'bottom-nav-apps': mobileView==='apps',
+        'bottom-nav-more': mobileMoreOpen||moreViews.indexOf(mobileView)>=0
+    };
+    document.querySelectorAll('.mobile-rail-btn').forEach(function(btn){
+        var qa=btn.getAttribute('data-qa');
+        btn.classList.toggle('active',!!railStates[qa]);
+        btn.setAttribute('aria-expanded',qa==='bottom-nav-more'?String(mobileMoreOpen):btn.getAttribute('aria-expanded')||'');
+    });
+    var railLabels={
+        'mobile-rail-label-home': ru?'Дом':'Home',
+        'mobile-rail-label-workspace': ru?'Vault':'Vault',
+        'mobile-rail-label-apps': 'Apps',
+        'mobile-rail-label-more': ru?'Ещё':'More'
+    };
+    Object.keys(railLabels).forEach(function(id){
+        var el=document.getElementById(id);
+        if(el)el.textContent=railLabels[id];
+    });
     if(showNav){
         mobileSyncModuleRail();
         setTimeout(mobileRefreshProfileMeter,0);
     }
+}
+var mobileMoreOpen=false;
+function mobileMoreToggle(){
+    mobileMoreOpen=!mobileMoreOpen;
+    mobileSetBottomNav(mobileView!=='dispatch');
 }
 function mobileMainHtml(html){
     var main=document.getElementById('mobile-main');
@@ -3644,9 +3702,16 @@ function mobileScrollMainTop(){
 }
 function mobileShow(view){
     mobileView=view||'home';
+    mobileMoreOpen=false;   // R2: the «Ещё» sheet closes on any navigation
+    // R2 (M8): leaving Apps unmounts an open plugin through the host's single
+    // unmount entry — no plugin keeps running behind another module.
+    if(mobileView!=='apps' && pluginHostState.openId){
+        try{ SkipiPluginHost.unmount(); }catch(e){}
+        pluginHostState.openId=null; pluginHostState.openedFrom=null;
+    }
     if(mobileView==='add'&&mobileAddMode!=='attach_single'&&mobileAddMode!=='attach_pdf')mobileAddMode='choose';
     if(mobileView==='dispatch')mobileDispatchStep='choose';
-    if(mobileView==='apps'){pluginHostState.selectedId=null;pluginHostState.openId=null;}
+    if(mobileView==='apps'){pluginHostState.selectedId=null;pluginHostState.openId=null;pluginHostState.surface='launcher';pluginHostState.search='';}
     renderMobileShell();
     setTimeout(mobileScrollMainTop,0);
     setTimeout(mobileScrollMainTop,140);
@@ -8904,8 +8969,32 @@ function renderMobileApps(){
         return;
     }
     if(pluginHostState.selectedId) return pluginMobileDetail(pluginById(pluginHostState.selectedId));
-    var h='<div class="mobile-section-title">Apps — bundled plugins</div>';
-    h+='<div class="mobile-card-sub" style="margin:-4px 0 12px;">First-party plugins inside your Seafarer home. Not a marketplace and no third-party code.</div>';
+    if(pluginHostState.surface==='manage') return renderMobileAppsManage();
+    // Mobile compact launcher v2 (standard 2026-07-03): header + installed-only
+    // search + 3-column icon grid + footer copy; catalog lives behind the gear.
+    var ru=getUiLang()==='ru';
+    var offline=false; try{ offline=(navigator.onLine===false); }catch(e){}
+    var h='<div class="mobile-apps-launcher" data-qa="seafarer-module-apps">';
+    h+='<div class="mobile-apps-head"><span class="mobile-apps-icon">S</span>'
+      +'<div class="mobile-apps-head-copy"><div class="mobile-apps-head-title">Apps</div>'
+      +'<div class="mobile-apps-head-sub">'+esc(ru?'Скипи Моряк':'Skipi Seafarer')+'</div></div>'
+      +'<button class="apps-gear-btn" type="button" data-qa="plugins-settings-open" onclick="pluginOpenManage()" title="'+escAttr(ru?'Настройки плагинов':'Plugin settings')+'" aria-label="'+escAttr(ru?'Настройки плагинов':'Plugin settings')+'">&#9881;</button></div>';
+    if(offline){
+        h+='<div class="apps-offline" data-qa="plugin-offline-state">'+esc(ru?'Оффлайн — установленные плагины продолжают работать.':'Offline — installed plugins keep working.')+'</div>';
+    }
+    h+='<div class="apps-search"><label class="apps-search-label" for="apps-search-field">'+esc(ru?'Найти плагин':'Find a plugin')+'</label>'
+      +'<input id="apps-search-field" type="text" data-qa="apps-search-input" value="'+escAttr(pluginHostState.search||'')+'" oninput="pluginLauncherSearch(this.value)" placeholder="'+escAttr(ru?'Название плагина':'Plugin name')+'"></div>';
+    h+='<div id="apps-launcher-results">'+pluginLauncherResultsHtml()+'</div>';
+    h+='<div class="apps-launcher-foot">'+esc(ru?'Только установленные плагины. Управление, политики и обновления — через ⚙.':'Installed plugins only. Management, policies and updates — via ⚙.')+'</div>';
+    h+='</div>';
+    mobileMainHtml(h);
+}
+// Mobile manage (behind the gear): full catalog + lifecycle, «← Apps» return.
+function renderMobileAppsManage(){
+    var ru=getUiLang()==='ru';
+    var h='<button class="mobile-home-btn" type="button" onclick="pluginBackToLauncher()"><span class="mobile-home-btn-icon">←</span><span>Apps</span></button>';
+    h+='<div class="mobile-section-title">'+esc(ru?'Управление плагинами':'Plugin management')+'</div>';
+    h+='<div class="mobile-card-sub" style="margin:-4px 0 12px;">'+esc(ru?'Каталог, установка, отключение и обновления. Не маркетплейс, без стороннего кода.':'Catalog, install, disable and updates. Not a marketplace and no third-party code.')+'</div>';
     SKIPI_PLUGIN_CATEGORIES.forEach(function(cat){
         var items=SKIPI_PLUGIN_REGISTRY.filter(function(p){return p.category===cat.key;});
         if(!items.length) return;
@@ -8913,7 +9002,7 @@ function renderMobileApps(){
         items.forEach(function(p){
             var soon=!!p.comingSoon, st=pluginStatus(p.id);
             var tag=soon?' <span class="apps-badge soon">soon</span>':(st==='installed'?' <span class="apps-badge live">installed</span>':(st==='disabled'?' <span class="apps-badge soon">disabled</span>':''));
-            h+='<button class="mobile-primary-action" type="button" onclick="pluginSelect(\''+p.id+'\')">'
+            h+='<button class="mobile-primary-action" type="button" data-qa="plugin-settings-'+escAttr(p.id)+'" onclick="pluginSelect(\''+jsString(p.id)+'\')">'
               +'<span class="mobile-action-icon">'+(p.icon||'▢')+'</span>'
               +'<span class="mobile-action-copy"><span class="mobile-action-title">'+esc(p.name)+tag+'</span>'
               +'<span class="mobile-action-sub">'+esc(p.short||'')+'</span></span></button>';
@@ -8923,8 +9012,9 @@ function renderMobileApps(){
 }
 function pluginMobileScreenHtml(p){
     if(!p) return '';
+    var backLabel=pluginHostState.openedFrom==='launcher'?'Apps':(getUiLang()==='ru'?'Назад':'Back');
     return '<div class="apps-screen plugin-screen">'
-      + '<div class="plugin-host-bar"><button class="apps-back" type="button" onclick="pluginBack()">← Apps</button>'
+      + '<div class="plugin-host-bar"><button class="apps-back" type="button" onclick="pluginBack()">← '+esc(backLabel)+'</button>'
       + '<span class="plugin-host-title" id="plugin-host-title">'+esc(p.name||'')+'</span>'
       + '<button class="btn btn-outline btn-sm" onclick="pluginDisable(\''+p.id+'\')">Disable</button></div>'
       + '<div class="plugin-host-container" id="plugin-host-container"><div class="plugin-host-loading">Loading…</div></div>'
@@ -8933,7 +9023,7 @@ function pluginMobileScreenHtml(p){
 function pluginMobileDetail(p){
     if(!p){ pluginHostState.selectedId=null; return renderMobileApps(); }
     var st=pluginStatus(p.id);
-    var h='<button class="mobile-home-btn" type="button" onclick="pluginBack()"><span class="mobile-home-btn-icon">←</span><span>Apps</span></button>';
+    var h='<button class="mobile-home-btn" type="button" onclick="pluginBack()"><span class="mobile-home-btn-icon">←</span><span>'+esc(getUiLang()==='ru'?'Управление плагинами':'Plugin management')+'</span></button>';
     h+='<div class="mobile-primary-action" style="cursor:default;"><span class="mobile-action-icon">'+(p.icon||'▢')+'</span>'
       +'<span class="mobile-action-copy"><span class="mobile-action-title">'+esc(p.name)+'</span>'
       +'<span class="mobile-action-sub">'+esc(pluginCatLabel(p.category))+(p.comingSoon?' · Coming soon':(p.firstParty?' · First-party plugin':''))+'</span></span></div>';
