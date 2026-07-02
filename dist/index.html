@@ -1086,6 +1086,24 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .apps-head-sub { font-size:12.5px; color:var(--text2); margin-top:4px; line-height:1.4; max-width:640px; }
 .apps-cat-title { font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:var(--text2); margin:22px 0 10px; }
 .apps-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:12px; }
+/* compact launcher v1 (installed-only primary surface) */
+.apps-launcher-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.apps-gear-btn { background:var(--surface); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:17px; width:38px; height:38px; cursor:pointer; flex:0 0 auto; }
+.apps-gear-btn:hover { border-color:var(--accent); color:var(--accent); }
+.apps-search { margin:14px 0 6px; max-width:420px; }
+.apps-search-label { display:block; font-size:12px; font-weight:700; color:var(--text2); margin-bottom:5px; }
+.apps-search input { width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); font-size:13px; }
+.apps-launcher-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(118px,1fr)); gap:10px; max-width:640px; }
+.apps-icon-tile button { width:100%; display:flex; flex-direction:column; align-items:center; gap:7px; padding:14px 8px 11px; background:var(--surface); border:1px solid var(--border); border-radius:10px; cursor:pointer; color:var(--text); }
+.apps-icon-tile button:hover { border-color:var(--accent); }
+.apps-icon-tile-icon { font-size:26px; line-height:1; }
+.apps-icon-tile-name { font-size:12px; font-weight:700; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.apps-empty { padding:18px 0; display:flex; flex-direction:column; align-items:flex-start; gap:12px; max-width:480px; }
+.apps-empty-note { font-size:13px; color:var(--text2); line-height:1.5; }
+.apps-offline { font-size:12px; color:var(--text2); background:var(--hover); border:1px solid var(--border); border-radius:8px; padding:7px 10px; margin:8px 0; }
+.apps-launcher-foot { font-size:11.5px; color:var(--text2); margin-top:16px; }
+body.mobile-mode .apps-launcher-grid { grid-template-columns:repeat(3,1fr); max-width:none; }
+@media (max-width:359px){ body.mobile-mode .apps-launcher-grid { grid-template-columns:repeat(2,1fr); } }
 .apps-tile { display:flex; gap:12px; text-align:left; align-items:flex-start; padding:14px; border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--text); cursor:pointer; transition:border-color .12s, transform .05s; }
 .apps-tile:hover { border-color:var(--accent); }
 .apps-tile:active { transform:translateY(1px); }
@@ -8418,7 +8436,11 @@ var SKIPI_PLUGIN_REGISTRY = [
     { id:'reports',         name:'Complaints / Reports', category:'reports', icon:'📝', short:'Safety reports and signals.', comingSoon:true }
 ];
 
-var pluginHostState = { selectedId:null, openId:null };
+// surface: which Apps screen the user is on ('launcher' = compact installed-only
+// primary surface, 'manage' = full catalog/lifecycle behind the gear).
+// openedFrom records where a plugin was opened from so close returns there
+// (UHOST-11: launcher->launcher, detail->detail, manage->manage).
+var pluginHostState = { selectedId:null, openId:null, surface:'launcher', openedFrom:null, search:'' };
 
 function pluginById(id){ return SKIPI_PLUGIN_REGISTRY.find(function(p){return p.id===id;})||null; }
 function pluginCatLabel(key){ var c=SKIPI_PLUGIN_CATEGORIES.find(function(x){return x.key===key;}); return c?c.label:key; }
@@ -8456,21 +8478,36 @@ function pluginRerender(){
     if(shouldUseMobileShell()) renderMobileApps();
     else showApps();
 }
-function pluginSelect(id){ pluginHostState.selectedId=id; pluginHostState.openId=null; pluginRerender(); }
+function pluginSelect(id){ pluginHostState.selectedId=id; pluginHostState.openId=null; pluginHostState.surface='manage'; pluginRerender(); }
 function pluginBack(){
-    if(pluginHostState.openId){ pluginClose(); }      // plugin screen -> detail
-    else { pluginHostState.selectedId=null; pluginRerender(); } // detail -> list
+    if(pluginHostState.openId){ pluginClose(); }      // plugin screen -> where it was opened from
+    else { pluginHostState.selectedId=null; pluginRerender(); } // detail -> manage list
+}
+function pluginOpenManage(){ pluginHostState.surface='manage'; pluginHostState.selectedId=null; pluginHostState.openId=null; pluginRerender(); }
+function pluginBackToLauncher(){ pluginHostState.surface='launcher'; pluginHostState.selectedId=null; pluginHostState.openId=null; pluginHostState.search=''; pluginRerender(); }
+// Launcher tap target: installed plugins only (the launcher never installs).
+function pluginLaunch(id){
+    if(pluginStatus(id)!=='installed') return;
+    pluginHostState.openedFrom='launcher';
+    pluginHostState.openId=id;
+    pluginRerender();
 }
 function pluginOpen(id){
     var p=pluginById(id); if(!p||p.comingSoon) return;
     if(pluginStatus(id)==='available') pluginInstall(id);
     if(pluginStatus(id)==='disabled') pluginSetState(id,{ enabled:true });
+    pluginHostState.openedFrom=pluginHostState.selectedId===id?'detail':'manage';
     pluginHostState.openId=id;
     pluginRerender(); // renders the host screen; mount is kicked off there
 }
 function pluginClose(){
     SkipiPluginHost.unmount();
     pluginHostState.openId=null;
+    // UHOST-11 close semantics: return to the surface the plugin was opened from.
+    var from=pluginHostState.openedFrom; pluginHostState.openedFrom=null;
+    if(from==='launcher'){ pluginHostState.surface='launcher'; pluginHostState.selectedId=null; }
+    else if(from==='detail'){ pluginHostState.surface='manage'; }
+    else if(from==='manage'){ pluginHostState.surface='manage'; pluginHostState.selectedId=null; }
     pluginRerender();
 }
 
@@ -8608,16 +8645,104 @@ function showApps(){
     var content=document.getElementById('scr-content'); if(!content) return;
     if(pluginHostState.openId) content.innerHTML=pluginScreenHtml(pluginById(pluginHostState.openId));
     else if(pluginHostState.selectedId) content.innerHTML=pluginDetailHtml(pluginById(pluginHostState.selectedId));
-    else content.innerHTML=pluginListHtml();
+    else if(pluginHostState.surface==='manage') content.innerHTML=pluginManageHtml();
+    else content.innerHTML=pluginLauncherHtml();
     show('scr-content'); updateTabs('Apps');
     if(pluginHostState.openId) setTimeout(function(){ pluginMountInto(pluginHostState.openId); },0);
     // when the dev gate is ON, fetch remote catalog names once, then refresh the
-    // list so the staging tile shows its real name (degrades to the slug meanwhile).
-    if(!pluginHostState.openId && !pluginHostState.selectedId && remoteStagingOn() && !__remoteCatalogCache){
+    // manage list so the staging tile shows its real name (degrades to the slug meanwhile).
+    if(!pluginHostState.openId && !pluginHostState.selectedId && pluginHostState.surface==='manage' && remoteStagingOn() && !__remoteCatalogCache){
         remoteLoadCatalogOnce(function(){
-            if(!pluginHostState.openId && !pluginHostState.selectedId){ var c=document.getElementById('scr-content'); if(c) c.innerHTML=pluginListHtml(); }
+            if(!pluginHostState.openId && !pluginHostState.selectedId && pluginHostState.surface==='manage'){ var c=document.getElementById('scr-content'); if(c) c.innerHTML=pluginManageHtml(); }
         });
     }
+}
+// ---- compact launcher v1 (primary Apps surface, installed-only) ----
+function pluginInstalledList(){
+    return SKIPI_PLUGIN_REGISTRY.filter(function(p){ return !p.comingSoon && pluginStatus(p.id)==='installed'; });
+}
+function pluginLauncherFiltered(){
+    var q=String(pluginHostState.search||'').trim().toLowerCase();
+    var items=pluginInstalledList();
+    if(!q) return items;
+    return items.filter(function(p){
+        return String(p.name||'').toLowerCase().indexOf(q)>=0 || String(p.short||'').toLowerCase().indexOf(q)>=0;
+    });
+}
+function pluginLauncherSearch(v){
+    pluginHostState.search=v;
+    var box=document.getElementById('apps-launcher-results');
+    if(box) box.innerHTML=pluginLauncherResultsHtml();
+}
+function pluginIconTileHtml(p){
+    return '<div class="apps-icon-tile" data-qa="plugin-tile-'+escAttr(p.id)+'">'
+      + '<button type="button" data-qa="plugin-open-'+escAttr(p.id)+'" onclick="pluginLaunch(\''+jsString(p.id)+'\')" title="'+escAttr(p.name)+'">'
+      + '<span class="apps-icon-tile-icon">'+(p.icon||'▢')+'</span>'
+      + '<span class="apps-icon-tile-name">'+esc(p.name)+'</span>'
+      + '</button></div>';
+}
+function pluginLauncherResultsHtml(){
+    var ru=getUiLang()==='ru';
+    var installed=pluginInstalledList();
+    if(!installed.length){
+        return '<div class="apps-empty" data-qa="plugin-empty-state">'
+          + '<div class="apps-empty-note">'+esc(ru?'Установленных плагинов пока нет. Откройте настройки, чтобы проверить доступные модули.':'No installed plugins yet. Open plugin settings to see available modules.')+'</div>'
+          + '<button class="btn btn-accent" type="button" onclick="pluginOpenManage()">'+esc(ru?'Настройки плагинов':'Plugin settings')+'</button>'
+          + '</div>';
+    }
+    var items=pluginLauncherFiltered();
+    if(!items.length){
+        return '<div class="apps-empty" data-qa="plugin-empty-state" data-context="search">'
+          + '<div class="apps-empty-note">'+esc(ru?'Ничего не найдено среди установленных плагинов.':'Nothing found among installed plugins.')+'</div>'
+          + '</div>';
+    }
+    var h='<div class="apps-cat-title">'+esc(ru?'Установленные плагины':'Installed plugins')+'</div><div class="apps-launcher-grid">';
+    items.forEach(function(p){ h+=pluginIconTileHtml(p); });
+    h+='</div>';
+    return h;
+}
+function pluginLauncherHtml(){
+    var ru=getUiLang()==='ru';
+    var offline=false; try{ offline=(navigator.onLine===false); }catch(e){}
+    var h='<div class="apps-screen apps-launcher" data-qa="seafarer-module-apps">';
+    h+='<div class="apps-head apps-launcher-head"><div>'
+      +'<div class="apps-head-title">Apps</div>'
+      +'<div class="apps-head-sub">'+esc(ru?'Скипи Моряк':'Skipi Seafarer')+'</div></div>'
+      +'<button class="apps-gear-btn" type="button" data-qa="plugins-settings-open" onclick="pluginOpenManage()" title="'+escAttr(ru?'Настройки плагинов':'Plugin settings')+'" aria-label="'+escAttr(ru?'Настройки плагинов':'Plugin settings')+'">&#9881;</button></div>';
+    if(offline){
+        h+='<div class="apps-offline" data-qa="plugin-offline-state">'+esc(ru?'Оффлайн — установленные плагины продолжают работать.':'Offline — installed plugins keep working.')+'</div>';
+    }
+    h+='<div class="apps-search"><label class="apps-search-label" for="apps-search-field">'+esc(ru?'Найти плагин':'Find a plugin')+'</label>'
+      +'<input id="apps-search-field" type="text" data-qa="apps-search-input" value="'+escAttr(pluginHostState.search||'')+'" oninput="pluginLauncherSearch(this.value)" placeholder="'+escAttr(ru?'Название плагина':'Plugin name')+'"></div>';
+    h+='<div id="apps-launcher-results">'+pluginLauncherResultsHtml()+'</div>';
+    h+='<div class="apps-launcher-foot">'+esc(ru?'Только установленные плагины. Управление, политики и обновления — через ⚙.':'Installed plugins only. Management, policies and updates — via ⚙.')+'</div>';
+    h+='</div>';
+    return h;
+}
+// ---- manage surface (full catalog + lifecycle, behind the gear) ----
+function pluginManageHtml(){
+    var ru=getUiLang()==='ru';
+    var h='<div class="apps-screen apps-manage">';
+    h+='<button class="apps-back" type="button" onclick="pluginBackToLauncher()">← Apps</button>';
+    h+='<div class="apps-head"><div class="apps-head-title">'+esc(ru?'Управление плагинами':'Plugin management')+'</div>'
+      +'<div class="apps-head-sub">'+esc(ru?'Каталог, установка, отключение и обновления. Bundled first-party плагины — не маркетплейс, без стороннего кода.':'Catalog, install, disable and updates. Bundled first-party plugins — not a marketplace and no third-party code.')+'</div></div>';
+    SKIPI_PLUGIN_CATEGORIES.forEach(function(cat){
+        var items=SKIPI_PLUGIN_REGISTRY.filter(function(p){return p.category===cat.key;});
+        if(!items.length) return;
+        h+='<div class="apps-cat-title">'+esc(cat.label)+'</div><div class="apps-grid">';
+        items.forEach(function(p){ h+=pluginManageTileHtml(p); });
+        h+='</div>';
+    });
+    h+=remoteStagingSectionHtml();   // only renders when the dev/staging gate is ON
+    h+='</div>';
+    return h;
+}
+function pluginManageTileHtml(p){
+    var soon=!!p.comingSoon;
+    return '<button class="apps-tile'+(soon?' soon':'')+'" type="button" data-qa="plugin-settings-'+escAttr(p.id)+'" onclick="pluginSelect(\''+jsString(p.id)+'\')">'
+        + '<span class="apps-tile-icon">'+(p.icon||'▢')+'</span>'
+        + '<span class="apps-tile-body"><span class="apps-tile-name">'+esc(p.name)+'</span>'
+        + '<span class="apps-tile-sub">'+esc(p.short||'')+'</span>'+pluginBadge(p.id)+'</span></button>';
 }
 function pluginBadge(id){
     var p=pluginById(id);
@@ -8712,7 +8837,7 @@ function pluginDetailHtml(p){
     if(!p) return pluginListHtml();
     var st=pluginStatus(p.id);
     var h='<div class="apps-screen apps-detail">';
-    h+='<button class="apps-back" type="button" onclick="pluginBack()">← Apps</button>';
+    h+='<button class="apps-back" type="button" onclick="pluginBack()">← '+esc(getUiLang()==='ru'?'Управление плагинами':'Plugin management')+'</button>';
     h+='<div class="apps-detail-head"><span class="apps-tile-icon big">'+(p.icon||'▢')+'</span>'
       +'<div><div class="apps-detail-name">'+esc(p.name)+'</div>'
       +'<div class="apps-detail-cat">'+esc(pluginCatLabel(p.category))+(p.comingSoon?' · Coming soon':(p.firstParty?' · First-party plugin':''))+'</div></div></div>';
@@ -8745,10 +8870,13 @@ function pluginScreenHtml(p){
       + '</div>';
 }
 function pluginPlaceholderHtml(p, reason){
-    var note = (reason==='not_bundled'||reason==='no_bundle'||reason==='no_register')
+    var pending = (reason==='not_bundled'||reason==='no_bundle'||reason==='no_register');
+    var note = pending
         ? 'Plugin artifact is not bundled yet — it is being prepared in the Skipi plugin lab.'
         : 'This plugin could not be loaded ('+esc(reason||'unknown')+').';
-    var h='<div class="plugin-placeholder">';
+    // A non-pending failure here is a REAL load/integrity refusal from the
+    // isolated runtime (fail-closed sha256), so the error hook is honest.
+    var h='<div class="plugin-placeholder"'+(pending?'':' data-qa="plugin-error-state"')+'>';
     h+='<div class="plugin-placeholder-icon">'+(p&&p.icon||'▢')+'</div>';
     h+='<div class="plugin-placeholder-title">Preparing in plugin lab</div>';
     h+='<div class="plugin-placeholder-note">'+note+'</div>';
