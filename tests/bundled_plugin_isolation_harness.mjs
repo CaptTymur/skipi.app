@@ -20,6 +20,8 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import vm from 'node:vm';
+import { webcrypto } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -179,6 +181,361 @@ CORRUPT = true;
 const r2 = await M.SkipiBundledLoader.install('bnwas-time-anchor');
 ok(r2 && r2.ok === false && r2.stage === 'integrity', 'tampered index.js -> install fails with stage:integrity');
 CORRUPT = false;
+
+// ===========================================================================
+// Apps launcher surfaces (cross-home Apps standard v1 desktop + mobile v2).
+// Boots the REAL inline scripts of dist/index.html in a VM with a small DOM
+// that keeps every element carrying id / data-qa / data-i18n / data-mview,
+// then drives the app's own render path (showApps and friends) and asserts
+// hooks + semantics in the render output. Self-contained on purpose: guard
+// scope for the plugin-host task pins the file list, so no helper module.
+// ===========================================================================
+
+function vmParseAttrs(raw) {
+  const attrs = {};
+  const re = /([:@A-Za-z0-9_-]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
+  let m;
+  while ((m = re.exec(raw || ''))) attrs[m[1]] = m[2] ?? m[3] ?? m[4] ?? '';
+  return attrs;
+}
+
+class VmClassList {
+  constructor(raw = '') { this._s = new Set(String(raw || '').split(/\s+/).filter(Boolean)); }
+  add(...n) { n.forEach((x) => this._s.add(x)); }
+  remove(...n) { n.forEach((x) => this._s.delete(x)); }
+  contains(n) { return this._s.has(n); }
+  toggle(n, f) { if (f === true) { this._s.add(n); return true; } if (f === false) { this._s.delete(n); return false; } if (this._s.has(n)) { this._s.delete(n); return false; } this._s.add(n); return true; }
+  toString() { return Array.from(this._s).join(' '); }
+}
+
+class VmElement {
+  constructor(doc, tag, attrs = {}, initialHtml = '') {
+    this.ownerDocument = doc; this.tagName = String(tag).toUpperCase();
+    this.children = []; this.parentNode = null; this.attrs = { ...attrs };
+    this.id = attrs.id || ''; this.value = attrs.value || ''; this.title = attrs.title || '';
+    this.disabled = false; this.scrollTop = 0; this.clientWidth = 1024; this.clientHeight = 768;
+    this.classList = new VmClassList(attrs.class || '');
+    this.style = new Proxy({}, { get: (t, k) => t[k] ?? '', set: (t, k, v) => { t[k] = String(v); return true; } });
+    this.innerHTML = initialHtml; this.textContent = '';
+  }
+  setAttribute(k, v) { this.attrs[k] = String(v ?? ''); if (k === 'id') { this.id = this.attrs[k]; this.ownerDocument._ids.set(this.id, this); } if (k === 'class') this.classList = new VmClassList(v); }
+  getAttribute(k) { if (k === 'class') return this.classList.toString(); return Object.prototype.hasOwnProperty.call(this.attrs, k) ? this.attrs[k] : null; }
+  removeAttribute(k) { delete this.attrs[k]; }
+  appendChild(c) { if (c) { this.children.push(c); c.parentNode = this; } return c; }
+  removeChild(c) { this.children = this.children.filter((x) => x !== c); return c; }
+  remove() {}
+  addEventListener() {} removeEventListener() {} focus() {} blur() {} click() {} scrollIntoView() {}
+  getBoundingClientRect() { return { left: 0, top: 0, width: this.clientWidth, height: this.clientHeight }; }
+  querySelector(s) { return this.ownerDocument.querySelector(s); }
+  querySelectorAll(s) { return this.ownerDocument.querySelectorAll(s); }
+}
+
+class VmDocument {
+  constructor(sourceHtml) {
+    this._ids = new Map(); this._all = []; this.title = '';
+    this.documentElement = this._make('html', { id: '__html', 'data-theme': 'light' });
+    this.head = this._make('head', { id: '__head' });
+    this.body = this._make('body', { id: '__body' });
+    const re = /<([A-Za-z][A-Za-z0-9:-]*)(\s[^<>]*?)?>/g;
+    let m;
+    while ((m = re.exec(sourceHtml))) {
+      const tag = m[1].toLowerCase();
+      if (tag === 'script' || tag === 'style' || tag === 'meta' || tag === 'link' || tag === 'html') continue;
+      const attrs = vmParseAttrs(m[2] || '');
+      if (!attrs.id && !attrs['data-qa'] && !attrs['data-i18n'] && !attrs['data-mview']) continue;
+      this._make(tag, attrs);
+    }
+  }
+  _make(tag, attrs = {}) { const el = new VmElement(this, tag, attrs); this._all.push(el); if (el.id) this._ids.set(el.id, el); return el; }
+  getElementById(id) { return this._ids.get(String(id)) || null; }
+  createElement(tag) { return this._make(tag, {}); }
+  createTextNode(t) { const el = this._make('#text', {}); el.textContent = t; return el; }
+  addEventListener() {} removeEventListener() {}
+  querySelector(s) { return this.querySelectorAll(s)[0] || null; }
+  querySelectorAll(s) {
+    s = String(s || '').trim();
+    if (s.startsWith('#')) { const el = this.getElementById(s.slice(1)); return el ? [el] : []; }
+    const attr = /^\[([^=\]]+)(?:=["']?([^"'\]]+)["']?)?\]$/.exec(s);
+    if (attr) return this._all.filter((el) => { const a = el.getAttribute(attr[1]); return a !== null && (attr[2] === undefined || a === attr[2]); });
+    if (s.startsWith('.')) return this._all.filter((el) => el.classList.contains(s.slice(1)));
+    return this._all.filter((el) => el.tagName.toLowerCase() === s.toLowerCase());
+  }
+}
+
+function bootApp({ seed = {}, onLine = true } = {}) {
+  const doc = new VmDocument(HTML);
+  const lstore = new Map(Object.entries(seed).map(([k, v]) => [k, String(v)]));
+  const invoke = async (cmd) => {
+    if (cmd === 'get_build_info') return { version: '0.0.0-apps-harness', sha: 'apps-harness' };
+    if (cmd === 'get_platform') return 'linux';
+    if (cmd === 'get_vault_types' || cmd === 'get_recent_vaults' || cmd === 'get_optional_categories') return [];
+    if (cmd === 'get_last_vault') return null;
+    return {};
+  };
+  const sandbox = {
+    console, document: doc,
+    navigator: { userAgent: 'Node Apps Harness', platform: 'Linux x86_64', onLine, clipboard: { writeText: async () => {} }, mediaDevices: { getUserMedia: async () => ({ getTracks: () => [] }) } },
+    location: { hash: '', pathname: '/apps-harness', reload() {} },
+    screen: { width: 1920, height: 1080, availWidth: 1920, availHeight: 1080 },
+    localStorage: { getItem: (k) => (lstore.has(k) ? lstore.get(k) : null), setItem: (k, v) => lstore.set(k, String(v)), removeItem: (k) => lstore.delete(k) },
+    sessionStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+    crypto: webcrypto,
+    __TAURI__: { core: { invoke, convertFileSrc: (p) => p }, invoke, event: { listen: async () => () => {} }, window: { getCurrentWindow: () => ({ setTitle: async () => {} }) } },
+    fetch: async () => ({ ok: true, json: async () => ({}), text: async () => '' }),
+    matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }),
+    SkipiPluginRuntime: { create: () => ({ open() {}, close() {}, destroy() {} }) },
+    addEventListener() {}, removeEventListener() {},
+    setTimeout: () => 0, clearTimeout() {}, setInterval: () => 0, clearInterval() {},
+    requestAnimationFrame: () => 0, cancelAnimationFrame() {},
+    alert() {}, confirm: () => true, prompt: () => null,
+    Blob: class {}, FileReader: class {}, Image: class {},
+    URL: { createObjectURL: () => 'blob:apps-harness', revokeObjectURL() {} },
+  };
+  sandbox.window = sandbox; sandbox.self = sandbox; sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  const scripts = Array.from(HTML.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi))
+    .filter(([, a]) => !/\ssrc\s*=/.test(a || ''))
+    .map(([, , c]) => c);
+  scripts.forEach((code, i) => vm.runInContext(code, sandbox, { filename: `dist/index.html#inline-${i + 1}` }));
+  return { sandbox, doc, lstore };
+}
+
+const settleVm = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
+const BNWAS_INSTALLED = { skipi_plugins_state: JSON.stringify({ 'bnwas-time-anchor': { installed: true, enabled: true } }) };
+const appsHtml = (doc) => String((doc.getElementById('scr-content') || {}).innerHTML || '');
+
+{
+  section('desktop launcher v1 — hooks render through the real path');
+  const { sandbox, doc } = bootApp({ seed: BNWAS_INSTALLED });
+  await settleVm();
+  sandbox.showApps();
+  const h = appsHtml(doc);
+  ok(h.includes('data-qa="seafarer-module-apps"'), 'launcher root carries seafarer-module-apps');
+  ok(h.includes('data-qa="apps-search-input"'), 'search input hook present');
+  ok(h.includes('data-qa="plugins-settings-open"'), 'gear (plugins-settings-open) hook present');
+  ok(h.includes('data-qa="plugin-tile-bnwas-time-anchor"'), 'installed plugin tile hook present');
+  ok(h.includes('data-qa="plugin-open-bnwas-time-anchor"'), 'plugin open hook present');
+  ok(!h.includes('plugin-tile-distance-tables'), 'coming-soon plugin is NOT in the launcher grid');
+  ok(!h.includes('data-qa="plugin-empty-state"'), 'no empty state while a plugin is installed');
+  ok(!h.includes('data-qa="plugin-offline-state"'), 'no offline state while navigator.onLine is true');
+}
+
+{
+  section('desktop launcher v1 — State B (no installed plugins)');
+  const { sandbox, doc } = bootApp({ seed: {} });
+  await settleVm();
+  sandbox.showApps();
+  const h = appsHtml(doc);
+  ok(h.includes('data-qa="plugin-empty-state"'), 'empty state hook renders when nothing is installed');
+  ok(h.includes('pluginOpenManage()'), 'empty state CTA routes to manage');
+  ok(!h.includes('data-qa="plugin-tile-'), 'no tiles in State B');
+}
+
+{
+  section('desktop launcher v1 — search is installed-only (State C semantics)');
+  const { sandbox } = bootApp({ seed: BNWAS_INSTALLED });
+  await settleVm();
+  sandbox.pluginHostState.search = 'zzz-no-such-plugin';
+  const none = sandbox.pluginLauncherResultsHtml();
+  ok(none.includes('data-qa="plugin-empty-state"') && none.includes('data-context="search"'), 'no-match search renders the search-context empty state');
+  sandbox.pluginHostState.search = 'bnwas';
+  const hit = sandbox.pluginLauncherResultsHtml();
+  ok(hit.includes('data-qa="plugin-tile-bnwas-time-anchor"'), 'matching installed plugin stays in results');
+  sandbox.pluginHostState.search = 'distance';
+  const cat = sandbox.pluginLauncherResultsHtml();
+  ok(!cat.includes('distance-tables'), 'catalog-only name never matches launcher search');
+}
+
+{
+  section('desktop launcher v1 — honest offline + error states');
+  const off = bootApp({ seed: BNWAS_INSTALLED, onLine: false });
+  await settleVm();
+  off.sandbox.showApps();
+  ok(appsHtml(off.doc).includes('data-qa="plugin-offline-state"'), 'offline hook renders only from real navigator.onLine === false');
+  const errHtml = off.sandbox.pluginPlaceholderHtml({ id: 'x', name: 'X', icon: '▢' }, 'integrity');
+  ok(errHtml.includes('data-qa="plugin-error-state"'), 'load/integrity failure renders the error hook');
+  const pendingHtml = off.sandbox.pluginPlaceholderHtml({ id: 'x', name: 'X', icon: '▢' }, 'not_bundled');
+  ok(!pendingHtml.includes('data-qa="plugin-error-state"'), 'not-bundled placeholder is NOT an error state');
+}
+
+{
+  section('desktop launcher v1 — manage behind the gear, lifecycle not on primary');
+  const { sandbox, doc } = bootApp({ seed: BNWAS_INSTALLED });
+  await settleVm();
+  sandbox.showApps();
+  const launcher = appsHtml(doc);
+  ok(!/pluginInstall\(/.test(launcher) && !/pluginDisable\(/.test(launcher) && !/pluginUninstall\(/.test(launcher), 'no Install/Disable/Remove on the primary surface');
+  sandbox.pluginOpenManage();
+  const manage = appsHtml(doc);
+  ok(manage.includes('data-qa="plugin-settings-bnwas-time-anchor"'), 'manage carries plugin-settings-<id> hooks');
+  ok(manage.includes('plugin-settings-distance-tables'), 'full catalog (incl. coming-soon) lives in manage');
+  ok(manage.includes('pluginBackToLauncher()'), 'manage has the explicit «← Apps» return');
+  ok(!manage.includes('Staging · remote'), 'remote staging section absent while the dev gate is OFF');
+}
+
+{
+  section('desktop launcher v1 — UHOST-11 close semantics');
+  const { sandbox } = bootApp({ seed: BNWAS_INSTALLED });
+  await settleVm();
+  sandbox.pluginLaunch('bnwas-time-anchor');
+  ok(sandbox.pluginHostState.openId === 'bnwas-time-anchor', 'launcher tile opens the plugin');
+  sandbox.pluginClose();
+  ok(sandbox.pluginHostState.surface === 'launcher' && !sandbox.pluginHostState.selectedId, 'opened from launcher -> closes back to launcher');
+  sandbox.pluginSelect('bnwas-time-anchor');
+  sandbox.pluginOpen('bnwas-time-anchor');
+  sandbox.pluginClose();
+  ok(sandbox.pluginHostState.surface === 'manage' && sandbox.pluginHostState.selectedId === 'bnwas-time-anchor', 'opened from detail -> closes back to detail');
+  sandbox.pluginBack();
+  ok(sandbox.pluginHostState.selectedId === null && sandbox.pluginHostState.surface === 'manage', 'detail back returns to the manage list');
+}
+
+// ---------------------------------------------------------------------------
+// Mobile compact launcher v2 + rail R2 (test matrix M1–M13; M10 is the visual
+// pass, M11/M12 are the whole-suite + guard runs — covered outside this file).
+// ---------------------------------------------------------------------------
+
+const mobileHtml = (doc) => String((doc.getElementById('mobile-main') || {}).innerHTML || '');
+
+function bootMobile(opts) {
+  const app = bootApp(opts);
+  app.sandbox.shouldUseMobileShell = () => true;
+  return app;
+}
+
+{
+  section('mobile v2 (M1) — canonical hooks through the real render path');
+  const { sandbox, doc } = bootMobile({ seed: BNWAS_INSTALLED });
+  await settleVm();
+  sandbox.mobileShow('apps');
+  const h = mobileHtml(doc);
+  ok(h.includes('data-qa="seafarer-module-apps"'), 'launcher root hook renders in #mobile-main');
+  ok(h.includes('data-qa="apps-search-input"'), 'apps-search-input renders');
+  ok(h.includes('data-qa="plugins-settings-open"'), 'plugins-settings-open (gear) renders');
+  ok(h.includes('data-qa="plugin-tile-bnwas-time-anchor"') && h.includes('data-qa="plugin-open-bnwas-time-anchor"'), 'plugin-tile-/plugin-open-<id> render for the installed plugin');
+  for (const qa of ['bottom-nav-home', 'bottom-nav-workspace', 'bottom-nav-apps', 'bottom-nav-more']) {
+    ok(doc.querySelectorAll(`[data-qa="${qa}"]`).length === 1, `${qa} exists exactly once in the rail`);
+  }
+  sandbox.pluginOpenManage();
+  ok(mobileHtml(doc).includes('data-qa="plugin-settings-bnwas-time-anchor"'), 'plugin-settings-<id> renders in manage');
+}
+
+{
+  section('mobile v2 (M2) — installed-only grid');
+  const { sandbox, doc } = bootMobile({ seed: BNWAS_INSTALLED });
+  await settleVm();
+  sandbox.mobileShow('apps');
+  const h = mobileHtml(doc);
+  ok(!h.includes('distance-tables') && !h.includes('draft-survey'), 'catalog/coming-soon never on the launcher');
+  ok(h.includes('apps-launcher-grid'), 'installed grid renders');
+  sandbox.pluginOpenManage();
+  const m = mobileHtml(doc);
+  ok(m.includes('plugin-settings-distance-tables') && m.includes('plugin-settings-draft-survey'), 'full catalog lives behind the gear');
+}
+
+{
+  section('mobile v2 (M3/M4) — search + states B/C semantics (language-agnostic)');
+  const empty = bootMobile({ seed: {} });
+  await settleVm();
+  empty.sandbox.mobileShow('apps');
+  const hB = mobileHtml(empty.doc);
+  ok(hB.includes('data-qa="plugin-empty-state"') && !hB.includes('data-context="search"'), 'State B renders the empty hook (not search context)');
+  ok(hB.includes('pluginOpenManage()'), 'State B CTA routes to manage');
+  const inst = bootMobile({ seed: BNWAS_INSTALLED });
+  await settleVm();
+  inst.sandbox.mobileShow('apps');
+  inst.sandbox.pluginHostState.search = 'no-such-plugin';
+  const hC = inst.sandbox.pluginLauncherResultsHtml();
+  ok(hC.includes('data-qa="plugin-empty-state"') && hC.includes('data-context="search"'), 'State C is a distinct search-context empty state');
+  inst.sandbox.pluginHostState.search = 'BNWAS';
+  ok(inst.sandbox.pluginLauncherResultsHtml().includes('plugin-tile-bnwas-time-anchor'), 'search match is case-insensitive on installed plugins');
+  inst.sandbox.pluginHostState.search = 'draft';
+  ok(!inst.sandbox.pluginLauncherResultsHtml().includes('draft-survey'), 'catalog-only names never match');
+}
+
+{
+  section('mobile v2 (M5) — honest offline state');
+  const off = bootMobile({ seed: BNWAS_INSTALLED, onLine: false });
+  await settleVm();
+  off.sandbox.mobileShow('apps');
+  ok(mobileHtml(off.doc).includes('data-qa="plugin-offline-state"'), 'offline hook renders from real navigator.onLine === false');
+  const on = bootMobile({ seed: BNWAS_INSTALLED, onLine: true });
+  await settleVm();
+  on.sandbox.mobileShow('apps');
+  ok(!mobileHtml(on.doc).includes('data-qa="plugin-offline-state"'), 'no offline hook while online');
+}
+
+{
+  section('mobile v2 (M6/M7) — gear/manage/detail routing + UHOST-11');
+  const { sandbox, doc } = bootMobile({ seed: BNWAS_INSTALLED });
+  await settleVm();
+  sandbox.mobileShow('apps');
+  ok(!/pluginInstall\(/.test(mobileHtml(doc)), 'no Install on the primary surface');
+  sandbox.pluginOpenManage();
+  sandbox.pluginSelect('bnwas-time-anchor');
+  const detail = mobileHtml(doc);
+  ok(/pluginOpen\(/.test(detail) && /pluginDisable\(/.test(detail) && /pluginUninstall\(/.test(detail), 'lifecycle buttons live on the manage detail');
+  sandbox.pluginOpen('bnwas-time-anchor');
+  ok(sandbox.pluginHostState.openId === 'bnwas-time-anchor', 'detail Open mounts the plugin screen');
+  ok(mobileHtml(doc).includes('plugin-host-container'), 'plugin screen renders the single host mount container');
+  sandbox.pluginClose();
+  ok(sandbox.pluginHostState.selectedId === 'bnwas-time-anchor' && sandbox.pluginHostState.surface === 'manage', 'UHOST-11: opened from detail -> closes to detail');
+  sandbox.pluginBack();
+  ok(sandbox.pluginHostState.selectedId === null && sandbox.pluginHostState.surface === 'manage', 'detail back -> manage list');
+  sandbox.pluginBackToLauncher();
+  ok(mobileHtml(doc).includes('data-qa="apps-search-input"'), '«← Apps» returns to the launcher');
+  sandbox.pluginLaunch('bnwas-time-anchor');
+  sandbox.pluginClose();
+  ok(sandbox.pluginHostState.surface === 'launcher', 'UHOST-11: opened from launcher -> closes to launcher');
+}
+
+{
+  section('mobile v2 (M8) — rail active state + unmount on leaving Apps');
+  const { sandbox, doc } = bootMobile({ seed: BNWAS_INSTALLED });
+  await settleVm();
+  sandbox.mobileShow('apps');
+  const btn = (qa) => doc.querySelector(`[data-qa="${qa}"]`);
+  ok(btn('bottom-nav-apps').classList.contains('active'), 'bottom-nav-apps is active on the launcher');
+  ok(!btn('bottom-nav-home').classList.contains('active'), 'home slot not active on Apps');
+  sandbox.pluginLaunch('bnwas-time-anchor');
+  ok(sandbox.pluginHostState.openId === 'bnwas-time-anchor', 'plugin open before leaving');
+  sandbox.mobileShow('home');
+  ok(sandbox.pluginHostState.openId === null, 'leaving Apps unmounts the open plugin');
+  ok(!btn('bottom-nav-apps').classList.contains('active') && btn('bottom-nav-home').classList.contains('active'), 'active moves from Apps to Home');
+  sandbox.mobileShow('docs');
+  ok(btn('bottom-nav-workspace').classList.contains('active'), 'workspace (Vault) active on docs');
+  sandbox.mobileShow('experience');
+  ok(btn('bottom-nav-more').classList.contains('active'), '«Ещё» active while a sheet module is current');
+}
+
+{
+  section('mobile v2 (M9) — R2 is additive, existing rail untouched');
+  const { sandbox, doc } = bootMobile({ seed: {} });
+  await settleVm();
+  for (const v of ['docs', 'assistant', 'experience', 'cv', 'dispatch', 'jobs', 'information', 'vessels', 'myvessel', 'apps']) {
+    ok(doc.querySelectorAll(`[data-mview="${v}"]`).length === 1, `existing data-mview="${v}" button still present`);
+  }
+  ok(!!doc.getElementById('mobile-module-rail') && !!doc.getElementById('mobile-bottom-nav') && !!doc.getElementById('mobile-profile-meter'), 'mobile-module-rail / mobile-bottom-nav / profile-meter ids kept');
+  ok(!!doc.getElementById('mobile-more-sheet') && !!doc.getElementById('mobile-primary-rail'), 'sheet + primary rail are new additive containers');
+  sandbox.mobileShow('home');
+  const sheet = doc.getElementById('mobile-more-sheet');
+  ok(sheet.style.display === 'none', '«Ещё» sheet is closed by default');
+  sandbox.mobileMoreToggle();
+  ok(sheet.style.display !== 'none', 'bottom-nav-more opens the sheet');
+  sandbox.mobileShow('docs');
+  ok(sheet.style.display === 'none', 'navigation closes the sheet');
+}
+
+{
+  section('mobile v2 (M13) — plugin opens only via the existing §1 mount path');
+  const { sandbox, doc } = bootMobile({ seed: BNWAS_INSTALLED });
+  await settleVm();
+  sandbox.mobileShow('apps');
+  sandbox.pluginLaunch('bnwas-time-anchor');
+  const h = mobileHtml(doc);
+  ok(h.includes('id="plugin-host-container"'), 'mobile plugin screen mounts into the single #plugin-host-container');
+  ok((HTML.match(/SkipiPluginHost\.mount\(/g) || []).length === 1, 'exactly one SkipiPluginHost.mount call site (pluginMountInto)');
+  ok(!/srcdoc\s*=/.test(HTML), 'host document builds no iframes of its own (runtime bridge owns the frame)');
+}
 
 console.log('\n' + (fail === 0 ? 'ALL GREEN' : 'FAILURES') + ': ' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail === 0 ? 0 : 1);
