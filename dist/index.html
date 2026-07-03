@@ -93,15 +93,17 @@ var UI_STRINGS={
     }
 };
 function getUiLang(){
-	    var lang=localStorage.getItem(UI_LANG_KEY)||'ru';
-	    return UI_STRINGS[lang]?lang:'ru';
+	    // Family UI Base card 11: EN is the default for fresh installs; a saved
+	    // choice always wins and the full locale list stays available.
+	    var lang=localStorage.getItem(UI_LANG_KEY)||'en';
+	    return UI_STRINGS[lang]?lang:'en';
 }
 function tr(key){
     var lang=getUiLang();
     return (UI_STRINGS[lang]&&UI_STRINGS[lang][key]) || UI_STRINGS.en[key] || key;
 }
 function setUiLang(lang){
-	    if(!UI_STRINGS[lang])lang='ru';
+	    if(!UI_STRINGS[lang])lang='en';
     localStorage.setItem(UI_LANG_KEY,lang);
     document.documentElement.lang=lang;
     applyI18nChrome();
@@ -1110,13 +1112,52 @@ body.mobile-mode .apps-launcher-grid { grid-template-columns:repeat(3,1fr); max-
 .mobile-apps-head-copy { flex:1; min-width:0; }
 .mobile-apps-head-title { font-size:18px; font-weight:800; color:var(--text); }
 .mobile-apps-head-sub { font-size:11.5px; color:var(--text2); }
-/* R2 primary rail (4 slots) + «Ещё» sheet */
+/* ---- Family UI Base v1 tokens (Wave 1): spacing 4-32, radius 8/12/14, 44px touch ---- */
+:root { --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px; --sp-8:32px;
+        --radius-sm:8px; --radius-md:12px; --radius-lg:14px; --touch-min:44px;
+        --state-ready-bg:#e8f6ee; --state-ready-fg:#1c7a4a;
+        --state-pending-bg:#fff4da; --state-pending-fg:#8a5a00;
+        --state-danger-bg:#fdecec; --state-danger-fg:#a33a3a;
+        --state-neutral-bg:#eef2f3; --state-neutral-fg:#607078; }
+[data-theme="dark"] { --state-ready-bg:rgba(39,174,96,.18); --state-ready-fg:#6fdba4;
+        --state-pending-bg:rgba(212,160,23,.18); --state-pending-fg:#eac94f;
+        --state-danger-bg:rgba(231,76,60,.18); --state-danger-fg:#ff9d92;
+        --state-neutral-bg:rgba(255,255,255,.08); --state-neutral-fg:#9aa7ad; }
+.fam-chip { display:inline-flex; align-items:center; min-height:24px; padding:0 10px; border-radius:var(--radius-lg); font-size:11px; font-weight:800; white-space:nowrap; }
+.fam-chip.tone-ready { background:var(--state-ready-bg); color:var(--state-ready-fg); }
+.fam-chip.tone-pending { background:var(--state-pending-bg); color:var(--state-pending-fg); }
+.fam-chip.tone-danger { background:var(--state-danger-bg); color:var(--state-danger-fg); }
+.fam-chip.tone-neutral { background:var(--state-neutral-bg); color:var(--state-neutral-fg); }
+.fam-state-panel { padding:var(--sp-5); border:1px solid var(--border); border-radius:var(--radius-lg); background:var(--surface); display:flex; flex-direction:column; align-items:flex-start; gap:var(--sp-3); }
+.fam-state-title { font-size:14px; font-weight:800; }
+.fam-state-copy { font-size:13px; color:var(--text2); line-height:1.45; }
+.fam-primary-action { min-height:var(--touch-min); padding:0 var(--sp-4); border-radius:var(--radius-md); background:var(--accent); color:#fff; font-weight:800; border:none; cursor:pointer; }
+.fam-secondary-action { min-height:var(--touch-min); padding:0 var(--sp-4); border-radius:var(--radius-md); background:var(--surface); color:var(--accent); border:1px solid var(--border); font-weight:800; cursor:pointer; }
+/* Family AppHeader (card 1) */
+.fam-app-icon { width:48px; height:48px; border-radius:var(--radius-lg); background:var(--accent); color:#fff; display:flex; align-items:center; justify-content:center; font-size:22px; font-weight:800; flex:0 0 auto; }
+.fam-icon-btn { width:var(--touch-min); height:var(--touch-min); border-radius:13px; background:var(--surface); border:1px solid var(--border); color:var(--accent); display:flex; align-items:center; justify-content:center; font-weight:800; font-size:17px; cursor:pointer; flex:0 0 auto; }
+/* Family mobile home (card 12): hero + module grid */
+.fam-hero { background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:var(--sp-4); margin-bottom:var(--sp-3); }
+.fam-hero-row { display:flex; justify-content:space-between; align-items:flex-start; gap:var(--sp-3); }
+.fam-hero h2 { margin:0; font-size:18px; line-height:1.2; }
+.fam-hero p { margin:7px 0 0; color:var(--text2); font-size:13px; line-height:1.35; }
+.fam-module-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.fam-module-card { min-height:112px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:13px; display:flex; flex-direction:column; justify-content:space-between; gap:10px; color:var(--text); text-align:left; cursor:pointer; }
+.fam-module-card.large { grid-column:1 / -1; min-height:118px; }
+.fam-module-top { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+.fam-module-icon { width:38px; height:38px; border-radius:var(--radius-md); background:var(--accent-bg); color:var(--accent); display:flex; align-items:center; justify-content:center; font-weight:900; flex:0 0 auto; }
+.fam-module-name { display:block; font-size:15px; font-weight:800; line-height:1.18; }
+.fam-module-desc { display:block; margin-top:5px; color:var(--text2); font-size:12px; line-height:1.3; }
+/* Family settings grouped rows (card 7) */
+.fam-settings-row { min-height:64px; padding:var(--sp-3); border:1px solid var(--border); border-radius:var(--radius-lg); background:var(--surface); display:flex; justify-content:space-between; gap:var(--sp-3); align-items:center; margin-bottom:10px; }
+.fam-settings-row strong { display:block; font-size:14px; line-height:1.2; }
+.fam-settings-row span.meta { display:block; color:var(--text2); font-size:12px; line-height:1.3; margin-top:3px; }
+/* R2 primary rail (4 slots) */
 .mobile-primary-rail { display:flex; gap:6px; }
 .mobile-rail-btn { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; padding:7px 4px; background:var(--bg); border:1px solid var(--border); border-radius:8px; color:var(--text2); font-size:11px; font-weight:700; cursor:pointer; }
 .mobile-rail-btn span { font-size:16px; line-height:1; }
 .mobile-rail-btn em { font-style:normal; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .mobile-rail-btn.active { color:var(--accent); border-color:var(--accent-bg2); background:var(--accent-bg); }
-.mobile-more-sheet { border-bottom:1px solid var(--border); padding-bottom:7px; }
 .apps-tile { display:flex; gap:12px; text-align:left; align-items:flex-start; padding:14px; border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--text); cursor:pointer; transition:border-color .12s, transform .05s; }
 .apps-tile:hover { border-color:var(--accent); }
 .apps-tile:active { transform:translateY(1px); }
@@ -1298,16 +1339,18 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
 <body>
 
 <div class="mobile-shell" id="mobile-shell">
+    <!-- Family AppHeader (card 1): product icon + name + context + gear.
+         The old top-home button is gone — Home lives on the bottom rail. -->
     <div class="mobile-top">
         <div class="mobile-brand-wrap">
-            <button class="mobile-top-home" id="mobile-top-home" type="button" onclick="mobileShow('home')" title="Home" aria-label="Home">&#8962;</button>
-            <button class="mobile-feedback-btn" id="mobile-feedback-btn" type="button" onclick="openMobileFeedbackMenu()" title="Отправить отзыв или сообщить о проблеме" aria-label="Отправить отзыв или сообщить о проблеме"><span class="mobile-feedback-mark">!</span><span class="mobile-feedback-text">Отзыв</span></button>
+            <span class="fam-app-icon" data-qa="app-header-icon" aria-hidden="true">S</span>
             <div class="mobile-brand">
-                <div class="mobile-brand-title" id="mobile-brand-title">Скипи Моряк</div>
-                <div class="mobile-brand-sub" id="mobile-vault-sub">Mobile seafarer vault</div>
+                <div class="mobile-brand-title" id="mobile-brand-title" data-qa="app-header-title">Скипи Моряк</div>
+                <div class="mobile-brand-sub" id="mobile-vault-sub" data-qa="app-header-context">Mobile seafarer vault</div>
             </div>
         </div>
-        <button class="mobile-icon-btn" type="button" onclick="openSettings()" title="Settings">&#9881;</button>
+        <button class="fam-icon-btn mobile-feedback-btn" id="mobile-feedback-btn" type="button" data-qa="app-header-feedback" onclick="openMobileFeedbackMenu()" title="Отправить отзыв или сообщить о проблеме" aria-label="Отправить отзыв или сообщить о проблеме"><span class="mobile-feedback-mark">!</span><span class="mobile-feedback-text" style="display:none;"></span></button>
+        <button class="fam-icon-btn" type="button" data-qa="app-header-settings" onclick="openSettings()" title="Settings" aria-label="Settings">&#9881;</button>
     </div>
     <main class="mobile-main" id="mobile-main"></main>
     <nav class="mobile-bottom-nav" id="mobile-bottom-nav" style="display:none;">
@@ -1317,37 +1360,37 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
             <span class="mobile-profile-meter-track"><span class="mobile-profile-meter-fill" id="mobile-profile-meter-fill"></span></span>
             <span class="mobile-profile-meter-value" id="mobile-profile-meter-value">0%</span>
         </button>
-        <!-- R2: the full module rail lives behind the «Ещё» sheet. The buttons
-             below keep their ids/classes/data-mview untouched — they stay the
-             real navigation for these modules, one tap deeper. -->
-        <div class="mobile-more-sheet" id="mobile-more-sheet" style="display:none;">
-        <div class="mobile-module-rail-wrap has-more" id="mobile-module-rail-wrap">
-        <div class="mobile-module-rail" id="mobile-module-rail" onscroll="mobileUpdateModuleRailHint()">
-            <button class="mobile-nav-btn active" type="button" data-mview="docs" onclick="mobileShow('docs')"><span>&#9633;</span>Documents</button>
-            <button class="mobile-nav-btn" type="button" data-mview="assistant" onclick="mobileShow('assistant')"><span>&#128172;</span>Assistant</button>
-            <button class="mobile-nav-btn" type="button" data-mview="experience" onclick="mobileShow('experience')"><span>&#9873;&#65038;</span>Experience</button>
-            <button class="mobile-nav-btn" type="button" data-mview="cv" onclick="mobileShow('cv')"><span>CV</span>CV</button>
-            <button class="mobile-nav-btn" type="button" data-mview="dispatch" onclick="mobileShow('dispatch')"><span>&#9993;&#65038;</span>Mailings</button>
-            <button class="mobile-nav-btn" type="button" data-mview="jobs" onclick="mobileShow('jobs')"><span>J</span>Jobs</button>
-            <button class="mobile-nav-btn" type="button" data-mview="information" onclick="mobileShow('information')"><span>i</span>Info</button>
-            <button class="mobile-nav-btn" type="button" data-mview="vessels" onclick="mobileShow('vessels')"><span>&#9872;&#65038;</span>Vessels</button>
-
-            <button class="mobile-nav-btn" type="button" data-mview="myvessel" onclick="mobileShow('myvessel')"><span>&#9875;&#65038;</span>Моё судно</button>
-
-            <button class="mobile-nav-btn" type="button" data-mview="apps" onclick="mobileShow('apps')"><span>&#9638;</span>Apps</button>
-
-        </div>
-        </div>
-        </div>
-        <!-- R2 primary rail: exactly 4 slots (standard v2 §7). Hooks are
-             additive data-qa; labels are set per-language in mobileSetBottomNav. -->
+        <!-- Family rail (card 2): 4 slots Home / Vault / Apps / Settings.
+             Module navigation moved to the home module grid (card 12);
+             labels are set per-language in mobileSetBottomNav. -->
         <div class="mobile-primary-rail" id="mobile-primary-rail">
-            <button class="mobile-rail-btn" type="button" data-qa="bottom-nav-home" onclick="mobileShow('home')"><span>&#8962;</span><em id="mobile-rail-label-home">Дом</em></button>
+            <button class="mobile-rail-btn" type="button" data-qa="bottom-nav-home" onclick="mobileShow('home')"><span>&#8962;</span><em id="mobile-rail-label-home">Home</em></button>
             <button class="mobile-rail-btn" type="button" data-qa="bottom-nav-workspace" onclick="mobileShow('docs')"><span>&#9636;</span><em id="mobile-rail-label-workspace">Vault</em></button>
             <button class="mobile-rail-btn" type="button" data-qa="bottom-nav-apps" onclick="mobileShow('apps')"><span>&#9638;</span><em id="mobile-rail-label-apps">Apps</em></button>
-            <button class="mobile-rail-btn" type="button" data-qa="bottom-nav-more" onclick="mobileMoreToggle()"><span>&#8943;</span><em id="mobile-rail-label-more">Ещё</em></button>
+            <button class="mobile-rail-btn" type="button" data-qa="bottom-nav-settings" onclick="openSettings()"><span>&#9881;</span><em id="mobile-rail-label-settings">Settings</em></button>
         </div>
     </nav>
+    <!-- Family home module grid source (card 12). Single source of truth for
+         the 11-module navigation: renderMobileHome injects this template's
+         markup, so the presence contract keeps asserting REAL literal
+         data-mview buttons (and the container keeps the mobile-module-rail
+         id the contract mounts on). Packages is desktop-only by the presence
+         manifest — its card says so honestly instead of faking a route. -->
+    <template id="mobile-home-modules-tpl">
+        <div class="fam-module-grid" id="mobile-module-rail">
+            <button class="fam-module-card large mobile-nav-btn" type="button" data-mview="docs" onclick="mobileShow('docs')"><span class="fam-module-top"><span class="fam-module-icon">&#9633;</span><span class="fam-chip tone-ready" data-qa="state-chip-ready" id="mhs-docs">ready</span></span><span><span class="fam-module-name" id="mhn-docs">Documents</span><span class="fam-module-desc" id="mhd-docs">Certificates and personal files</span></span></button>
+            <button class="fam-module-card mobile-nav-btn" type="button" data-mview="experience" onclick="mobileShow('experience')"><span class="fam-module-top"><span class="fam-module-icon">&#9873;&#65038;</span><span class="fam-chip tone-ready" data-qa="state-chip-ready" id="mhs-experience">ready</span></span><span><span class="fam-module-name" id="mhn-experience">Experience</span><span class="fam-module-desc" id="mhd-experience">Sea service and contracts</span></span></button>
+            <button class="fam-module-card mobile-nav-btn" type="button" data-mview="cv" onclick="mobileShow('cv')"><span class="fam-module-top"><span class="fam-module-icon">CV</span><span class="fam-chip tone-ready" data-qa="state-chip-ready" id="mhs-cv">ready</span></span><span><span class="fam-module-name" id="mhn-cv">CV</span><span class="fam-module-desc" id="mhd-cv">Exportable profile package</span></span></button>
+            <button class="fam-module-card" type="button" id="mobile-home-packages" onclick="mobilePackagesHint()"><span class="fam-module-top"><span class="fam-module-icon">P</span><span class="fam-chip tone-neutral" data-qa="state-chip-desktop" id="mhs-packages">desktop</span></span><span><span class="fam-module-name" id="mhn-packages">Packages</span><span class="fam-module-desc" id="mhd-packages">Prepared document sets</span></span></button>
+            <button class="fam-module-card mobile-nav-btn" type="button" data-mview="dispatch" onclick="mobileShow('dispatch')"><span class="fam-module-top"><span class="fam-module-icon">&#9993;&#65038;</span><span class="fam-chip tone-ready" data-qa="state-chip-ready" id="mhs-dispatch">ready</span></span><span><span class="fam-module-name" id="mhn-dispatch">Mailings</span><span class="fam-module-desc" id="mhd-dispatch">Sent applications and replies</span></span></button>
+            <button class="fam-module-card mobile-nav-btn" type="button" data-mview="jobs" onclick="mobileShow('jobs')"><span class="fam-module-top"><span class="fam-module-icon">J</span><span class="fam-chip tone-ready" data-qa="state-chip-ready" id="mhs-jobs">ready</span></span><span><span class="fam-module-name" id="mhn-jobs">Jobs</span><span class="fam-module-desc" id="mhd-jobs">Vacancies matched to profile</span></span></button>
+            <button class="fam-module-card mobile-nav-btn" type="button" data-mview="information" onclick="mobileShow('information')"><span class="fam-module-top"><span class="fam-module-icon">i</span><span class="fam-chip tone-ready" data-qa="state-chip-ready" id="mhs-information">ready</span></span><span><span class="fam-module-name" id="mhn-information">Information</span><span class="fam-module-desc" id="mhd-information">Reference notes and guidance</span></span></button>
+            <button class="fam-module-card mobile-nav-btn" type="button" data-mview="vessels" onclick="mobileShow('vessels')"><span class="fam-module-top"><span class="fam-module-icon">&#9872;&#65038;</span><span class="fam-chip tone-ready" data-qa="state-chip-ready" id="mhs-vessels">ready</span></span><span><span class="fam-module-name" id="mhn-vessels">Vessel DB</span><span class="fam-module-desc" id="mhd-vessels">Known vessel records</span></span></button>
+            <button class="fam-module-card mobile-nav-btn" type="button" data-mview="myvessel" onclick="mobileShow('myvessel')"><span class="fam-module-top"><span class="fam-module-icon">&#9875;&#65038;</span><span class="fam-chip tone-ready" data-qa="state-chip-ready" id="mhs-myvessel">ready</span></span><span><span class="fam-module-name" id="mhn-myvessel">My Vessel</span><span class="fam-module-desc" id="mhd-myvessel">On Board workspace</span></span></button>
+            <button class="fam-module-card mobile-nav-btn" type="button" data-mview="apps" onclick="mobileShow('apps')"><span class="fam-module-top"><span class="fam-module-icon">&#9638;</span><span class="fam-chip tone-ready" data-qa="state-chip-ready" id="mhs-apps">ready</span></span><span><span class="fam-module-name" id="mhn-apps">Apps</span><span class="fam-module-desc" id="mhd-apps">Installed tools</span></span></button>
+            <button class="fam-module-card mobile-nav-btn" type="button" data-mview="assistant" onclick="mobileShow('assistant')"><span class="fam-module-top"><span class="fam-module-icon">&#128172;</span><span class="fam-chip tone-ready" data-qa="state-chip-ready" id="mhs-assistant">ready</span></span><span><span class="fam-module-name" id="mhn-assistant">Assistant</span><span class="fam-module-desc" id="mhd-assistant">Drafts and help</span></span></button>
+        </div>
+    </template>
     <input id="mobile-file-input" type="file" accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png" style="display:none;" onchange="mobileHandleFilePicked(this.files)">
 </div>
 
@@ -3092,42 +3135,32 @@ function mobileSetBottomNav(showNav){
         var active=(mobileView===v)||(v==='docs'&&docViews.indexOf(mobileView)>=0);
         btn.classList.toggle('active',active);
     });
-    // R2 primary rail: sheet visibility, active states and per-language labels.
-    var moreSheet=document.getElementById('mobile-more-sheet');
-    if(moreSheet)moreSheet.style.display=mobileMoreOpen?'':'none';
+    // Family rail (card 2): active states and per-language labels.
     var ru=getUiLang()==='ru';
     var docViews2=['docs','doc','add','pdf'];
-    var moreViews=['assistant','experience','cv','dispatch','jobs','information','vessels','myvessel'];
     var railStates={
         'bottom-nav-home': mobileView==='home',
         'bottom-nav-workspace': docViews2.indexOf(mobileView)>=0,
         'bottom-nav-apps': mobileView==='apps',
-        'bottom-nav-more': mobileMoreOpen||moreViews.indexOf(mobileView)>=0
+        'bottom-nav-settings': false
     };
     document.querySelectorAll('.mobile-rail-btn').forEach(function(btn){
         var qa=btn.getAttribute('data-qa');
         btn.classList.toggle('active',!!railStates[qa]);
-        btn.setAttribute('aria-expanded',qa==='bottom-nav-more'?String(mobileMoreOpen):btn.getAttribute('aria-expanded')||'');
     });
     var railLabels={
         'mobile-rail-label-home': ru?'Дом':'Home',
-        'mobile-rail-label-workspace': ru?'Vault':'Vault',
+        'mobile-rail-label-workspace': 'Vault',
         'mobile-rail-label-apps': 'Apps',
-        'mobile-rail-label-more': ru?'Ещё':'More'
+        'mobile-rail-label-settings': ru?'Настройки':'Settings'
     };
     Object.keys(railLabels).forEach(function(id){
         var el=document.getElementById(id);
         if(el)el.textContent=railLabels[id];
     });
     if(showNav){
-        mobileSyncModuleRail();
         setTimeout(mobileRefreshProfileMeter,0);
     }
-}
-var mobileMoreOpen=false;
-function mobileMoreToggle(){
-    mobileMoreOpen=!mobileMoreOpen;
-    mobileSetBottomNav(mobileView!=='dispatch');
 }
 function mobileMainHtml(html){
     var main=document.getElementById('mobile-main');
@@ -3702,7 +3735,6 @@ function mobileScrollMainTop(){
 }
 function mobileShow(view){
     mobileView=view||'home';
-    mobileMoreOpen=false;   // R2: the «Ещё» sheet closes on any navigation
     // R2 (M8): leaving Apps unmounts an open plugin through the host's single
     // unmount entry — no plugin keeps running behind another module.
     if(mobileView!=='apps' && pluginHostState.openId){
@@ -5580,57 +5612,66 @@ function mobileHomeActionHtml(icon,title,sub,onclick){
     return '<button class="mobile-primary-action" type="button" onclick="'+onclick+'"><span class="mobile-action-icon">'+icon+'</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(title)+'</span><span class="mobile-action-sub">'+mobileEsc(sub)+'</span></span></button>';
 }
 function renderMobileHome(){
+    // Family mobile home (card 12): hero + the 11-module grid. The grid markup
+    // comes verbatim from #mobile-home-modules-tpl (single source of truth the
+    // presence contract also reads); localization and honest per-module status
+    // chips are applied after injection.
     var ru=getUiLang()==='ru';
+    var hour=(new Date()).getHours();
+    var greet=hour<5?(ru?'Доброй ночи':'Good night'):hour<12?(ru?'Доброе утро':'Good morning'):hour<18?(ru?'Добрый день':'Good afternoon'):(ru?'Добрый вечер':'Good evening');
     var st=mobileStats();
-    var pct=mobileCompletenessPercent();
-    var missing=mobileFilteredDocs('missing');
-    var expiring=mobileFilteredDocs('expiring');
-    var uploaded=allDocs.filter(function(d){return !!d.file_name;});
-    var leadIcon='+';
-    var leadTitle=ru?'Сканировать документ':'Scan document';
-    var leadSub=ru?'Сфотографируйте страницы, Скипи Моряк соберет PDF.':'Take pages, Skipi Seafarer creates a PDF.';
-    var leadAction="mobileBeginAdd('pdf')";
-    if(missing.length){
-        leadIcon='!';
-        leadTitle=ru?'Добавить обязательный документ':'Add required document';
-        leadSub=missing[0].title;
-        leadAction="mobileOpenDoc('"+jsString(missing[0].id)+"')";
-    }else if(expiring.length){
-        leadIcon='!';
-        leadTitle=ru?'Проверить срок действия':'Check expiry dates';
-        leadSub=ru?'Есть документы, которые скоро истекают.':'Some documents expire soon.';
-        leadAction="mobileSetDocsFilter('expiring');mobileShow('docs')";
-    }else if(uploaded.length){
-        leadIcon='CV';
-        leadTitle=ru?'Отправить CV':'Send CV';
-        leadSub=ru?'CV и документы готовы к отправке.':'Your CV and documents are ready.';
-        leadAction="mobileShow('dispatch')";
-    }
-    var h='<button class="mobile-primary-action mobile-home-lead" type="button" onclick="'+leadAction+'"><span class="mobile-action-icon">'+leadIcon+'</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(leadTitle)+'</span><span class="mobile-action-sub">'+mobileEsc(leadSub)+'</span></span></button>';
-    h+='<div class="mobile-home-action-grid">';
-    h+=mobileHomeActionHtml('+',ru?'Сканировать':'Scan',ru?'Камера в PDF':'Camera to PDF',"mobileBeginAdd('pdf')");
-    h+=mobileHomeActionHtml('CV',ru?'Посмотреть CV':'View CV',ru?'Что увидит получатель':'What recipient sees',"mobileShow('cv')");
-    h+=mobileHomeActionHtml('@',ru?'Рассылка':'Mailings',ru?'Email или поделиться':'Email or share',"mobileShow('dispatch')");
-    h+=mobileHomeActionHtml('J',ru?'Вакансии':'Jobs',ru?'Готовность и офферы':'Readiness and offers',"mobileShow('jobs')");
-    h+='</div>';
-    h+='<div class="mobile-stats">'
-        + '<div class="mobile-stat"><strong>'+st.uploaded+'</strong><span>'+mobileEsc(ru?'Файлов':'Uploaded')+'</span></div>'
-        + '<div class="mobile-stat"><strong>'+st.missing+'</strong><span>'+mobileEsc(ru?'Не хватает':'Missing')+'</span></div>'
-        + '<div class="mobile-stat"><strong>'+pct+'%</strong><span>'+mobileEsc(ru?'Профиль':'Profile')+'</span></div>'
-        + '</div>';
-    h+='<div class="mobile-alert-strip"><div><strong>'+mobileEsc(st.missing?((ru?'Нужно добавить: ':'Missing: ')+st.missing):(ru?'Обязательные документы на месте':'Required documents are complete'))+'</strong><span>'+mobileEsc(st.expiring?((ru?'Скоро истекают: ':'Expiring soon: ')+st.expiring):(ru?'Сроки действия выглядят спокойно':'Expiry dates look clear'))+'</span></div><button class="btn btn-outline btn-sm" onclick="mobileShow(\'docs\')">'+mobileEsc(ru?'Документы':'Docs')+'</button></div>';
-    var attention=missing.concat(expiring.filter(function(d){return missing.indexOf(d)<0;})).slice(0,3);
-    h+='<div class="mobile-section-title">'+mobileEsc(ru?'Требует внимания':'Needs attention')+'</div>';
-    if(attention.length)attention.forEach(function(d){h+=mobileDocRow(d);});
-    else h+='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(ru?'Нет срочных действий':'No urgent action')+'</div><div class="mobile-card-sub">'+mobileEsc(ru?'Можно открыть CV, отправить документы или проверить вакансии.':'You can review CV, send documents or check jobs.')+'</div></div>';
-    if(uploaded.length){
-        h+='<div class="mobile-section-title">'+mobileEsc(ru?'Недавно загружено':'Recently loaded')+'</div>';
-        uploaded.slice(0,3).forEach(function(d){h+=mobileDocRow(d);});
-        if(uploaded.length>3){
-            h+='<button class="btn btn-outline" style="width:100%;margin-top:2px;" onclick="mobileShow(\'docs\')">'+mobileEsc(ru?'Все документы':'All documents')+'</button>';
-        }
-    }
+    var heroChip=st.missing?famStateChip('pending'):famStateChip('ready');
+    var heroCopy=ru?'Профиль, документы, судно и установленные приложения — в одном месте.':'Your profile, documents, vessel workspace and installed apps are ready in one place.';
+    var h='<div class="fam-hero" data-qa="home-hero"><div class="fam-hero-row"><div>'
+      +'<h2>'+mobileEsc(greet)+'</h2>'
+      +'<p>'+mobileEsc(heroCopy)+'</p>'
+      +'</div>'+heroChip+'</div></div>';
+    var tpl=document.getElementById('mobile-home-modules-tpl');
+    h+=(tpl&&tpl.innerHTML)?tpl.innerHTML:'';
     mobileMainHtml(h);
+    mobileHomeLocalizeModules();
+}
+var MOBILE_HOME_MODULE_L10N={
+    docs:['Документы','Сертификаты и личные файлы'],
+    experience:['Опыт','Sea service и контракты'],
+    cv:['CV','Пакет профиля для отправки'],
+    packages:['Пакеты','Подготовленные наборы документов'],
+    dispatch:['Рассылки','Отправки и ответы'],
+    jobs:['Работа','Вакансии по профилю'],
+    information:['Информация','Справка и заметки'],
+    vessels:['База судов','Известные суда'],
+    myvessel:['Моё судно','Рабочее пространство On Board'],
+    apps:['Приложения','Установленные инструменты'],
+    assistant:['Ассистент','Черновики и помощь']
+};
+function mobileHomeSetChip(key,state){
+    var el=document.getElementById('mhs-'+key);
+    if(!el)return;
+    var s=FAMILY_STATES[state]||{tone:'neutral'};
+    el.className='fam-chip tone-'+(s.tone||'neutral');
+    el.setAttribute('data-qa','state-chip-'+state);
+    el.textContent=(getUiLang()==='ru'?s.ru:s.en)||state;
+}
+function mobileHomeLocalizeModules(){
+    var ru=getUiLang()==='ru';
+    if(ru){
+        Object.keys(MOBILE_HOME_MODULE_L10N).forEach(function(k){
+            var pair=MOBILE_HOME_MODULE_L10N[k];
+            var n=document.getElementById('mhn-'+k), d=document.getElementById('mhd-'+k);
+            if(n)n.textContent=pair[0];
+            if(d)d.textContent=pair[1];
+        });
+    }
+    // Honest chips: statuses only reflect what the app actually knows.
+    var offline=false; try{ offline=(navigator.onLine===false); }catch(e){}
+    ['experience','cv','dispatch','jobs','information','vessels','myvessel','apps'].forEach(function(k){ mobileHomeSetChip(k,'ready'); });
+    mobileHomeSetChip('docs', mobileStats().missing?'pending':'ready');
+    mobileHomeSetChip('assistant', offline?'offline':'ready');
+    mobileHomeSetChip('packages','desktop');
+}
+function mobilePackagesHint(){
+    var ru=getUiLang()==='ru';
+    showToast(ru?'Пакеты доступны в desktop-версии Скипи Моряк.':'Packages lives in the Skipi Seafarer desktop app.','info');
 }
 function renderMobileDocs(){
     var missing=mobileFilteredDocs('missing').length;
@@ -8706,6 +8747,37 @@ function pluginPermsHtml(p){
 }
 
 // ---- desktop renderers ----
+// ---- Family UI Base v1 (Wave 1): state dictionary + shared chip/panel ----
+// Accepted dictionary + additive proposal (empty/loading/ready/stale/pending/
+// queued) plus the doc/app states already living in the product. New copy is
+// EN-first; RU comes with it because the home ships RU today (migration-as-
+// touched rule); other locales fall back to EN.
+var FAMILY_STATES={
+    empty:{tone:'neutral',en:'empty',ru:'пусто'},
+    loading:{tone:'pending',en:'loading',ru:'загрузка'},
+    ready:{tone:'ready',en:'ready',ru:'готово'},
+    stale:{tone:'pending',en:'stale',ru:'устарело'},
+    pending:{tone:'pending',en:'pending',ru:'ожидает'},
+    queued:{tone:'pending',en:'queued',ru:'в очереди'},
+    offline:{tone:'neutral',en:'offline',ru:'офлайн'},
+    valid:{tone:'ready',en:'valid',ru:'действует'},
+    expiring:{tone:'pending',en:'expiring',ru:'истекает'},
+    expired:{tone:'danger',en:'expired',ru:'истёк'},
+    error:{tone:'danger',en:'error',ru:'ошибка'},
+    desktop:{tone:'neutral',en:'desktop',ru:'на десктопе'}
+};
+function famStateChip(state,labelOverride){
+    var s=FAMILY_STATES[state]||{tone:'neutral'};
+    var label=labelOverride||(getUiLang()==='ru'?s.ru:s.en)||state;
+    return '<span class="fam-chip tone-'+escAttr(s.tone||'neutral')+'" data-qa="state-chip-'+escAttr(state)+'">'+esc(label)+'</span>';
+}
+function famStatePanelHtml(kind,extraQa,title,copy,ctaHtml){
+    return '<div class="fam-state-panel" data-qa="state-'+escAttr(kind)+'-panel"'+(extraQa?' '+extraQa:'')+'>'
+      +(title?'<div class="fam-state-title">'+esc(title)+'</div>':'')
+      +(copy?'<div class="fam-state-copy">'+esc(copy)+'</div>':'')
+      +(ctaHtml||'')
+      +'</div>';
+}
 function showApps(){
     var content=document.getElementById('scr-content'); if(!content) return;
     if(pluginHostState.openId) content.innerHTML=pluginScreenHtml(pluginById(pluginHostState.openId));
@@ -8744,21 +8816,22 @@ function pluginIconTileHtml(p){
       + '<button type="button" data-qa="plugin-open-'+escAttr(p.id)+'" onclick="pluginLaunch(\''+jsString(p.id)+'\')" title="'+escAttr(p.name)+'">'
       + '<span class="apps-icon-tile-icon">'+(p.icon||'▢')+'</span>'
       + '<span class="apps-icon-tile-name">'+esc(p.name)+'</span>'
+      + famStateChip('ready')
       + '</button></div>';
 }
 function pluginLauncherResultsHtml(){
     var ru=getUiLang()==='ru';
     var installed=pluginInstalledList();
     if(!installed.length){
-        return '<div class="apps-empty" data-qa="plugin-empty-state">'
-          + '<div class="apps-empty-note">'+esc(ru?'Установленных плагинов пока нет. Откройте настройки, чтобы проверить доступные модули.':'No installed plugins yet. Open plugin settings to see available modules.')+'</div>'
-          + '<button class="btn btn-accent" type="button" onclick="pluginOpenManage()">'+esc(ru?'Настройки плагинов':'Plugin settings')+'</button>'
+        return '<div class="apps-empty fam-state-panel" data-qa="plugin-empty-state" data-qa2="state-empty-panel">'
+          + '<div class="apps-empty-note fam-state-copy">'+esc(ru?'Установленных плагинов пока нет. Откройте настройки, чтобы проверить доступные модули.':'No installed plugins yet. Open plugin settings to see available modules.')+'</div>'
+          + '<button class="fam-primary-action" type="button" onclick="pluginOpenManage()">'+esc(ru?'Настройки плагинов':'Plugin settings')+'</button>'
           + '</div>';
     }
     var items=pluginLauncherFiltered();
     if(!items.length){
-        return '<div class="apps-empty" data-qa="plugin-empty-state" data-context="search">'
-          + '<div class="apps-empty-note">'+esc(ru?'Ничего не найдено среди установленных плагинов.':'Nothing found among installed plugins.')+'</div>'
+        return '<div class="apps-empty fam-state-panel" data-qa="plugin-empty-state" data-context="search" data-qa2="state-empty-panel">'
+          + '<div class="apps-empty-note fam-state-copy">'+esc(ru?'Ничего не найдено среди установленных плагинов.':'Nothing found among installed plugins.')+'</div>'
           + '</div>';
     }
     var h='<div class="apps-cat-title">'+esc(ru?'Установленные плагины':'Installed plugins')+'</div><div class="apps-launcher-grid">';
@@ -15614,6 +15687,10 @@ function renderSettingsBody(){
 
     if(settingsTab === 'vaults'){
         if(isMobileMode()){
+            // Family card 11: language selection lives in Settings on mobile too.
+            h += '<div class="settings-section"><h3>'+tr('settings.language')+'</h3>';
+            h += '<div class="fam-settings-row" data-qa="settings-language"><div><strong>'+tr('settings.language')+'</strong><span class="meta">'+tr('settings.language_desc')+'</span></div><div>'+uiLanguageSelectHtml()+'</div></div>';
+            h += '</div>';
             h += '<div class="settings-section"><h3>Vault</h3><div class="section-desc">Choose which seafarer vault is open on this phone.</div>';
             h += '<div class="mobile-card" style="margin:12px 0;"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title" id="mobile-settings-vault-name">Current vault</div><div class="mobile-card-sub" id="mobile-settings-vault-sub">Loading...</div></div><span class="mobile-pill ok">Open</span></div></div>';
             h += '<button class="mobile-primary-action" type="button" onclick="closeSettings();mobileOpenExistingVault(true)"><span class="mobile-action-icon">&#128451;</span><span class="mobile-action-copy"><span class="mobile-action-title">Switch vault</span><span class="mobile-action-sub">Choose from vaults already opened on this phone.</span></span></button>';
