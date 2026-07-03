@@ -20,7 +20,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: CaptTymur/skipi-guard
-          ref: a2fd9a458d988fb7bee3593711e3ab9454b2fb06
+          ref: c391500c950e7d6f8d4496f9f96551782bf0e306
           path: .skipi-guard
 
       - name: Setup Node
@@ -83,6 +83,26 @@ jobs:
           done
           if [[ "$presence_manifest_added" -eq 1 && "$presence_bootstrap_candidate" -eq 1 ]]; then
             OVERRIDE_ARGS=(--override-protected seafarer-presence-contracts-bootstrap)
+          fi
+          # One-shot theme-default bootstrap: the theme harness may be
+          # INTRODUCED (diff-filter=A) together with the dist/index.html theme
+          # fix and this workflow pin, and nothing else. Once the harness
+          # exists on main, edits are M-not-A and never get this override.
+          theme_bootstrap_candidate=1
+          theme_harness_added=0
+          for added_file in "${GUARD_ADDED_FILES[@]}"; do
+            if [[ "$added_file" == "tests/seafarer_theme_default_harness.mjs" ]]; then
+              theme_harness_added=1
+            fi
+          done
+          for changed_file in "${GUARD_CHANGED_FILES[@]}"; do
+            case "$changed_file" in
+              dist/index.html|tests/seafarer_theme_default_harness.mjs|.github/workflows/skipi-guard.yml) ;;
+              *) theme_bootstrap_candidate=0 ;;
+            esac
+          done
+          if [[ "$theme_harness_added" -eq 1 && "$theme_bootstrap_candidate" -eq 1 ]]; then
+            OVERRIDE_ARGS=(--override-protected seafarer-theme-default-bootstrap)
           fi
           .skipi-guard/bin/skipi-guard verify \
             --home "$SKIPI_GUARD_HOME" \
