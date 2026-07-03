@@ -243,10 +243,12 @@ class VmDocument {
       if (tag === 'script' || tag === 'style' || tag === 'meta' || tag === 'link' || tag === 'html') continue;
       const attrs = vmParseAttrs(m[2] || '');
       if (!attrs.id && !attrs['data-qa'] && !attrs['data-i18n'] && !attrs['data-mview']) continue;
-      this._make(tag, attrs);
+      const close = sourceHtml.indexOf(`</${tag}>`, re.lastIndex);
+      const initialHtml = close >= 0 ? sourceHtml.slice(re.lastIndex, close) : '';
+      this._make(tag, attrs, initialHtml);
     }
   }
-  _make(tag, attrs = {}) { const el = new VmElement(this, tag, attrs); this._all.push(el); if (el.id) this._ids.set(el.id, el); return el; }
+  _make(tag, attrs = {}, initialHtml = '') { const el = new VmElement(this, tag, attrs, initialHtml); this._all.push(el); if (el.id) this._ids.set(el.id, el); return el; }
   getElementById(id) { return this._ids.get(String(id)) || null; }
   createElement(tag) { return this._make(tag, {}); }
   createTextNode(t) { const el = this._make('#text', {}); el.textContent = t; return el; }
@@ -412,7 +414,7 @@ function bootMobile(opts) {
   ok(h.includes('data-qa="apps-search-input"'), 'apps-search-input renders');
   ok(h.includes('data-qa="plugins-settings-open"'), 'plugins-settings-open (gear) renders');
   ok(h.includes('data-qa="plugin-tile-bnwas-time-anchor"') && h.includes('data-qa="plugin-open-bnwas-time-anchor"'), 'plugin-tile-/plugin-open-<id> render for the installed plugin');
-  for (const qa of ['bottom-nav-home', 'bottom-nav-workspace', 'bottom-nav-apps', 'bottom-nav-more']) {
+  for (const qa of ['bottom-nav-home', 'bottom-nav-workspace', 'bottom-nav-apps', 'bottom-nav-settings']) {
     ok(doc.querySelectorAll(`[data-qa="${qa}"]`).length === 1, `${qa} exists exactly once in the rail`);
   }
   sandbox.pluginOpenManage();
@@ -504,7 +506,8 @@ function bootMobile(opts) {
   sandbox.mobileShow('docs');
   ok(btn('bottom-nav-workspace').classList.contains('active'), 'workspace (Vault) active on docs');
   sandbox.mobileShow('experience');
-  ok(btn('bottom-nav-more').classList.contains('active'), '«Ещё» active while a sheet module is current');
+  ok(!btn('bottom-nav-home').classList.contains('active') && !btn('bottom-nav-workspace').classList.contains('active') && !btn('bottom-nav-apps').classList.contains('active'), 'no primary slot claims a grid-module view');
+  ok(!!btn('bottom-nav-settings'), 'settings slot present (opens the settings overlay)');
 }
 
 {
@@ -515,14 +518,12 @@ function bootMobile(opts) {
     ok(doc.querySelectorAll(`[data-mview="${v}"]`).length === 1, `existing data-mview="${v}" button still present`);
   }
   ok(!!doc.getElementById('mobile-module-rail') && !!doc.getElementById('mobile-bottom-nav') && !!doc.getElementById('mobile-profile-meter'), 'mobile-module-rail / mobile-bottom-nav / profile-meter ids kept');
-  ok(!!doc.getElementById('mobile-more-sheet') && !!doc.getElementById('mobile-primary-rail'), 'sheet + primary rail are new additive containers');
+  ok(!!doc.getElementById('mobile-home-modules-tpl') && !!doc.getElementById('mobile-primary-rail'), 'home module template + primary rail present');
   sandbox.mobileShow('home');
-  const sheet = doc.getElementById('mobile-more-sheet');
-  ok(sheet.style.display === 'none', '«Ещё» sheet is closed by default');
-  sandbox.mobileMoreToggle();
-  ok(sheet.style.display !== 'none', 'bottom-nav-more opens the sheet');
-  sandbox.mobileShow('docs');
-  ok(sheet.style.display === 'none', 'navigation closes the sheet');
+  const mm = String((doc.getElementById('mobile-main') || {}).innerHTML || '');
+  ok(mm.includes('data-mview="docs"') && mm.includes('data-mview="assistant"') && mm.includes('data-mview="apps"'), 'home injects the module grid from the template');
+  ok(mm.includes('id="mobile-home-packages"'), 'Packages card present (desktop-only, honest hint)');
+  ok(mm.includes('data-qa="home-hero"'), 'home hero renders');
 }
 
 {
@@ -535,6 +536,71 @@ function bootMobile(opts) {
   ok(h.includes('id="plugin-host-container"'), 'mobile plugin screen mounts into the single #plugin-host-container');
   ok((HTML.match(/SkipiPluginHost\.mount\(/g) || []).length === 1, 'exactly one SkipiPluginHost.mount call site (pluginMountInto)');
   ok(!/srcdoc\s*=/.test(HTML), 'host document builds no iframes of its own (runtime bridge owns the frame)');
+}
+
+// ---------------------------------------------------------------------------
+// Family UI Base v1 — Wave 1 (cards 1,2,4,11,12): AppHeader anatomy, state
+// dictionary, language selector persistence, home module grid integrity.
+// ---------------------------------------------------------------------------
+
+{
+  section('family UI base — AppHeader anatomy (card 1)');
+  const { doc } = bootMobile({ seed: {} });
+  await settleVm();
+  for (const qa of ['app-header-icon', 'app-header-title', 'app-header-context', 'app-header-settings', 'app-header-feedback']) {
+    ok(doc.querySelectorAll(`[data-qa="${qa}"]`).length === 1, `${qa} present exactly once`);
+  }
+  const gear = doc.querySelector('[data-qa="app-header-settings"]');
+  ok(/openSettings\(\)/.test(gear.getAttribute('onclick') || ''), 'header gear opens Settings');
+}
+
+{
+  section('family UI base — state dictionary chips (card 4)');
+  const { sandbox } = bootMobile({ seed: {} });
+  await settleVm();
+  const states = ['empty', 'loading', 'ready', 'stale', 'pending', 'queued', 'offline', 'valid', 'expiring', 'expired', 'error'];
+  for (const st of states) {
+    const chip = sandbox.famStateChip(st);
+    ok(chip.includes(`data-qa="state-chip-${st}"`) && /tone-(ready|pending|danger|neutral)/.test(chip), `chip renders for '${st}' with a dictionary tone`);
+  }
+  ok(sandbox.famStateChip('ready').includes('tone-ready') && sandbox.famStateChip('error').includes('tone-danger') && sandbox.famStateChip('queued').includes('tone-pending') && sandbox.famStateChip('offline').includes('tone-neutral'), 'tones map per the accepted dictionary');
+  const panel = sandbox.famStatePanelHtml('empty', '', 'T', 'C', '');
+  ok(panel.includes('data-qa="state-empty-panel"'), 'family state panel exposes its state hook');
+}
+
+{
+  section('family UI base — language in Settings (card 11)');
+  const fresh = bootMobile({ seed: {} });
+  await settleVm();
+  ok(fresh.sandbox.getUiLang() === 'en', 'fresh install defaults to EN');
+  const saved = bootMobile({ seed: { 'skipi-ui-language': 'ru' } });
+  await settleVm();
+  ok(saved.sandbox.getUiLang() === 'ru', 'saved locale choice wins over the default');
+  saved.sandbox.setUiLang('tl');
+  ok(saved.lstore.get('skipi-ui-language') === 'tl' && saved.sandbox.getUiLang() === 'tl', 'selector persists a new choice');
+  saved.sandbox.setUiLang('xx');
+  ok(saved.sandbox.getUiLang() === 'en', 'unknown locale falls back to EN');
+  const opts = saved.sandbox.uiLanguageSelectHtml();
+  for (const loc of ['ru', 'en', 'tl', 'hi', 'id']) ok(opts.includes(`value="${loc}"`), `locale list keeps '${loc}'`);
+  saved.sandbox.settingsTab = 'vaults';
+  saved.sandbox.isMobileMode = () => true;
+  let err = null;
+  try { saved.sandbox.renderSettingsBody(); } catch (e) { err = e; }
+  const body = String((saved.doc.getElementById('settings-body') || {}).innerHTML || '');
+  ok(!err && body.includes('data-qa="settings-language"') && body.includes('id="i-lang"'), 'mobile Settings exposes the language row');
+}
+
+{
+  section('family UI base — home module grid covers all 11 modules (card 12)');
+  const { sandbox, doc } = bootMobile({ seed: {} });
+  await settleVm();
+  sandbox.mobileShow('home');
+  const mm = String((doc.getElementById('mobile-main') || {}).innerHTML || '');
+  for (const v of ['docs', 'experience', 'cv', 'dispatch', 'jobs', 'information', 'vessels', 'myvessel', 'apps', 'assistant']) {
+    ok(mm.includes(`data-mview="${v}"`) && mm.includes(`mobileShow('${v}')`), `home grid routes '${v}' through mobileShow`);
+  }
+  ok(mm.includes('id="mobile-home-packages"') && mm.includes('mobilePackagesHint()'), 'Packages card is present with the honest desktop-only hint');
+  ok((mm.match(/fam-module-card/g) || []).length === 11, 'exactly 11 module cards');
 }
 
 console.log('\n' + (fail === 0 ? 'ALL GREEN' : 'FAILURES') + ': ' + pass + ' passed, ' + fail + ' failed');
