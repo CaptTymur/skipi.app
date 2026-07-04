@@ -2,7 +2,7 @@
    FEATURE FLAG IS OFF BY DEFAULT. When false, plugin-remote-boot.js does nothing:
    no runtime, no catalog fetch, no UI change — Seafarer behaves exactly as today.
 
-   STAGING ONLY. TEST KEY ONLY. No production catalog. No production key. */
+   REMOTE DELIVERY IS STILL OFF BY DEFAULT. Production catalog is not enabled here. */
 
 window.FEATURE_REMOTE_PLUGIN_DELIVERY = false;   // <-- default OFF (kill switch)
 try {
@@ -26,8 +26,27 @@ window.SKIPI_REMOTE_CONFIG = {
     requireCapabilities: { network: 'none', documents: 'none', account: 'none', analytics: 'none', server_upload: false }
   },
 
-  // Pinned STAGING/TEST public key (public material only — safe to ship).
-  // Production verification key is generated offline in an HSM and is NOT here.
+  // Trusted first-party signing keys (public material only — safe to ship).
+  // The loader selects by catalog.keyId. Staging stays for QA; prod is inert until
+  // a production catalog URL + feature flag are enabled in a separate release.
+  pinnedPublicKeys: {
+    'skipi-firstparty-staging-v1': {
+      kty: 'EC',
+      crv: 'P-256',
+      x: 'ycMaqzJTGpiFx_yGg6xub99ZnEqn_ARvHZVW_zKMkUU',
+      y: 'gC9j0u6GQL9Lh53rFbA3H5nSh85ttZJbb29fpkkjJak',
+      kid: 'skipi-firstparty-staging-v1'
+    },
+    'skipi-firstparty-prod-v1': {
+      kty: 'EC',
+      crv: 'P-256',
+      x: 'ByRH-jQw8EE2XOD7BBatMFTRK5QuBkX7sfSfc8kKvMk',
+      y: 'QGpxR4UEY72g2rGHigLXXlasRYBiieud9VM3m7wMF-4',
+      kid: 'skipi-firstparty-prod-v1'
+    }
+  },
+
+  // Legacy single-key alias for older boot code and local harnesses.
   pinnedPublicKey: {
     kty: 'EC',
     crv: 'P-256',

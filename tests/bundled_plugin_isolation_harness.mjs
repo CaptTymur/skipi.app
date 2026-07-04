@@ -29,6 +29,8 @@ const DIST = path.join(__dirname, '..', 'dist');
 const HTML = fs.readFileSync(path.join(DIST, 'index.html'), 'utf8');
 const BRIDGE = fs.readFileSync(path.join(DIST, 'plugin-host-bridge.js'), 'utf8');
 const CONFIG = fs.readFileSync(path.join(DIST, 'plugin-host-config.js'), 'utf8');
+const REMOTE_BOOT = fs.readFileSync(path.join(DIST, 'plugin-remote-boot.js'), 'utf8');
+const REMOTE_LOADER = fs.readFileSync(path.join(DIST, 'plugin-loader.js'), 'utf8');
 
 const PDIR = path.join(DIST, 'plugins', 'bnwas-time-anchor');
 const FILES = {
@@ -42,6 +44,13 @@ let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail++; console.error('  ✗ ' + m); } };
 const section = (t) => console.log('\n# ' + t);
 const tick = () => new Promise((r) => setTimeout(r, 0));
+const waitUntil = async (fn, n = 24) => {
+  for (let i = 0; i < n; i++) {
+    if (fn()) return true;
+    await tick();
+  }
+  return false;
+};
 
 // ------------------------------------------------------------------ fake DOM
 const store = new Map();
@@ -117,6 +126,10 @@ ok(/connect-src 'none'/.test(BRIDGE) && /default-src 'none'/.test(BRIDGE), "runt
 ok(/setAttribute\('sandbox', 'allow-scripts'\)/.test(BRIDGE) && !/allow-scripts allow-same-origin/.test(BRIDGE), 'runtime iframe sandbox is allow-scripts only (no allow-same-origin)');
 ok(/return p;/.test(BRIDGE) && /storage:\s*{[\s\S]*?get: function \(k, cb\) {[\s\S]*?new Promise/.test(BRIDGE), 'frame proxy storage.get returns a Promise (async bridge contract)');
 ok(/FEATURE_REMOTE_PLUGIN_DELIVERY = false/.test(CONFIG), 'remote-delivery feature flag is OFF by default');
+ok(/pinnedPublicKeys/.test(CONFIG) && /skipi-firstparty-staging-v1/.test(CONFIG) && /skipi-firstparty-prod-v1/.test(CONFIG), 'remote config pins staging + prod public keys by kid');
+ok(!/"d"\s*:/.test(CONFIG) && !/\bd\s*:/.test(CONFIG), 'remote config does NOT ship a private JWK d component');
+ok(/pinnedPublicKeys: CFG\.pinnedPublicKeys/.test(REMOTE_BOOT), 'remote boot passes the trusted key set to the loader');
+ok(/catalog && catalog\.keyId/.test(REMOTE_LOADER) && /pinnedJwks\[keyId\]/.test(REMOTE_LOADER), 'remote loader selects the verification key by catalog.keyId');
 ok(/function showApps\(/.test(HTML) && /function renderMobileApps\(/.test(HTML) && /function pluginMountInto\(/.test(HTML), 'desktop + mobile Apps entry points still exist');
 
 // ------------------------------------------------------------------ mount
@@ -135,7 +148,7 @@ const token = tokMatch ? JSON.parse(tokMatch[1]) : null;
 ok(!!token && token.length >= 16, 'capability token is random + non-trivial');
 
 section('init handshake — verified BNWAS bytes to frame, no secrets');
-await tick(); await tick();                 // let loader.install() (fetch + sha256) resolve
+ok(await waitUntil(() => M.bundledRuntime()._active()?.installed === true), 'verified install completes before frame init');
 framePosts.length = 0;
 emit({ ch: 'skipi-plugin', v: 1, token, type: 'ready' });
 await tick();

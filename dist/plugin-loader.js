@@ -45,22 +45,34 @@
     var catalogUrl = config.catalogUrl;
     var host = config.host;                 // { id, version }
     var policy = config.policy;             // { maxPermissions[], requireCapabilities{} }
-    var pinnedJwk = config.pinnedPublicKey; // JWK
+    var pinnedJwk = config.pinnedPublicKey; // legacy single-key JWK
+    var pinnedJwks = {};
+    if (config.pinnedPublicKeys && typeof config.pinnedPublicKeys === 'object') {
+      Object.keys(config.pinnedPublicKeys).forEach(function (kid) {
+        var jwk = config.pinnedPublicKeys[kid];
+        if (jwk && jwk.kid) pinnedJwks[jwk.kid] = jwk;
+      });
+    }
+    if (pinnedJwk && pinnedJwk.kid && !pinnedJwks[pinnedJwk.kid]) pinnedJwks[pinnedJwk.kid] = pinnedJwk;
     var cache = config.cache || defaultCache();
     var doFetch = config.fetch || function (url) {
       return fetch(url, { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); });
     };
 
-    var pubKeyPromise = null;
-    function pubKey() {
-      if (!pubKeyPromise) pubKeyPromise = crypto.subtle.importKey('jwk', pinnedJwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
-      return pubKeyPromise;
+    var pubKeyPromises = {};
+    function pubKey(keyId) {
+      var jwk = keyId ? pinnedJwks[keyId] : null;
+      if (!jwk) return Promise.reject(new Error('public key unavailable for catalog keyId: ' + (keyId || 'missing')));
+      if (!pubKeyPromises[keyId]) {
+        pubKeyPromises[keyId] = crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+      }
+      return pubKeyPromises[keyId];
     }
 
-    async function verifySignature(entry) {
+    async function verifySignature(entry, keyId) {
       var noSig = {}; Object.keys(entry).forEach(function (k) { if (k !== 'signature') noSig[k] = entry[k]; });
       try {
-        return await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, await pubKey(), b64ToBytes(entry.signature || ''), enc.encode(canonical(noSig)));
+        return await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, await pubKey(keyId), b64ToBytes(entry.signature || ''), enc.encode(canonical(noSig)));
       } catch (e) { return false; }
     }
     function checkCompat(entry) {
@@ -79,8 +91,10 @@
       return { ok: true };
     }
 
-    async function verifyEntry(entry) {
-      var sig = await verifySignature(entry);
+    async function verifyEntry(entry, catalog) {
+      var keyId = catalog && catalog.keyId;
+      if (!keyId || !pinnedJwks[keyId]) return { ok: false, stage: 'signature', reason: 'unknown catalog keyId: ' + (keyId || 'missing') };
+      var sig = await verifySignature(entry, keyId);
       if (!sig) return { ok: false, stage: 'signature', reason: 'invalid signature' };
       var cm = checkCompat(entry); if (!cm.ok) return { ok: false, stage: 'compat', reason: cm.reason };
       var pl = checkPolicy(entry); if (!pl.ok) return { ok: false, stage: 'policy', reason: pl.reason };
@@ -133,7 +147,7 @@
       try { cat = await getCatalog(opts); } catch (e) { return { ok: false, stage: 'catalog', reason: e.message }; }
       var entry = findEntry(cat.catalog, slug);
       if (!entry) return { ok: false, reason: 'not in catalog: ' + slug };
-      var v = await verifyEntry(entry);
+      var v = await verifyEntry(entry, cat.catalog);
       if (!v.ok) return v;
       var p = await getVerifiedPack(entry, opts);
       if (!p.ok) return p;
