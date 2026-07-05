@@ -1,6 +1,6 @@
 /* Remote plugin delivery — boot/wiring (Seafarer), behind FEATURE_REMOTE_PLUGIN_DELIVERY.
    ---------------------------------------------------------------------------------------
-   KILL SWITCH: if the flag is OFF (default), this file does NOTHING — no runtime, no
+   KILL SWITCH: if the flag is OFF, this file does NOTHING — no runtime, no
    catalog fetch, no patching. Seafarer is byte-identical to today.
 
    When ON: creates the isolated remote runtime (SkipiPluginRuntime, sandboxed strict-CSP
@@ -8,7 +8,7 @@
    slugs (e.g. bnwas-time-anchor) through it, instead of the bundled mount path. All other
    plugins/screens are untouched. Fail-closed UI on any verification/transport failure.
 
-   STAGING + TEST KEY ONLY. No production catalog. No production key. */
+   Production catalog uses first-party signed packs selected by catalog.keyId. */
 (function () {
   'use strict';
 
@@ -44,7 +44,7 @@
     pinnedPublicKey: CFG.pinnedPublicKey,
     pinnedPublicKeys: CFG.pinnedPublicKeys
   });
-  // Read-only helper so the Apps UI can LIST remote/staging catalog entries when
+  // Read-only helper so the Apps UI can LIST remote catalog entries when
   // ON (display only — opening still goes through the verified runtime). Resolves
   // to [] on any failure so the UI degrades to slug names.
   window.SkipiRemoteList = function () {
@@ -56,8 +56,7 @@
       theme: { get: getTheme },
       storage: hostStore,
       navigation: { setTitle: function () {}, closePlugin: function () {} },
-      // Non-secret host identity so a plugin can resolve its role (e.g.
-      // ship-photo-collection: seafarer -> "sender"). No vault, no token, no
+      // Non-secret host identity so a plugin can resolve its role. No vault, no token, no
       // public_seafarer_id, no crew/vessel context.
       id: (CFG.host && CFG.host.id) || 'seafarer'
     }
@@ -112,5 +111,5 @@
     return origUnmount ? origUnmount.apply(window.SkipiPluginHost, arguments) : undefined;
   };
 
-  try { console.info('[remote-plugins] ON · staging catalog · isolated runtime · remote slugs: ' + REMOTE.join(', ')); } catch (e) {}
+  try { console.info('[remote-plugins] ON · production catalog · isolated runtime · remote slugs: ' + REMOTE.join(', ')); } catch (e) {}
 })();

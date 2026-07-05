@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Скипи Моряк - United Seafarers</title>
 <script>
-var APP_VERSION='0.4.164';
+var APP_VERSION='0.4.165';
 var APP_BUILD_SHA='unknown';
 function buildShortSha(){
     return APP_BUILD_SHA && APP_BUILD_SHA !== 'unknown' ? APP_BUILD_SHA.slice(0,7) : '';
@@ -8786,7 +8786,7 @@ function showApps(){
     else content.innerHTML=pluginLauncherHtml();
     show('scr-content'); updateTabs('Apps');
     if(pluginHostState.openId) setTimeout(function(){ pluginMountInto(pluginHostState.openId); },0);
-    // when the dev gate is ON, fetch remote catalog names once, then refresh the
+    // when production remote delivery is ON, fetch remote catalog names once, then refresh the
     // manage list so the staging tile shows its real name (degrades to the slug meanwhile).
     if(!pluginHostState.openId && !pluginHostState.selectedId && pluginHostState.surface==='manage' && remoteStagingOn() && !__remoteCatalogCache){
         remoteLoadCatalogOnce(function(){
@@ -8871,7 +8871,7 @@ function pluginManageHtml(){
         items.forEach(function(p){ h+=pluginManageTileHtml(p); });
         h+='</div>';
     });
-    h+=remoteStagingSectionHtml();   // only renders when the dev/staging gate is ON
+    h+=remoteStagingSectionHtml();   // only renders when production remote delivery is ON
     h+='</div>';
     return h;
 }
@@ -8911,8 +8911,7 @@ function pluginListHtml(){
     h+='</div>';
     return h;
 }
-// ---- remote/staging plugin entry point (visible ONLY when the localStorage
-// dev gate FEATURE_REMOTE_PLUGIN_DELIVERY is ON; nothing here on default OFF) ----
+// ---- remote plugin entry point (visible when FEATURE_REMOTE_PLUGIN_DELIVERY is ON) ----
 var __remoteCatalogCache = null;
 function remoteStagingOn(){ return !!window.FEATURE_REMOTE_PLUGIN_DELIVERY; }
 function remoteStagingSlugs(){
@@ -8925,8 +8924,8 @@ function remoteCatalogName(slug){
     return null;
 }
 function remoteEntryFor(slug){
-    return { id:slug, name:remoteCatalogName(slug)||slug, icon:'📷',
-             short:'Remote · staging · transport not connected' };
+    return { id:slug, name:remoteCatalogName(slug)||slug, icon:'▦',
+             short:'Signed first-party plugin · sandboxed runtime' };
 }
 function remoteLoadCatalogOnce(cb){
     if(__remoteCatalogCache){ cb&&cb(); return; }
@@ -8938,12 +8937,12 @@ function remoteTileHtml(slug){
     return '<button class="apps-tile" type="button" onclick="remotePluginOpen(\''+jsString(slug)+'\')">'
         + '<span class="apps-tile-icon">'+e.icon+'</span>'
         + '<span class="apps-tile-body"><span class="apps-tile-name">'+esc(e.name)+'</span>'
-        + '<span class="apps-tile-sub">'+esc(e.short)+'</span><span class="apps-badge soon">Remote · staging</span></span></button>';
+        + '<span class="apps-tile-sub">'+esc(e.short)+'</span><span class="apps-badge live">Remote · verified</span></span></button>';
 }
 function remoteStagingSectionHtml(){
     var slugs=remoteStagingSlugs(); if(!slugs.length) return '';
-    var h='<div class="apps-cat-title">Staging · remote (dev gate)</div>'
-        + '<div class="apps-head-sub" style="margin:-6px 0 8px;">Loaded from the staging catalog via the verified, sandboxed plugin runtime. Dev/staging only — not shown by default.</div>'
+    var h='<div class="apps-cat-title">Remote first-party plugins</div>'
+        + '<div class="apps-head-sub" style="margin:-6px 0 8px;">Loaded from the signed production catalog via the verified, sandboxed plugin runtime.</div>'
         + '<div class="apps-grid">';
     slugs.forEach(function(s){ h+=remoteTileHtml(s); });
     h+='</div>';
@@ -8954,8 +8953,8 @@ function remotePluginScreenHtml(slug){
     return '<div class="apps-screen plugin-screen">'
       + '<div class="plugin-host-bar"><button class="apps-back" type="button" onclick="remotePluginBack()">&larr; '+esc(e.name)+'</button>'
       + '<span class="plugin-host-title" id="plugin-host-title"></span>'
-      + '<span class="apps-badge soon">Remote · staging</span></div>'
-      + '<div class="apps-safety" style="margin:10px 0;"><b>Remote staging plugin</b> — dev gate only · transport not connected · no photo upload. Signed &amp; sandboxed; no access to your vault.</div>'
+      + '<span class="apps-badge live">Remote · verified</span></div>'
+      + '<div class="apps-safety" style="margin:10px 0;"><b>Remote first-party plugin</b> — signed &amp; sandboxed; no access to your vault.</div>'
       + '<div class="plugin-host-container" id="plugin-host-container"><div class="plugin-host-loading">Loading…</div></div>'
       + '</div>';
 }
