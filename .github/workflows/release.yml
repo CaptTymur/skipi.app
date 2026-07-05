@@ -103,6 +103,9 @@ jobs:
           fi
           exit "$fail"
 
+      - name: Check release asset matcher
+        run: node scripts/check-release-asset-patterns.mjs
+
   # ----------------------------------------------------------------------
   # Linux build — load-bearing for the Linux beta auto-updater audience.
   # ----------------------------------------------------------------------
@@ -336,23 +339,25 @@ jobs:
             echo "${BASE_URL}/${encoded}"
           }
 
+          find_sig_for_version() {
+            local suffix="$1"
+            find . -maxdepth 1 -type f -name "*${suffix}.sig" -printf '%f\n' \
+              | grep -F "$VERSION" \
+              | sort \
+              | head -n1 || true
+          }
+
           # Windows entry only when the Windows job actually finished.
           WIN_SIG=""
           WIN_URL=""
           if [ "${WIN_OUTCOME}" = "success" ]; then
-            if [ -f "Skipi_${VERSION}_x64-setup.exe.sig" ]; then
-              WIN_SIG="$(read_sig "Skipi_${VERSION}_x64-setup.exe.sig")"
-              WIN_URL="$(asset_url "Skipi_${VERSION}_x64-setup.exe")"
-            elif [ -f "Skipi_${VERSION}_x64_en-US.msi.sig" ]; then
-              WIN_SIG="$(read_sig "Skipi_${VERSION}_x64_en-US.msi.sig")"
-              WIN_URL="$(asset_url "Skipi_${VERSION}_x64_en-US.msi")"
-            else
-              WIN_ASSET="$(find . -maxdepth 1 -type f \( -name '*.exe.sig' -o -name '*.msi.sig' \) | head -n1 || true)"
-              if [ -n "$WIN_ASSET" ]; then
-                WIN_ASSET="${WIN_ASSET#./}"
-                WIN_SIG="$(read_sig "$WIN_ASSET")"
-                WIN_URL="$(asset_url "${WIN_ASSET%.sig}")"
-              fi
+            WIN_ASSET="$(find_sig_for_version '.exe')"
+            if [ -z "$WIN_ASSET" ]; then
+              WIN_ASSET="$(find_sig_for_version '.msi')"
+            fi
+            if [ -n "$WIN_ASSET" ]; then
+              WIN_SIG="$(read_sig "$WIN_ASSET")"
+              WIN_URL="$(asset_url "${WIN_ASSET%.sig}")"
             fi
           fi
           if [ -z "$WIN_URL" ]; then
@@ -363,7 +368,7 @@ jobs:
           # Linux: prefer AppImage (self-contained, portable for updater).
           LINUX_SIG=""
           LINUX_URL=""
-          APPIMG="$(ls Skipi_${VERSION}_amd64*.AppImage.sig 2>/dev/null | head -n1 || true)"
+          APPIMG="$(find_sig_for_version '.AppImage')"
           if [ -n "$APPIMG" ]; then
             LINUX_SIG="$(read_sig "$APPIMG")"
             LINUX_URL="$(asset_url "${APPIMG%.sig}")"
@@ -429,6 +434,7 @@ jobs:
     steps:
       - name: Verify
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
         run: |
@@ -449,24 +455,53 @@ jobs:
             exit 1
           fi
 
+          asset_url() {
+            local f="$1"
+            local encoded
+            encoded="$(jq -rn --arg x "$f" '$x|@uri')"
+            echo "${BASE_URL}/${encoded}"
+          }
+
+          find_sig_for_version() {
+            local dir="$1"
+            local suffix="$2"
+            find "$dir" -maxdepth 1 -type f -name "*${suffix}.sig" -printf '%f\n' \
+              | grep -F "$VERSION" \
+              | sort \
+              | head -n1 || true
+          }
+
+          check_required_asset_pair() {
+            local label="$1"
+            local suffix="$2"
+            local sig
+            sig="$(find_sig_for_version sigs "$suffix")"
+            if [ -z "$sig" ]; then
+              echo "::error::required $label .sig asset was not found for version $VERSION"
+              exit 1
+            fi
+            for asset in "${sig%.sig}" "$sig"; do
+              url="$(asset_url "$asset")"
+              echo "checking release asset -> $url"
+              code="$(curl -sSL -o /dev/null -w '%{http_code}' "$url")"
+              if [ "$code" != "200" ]; then
+                echo "::error::required $label asset $url -> HTTP $code"
+                exit 1
+              fi
+            done
+          }
+
+          mkdir -p sigs
+          gh release download "${TAG}" --repo "${REPO}" --pattern '*.sig' --dir sigs || true
+
           # .deb installs do not use the AppImage URL from latest.json for
           # installation. The frontend detects deb installs and calls the
           # Rust `install_deb_update(version)` command, which downloads this
-          # conventional asset name directly from the release. If it is
+          # release asset directly from GitHub. If it is
           # missing, update checks would pass but every existing Linux beta
           # user installed via dpkg would hit HTTP 404 on "Download".
-          for asset in \
-            "Skipi_${VERSION}_amd64.deb" \
-            "Skipi_${VERSION}_amd64.deb.sig"
-          do
-            url="${BASE_URL}/${asset}"
-            echo "checking release asset -> $url"
-            code="$(curl -sSL -o /dev/null -w '%{http_code}' "$url")"
-            if [ "$code" != "200" ]; then
-              echo "::error::required Linux .deb asset $url -> HTTP $code"
-              exit 1
-            fi
-          done
+          check_required_asset_pair "Linux .deb" ".deb"
+          check_required_asset_pair "Linux .rpm" ".rpm"
 
           # Every URL inside platforms must respond 200, and each must
           # have a non-empty signature embedded.
