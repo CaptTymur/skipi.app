@@ -125,7 +125,8 @@ ok(/enabled:true/.test(block.replace(/\s/g, '')) || /enabled: ?true/.test(block)
 ok(/connect-src 'none'/.test(BRIDGE) && /default-src 'none'/.test(BRIDGE), "runtime frame CSP forbids network (connect-src 'none') + default-src 'none'");
 ok(/setAttribute\('sandbox', 'allow-scripts'\)/.test(BRIDGE) && !/allow-scripts allow-same-origin/.test(BRIDGE), 'runtime iframe sandbox is allow-scripts only (no allow-same-origin)');
 ok(/return p;/.test(BRIDGE) && /storage:\s*{[\s\S]*?get: function \(k, cb\) {[\s\S]*?new Promise/.test(BRIDGE), 'frame proxy storage.get returns a Promise (async bridge contract)');
-ok(/FEATURE_REMOTE_PLUGIN_DELIVERY = false/.test(CONFIG), 'remote-delivery feature flag is OFF by default');
+ok(/FEATURE_REMOTE_PLUGIN_DELIVERY = true/.test(CONFIG), 'remote-delivery feature flag is ON for production by default');
+ok(/skipi\.remotePluginDelivery/.test(CONFIG) && /=== 'off'/.test(CONFIG), 'remote-delivery local override only supports explicit off kill shape');
 ok(/pinnedPublicKeys/.test(CONFIG) && /skipi-firstparty-staging-v1/.test(CONFIG) && /skipi-firstparty-prod-v1/.test(CONFIG), 'remote config pins staging + prod public keys by kid');
 ok(!/"d"\s*:/.test(CONFIG) && !/\bd\s*:/.test(CONFIG), 'remote config does NOT ship a private JWK d component');
 ok(/pinnedPublicKeys: CFG\.pinnedPublicKeys/.test(REMOTE_BOOT), 'remote boot passes the trusted key set to the loader');
@@ -385,7 +386,7 @@ const appsHtml = (doc) => String((doc.getElementById('scr-content') || {}).inner
   ok(manage.includes('data-qa="plugin-settings-bnwas-time-anchor"'), 'manage carries plugin-settings-<id> hooks');
   ok(manage.includes('plugin-settings-distance-tables'), 'full catalog (incl. coming-soon) lives in manage');
   ok(manage.includes('pluginBackToLauncher()'), 'manage has the explicit «← Apps» return');
-  ok(!manage.includes('Staging · remote'), 'remote staging section absent while the dev gate is OFF');
+  ok(!manage.includes('Staging · remote') && !manage.includes('dev gate') && !manage.includes('transport not connected'), 'desktop manage no longer exposes staging/dev-gate remote copy');
 }
 
 {
