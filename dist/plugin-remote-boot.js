@@ -40,7 +40,9 @@
   if (window.APP_VERSION && CFG.host) CFG.host.version = String(window.APP_VERSION);
 
   var loader = window.SkipiPluginLoader.create({
-    catalogUrl: CFG.catalogUrl, host: CFG.host, policy: CFG.policy, pinnedPublicKey: CFG.pinnedPublicKey
+    catalogUrl: CFG.catalogUrl, host: CFG.host, policy: CFG.policy,
+    pinnedPublicKey: CFG.pinnedPublicKey,
+    pinnedPublicKeys: CFG.pinnedPublicKeys
   });
   // Read-only helper so the Apps UI can LIST remote/staging catalog entries when
   // ON (display only — opening still goes through the verified runtime). Resolves
