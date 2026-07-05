@@ -37,6 +37,7 @@
     return {
       get: function (k) { try { return localStorage.getItem(NS + k); } catch (e) { return null; } },
       set: function (k, v) { try { localStorage.setItem(NS + k, v); } catch (e) {} },
+      remove: function (k) { try { localStorage.removeItem(NS + k); } catch (e) {} },
       keys: function () { var out = []; try { for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k.indexOf(NS) === 0) out.push(k.slice(NS.length)); } } catch (e) {} return out; }
     };
   }
@@ -200,7 +201,19 @@
 
     function isCached(slug) { return !!cache.get('entry:' + slug); }
 
-    return { getCatalog: getCatalog, verifyEntry: verifyEntry, install: install, load: load, unload: unload, isCached: isCached, _cache: cache };
+    function uninstall(slug) {
+      if (!slug) return { ok: false, reason: 'missing slug' };
+      if (cache.remove) cache.remove('entry:' + slug);
+      if (cache.keys && cache.remove) {
+        cache.keys().forEach(function (k) {
+          if (k.indexOf('pack:' + slug + '@') === 0) cache.remove(k);
+        });
+      }
+      unload(slug);
+      return { ok: true };
+    }
+
+    return { getCatalog: getCatalog, verifyEntry: verifyEntry, install: install, load: load, unload: unload, uninstall: uninstall, isCached: isCached, _cache: cache };
   }
 
   window.SkipiPluginLoader = { create: createLoader, canonical: canonical, sha256hex: sha256hex, semverGte: semverGte };

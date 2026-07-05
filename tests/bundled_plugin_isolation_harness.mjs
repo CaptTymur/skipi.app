@@ -318,7 +318,163 @@ function bootApp({ seed = {}, onLine = true } = {}) {
 
 const settleVm = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
 const BNWAS_INSTALLED = { skipi_plugins_state: JSON.stringify({ 'bnwas-time-anchor': { installed: true, enabled: true } }) };
+const NAVCALC_INSTALLED = {
+  skipi_remote_plugins_state: JSON.stringify({
+    'navigation-calculators': {
+      installed: true,
+      enabled: true,
+      slug: 'navigation-calculators',
+      id: 'app.skipi.plugins.navigation-calculators',
+      name: 'Navigation Calculators',
+      version: '1.0.0',
+      entry: { slug: 'navigation-calculators', permissions: ['local_storage'], version: '1.0.0' }
+    }
+  })
+};
 const appsHtml = (doc) => String((doc.getElementById('scr-content') || {}).innerHTML || '');
+
+function remoteCanonical(v) {
+  if (v === null || typeof v !== 'object') return JSON.stringify(v);
+  if (Array.isArray(v)) return '[' + v.map(remoteCanonical).join(',') + ']';
+  return '{' + Object.keys(v).sort().map((k) => JSON.stringify(k) + ':' + remoteCanonical(v[k])).join(',') + '}';
+}
+const remoteB64 = (buf) => Buffer.from(new Uint8Array(buf)).toString('base64');
+const remoteSha256 = async (txt) => {
+  const d = await webcrypto.subtle.digest('SHA-256', new TextEncoder().encode(txt));
+  return Buffer.from(new Uint8Array(d)).toString('hex');
+};
+function remoteStore(seed = {}) {
+  const m = new Map(Object.entries(seed).map(([k, v]) => [k, String(v)]));
+  return {
+    getItem: (k) => (m.has(k) ? m.get(k) : null),
+    setItem: (k, v) => m.set(k, String(v)),
+    removeItem: (k) => m.delete(k),
+    key: (i) => Array.from(m.keys())[i] || null,
+    get length() { return m.size; },
+  };
+}
+async function remoteFixture() {
+  const keys = await webcrypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+  const publicJwk = await webcrypto.subtle.exportKey('jwk', keys.publicKey);
+  publicJwk.kid = 'skipi-firstparty-prod-v1';
+  const pack = {
+    id: 'app.skipi.plugins.navigation-calculators',
+    slug: 'navigation-calculators',
+    version: '1.0.0',
+    entrypoints: { ui: 'index.js', style: 'index.css' },
+    permissions: ['local_storage'],
+    files: {
+      'index.js': 'window.SkipiPlugins=window.SkipiPlugins||{};window.SkipiPlugins["navigation-calculators"]={manifest:{name:"Navigation Calculators"},mount:function(el){el.textContent="NAVCALC";},unmount:function(){}};',
+      'index.css': '.navcalc{display:block}'
+    }
+  };
+  const packStr = JSON.stringify(pack);
+  async function catalog(entryPatch = {}, catalogPatch = {}) {
+    const entryNoSig = Object.assign({
+      id: pack.id,
+      slug: pack.slug,
+      name: 'Navigation Calculators',
+      version: pack.version,
+      packUrl: 'packs/navigation-calculators.skpack.json',
+      sha256: await remoteSha256(packStr),
+      permissions: ['local_storage'],
+      capabilities: { network: 'none', documents: 'none', account: 'none', analytics: 'none', server_upload: false },
+      compat: { host: ['seafarer'], minHostVersion: '0.4.165' }
+    }, entryPatch);
+    const sig = await webcrypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, keys.privateKey, new TextEncoder().encode(remoteCanonical(entryNoSig)));
+    return Object.assign({ schema: 'skipi-catalog/1', env: 'production', keyId: 'skipi-firstparty-prod-v1', plugins: [Object.assign({}, entryNoSig, { signature: remoteB64(sig) })] }, catalogPatch);
+  }
+  return { publicJwk, packStr, catalog: await catalog(), signedCatalog: catalog };
+}
+async function runRemoteInstallOfflineHarness() {
+  const fx = await remoteFixture();
+  const storage = remoteStore();
+  let online = true;
+  const ctx = {
+    console, TextEncoder, TextDecoder, Uint8Array, atob: (s) => Buffer.from(s, 'base64').toString('binary'),
+    crypto: webcrypto, localStorage: storage, setTimeout, clearTimeout,
+    document: {
+      getElementById: () => ({ innerHTML: '', appendChild() {} }),
+      head: { appendChild() {} },
+      body: { getAttribute: () => 'light' },
+      documentElement: { getAttribute: () => 'light' },
+      createElement: () => ({ setAttribute() {}, style: {}, appendChild() {} })
+    },
+    Blob: class Blob {},
+    URL: { createObjectURL: () => 'blob:remote-harness', revokeObjectURL() {} }
+  };
+  ctx.window = {
+    console,
+    FEATURE_REMOTE_PLUGIN_DELIVERY: true,
+    SKIPI_REMOTE_CONFIG: {
+      catalogUrl: 'https://unit.test/catalog.json',
+      remoteSlugs: ['bnwas-time-anchor', 'navigation-calculators'],
+      host: { id: 'seafarer', version: '0.4.167' },
+      policy: { maxPermissions: ['local_storage', 'audio_alert'], requireCapabilities: { network: 'none', documents: 'none', account: 'none', analytics: 'none', server_upload: false } },
+      pinnedPublicKeys: { 'skipi-firstparty-prod-v1': fx.publicJwk },
+      pinnedPublicKey: fx.publicJwk
+    },
+    APP_VERSION: '0.4.167',
+    pluginMountInto: (id) => { ctx.origMount = id; },
+    SkipiPluginHost: { unmount() { ctx.hostUnmounted = true; } }
+  };
+  ctx.window.window = ctx.window;
+  ctx.window.localStorage = storage;
+  ctx.window.document = ctx.document;
+  ctx.fetch = async (url) => {
+    if (!online) throw new Error('offline');
+    if (String(url).endsWith('catalog.json')) return { ok: true, status: 200, text: async () => JSON.stringify(fx.catalog) };
+    if (String(url).endsWith('navigation-calculators.skpack.json')) return { ok: true, status: 200, text: async () => fx.packStr };
+    return { ok: false, status: 404, text: async () => '' };
+  };
+  ctx.window.fetch = ctx.fetch;
+  vm.createContext(ctx);
+  vm.runInContext(REMOTE_LOADER, ctx, { filename: 'dist/plugin-loader.js' });
+  const loader = ctx.window.SkipiPluginLoader.create({
+    catalogUrl: ctx.window.SKIPI_REMOTE_CONFIG.catalogUrl,
+    host: ctx.window.SKIPI_REMOTE_CONFIG.host,
+    policy: ctx.window.SKIPI_REMOTE_CONFIG.policy,
+    pinnedPublicKeys: ctx.window.SKIPI_REMOTE_CONFIG.pinnedPublicKeys,
+    pinnedPublicKey: ctx.window.SKIPI_REMOTE_CONFIG.pinnedPublicKey
+  });
+  const net = await loader.install('navigation-calculators');
+  ok(net.ok && net.source === 'network/network', 'remote network install verifies and caches');
+  ok(!!storage.getItem('skpd.entry:navigation-calculators'), 'remote entry cache exists');
+  ok(!!storage.getItem('skpd.pack:navigation-calculators@1.0.0'), 'remote pack cache exists');
+  online = false;
+  const off = await loader.install('navigation-calculators', { allowNetwork: false });
+  ok(off.ok && off.source === 'cache/cache', 'remote offline install path succeeds from verified cache');
+  const goodCatalog = storage.getItem('skpd.catalog');
+  storage.setItem('skpd.pack:navigation-calculators@1.0.0', JSON.stringify({ tampered: true }));
+  const tampered = await loader.install('navigation-calculators', { allowNetwork: false });
+  ok(!tampered.ok && tampered.stage === 'integrity', 'remote tampered cache is rejected by sha256');
+  storage.setItem('skpd.pack:navigation-calculators@1.0.0', fx.packStr);
+  storage.setItem('skpd.catalog', JSON.stringify(Object.assign({}, fx.catalog, { keyId: 'unknown-key' })));
+  const badKey = await loader.install('navigation-calculators', { allowNetwork: false });
+  ok(!badKey.ok && badKey.stage === 'signature', 'remote offline path still enforces keyId/signature');
+  storage.setItem('skpd.catalog', JSON.stringify(await fx.signedCatalog({ permissions: ['server_access'] })));
+  const badPolicy = await loader.install('navigation-calculators', { allowNetwork: false });
+  ok(!badPolicy.ok && badPolicy.stage === 'policy', 'remote offline path still enforces policy');
+  storage.setItem('skpd.catalog', JSON.stringify(await fx.signedCatalog({ compat: { host: ['broker'], minHostVersion: '0.4.165' } })));
+  const badCompat = await loader.install('navigation-calculators', { allowNetwork: false });
+  ok(!badCompat.ok && badCompat.stage === 'compat', 'remote offline path still enforces host compatibility');
+  storage.setItem('skpd.catalog', goodCatalog);
+  online = true;
+  vm.runInContext('window.SkipiPluginRuntime={create:function(){return{open:function(slug,container,opts){window.__lastOpen={slug:slug,opts:opts||null};return Promise.resolve({ok:true});},close:function(){window.__closed=true;}};}};', ctx);
+  vm.runInContext(REMOTE_BOOT, ctx, { filename: 'dist/plugin-remote-boot.js' });
+  ok(typeof ctx.window.SkipiRemoteInstall === 'function', 'remote boot exposes SkipiRemoteInstall');
+  ok(typeof ctx.window.SkipiRemoteUninstall === 'function', 'remote boot exposes SkipiRemoteUninstall');
+  const uiInstall = await ctx.window.SkipiRemoteInstall('navigation-calculators');
+  ok(uiInstall.ok, 'SkipiRemoteInstall delegates to verified loader install');
+  ok(JSON.parse(storage.getItem('skipi_remote_plugins_state') || '{}')['navigation-calculators']?.installed, 'SkipiRemoteInstall persists registry');
+  ctx.window.pluginMountInto('navigation-calculators');
+  ok(ctx.window.__lastOpen?.opts?.allowNetwork === false, 'installed remote open is forced to allowNetwork:false');
+  ctx.window.SkipiRemoteSetEnabled('navigation-calculators', false);
+  ok(JSON.parse(storage.getItem('skipi_remote_plugins_state'))['navigation-calculators'].enabled === false, 'remote disable persists');
+  ctx.window.SkipiRemoteUninstall('navigation-calculators');
+  ok(!JSON.parse(storage.getItem('skipi_remote_plugins_state') || '{}')['navigation-calculators'], 'remote uninstall removes registry');
+  ok(!storage.getItem('skpd.entry:navigation-calculators') && !storage.getItem('skpd.pack:navigation-calculators@1.0.0'), 'remote uninstall removes entry and pack cache');
+}
 
 {
   section('desktop launcher v1 — hooks render through the real path');
@@ -334,6 +490,21 @@ const appsHtml = (doc) => String((doc.getElementById('scr-content') || {}).inner
   ok(!h.includes('plugin-tile-distance-tables'), 'coming-soon plugin is NOT in the launcher grid');
   ok(!h.includes('data-qa="plugin-empty-state"'), 'no empty state while a plugin is installed');
   ok(!h.includes('data-qa="plugin-offline-state"'), 'no offline state while navigator.onLine is true');
+}
+
+{
+  section('desktop launcher v1 — remote installed plugins join Installed and uninstall cleanly');
+  const { sandbox, doc } = bootApp({ seed: { ...BNWAS_INSTALLED, ...NAVCALC_INSTALLED } });
+  await settleVm();
+  sandbox.showApps();
+  const h = appsHtml(doc);
+  ok(h.includes('data-qa="plugin-tile-bnwas-time-anchor"'), 'bundled installed plugin remains in Installed');
+  ok(h.includes('data-qa="plugin-tile-navigation-calculators"'), 'remote installed plugin appears in Installed');
+  ok(h.includes('data-qa="plugin-open-navigation-calculators"'), 'remote installed plugin has an Installed open hook');
+  sandbox.pluginUninstall('navigation-calculators');
+  sandbox.showApps();
+  const after = appsHtml(doc);
+  ok(!after.includes('plugin-tile-navigation-calculators'), 'remote uninstall removes plugin from Installed');
 }
 
 {
@@ -615,6 +786,11 @@ function bootMobile(opts) {
   }
   ok(mm.includes('id="mobile-home-packages"') && mm.includes('mobilePackagesHint()'), 'Packages card is present with the honest desktop-only hint');
   ok((mm.match(/fam-module-card/g) || []).length === 11, 'exactly 11 module cards');
+}
+
+{
+  section('remote install + offline persistence harness');
+  await runRemoteInstallOfflineHarness();
 }
 
 console.log('\n' + (fail === 0 ? 'ALL GREEN' : 'FAILURES') + ': ' + pass + ' passed, ' + fail + ' failed');

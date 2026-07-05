@@ -44,6 +44,42 @@
     pinnedPublicKey: CFG.pinnedPublicKey,
     pinnedPublicKeys: CFG.pinnedPublicKeys
   });
+  var REMOTE_REGISTRY_KEY = 'skipi_remote_plugins_state';
+  function nowIso() { try { return new Date().toISOString(); } catch (e) { return ''; } }
+  function readRemoteRegistry() {
+    try { return JSON.parse(localStorage.getItem(REMOTE_REGISTRY_KEY) || '{}') || {}; }
+    catch (e) { return {}; }
+  }
+  function writeRemoteRegistry(reg) {
+    try { localStorage.setItem(REMOTE_REGISTRY_KEY, JSON.stringify(reg || {})); } catch (e) {}
+  }
+  function remoteRecord(slug) {
+    var rec = readRemoteRegistry()[slug];
+    return rec && rec.installed ? rec : null;
+  }
+  function remoteEnabled(slug) {
+    var rec = remoteRecord(slug);
+    return !!rec && rec.enabled !== false;
+  }
+  function persistInstalled(entry) {
+    if (!entry || !entry.slug) return;
+    var reg = readRemoteRegistry();
+    var prior = reg[entry.slug] || {};
+    reg[entry.slug] = {
+      installed: true,
+      enabled: prior.enabled === false ? false : true,
+      installed_at: prior.installed_at || nowIso(),
+      updated_at: nowIso(),
+      slug: entry.slug,
+      id: entry.id,
+      name: entry.name || entry.title || entry.slug,
+      title: entry.title || entry.name || entry.slug,
+      version: entry.version,
+      keyId: (entry.keyId || (CFG && CFG.pinnedPublicKey && CFG.pinnedPublicKey.kid) || null),
+      entry: entry
+    };
+    writeRemoteRegistry(reg);
+  }
   // Read-only helper so the Apps UI can LIST remote catalog entries when
   // ON (display only — opening still goes through the verified runtime). Resolves
   // to [] on any failure so the UI degrades to slug names.
@@ -62,6 +98,41 @@
     }
   });
   window.SkipiRemoteRuntime = runtime; // exposed for QA/debug
+  window.SkipiRemoteInstalled = function () {
+    var reg = readRemoteRegistry(), out = [];
+    Object.keys(reg).forEach(function (slug) {
+      if (reg[slug] && reg[slug].installed) out.push(reg[slug]);
+    });
+    return out;
+  };
+  window.SkipiRemoteStatus = function (slug) {
+    var rec = remoteRecord(slug);
+    if (!rec) return 'available';
+    return rec.enabled === false ? 'disabled' : 'installed';
+  };
+  window.SkipiRemoteInstall = function (slug, opts) {
+    return loader.install(slug, opts).then(function (res) {
+      if (res && res.ok) persistInstalled(res.entry);
+      return res;
+    }, function (e) {
+      return { ok: false, stage: 'install', reason: '' + (e && e.message || e) };
+    });
+  };
+  window.SkipiRemoteSetEnabled = function (slug, enabled) {
+    var reg = readRemoteRegistry();
+    if (!reg[slug] || !reg[slug].installed) return { ok: false, reason: 'not_installed' };
+    reg[slug].enabled = enabled !== false;
+    reg[slug].updated_at = nowIso();
+    writeRemoteRegistry(reg);
+    return { ok: true, status: reg[slug].enabled ? 'installed' : 'disabled' };
+  };
+  window.SkipiRemoteUninstall = function (slug) {
+    var reg = readRemoteRegistry();
+    if (reg[slug]) delete reg[slug];
+    writeRemoteRegistry(reg);
+    try { if (currentRemote === slug) runtime.close(); } catch (e) {}
+    return loader.uninstall ? loader.uninstall(slug) : { ok: true };
+  };
 
   var REMOTE = CFG.remoteSlugs || [];
   var currentRemote = null;
@@ -96,8 +167,14 @@
     if (!container) return;
     if (currentRemote === id) return; // already open
     currentRemote = id;
+    if (remoteRecord(id) && !remoteEnabled(id)) {
+      container.innerHTML = failHtml({ stage: 'policy', reason: 'disabled' });
+      currentRemote = null;
+      return;
+    }
     container.innerHTML = loadingHtml();
-    runtime.open(id, container).then(function (res) {
+    var openOpts = remoteRecord(id) ? { allowNetwork: false } : undefined;
+    runtime.open(id, container, openOpts).then(function (res) {
       if (!res || !res.ok) { currentRemote = null; container.innerHTML = failHtml(res); }
     }, function (e) {
       currentRemote = null; container.innerHTML = failHtml({ stage: 'mount', reason: '' + (e && e.message || e) });

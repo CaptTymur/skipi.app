@@ -8548,7 +8548,28 @@ var SKIPI_PLUGIN_REGISTRY = [
 // (UHOST-11: launcher->launcher, detail->detail, manage->manage).
 var pluginHostState = { selectedId:null, openId:null, surface:'launcher', openedFrom:null, search:'' };
 
-function pluginById(id){ return SKIPI_PLUGIN_REGISTRY.find(function(p){return p.id===id;})||null; }
+var REMOTE_PLUGIN_STATE_KEY = 'skipi_remote_plugins_state';
+function bundledPluginById(id){ return SKIPI_PLUGIN_REGISTRY.find(function(p){return p.id===id;})||null; }
+function remoteRegistryAll(){ try{ return JSON.parse(localStorage.getItem(REMOTE_PLUGIN_STATE_KEY)||'{}')||{}; }catch(e){ return {}; } }
+function remoteStateSaveAll(s){ try{ localStorage.setItem(REMOTE_PLUGIN_STATE_KEY, JSON.stringify(s||{})); }catch(e){} }
+function remoteInstalledMeta(id){ var r=remoteRegistryAll()[id]; return r&&r.installed?r:null; }
+function remotePermissionsFor(entry){
+    var perms=(entry&&entry.permissions)||[];
+    return { server_access:false, documents_access:false, account_required:false, analytics:false,
+             audio_alert:perms.indexOf('audio_alert')>=0, local_only:true };
+}
+function remoteInstalledEntryFor(id){
+    var rec=remoteInstalledMeta(id); if(!rec) return null;
+    var entry=rec.entry||{};
+    return { id:id, remote:true, firstParty:true, category:'utils', icon:'▦',
+        name:rec.name||rec.title||entry.name||entry.title||id,
+        short:'Installed remote first-party plugin · works offline after install',
+        description:'Signed first-party plugin installed from the production catalog and cached locally for offline use.',
+        safety_note:'Runs inside Skipi sandbox. Catalog signature, policy, compatibility and pack checksum are verified before install and before offline launch.',
+        permissions:remotePermissionsFor(entry),
+        version:rec.version||entry.version };
+}
+function pluginById(id){ return bundledPluginById(id)||remoteInstalledEntryFor(id)||null; }
 function pluginCatLabel(key){ var c=SKIPI_PLUGIN_CATEGORIES.find(function(x){return x.key===key;}); return c?c.label:key; }
 function pluginNowIso(){ try{ return new Date().toISOString(); }catch(e){ return ''; } }
 
@@ -8556,29 +8577,66 @@ function pluginNowIso(){ try{ return new Date().toISOString(); }catch(e){ return
 function pluginStateAll(){ try{ return JSON.parse(localStorage.getItem('skipi_plugins_state')||'{}'); }catch(e){ return {}; } }
 function pluginStateSaveAll(s){ try{ localStorage.setItem('skipi_plugins_state', JSON.stringify(s)); }catch(e){} }
 function pluginSetState(id, patch){ var all=pluginStateAll(); all[id]=Object.assign({}, all[id]||{}, patch); pluginStateSaveAll(all); }
-function pluginGetState(id){ var s=pluginStateAll()[id]||{}; return { installed:!!s.installed, enabled:s.enabled!==false }; }
+function pluginGetState(id){
+    var r=remoteInstalledMeta(id);
+    if(r) return { installed:true, enabled:r.enabled!==false };
+    var s=pluginStateAll()[id]||{};
+    return { installed:!!s.installed, enabled:s.enabled!==false };
+}
 // status: available (not installed) | installed (installed+enabled) | disabled (installed, disabled)
 function pluginStatus(id){ var st=pluginGetState(id); if(!st.installed) return 'available'; return st.enabled?'installed':'disabled'; }
 
 function pluginInstall(id){
-    var p=pluginById(id); if(!p||p.comingSoon) return;
+    var p=pluginById(id)||remoteEntryFor(id); if(!p||p.comingSoon) return;
+    if(p.remote){
+        if(typeof window.SkipiRemoteInstall!=='function'){ showToast('Remote install is unavailable.','error'); return; }
+        showToast('Installing '+p.name+'…','info');
+        window.SkipiRemoteInstall(id).then(function(res){
+            if(res&&res.ok){ __remoteCatalogCache=null; showToast(p.name+' installed for offline use.','success'); }
+            else showToast('Could not install '+p.name+': '+((res&&res.reason)||'verification failed'),'error');
+            pluginRerender();
+        }, function(e){ showToast('Could not install '+p.name+': '+((e&&e.message)||e),'error'); pluginRerender(); });
+        return;
+    }
     pluginSetState(id,{ installed:true, enabled:true, installed_at:pluginNowIso() });
     showToast(p.name+' installed.','success');
     pluginRerender();
 }
 function pluginUninstall(id){
     if(pluginHostState.openId===id) pluginClose();
+    if(remoteInstalledMeta(id)){
+        if(typeof window.SkipiRemoteUninstall==='function') window.SkipiRemoteUninstall(id);
+        else { var rs=remoteRegistryAll(); delete rs[id]; remoteStateSaveAll(rs); }
+        showToast((remoteInstalledEntryFor(id)||{name:id}).name+' removed.','info');
+        pluginHostState.selectedId=null;
+        pluginRerender();
+        return;
+    }
     pluginSetState(id,{ installed:false, enabled:false });
     showToast((pluginById(id)||{}).name+' removed.','info');
     pluginRerender();
 }
 function pluginDisable(id){
     if(pluginHostState.openId===id) pluginClose();
+    if(remoteInstalledMeta(id)){
+        if(typeof window.SkipiRemoteSetEnabled==='function') window.SkipiRemoteSetEnabled(id,false);
+        else { var rd=remoteRegistryAll(); if(rd[id]){ rd[id].enabled=false; remoteStateSaveAll(rd); } }
+        showToast((pluginById(id)||{name:id}).name+' disabled.','info');
+        pluginRerender();
+        return;
+    }
     pluginSetState(id,{ enabled:false });
     showToast((pluginById(id)||{}).name+' disabled.','info');
     pluginRerender();
 }
-function pluginEnable(id){ pluginSetState(id,{ enabled:true }); showToast((pluginById(id)||{}).name+' enabled.','success'); pluginRerender(); }
+function pluginEnable(id){
+    if(remoteInstalledMeta(id)){
+        if(typeof window.SkipiRemoteSetEnabled==='function') window.SkipiRemoteSetEnabled(id,true);
+        else { var re=remoteRegistryAll(); if(re[id]){ re[id].enabled=true; remoteStateSaveAll(re); } }
+        showToast((pluginById(id)||{name:id}).name+' enabled.','success'); pluginRerender(); return;
+    }
+    pluginSetState(id,{ enabled:true }); showToast((pluginById(id)||{}).name+' enabled.','success'); pluginRerender();
+}
 
 function pluginRerender(){
     if(shouldUseMobileShell()) renderMobileApps();
@@ -8600,8 +8658,13 @@ function pluginLaunch(id){
 }
 function pluginOpen(id){
     var p=pluginById(id); if(!p||p.comingSoon) return;
-    if(pluginStatus(id)==='available') pluginInstall(id);
-    if(pluginStatus(id)==='disabled') pluginSetState(id,{ enabled:true });
+    if(pluginStatus(id)==='available'){ pluginInstall(id); return; }
+    if(pluginStatus(id)==='disabled'){
+        if(remoteInstalledMeta(id)){
+            if(typeof window.SkipiRemoteSetEnabled==='function') window.SkipiRemoteSetEnabled(id,true);
+            else { var ro=remoteRegistryAll(); if(ro[id]){ ro[id].enabled=true; remoteStateSaveAll(ro); } }
+        } else pluginSetState(id,{ enabled:true });
+    }
     pluginHostState.openedFrom=pluginHostState.selectedId===id?'detail':'manage';
     pluginHostState.openId=id;
     pluginRerender(); // renders the host screen; mount is kicked off there
@@ -8796,7 +8859,16 @@ function showApps(){
 }
 // ---- compact launcher v1 (primary Apps surface, installed-only) ----
 function pluginInstalledList(){
-    return SKIPI_PLUGIN_REGISTRY.filter(function(p){ return !p.comingSoon && pluginStatus(p.id)==='installed'; });
+    var items=SKIPI_PLUGIN_REGISTRY.filter(function(p){ return !p.comingSoon && pluginStatus(p.id)==='installed'; });
+    // Desktop-only in this slice: mobile remote install/offline UX is a separate product pass.
+    if(typeof shouldUseMobileShell==='function' && shouldUseMobileShell()) return items;
+    Object.keys(remoteRegistryAll()).forEach(function(id){
+        if(pluginStatus(id)==='installed'){
+            var p=remoteInstalledEntryFor(id);
+            if(p) items.push(p);
+        }
+    });
+    return items;
 }
 function pluginLauncherFiltered(){
     var q=String(pluginHostState.search||'').trim().toLowerCase();
@@ -8917,15 +8989,26 @@ function remoteStagingOn(){ return !!window.FEATURE_REMOTE_PLUGIN_DELIVERY; }
 function remoteStagingSlugs(){
     if(!remoteStagingOn()) return [];
     var cfg=window.SKIPI_REMOTE_CONFIG||{}, slugs=cfg.remoteSlugs||[];
-    return slugs.filter(function(s){ return !pluginById(s); }); // only NON-bundled remote slugs
+    return slugs.filter(function(s){ return !bundledPluginById(s); }); // only NON-bundled remote slugs
 }
 function remoteCatalogName(slug){
     if(__remoteCatalogCache){ var e=__remoteCatalogCache.find(function(p){return p.slug===slug;}); if(e&&(e.name||e.title)) return e.name||e.title; }
     return null;
 }
+function remoteCatalogEntry(slug){
+    if(__remoteCatalogCache) return __remoteCatalogCache.find(function(p){return p.slug===slug;})||null;
+    return null;
+}
 function remoteEntryFor(slug){
-    return { id:slug, name:remoteCatalogName(slug)||slug, icon:'▦',
-             short:'Signed first-party plugin · sandboxed runtime' };
+    var installed=remoteInstalledEntryFor(slug); if(installed) return installed;
+    var entry=remoteCatalogEntry(slug)||{};
+    return { id:slug, remote:true, firstParty:true, category:'utils', icon:'▦',
+             name:remoteCatalogName(slug)||slug,
+             short:'Signed first-party plugin · install once, use offline',
+             description:'Signed first-party plugin from the production catalog. Install caches a verified pack for offline use.',
+             safety_note:'Runs inside Skipi sandbox. Signature, policy, compatibility and checksum are verified before install.',
+             permissions:remotePermissionsFor(entry),
+             version:entry.version };
 }
 function remoteLoadCatalogOnce(cb){
     if(__remoteCatalogCache){ cb&&cb(); return; }
@@ -8934,10 +9017,19 @@ function remoteLoadCatalogOnce(cb){
 }
 function remoteTileHtml(slug){
     var e=remoteEntryFor(slug);
-    return '<button class="apps-tile" type="button" onclick="remotePluginOpen(\''+jsString(slug)+'\')">'
+    var st=pluginStatus(slug);
+    var actions='';
+    if(st==='installed') actions='<button class="btn btn-accent btn-sm" type="button" data-qa="remote-plugin-open-'+escAttr(slug)+'" onclick="pluginOpen(\''+jsString(slug)+'\')">Open</button>'
+        + ' <button class="btn btn-outline btn-sm" type="button" data-qa="remote-plugin-disable-'+escAttr(slug)+'" onclick="pluginDisable(\''+jsString(slug)+'\')">Disable</button>'
+        + ' <button class="btn btn-outline btn-sm" type="button" data-qa="remote-plugin-uninstall-'+escAttr(slug)+'" onclick="pluginUninstall(\''+jsString(slug)+'\')">Remove</button>';
+    else if(st==='disabled') actions='<button class="btn btn-accent btn-sm" type="button" data-qa="remote-plugin-enable-'+escAttr(slug)+'" onclick="pluginEnable(\''+jsString(slug)+'\')">Enable</button>'
+        + ' <button class="btn btn-outline btn-sm" type="button" data-qa="remote-plugin-uninstall-'+escAttr(slug)+'" onclick="pluginUninstall(\''+jsString(slug)+'\')">Remove</button>';
+    else actions='<button class="btn btn-accent btn-sm" type="button" data-qa="remote-plugin-install-'+escAttr(slug)+'" onclick="pluginInstall(\''+jsString(slug)+'\')">Install</button>';
+    return '<div class="apps-tile" data-qa="remote-plugin-tile-'+escAttr(slug)+'">'
         + '<span class="apps-tile-icon">'+e.icon+'</span>'
         + '<span class="apps-tile-body"><span class="apps-tile-name">'+esc(e.name)+'</span>'
-        + '<span class="apps-tile-sub">'+esc(e.short)+'</span><span class="apps-badge live">Remote · verified</span></span></button>';
+        + '<span class="apps-tile-sub">'+esc(e.short)+'</span><span class="apps-badge live">'+(st==='available'?'Remote · verified':(st==='disabled'?'Installed · disabled':'Installed · offline-ready'))+'</span>'
+        + '<span class="apps-actions" style="margin-top:8px;">'+actions+'</span></span></div>';
 }
 function remoteStagingSectionHtml(){
     var slugs=remoteStagingSlugs(); if(!slugs.length) return '';
@@ -8959,10 +9051,7 @@ function remotePluginScreenHtml(slug){
       + '</div>';
 }
 function remotePluginOpen(slug){
-    var content=document.getElementById('scr-content'); if(!content) return;
-    content.innerHTML=remotePluginScreenHtml(slug);
-    show('scr-content'); updateTabs('Apps');
-    setTimeout(function(){ try{ pluginMountInto(slug); }catch(e){ logError('remotePlugin.mount',e); } },0);
+    pluginOpen(slug);
 }
 function remotePluginBack(){
     // close the isolated remote frame via the host's single unmount entry, then list.

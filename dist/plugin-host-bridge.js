@@ -187,7 +187,7 @@
 
     var api = {
       enabled: enabled,
-      async open(slug, mountEl) {
+      async open(slug, mountEl, opts) {
         if (!enabled) return { ok: false, stage: 'flag', reason: 'FEATURE_REMOTE_PLUGIN_DELIVERY is off' };
         // Create + boot the isolated frame SYNCHRONOUSLY (before any await), so the
         // frame loads regardless of verification latency. The frame waits for 'init',
@@ -204,7 +204,7 @@
         mountEl.innerHTML = ''; mountEl.appendChild(iframe);
         // verify + cache (async). Only after this do we hand the verified code to the frame.
         var r;
-        try { r = await loader.install(slug); }
+        try { r = await loader.install(slug, opts); }
         catch (e) { clearTimeout(timer); api.close(); return { ok: false, stage: 'install', reason: e.message }; }
         if (!r.ok) { clearTimeout(timer); api.close(); return r; }   // verify/integrity/policy/offline failure → surfaced
         var ep = r.pack.entrypoints || { ui: 'index.js', style: 'index.css' };
