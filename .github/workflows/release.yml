@@ -106,6 +106,9 @@ jobs:
       - name: Check release asset matcher
         run: node scripts/check-release-asset-patterns.mjs
 
+      - name: Check .deb updater asset matcher
+        run: node scripts/check-deb-update-asset-patterns.mjs
+
   # ----------------------------------------------------------------------
   # Linux build — load-bearing for the Linux beta auto-updater audience.
   # ----------------------------------------------------------------------

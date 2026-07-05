@@ -6,6 +6,10 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use tauri::State;
 
+const SKIPI_RELEASES_API: &str = "https://api.github.com/repos/CaptTymur/skipi.app/releases/tags";
+const SKIPI_RELEASE_DOWNLOAD_BASE: &str = "https://github.com/CaptTymur/skipi.app/releases/download";
+const TAURI_CONF_JSON: &str = include_str!("../../tauri.conf.json");
+
 #[derive(serde::Serialize)]
 pub struct BuildInfo {
     pub version: String,
@@ -173,6 +177,88 @@ pub fn open_external_url(url: String) -> Result<(), String> {
     cmd.map(|_| ()).map_err(|e| e.to_string())
 }
 
+fn valid_release_version(version: &str) -> bool {
+    !version.is_empty()
+        && version
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
+}
+
+fn product_asset_stem() -> String {
+    serde_json::from_str::<serde_json::Value>(TAURI_CONF_JSON)
+        .ok()
+        .and_then(|v| v.get("productName").and_then(|name| name.as_str()).map(str::to_string))
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or_else(|| "Skipi Seafarer".to_string())
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(".")
+}
+
+fn fallback_deb_asset_name(version: &str) -> String {
+    format!("{}_{}_amd64.deb", product_asset_stem(), version)
+}
+
+fn release_asset_download_url(version: &str, filename: &str) -> String {
+    format!(
+        "{}/v{}/{}",
+        SKIPI_RELEASE_DOWNLOAD_BASE, version, filename
+    )
+}
+
+fn deb_asset_from_release_json(
+    version: &str,
+    release_json: &serde_json::Value,
+) -> Option<(String, String)> {
+    let assets = release_json.get("assets")?.as_array()?;
+    let expected_name = fallback_deb_asset_name(version);
+
+    let read_asset = |asset: &serde_json::Value| -> Option<(String, String)> {
+        let name = asset.get("name")?.as_str()?;
+        if name.contains('/') || name.contains('\\') {
+            return None;
+        }
+        if !name.ends_with("_amd64.deb") || !name.contains(version) {
+            return None;
+        }
+        let url = asset.get("browser_download_url")?.as_str()?;
+        Some((name.to_string(), url.to_string()))
+    };
+
+    assets
+        .iter()
+        .filter_map(read_asset)
+        .find(|(name, _)| name == &expected_name)
+        .or_else(|| assets.iter().filter_map(read_asset).next())
+}
+
+async fn resolve_deb_update_asset(version: &str) -> Result<(String, String), String> {
+    if !valid_release_version(version) {
+        return Err("Invalid update version".to_string());
+    }
+
+    let fallback_name = fallback_deb_asset_name(version);
+    let fallback_url = release_asset_download_url(version, &fallback_name);
+
+    let client = reqwest::Client::builder()
+        .user_agent(format!("Skipi/{}", env!("CARGO_PKG_VERSION")))
+        .build()
+        .map_err(|e| format!("Cannot prepare update download: {}", e))?;
+    let api_url = format!("{}/v{}", SKIPI_RELEASES_API, version);
+
+    match client.get(&api_url).send().await {
+        Ok(resp) if resp.status().is_success() => {
+            let release_json = resp
+                .json::<serde_json::Value>()
+                .await
+                .map_err(|e| format!("Cannot read release assets: {}", e))?;
+            Ok(deb_asset_from_release_json(version, &release_json)
+                .unwrap_or((fallback_name, fallback_url)))
+        }
+        Ok(_) | Err(_) => Ok((fallback_name, fallback_url)),
+    }
+}
+
 /// Download a .deb from GitHub releases to /tmp and install via pkexec dpkg -i.
 /// Shows a native password prompt. On success, exits the app so the user
 /// restarts into the new version.
@@ -181,11 +267,7 @@ pub async fn install_deb_update(version: String) -> Result<String, String> {
     if !cfg!(target_os = "linux") {
         return Err("Only available on Linux".to_string());
     }
-    let filename = format!("Skipi_{}_amd64.deb", version);
-    let url = format!(
-        "https://github.com/CaptTymur/skipi.app/releases/download/v{}/{}",
-        version, filename
-    );
+    let (filename, url) = resolve_deb_update_asset(&version).await?;
     let dest = std::path::PathBuf::from("/tmp").join(&filename);
 
     // Download
