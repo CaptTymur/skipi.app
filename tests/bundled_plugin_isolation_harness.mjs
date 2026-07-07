@@ -357,26 +357,35 @@ async function remoteFixture() {
   const keys = await webcrypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
   const publicJwk = await webcrypto.subtle.exportKey('jwk', keys.publicKey);
   publicJwk.kid = 'skipi-firstparty-prod-v1';
-  const pack = {
-    id: 'app.skipi.plugins.navigation-calculators',
-    slug: 'navigation-calculators',
-    version: '1.0.0',
-    entrypoints: { ui: 'index.js', style: 'index.css' },
-    permissions: ['local_storage'],
-    files: {
-      'index.js': 'window.SkipiPlugins=window.SkipiPlugins||{};window.SkipiPlugins["navigation-calculators"]={manifest:{name:"Navigation Calculators"},mount:function(el){el.textContent="NAVCALC";},unmount:function(){}};',
-      'index.css': '.navcalc{display:block}'
-    }
-  };
+  function makePack(version) {
+    return {
+      id: 'app.skipi.plugins.navigation-calculators',
+      slug: 'navigation-calculators',
+      version,
+      entrypoints: { ui: 'index.js', style: 'index.css' },
+      permissions: ['local_storage'],
+      files: {
+        'index.js': `window.SkipiPlugins=window.SkipiPlugins||{};window.SkipiPlugins["navigation-calculators"]={manifest:{name:"Navigation Calculators",version:"${version}"},mount:function(el){el.textContent="NAVCALC ${version}";},unmount:function(){}};`,
+        'index.css': '.navcalc{display:block}'
+      }
+    };
+  }
+  const pack = makePack('0.1.0');
   const packStr = JSON.stringify(pack);
+  async function signedPack(version) {
+    const p = makePack(version);
+    return { pack: p, packStr: JSON.stringify(p) };
+  }
   async function catalog(entryPatch = {}, catalogPatch = {}) {
+    const version = entryPatch.version || pack.version;
+    const current = version === pack.version ? { pack, packStr } : await signedPack(version);
     const entryNoSig = Object.assign({
-      id: pack.id,
-      slug: pack.slug,
+      id: current.pack.id,
+      slug: current.pack.slug,
       name: 'Navigation Calculators',
-      version: pack.version,
+      version,
       packUrl: 'packs/navigation-calculators.skpack.json',
-      sha256: await remoteSha256(packStr),
+      sha256: await remoteSha256(current.packStr),
       permissions: ['local_storage'],
       capabilities: { network: 'none', documents: 'none', account: 'none', analytics: 'none', server_upload: false },
       compat: { host: ['seafarer'], minHostVersion: '0.4.165' }
@@ -384,12 +393,19 @@ async function remoteFixture() {
     const sig = await webcrypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, keys.privateKey, new TextEncoder().encode(remoteCanonical(entryNoSig)));
     return Object.assign({ schema: 'skipi-catalog/1', env: 'production', keyId: 'skipi-firstparty-prod-v1', plugins: [Object.assign({}, entryNoSig, { signature: remoteB64(sig) })] }, catalogPatch);
   }
-  return { publicJwk, packStr, catalog: await catalog(), signedCatalog: catalog };
+  return { publicJwk, packStr, catalog: await catalog(), signedCatalog: catalog, signedPack };
 }
 async function runRemoteInstallOfflineHarness() {
   const fx = await remoteFixture();
   const storage = remoteStore();
   let online = true;
+  let activeCatalog = fx.catalog;
+  const packByVersion = { '0.1.0': fx.packStr };
+  async function setCatalogVersion(version) {
+    const signed = await fx.signedPack(version);
+    packByVersion[version] = signed.packStr;
+    activeCatalog = await fx.signedCatalog({ version, sha256: await remoteSha256(signed.packStr) });
+  }
   const ctx = {
     console, TextEncoder, TextDecoder, Uint8Array, atob: (s) => Buffer.from(s, 'base64').toString('binary'),
     crypto: webcrypto, localStorage: storage, setTimeout, clearTimeout,
@@ -423,8 +439,11 @@ async function runRemoteInstallOfflineHarness() {
   ctx.window.document = ctx.document;
   ctx.fetch = async (url) => {
     if (!online) throw new Error('offline');
-    if (String(url).endsWith('catalog.json')) return { ok: true, status: 200, text: async () => JSON.stringify(fx.catalog) };
-    if (String(url).endsWith('navigation-calculators.skpack.json')) return { ok: true, status: 200, text: async () => fx.packStr };
+    if (String(url).endsWith('catalog.json')) return { ok: true, status: 200, text: async () => JSON.stringify(activeCatalog) };
+    if (String(url).endsWith('navigation-calculators.skpack.json')) {
+      const entry = activeCatalog.plugins.find((p) => p.slug === 'navigation-calculators');
+      return { ok: true, status: 200, text: async () => packByVersion[entry.version] };
+    }
     return { ok: false, status: 404, text: async () => '' };
   };
   ctx.window.fetch = ctx.fetch;
@@ -440,15 +459,15 @@ async function runRemoteInstallOfflineHarness() {
   const net = await loader.install('navigation-calculators');
   ok(net.ok && net.source === 'network/network', 'remote network install verifies and caches');
   ok(!!storage.getItem('skpd.entry:navigation-calculators'), 'remote entry cache exists');
-  ok(!!storage.getItem('skpd.pack:navigation-calculators@1.0.0'), 'remote pack cache exists');
+  ok(!!storage.getItem('skpd.pack:navigation-calculators@0.1.0'), 'remote pack cache exists');
   online = false;
   const off = await loader.install('navigation-calculators', { allowNetwork: false });
   ok(off.ok && off.source === 'cache/cache', 'remote offline install path succeeds from verified cache');
   const goodCatalog = storage.getItem('skpd.catalog');
-  storage.setItem('skpd.pack:navigation-calculators@1.0.0', JSON.stringify({ tampered: true }));
+  storage.setItem('skpd.pack:navigation-calculators@0.1.0', JSON.stringify({ tampered: true }));
   const tampered = await loader.install('navigation-calculators', { allowNetwork: false });
   ok(!tampered.ok && tampered.stage === 'integrity', 'remote tampered cache is rejected by sha256');
-  storage.setItem('skpd.pack:navigation-calculators@1.0.0', fx.packStr);
+  storage.setItem('skpd.pack:navigation-calculators@0.1.0', fx.packStr);
   storage.setItem('skpd.catalog', JSON.stringify(Object.assign({}, fx.catalog, { keyId: 'unknown-key' })));
   const badKey = await loader.install('navigation-calculators', { allowNetwork: false });
   ok(!badKey.ok && badKey.stage === 'signature', 'remote offline path still enforces keyId/signature');
@@ -467,13 +486,45 @@ async function runRemoteInstallOfflineHarness() {
   const uiInstall = await ctx.window.SkipiRemoteInstall('navigation-calculators');
   ok(uiInstall.ok, 'SkipiRemoteInstall delegates to verified loader install');
   ok(JSON.parse(storage.getItem('skipi_remote_plugins_state') || '{}')['navigation-calculators']?.installed, 'SkipiRemoteInstall persists registry');
+  await setCatalogVersion('0.2.0');
+  const refreshed = await ctx.window.SkipiRemoteEnsureLatest('navigation-calculators');
+  const refreshedRec = JSON.parse(storage.getItem('skipi_remote_plugins_state') || '{}')['navigation-calculators'];
+  ok(refreshed.ok && refreshed.updated && refreshed.version === '0.2.0', 'SkipiRemoteEnsureLatest updates installed remote plugin from 0.1.0 to catalog 0.2.0');
+  ok(refreshedRec && refreshedRec.version === '0.2.0', 'remote registry version advances after verified refresh');
+  ok(!!storage.getItem('skpd.pack:navigation-calculators@0.2.0'), 'verified refreshed pack is cached by new version');
+  await setCatalogVersion('0.1.5');
+  const downgrade = await ctx.window.SkipiRemoteEnsureLatest('navigation-calculators');
+  const afterDowngrade = JSON.parse(storage.getItem('skipi_remote_plugins_state') || '{}')['navigation-calculators'];
+  const cachedAfterDowngrade = JSON.parse(storage.getItem('skpd.catalog') || '{}').plugins?.[0];
+  ok(downgrade.ok && downgrade.updated === false && afterDowngrade.version === '0.2.0', 'older catalog version does not downgrade installed remote plugin');
+  ok(cachedAfterDowngrade && cachedAfterDowngrade.version === '0.2.0', 'downgrade catalog does not replace latest verified catalog cache');
+  await setCatalogVersion('0.2.1');
+  delete packByVersion['0.2.1'];
+  const failedRefresh = await ctx.window.SkipiRemoteEnsureLatest('navigation-calculators');
+  const cachedAfterFailedRefresh = JSON.parse(storage.getItem('skpd.catalog') || '{}').plugins?.[0];
+  ok(!failedRefresh.ok && cachedAfterFailedRefresh && cachedAfterFailedRefresh.version === '0.2.0', 'failed newer refresh preserves previous verified catalog for offline fallback');
+  await setCatalogVersion('0.3.0');
+  ctx.window.SkipiRemoteSetEnabled('navigation-calculators', false);
+  const enableRefresh = ctx.window.SkipiRemoteSetEnabled('navigation-calculators', true);
+  ok(enableRefresh && typeof enableRefresh.then === 'function', 'remote enable returns refresh promise');
+  const enableResult = await enableRefresh;
+  const afterEnable = JSON.parse(storage.getItem('skipi_remote_plugins_state') || '{}')['navigation-calculators'];
+  ok(enableResult.ok && enableResult.updated === true && afterEnable.version === '0.3.0' && afterEnable.enabled === true, 'Disable→Enable refreshes to latest verified version and preserves enabled state');
+  online = false;
   ctx.window.pluginMountInto('navigation-calculators');
+  await settleVm();
   ok(ctx.window.__lastOpen?.opts?.allowNetwork === false, 'installed remote open is forced to allowNetwork:false');
+  online = true;
   ctx.window.SkipiRemoteSetEnabled('navigation-calculators', false);
   ok(JSON.parse(storage.getItem('skipi_remote_plugins_state'))['navigation-calculators'].enabled === false, 'remote disable persists');
   ctx.window.SkipiRemoteUninstall('navigation-calculators');
   ok(!JSON.parse(storage.getItem('skipi_remote_plugins_state') || '{}')['navigation-calculators'], 'remote uninstall removes registry');
-  ok(!storage.getItem('skpd.entry:navigation-calculators') && !storage.getItem('skpd.pack:navigation-calculators@1.0.0'), 'remote uninstall removes entry and pack cache');
+  const leftoverNavcalcPacks = [];
+  for (let i = 0; i < storage.length; i += 1) {
+    const key = storage.key(i);
+    if (key && key.startsWith('skpd.pack:navigation-calculators@')) leftoverNavcalcPacks.push(key);
+  }
+  ok(!storage.getItem('skpd.entry:navigation-calculators') && leftoverNavcalcPacks.length === 0, 'remote uninstall removes entry and all versioned pack caches');
 }
 
 {
