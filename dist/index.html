@@ -1237,6 +1237,82 @@ body.mobile-mode .apps-safety, body.mobile-mode .apps-perm { margin-left:0; marg
 .mobile-db-result { overflow:hidden; }
 .mobile-db-result .vdb-hero,
 .mobile-db-result .vdb-section { background:var(--bg); border-radius:8px; margin-bottom:10px; }
+.vdb-demo { max-width:1180px; margin:0 auto; color:var(--text); }
+.vdb-demo-head { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom:14px; }
+.vdb-demo-title { font-size:24px; font-weight:900; line-height:1.12; margin:0; }
+.vdb-demo-sub { color:var(--text2); font-size:13px; margin-top:5px; line-height:1.45; }
+.vdb-demo-pills { display:flex; flex-wrap:wrap; gap:7px; }
+.vdb-demo-pill { display:inline-flex; align-items:center; min-height:28px; padding:0 10px; border:1px solid var(--border); border-radius:999px; background:var(--surface); color:var(--text2); font-size:11px; font-weight:900; white-space:nowrap; }
+.vdb-demo-pill.live { color:#0b7550; border-color:rgba(31,122,77,.35); background:rgba(31,122,77,.09); }
+.vdb-demo-pill.warn { color:#9a650f; border-color:rgba(183,121,31,.35); background:rgba(183,121,31,.10); }
+.vdb-demo-shell { display:grid; grid-template-columns:365px minmax(0,1fr); gap:14px; align-items:start; }
+.vdb-demo-panel { border:1px solid var(--border); border-radius:12px; background:var(--surface); padding:14px; min-width:0; }
+.vdb-demo-search { display:flex; gap:8px; align-items:center; margin-top:10px; }
+.vdb-demo-search input { flex:1; min-width:0; height:40px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); padding:0 10px; font-size:14px; }
+.vdb-demo-filters { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0 12px; }
+.vdb-demo-filter { border:1px solid var(--border); border-radius:999px; background:var(--bg); color:var(--text2); padding:6px 10px; font-size:11px; font-weight:900; }
+.vdb-demo-result { width:100%; border:1px solid var(--border); border-radius:10px; background:var(--bg); color:var(--text); padding:11px; margin-top:8px; text-align:left; cursor:pointer; }
+.vdb-demo-result.selected { border-color:var(--accent); background:var(--accent-bg); box-shadow:inset 4px 0 0 var(--accent); }
+.vdb-demo-result-top { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+.vdb-demo-result-name { font-weight:900; line-height:1.2; }
+.vdb-demo-result-meta { display:block; color:var(--text2); font-size:11px; line-height:1.35; margin-top:4px; }
+.vdb-demo-score { font-size:13px; font-weight:900; color:var(--accent); white-space:nowrap; }
+.vdb-demo-guardrail { margin-top:12px; border:1px solid #d89b65; border-radius:10px; background:rgba(216,155,101,.12); padding:11px; }
+.vdb-demo-guardrail strong { display:block; font-size:13px; color:#8a4d10; margin-bottom:4px; }
+.vdb-demo-guardrail p { margin:0; color:var(--text); font-size:12px; line-height:1.45; }
+.vdb-demo-detail-head { display:flex; justify-content:space-between; align-items:flex-start; gap:14px; padding-bottom:13px; border-bottom:1px solid var(--border); margin-bottom:13px; }
+.vdb-demo-vessel { font-size:28px; font-weight:900; line-height:1.05; }
+.vdb-demo-status { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.vdb-demo-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.vdb-demo-section { border:1px solid var(--border); border-radius:10px; background:var(--bg); padding:12px; min-width:0; }
+.vdb-demo-section h3 { margin:0 0 9px; font-size:12px; color:var(--text2); text-transform:uppercase; letter-spacing:.04em; }
+.vdb-demo-kv { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.vdb-demo-kv div { border:1px solid var(--border); border-radius:8px; padding:8px; background:var(--surface); min-width:0; }
+.vdb-demo-kv span { display:block; color:var(--text2); font-size:10px; text-transform:uppercase; font-weight:900; margin-bottom:4px; }
+.vdb-demo-kv strong { display:block; font-size:13px; line-height:1.2; overflow-wrap:anywhere; }
+.vdb-demo-redacted { border-color:rgba(var(--accent-rgb),.28); background:var(--accent-bg); }
+.vdb-demo-redacted p { margin:0; color:var(--text); font-size:12px; line-height:1.45; }
+.vdb-demo-source { display:grid; grid-template-columns:1.2fr .8fr .8fr; gap:8px; padding:8px 0; border-bottom:1px solid var(--border); font-size:12px; }
+.vdb-demo-source:last-child { border-bottom:0; }
+.vdb-demo-source strong { font-weight:900; }
+.vdb-demo-source span { color:var(--text2); }
+.vdb-demo-attach { margin-top:12px; border:1px solid var(--border); border-radius:10px; background:var(--bg); padding:12px; display:flex; justify-content:space-between; gap:12px; align-items:center; }
+.vdb-demo-state-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:8px; margin-top:12px; }
+.vdb-demo-state { border:1px solid var(--border); border-radius:9px; background:var(--bg); padding:9px; min-height:70px; }
+.vdb-demo-state strong { display:block; font-size:12px; line-height:1.2; }
+.vdb-demo-state span { display:block; margin-top:5px; color:var(--text2); font-size:11px; line-height:1.3; }
+.vdb-demo-modal { position:fixed; inset:0; z-index:120; background:rgba(0,0,0,.36); display:flex; align-items:center; justify-content:center; padding:24px; }
+.vdb-demo-modal-card { width:min(620px,100%); border:1px solid var(--border); border-radius:14px; background:var(--surface); box-shadow:0 18px 60px rgba(0,0,0,.25); padding:18px; }
+.vdb-demo-confirm-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:14px 0; }
+.vdb-demo-confirm-box { border:1px solid var(--border); border-radius:10px; background:var(--bg); padding:12px; }
+.vdb-demo-confirm-box span { display:block; color:var(--text2); font-size:11px; font-weight:900; text-transform:uppercase; margin-bottom:5px; }
+.vdb-demo-modal-actions { display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; margin-top:12px; }
+.mobile-vdb-demo-card { border:1px solid var(--border); border-radius:14px; background:var(--surface); padding:14px; margin-bottom:10px; }
+.mobile-vdb-demo-card.selected { border-color:var(--accent); background:var(--accent-bg); }
+.mobile-vdb-demo-title { font-size:18px; font-weight:900; line-height:1.15; }
+.mobile-vdb-demo-meta { color:var(--text2); font-size:12px; line-height:1.4; margin-top:5px; }
+.mobile-vdb-demo-guard { border:1px solid #d89b65; background:rgba(216,155,101,.12); color:var(--text); border-radius:12px; padding:12px; margin:10px 0; font-size:12px; line-height:1.45; }
+@media (max-width: 920px) {
+    .vdb-demo-shell { grid-template-columns:1fr; }
+    .vdb-demo-head, .vdb-demo-detail-head, .vdb-demo-attach { flex-direction:column; align-items:stretch; }
+    .vdb-demo-grid, .vdb-demo-confirm-row { grid-template-columns:1fr; }
+    .vdb-demo-state-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 480px) {
+    .mobile-vdb-demo-card .vdb-demo-source { grid-template-columns:1fr; gap:2px; }
+}
+body.mobile-mode .mobile-vdb-demo-card,
+body.mobile-mode .mobile-vdb-demo-card * { min-width:0; box-sizing:border-box; overflow-wrap:anywhere; }
+body.mobile-mode,
+body.mobile-mode .mobile-shell { width:100vw; max-width:100vw; overflow-x:hidden; }
+body.mobile-mode .mobile-main { width:100vw; max-width:100vw; box-sizing:border-box; overflow-x:hidden; }
+body.mobile-mode .mobile-bottom-nav { width:100vw; max-width:100vw; box-sizing:border-box; overflow:hidden; }
+body.mobile-mode [data-qa^="vessel-db-demo-mobile"] { width:100%; max-width:calc(100vw - 28px); box-sizing:border-box; overflow:hidden; }
+body.mobile-mode .mobile-vdb-demo-card .mobile-card-sub { white-space:normal; }
+body.mobile-mode .mobile-vdb-demo-guard { max-width:100%; box-sizing:border-box; white-space:normal; overflow-wrap:anywhere; }
+body.mobile-mode .mobile-vdb-demo-card .vdb-demo-kv,
+body.mobile-mode .mobile-vdb-demo-card .vdb-demo-source,
+body.mobile-mode .mobile-vdb-demo-card .vdb-demo-state-grid { grid-template-columns:1fr; }
 .mobile-preview { margin-top:10px; border:1px solid var(--border); border-radius:8px; overflow:hidden; background:#111; min-height:160px; display:flex; align-items:center; justify-content:center; color:var(--text2); }
 .mobile-preview img { display:block; width:100%; height:auto; max-height:58vh; object-fit:contain; }
 .mobile-preview iframe { width:100%; height:58vh; border:0; background:#fff; }
@@ -5397,6 +5473,10 @@ function mobileLookupSpecificVessel(imo){
     if(host&&host.scrollIntoView)host.scrollIntoView({block:'start',behavior:'smooth'});
 }
 async function renderMobileVessels(){
+    if(vesselDbDemoEnabled()){
+        renderMobileVesselDbDemo();
+        return;
+    }
     mobileMainHtml('<div class="mobile-card"><div class="mobile-card-title">Vessel DB</div><div class="mobile-card-sub">Loading vessel database...</div></div>');
     try{
         var entries=await invoke('get_work_history')||[];
@@ -10636,6 +10716,207 @@ function renderVesselDbSummary(data){
     return h;
 }
 
+// ---- vessel database UI demo preview (fixtures only) ----
+var VESSEL_DB_UI_DEMO_PREVIEW=false;
+var vesselDbDemoSelectedId='pacific-aurora';
+var vesselDbDemoAttachOpen=false;
+var vesselDbDemoMobileStep='search';
+var vesselDbDemoMobileSelectedId='pacific-aurora';
+var vesselDbDemoAttachState='ready';
+function vesselDbDemoEnabled(){
+    try{
+        if(localStorage.getItem('skipi.vesselDbUiDemo')==='on')return true;
+        if(localStorage.getItem('skipi.vesselDbUiDemo')==='off')return false;
+    }catch(_){}
+    try{
+        if(String(location.search||'').indexOf('vessel-db-demo=1')>=0)return true;
+    }catch(_){}
+    return !!VESSEL_DB_UI_DEMO_PREVIEW;
+}
+var vesselDbDemoFixture={
+    query:'IMO 9837421 / PACIFIC AURORA',
+    target:{label:'3/E vacancy SF-2026-014',context:'Seafarer application review',expected_imo:'9837421',expected_mmsi:'538009441',expected_call_sign:'V7A4412',expected_name:'PACIFIC AURORA'},
+    results:[
+        {id:'pacific-aurora',name:'PACIFIC AURORA',match:'Exact IMO',provenance:'Equasis + AIS',freshness:'Fresh 2h',confidence:98,imo:'9837421',mmsi:'538009441',call_sign:'V7A4412',flag:'Marshall Islands',type:'Bulk carrier',built:'2019',gt:'43,120 GT',dwt:'81,440 t',length:'229.0 m',beam:'32.2 m',risk:'Selected vessel matches IMO, MMSI, call sign and name.',status:'Verified identity'},
+        {id:'pacific-aurora-ii',name:'PACIFIC AURORA II',match:'Similar name',provenance:'AIS only',freshness:'Stale 19d',confidence:71,imo:'9837429',mmsi:'538009419',call_sign:'V7B9120',flag:'Liberia',type:'Bulk carrier',built:'2015',gt:'41,880 GT',dwt:'78,100 t',length:'225.4 m',beam:'32.2 m',risk:'Name is close, but IMO and call sign do not match the expected vessel.',status:'Ambiguous'},
+        {id:'aurora-pacific',name:'AURORA PACIFIC',match:'Ambiguous',provenance:'Registry',freshness:'Needs verify',confidence:64,imo:'9471120',mmsi:'636018882',call_sign:'D5MT7',flag:'Liberia',type:'Container ship',built:'2012',gt:'50,200 GT',dwt:'61,300 t',length:'294.1 m',beam:'32.3 m',risk:'Words are reversed and identifiers point to another vessel.',status:'Needs review'},
+        {id:'pacific-arora',name:'PACIFIC ARORA',match:'Fuzzy typo',provenance:'AIS only',freshness:'Partial',confidence:58,imo:'9837420',mmsi:'538009440',call_sign:'V7A4402',flag:'Panama',type:'General cargo',built:'2008',gt:'12,430 GT',dwt:'18,990 t',length:'149.6 m',beam:'23.0 m',risk:'Typo candidate, but IMO checksum and call sign differ.',status:'Invalid vessel'}
+    ],
+    sources:[
+        ['Equasis','98%','Fresh 2h'],
+        ['AIS','93%','Fresh 7m'],
+        ['Registry','Locked','Policy-limited'],
+        ['Company fleet cache','87%','Synced 1d']
+    ],
+    states:[
+        ['empty','No result yet'],
+        ['partial','Record has limited public data'],
+        ['stale','Source older than freshness policy'],
+        ['offline','Uses last local fixture snapshot'],
+        ['redacted','Some fields unavailable in this context'],
+        ['locked','Role or license does not open more detail'],
+        ['ambiguous','Multiple candidates need operator choice'],
+        ['forbidden','Current context cannot attach this vessel'],
+        ['invalid-vessel','Identity mismatch blocks attach'],
+        ['invalid-context','Target context is missing or incompatible']
+    ]
+};
+function vesselDbDemoSelected(){
+    var rows=vesselDbDemoFixture.results;
+    return rows.find(function(r){return r.id===vesselDbDemoSelectedId;})||rows[0];
+}
+function vesselDbDemoKv(label,value){
+    return '<div><span>'+esc(label)+'</span><strong>'+esc(value)+'</strong></div>';
+}
+function vesselDbDemoIdentityMismatch(row){
+    var t=vesselDbDemoFixture.target;
+    return String(row.imo)!==t.expected_imo||String(row.mmsi)!==t.expected_mmsi||String(row.call_sign)!==t.expected_call_sign||String(row.name)!==t.expected_name;
+}
+function vesselDbDemoSelect(id){
+    vesselDbDemoSelectedId=id||'pacific-aurora';
+    vesselDbDemoAttachOpen=false;
+    showVesselDatabase();
+}
+function vesselDbDemoShowAttach(){
+    vesselDbDemoAttachOpen=true;
+    vesselDbDemoAttachState='ready';
+    showVesselDatabase();
+}
+function vesselDbDemoCloseAttach(){
+    vesselDbDemoAttachOpen=false;
+    showVesselDatabase();
+}
+function vesselDbDemoAttachPreview(){
+    var row=vesselDbDemoSelected();
+    vesselDbDemoAttachState=vesselDbDemoIdentityMismatch(row)?'invalid-vessel':'success';
+    showVesselDatabase();
+}
+function vesselDbDemoHeader(){
+    return '<div class="vdb-demo-head">'
+        + '<div><h2 class="vdb-demo-title">Ship Database</h2><div class="vdb-demo-sub">Fixture-only preview for Seafarer. Network: none. Real vessel module is not loaded.</div></div>'
+        + '<div class="vdb-demo-pills" data-qa="vessel-db-demo-scope-switcher"><span class="vdb-demo-pill live">Public registry</span><span class="vdb-demo-pill">My fleet</span><span class="vdb-demo-pill">Company scope</span><span class="vdb-demo-pill warn">Vacancy context</span><span class="vdb-demo-pill">Live sources</span></div>'
+        + '</div>';
+}
+function vesselDbDemoResults(){
+    var f=vesselDbDemoFixture;
+    var h='<div class="vdb-demo-panel" data-qa="vessel-db-demo-search-pane">';
+    h+='<div class="vdb-demo-pills"><span class="vdb-demo-pill">S</span><span class="vdb-demo-pill">V</span><span class="vdb-demo-pill">A</span><span class="vdb-demo-pill">P</span></div>';
+    h+='<div class="vdb-demo-search"><input readonly value="'+escAttr(f.query)+'" aria-label="Find vessel"><button class="btn btn-accent btn-sm" type="button">Find vessel</button></div>';
+    h+='<div class="vdb-demo-filters"><span class="vdb-demo-filter">IMO</span><span class="vdb-demo-filter">MMSI</span><span class="vdb-demo-filter">Call sign</span><span class="vdb-demo-filter">Name</span><span class="vdb-demo-filter">Flag</span><span class="vdb-demo-filter">Type</span></div>';
+    f.results.forEach(function(row){
+        var selected=row.id===vesselDbDemoSelectedId;
+        h+='<button type="button" class="vdb-demo-result'+(selected?' selected':'')+'" onclick="vesselDbDemoSelect(\''+jsString(row.id)+'\')" data-qa="vessel-db-demo-result-row" data-vessel-id="'+escAttr(row.id)+'">';
+        h+='<span class="vdb-demo-result-top"><span><span class="vdb-demo-result-name">'+esc(row.name)+'</span><span class="vdb-demo-result-meta">'+esc(row.match)+' · '+esc(row.provenance)+' · '+esc(row.freshness)+'</span></span><span class="vdb-demo-score">'+esc(row.confidence)+'%</span></span>';
+        h+='</button>';
+    });
+    h+='<div class="vdb-demo-guardrail" data-qa="vessel-wrong-vessel-guardrail"><strong>Wrong-vessel guardrail</strong><p>Exact IMO stays selected. Similar-name vessels remain visible so a name match cannot silently override IMO, MMSI or call sign.</p></div>';
+    h+='</div>';
+    return h;
+}
+function vesselDbDemoDetail(){
+    var row=vesselDbDemoSelected();
+    var mismatch=vesselDbDemoIdentityMismatch(row);
+    var h='<div class="vdb-demo-panel" data-qa="vessel-db-demo-detail-pane">';
+    h+='<div class="vdb-demo-detail-head"><div><div class="vdb-demo-vessel">'+esc(row.name)+'</div><div class="vdb-demo-status"><span class="vdb-demo-pill live">'+esc(row.status)+'</span><span class="vdb-demo-pill">IMO '+esc(row.imo)+'</span><span class="vdb-demo-pill">'+esc(row.match)+'</span><span class="vdb-demo-pill">Some fields unavailable</span></div></div><button class="btn btn-accent" type="button" onclick="vesselDbDemoShowAttach()" data-qa="vessel-db-demo-attach-open">Attach to context</button></div>';
+    if(mismatch){
+        h+='<div class="vdb-demo-guardrail" data-qa="vessel-wrong-vessel-guardrail"><strong>Identity mismatch check</strong><p>'+esc(row.risk)+' Expected: IMO '+esc(vesselDbDemoFixture.target.expected_imo)+' · MMSI '+esc(vesselDbDemoFixture.target.expected_mmsi)+' · call sign '+esc(vesselDbDemoFixture.target.expected_call_sign)+'.</p></div>';
+    }
+    h+='<div class="vdb-demo-grid">';
+    h+='<div class="vdb-demo-section"><h3>Identity</h3><div class="vdb-demo-kv">'+vesselDbDemoKv('IMO',row.imo)+vesselDbDemoKv('MMSI',row.mmsi)+vesselDbDemoKv('Call sign',row.call_sign)+vesselDbDemoKv('Flag',row.flag)+'</div></div>';
+    h+='<div class="vdb-demo-section"><h3>Particulars</h3><div class="vdb-demo-kv">'+vesselDbDemoKv('Type',row.type)+vesselDbDemoKv('Built',row.built)+vesselDbDemoKv('Gross tonnage',row.gt)+vesselDbDemoKv('DWT',row.dwt)+vesselDbDemoKv('Length',row.length)+vesselDbDemoKv('Beam',row.beam)+'</div></div>';
+    h+='<div class="vdb-demo-section"><h3>Registry-source confidence</h3>';
+    vesselDbDemoFixture.sources.forEach(function(src){h+='<div class="vdb-demo-source"><strong>'+esc(src[0])+'</strong><span>'+esc(src[1])+'</span><span>'+esc(src[2])+'</span></div>';});
+    h+='</div>';
+    h+='<div class="vdb-demo-section vdb-demo-redacted" data-qa="vessel-db-demo-redaction"><h3>Unavailable context</h3><p>Some fields unavailable in this context. The interface does not reveal hidden field names; access depends on home, role, license, tenant and fleet context.</p></div>';
+    h+='</div>';
+    h+='<div class="vdb-demo-attach" data-qa="vessel-db-demo-attach-preview"><div><strong>Attach preview: '+esc(vesselDbDemoFixture.target.label)+'</strong><div class="vdb-demo-result-meta">Creates a Seafarer-owned association. Vessel source remains read-only.</div></div><span class="vdb-demo-pill '+(mismatch?'warn':'live')+'">'+(mismatch?'invalid-vessel':'ready')+'</span></div>';
+    h+=vesselDbDemoStateMatrix();
+    h+='</div>';
+    return h;
+}
+function vesselDbDemoStateMatrix(){
+    var h='<div class="vdb-demo-state-grid" data-qa="vessel-db-demo-state-matrix">';
+    vesselDbDemoFixture.states.forEach(function(state){
+        h+='<div class="vdb-demo-state" data-state="'+escAttr(state[0])+'"><strong>'+esc(state[0])+'</strong><span>'+esc(state[1])+'</span></div>';
+    });
+    h+='</div>';
+    return h;
+}
+function vesselDbDemoModal(){
+    if(!vesselDbDemoAttachOpen)return '';
+    var row=vesselDbDemoSelected();
+    var mismatch=vesselDbDemoIdentityMismatch(row);
+    var state=vesselDbDemoAttachState;
+    return '<div class="vdb-demo-modal" data-qa="vessel-db-demo-attach-modal">'
+        + '<div class="vdb-demo-modal-card"><div class="vdb-demo-detail-head"><div><div class="vdb-demo-vessel" style="font-size:22px;">Confirm attachment</div><div class="vdb-demo-sub">Creates a Seafarer-owned association. Vessel source remains read-only.</div></div><span class="vdb-demo-pill '+(state==='success'?'live':(state==='ready'?'':'warn'))+'">'+esc(state)+'</span></div>'
+        + '<div class="vdb-demo-confirm-row"><div class="vdb-demo-confirm-box"><span>Vessel</span><strong>'+esc(row.name)+'</strong><div class="vdb-demo-result-meta">IMO '+esc(row.imo)+' · MMSI '+esc(row.mmsi)+' · '+esc(row.call_sign)+'</div></div><div class="vdb-demo-confirm-box"><span>Target context</span><strong>'+esc(vesselDbDemoFixture.target.label)+'</strong><div class="vdb-demo-result-meta">'+esc(vesselDbDemoFixture.target.context)+'</div></div></div>'
+        + '<div class="vdb-demo-guardrail" data-qa="vessel-wrong-vessel-guardrail"><strong>Identity mismatch check</strong><p>'+(mismatch?esc(row.risk):'IMO, MMSI, call sign and name match the expected target vessel.')+' Failure states remain typed: invalid-vessel, invalid-context, forbidden, ambiguous, offline queued.</p></div>'
+        + '<div class="vdb-demo-modal-actions"><button class="btn btn-outline" type="button" onclick="vesselDbDemoCloseAttach()">Cancel</button><button class="btn btn-accent" type="button" onclick="vesselDbDemoAttachPreview()" data-qa="vessel-db-demo-attach-confirm">Attach</button></div></div></div>';
+}
+function renderVesselDbDemo(){
+    var h='<div class="vdb-demo" data-qa="vessel-db-demo" data-demo-fixture="true" data-network="none">';
+    h+=vesselDbDemoHeader();
+    h+='<div class="vdb-demo-shell">'+vesselDbDemoResults()+vesselDbDemoDetail()+'</div>';
+    h+=vesselDbDemoModal();
+    h+='</div>';
+    return h;
+}
+function mobileVesselDbDemoSet(step,id){
+    vesselDbDemoMobileStep=step||'search';
+    if(id)vesselDbDemoMobileSelectedId=id;
+    vesselDbDemoSelectedId=vesselDbDemoMobileSelectedId;
+    renderMobileVesselDbDemo();
+}
+function mobileVesselDbDemoResult(row){
+    var selected=row.id===vesselDbDemoMobileSelectedId;
+    return '<button class="mobile-vdb-demo-card '+(selected?'selected':'')+'" type="button" onclick="mobileVesselDbDemoSet(\'detail\',\''+jsString(row.id)+'\')" data-qa="vessel-db-demo-result-row"><div class="mobile-row"><div style="min-width:0;flex:1;"><div class="mobile-vdb-demo-title">'+mobileEsc(row.name)+'</div><div class="mobile-vdb-demo-meta">'+mobileEsc(row.match+' · '+row.provenance+' · '+row.freshness)+'</div><div class="mobile-vdb-demo-meta">IMO '+mobileEsc(row.imo)+' · MMSI '+mobileEsc(row.mmsi)+' · '+mobileEsc(row.call_sign)+'</div></div><span class="mobile-pill '+(selected?'ok':'')+'">'+mobileEsc(row.confidence+'%')+'</span></div></button>';
+}
+function mobileRenderVesselDbDemoSearch(){
+    var f=vesselDbDemoFixture;
+    var h='<div data-qa="vessel-db-demo-mobile" data-network="none">';
+    h+='<div class="mobile-card"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title">Find vessel</div><div class="mobile-card-sub">Fixture-only Ship Database preview. Network: none.</div></div><span class="mobile-pill ok">Live</span></div></div>';
+    h+='<div class="mobile-card"><div class="mobile-field"><label>Search</label><div class="mobile-vessel-search"><input readonly value="'+mobileEsc(f.query)+'"><button class="btn btn-accent" type="button" onclick="mobileVesselDbDemoSet(\'detail\',\'pacific-aurora\')">Open</button></div></div><div class="mobile-filter-row"><span class="mobile-filter-chip active">Public registry</span><span class="mobile-filter-chip">Company scope</span><span class="mobile-filter-chip">Broker view</span></div></div>';
+    f.results.slice(0,3).forEach(function(row){h+=mobileVesselDbDemoResult(row);});
+    h+='<div class="mobile-vdb-demo-guard" data-qa="vessel-wrong-vessel-guardrail"><strong>Wrong-vessel guardrail</strong><br>Similar-name vessels stay visible until IMO, MMSI and call sign match.</div>';
+    h+='</div>';
+    return h;
+}
+function mobileRenderVesselDbDemoDetail(){
+    var row=vesselDbDemoFixture.results.find(function(r){return r.id===vesselDbDemoMobileSelectedId;})||vesselDbDemoFixture.results[0];
+    var mismatch=vesselDbDemoIdentityMismatch(row);
+    var h='<div data-qa="vessel-db-demo-mobile-detail" data-network="none">';
+    h+='<button class="btn btn-outline btn-sm" type="button" onclick="mobileVesselDbDemoSet(\'search\')" style="margin-bottom:10px;">Back</button>';
+    h+='<div class="mobile-card"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title">'+mobileEsc(row.name)+'</div><div class="mobile-card-sub">IMO '+mobileEsc(row.imo)+' · '+mobileEsc(row.status)+'</div></div><span class="mobile-pill '+(mismatch?'warn':'ok')+'">'+mobileEsc(mismatch?'Needs review':'Verified')+'</span></div></div>';
+    if(mismatch)h+='<div class="mobile-vdb-demo-guard" data-qa="vessel-wrong-vessel-guardrail">'+mobileEsc(row.risk)+'</div>';
+    h+='<div class="mobile-vdb-demo-card"><div class="mobile-card-title">Some fields unavailable</div><div class="mobile-card-sub">Some fields unavailable in this context.</div></div>';
+    h+='<div class="mobile-vdb-demo-card"><div class="vdb-demo-kv">'+vesselDbDemoKv('IMO',row.imo)+vesselDbDemoKv('MMSI',row.mmsi)+vesselDbDemoKv('Flag',row.flag)+vesselDbDemoKv('Type',row.type)+vesselDbDemoKv('DWT',row.dwt)+vesselDbDemoKv('Built',row.built)+'</div></div>';
+    h+='<div class="mobile-vdb-demo-card"><div class="mobile-card-title">Source confidence</div>';
+    vesselDbDemoFixture.sources.forEach(function(src){h+='<div class="vdb-demo-source"><strong>'+mobileEsc(src[0])+'</strong><span>'+mobileEsc(src[1])+'</span><span>'+mobileEsc(src[2])+'</span></div>';});
+    h+='</div>';
+    h+='<button class="mobile-primary-action" type="button" onclick="mobileVesselDbDemoSet(\'attach\',\''+jsString(row.id)+'\')"><span class="mobile-action-icon">&#10003;</span><span class="mobile-action-copy"><span class="mobile-action-title">Attach to context</span><span class="mobile-action-sub">Open explicit confirmation with typed outcomes.</span></span></button>';
+    h+='</div>';
+    return h;
+}
+function mobileRenderVesselDbDemoAttach(){
+    var row=vesselDbDemoFixture.results.find(function(r){return r.id===vesselDbDemoMobileSelectedId;})||vesselDbDemoFixture.results[0];
+    var mismatch=vesselDbDemoIdentityMismatch(row);
+    var h='<div data-qa="vessel-db-demo-mobile-attach" data-network="none">';
+    h+='<button class="btn btn-outline btn-sm" type="button" onclick="mobileVesselDbDemoSet(\'detail\')" style="margin-bottom:10px;">Back</button>';
+    h+='<div class="mobile-card"><div class="mobile-card-title">Confirm attachment</div><div class="mobile-card-sub">Seafarer-owned link. Read-only source.</div></div>';
+    h+='<div class="mobile-vdb-demo-card"><div class="mobile-card-title">'+mobileEsc(row.name)+'</div><div class="mobile-vdb-demo-meta">IMO '+mobileEsc(row.imo)+' · MMSI '+mobileEsc(row.mmsi)+' · '+mobileEsc(row.call_sign)+'</div></div>';
+    h+='<div class="mobile-vdb-demo-card"><div class="mobile-card-title">'+mobileEsc(vesselDbDemoFixture.target.label)+'</div><div class="mobile-vdb-demo-meta">'+mobileEsc(vesselDbDemoFixture.target.context)+'</div></div>';
+    h+='<div class="mobile-vdb-demo-guard" data-qa="vessel-wrong-vessel-guardrail">'+mobileEsc(mismatch?row.risk:'IDs match. Typed outcomes are shown below.')+'</div>';
+    h+='<div class="mobile-vdb-demo-card"><div class="mobile-card-title">State matrix</div>'+vesselDbDemoStateMatrix()+'</div>';
+    h+='<div class="mobile-actions"><button class="btn btn-outline mobile-grow" type="button" onclick="mobileVesselDbDemoSet(\'detail\')">Cancel</button><button class="btn btn-accent mobile-grow" type="button" onclick="showToast(\''+(mismatch?'invalid-vessel':'Attach success')+'\',\''+(mismatch?'warn':'success')+'\')">Attach</button></div>';
+    h+='</div>';
+    return h;
+}
+function renderMobileVesselDbDemo(){
+    var h=vesselDbDemoMobileStep==='attach'?mobileRenderVesselDbDemoAttach():(vesselDbDemoMobileStep==='detail'?mobileRenderVesselDbDemoDetail():mobileRenderVesselDbDemoSearch());
+    mobileMainHtml(h);
+}
+// ---- vessel database UI demo preview end ----
+
 function findJobById(vacancyId){
     return (lastJobsItems||[]).find(function(x){return x.id===vacancyId;})||null;
 }
@@ -10724,6 +11005,11 @@ async function lookupVesselByImo(force){
     }
 }
 async function showVesselDatabase(){
+    if(vesselDbDemoEnabled()){
+        document.getElementById('scr-content').innerHTML=renderVesselDbDemo();
+        show('scr-content');updateTabs('Vessel DB');
+        return;
+    }
     var visitCount=noteVesselDbVisit();
     var reviewStats=await loadVesselReviewContributionStats();
     window._vesselReviewStats=reviewStats;
