@@ -563,5 +563,67 @@ for (const mod of manifest.required_modules) {
   await assertMobileNavigation(runtime.document, runtime.sandbox, mod);
 }
 
+section('my contribution UI — feature flag and fixtures');
+{
+  const { sandbox, document, store } = installRuntime(html);
+  await settle();
+  ok(typeof sandbox.trustContributionEnabled === 'function', 'trustContributionEnabled helper exists');
+  ok(typeof sandbox.showContribution === 'function', 'desktop My contribution renderer exists');
+  ok(typeof sandbox.renderMobileContribution === 'function', 'mobile My contribution renderer exists');
+  ok(sandbox.trustContributionEnabled() === false, 'feature flag defaults OFF');
+  const tab = document.getElementById('mt-contribution');
+  ok(!!tab && String(tab.style.display || tab.getAttribute('style') || '').includes('none'), 'desktop entry is hidden by default');
+  sandbox.showDashboard = () => {
+    const host = document.getElementById('scr-content');
+    if (host) host.innerHTML = '<div data-qa="dashboard-stub"></div>';
+  };
+  sandbox.showView('contribution');
+  await settle();
+  ok(sandbox.currentView !== 'contribution', 'flag-off cannot navigate to My contribution');
+  ok(!String((document.getElementById('scr-content') || {}).innerHTML || '').includes('data-qa="my-contribution-screen"'), 'flag-off screen is absent');
+
+  let fetchCalls = 0;
+  sandbox.fetch = async () => {
+    fetchCalls += 1;
+    return { ok: false, status: 599, json: async () => ({}), text: async () => '' };
+  };
+  sandbox.updateProfileCompletionChip = () => {};
+  store.set('skipi_seafarer_my_contribution', '1');
+  for (const fixture of ['provisional', 'verified_contributor', 'established_contributor']) {
+    store.set('skipi_seafarer_my_contribution_fixture', fixture);
+    sandbox.showView('contribution');
+    await settle();
+    const h = String((document.getElementById('scr-content') || {}).innerHTML || '');
+    ok(h.includes('data-qa="my-contribution-screen"'), `${fixture}: desktop screen renders`);
+    ok(h.includes(`data-qa="my-contribution-band-key"`) && h.includes(fixture), `${fixture}: band key renders`);
+    ok(h.includes('data-network="none"'), `${fixture}: fixture mode declares network none`);
+    ok(!/(score_mean|score_lower_bound|confidence|final_review_weight|token_id|raw_payload|payload_hash|email_hash|signature_raw)/i.test(h), `${fixture}: no score/hash/token/payload fields in desktop HTML`);
+    ok(!/(approved|rejected|blacklist|legal|rating|оценка моряка|рейтинг моряка)/i.test(h), `${fixture}: banned wording absent`);
+  }
+  ok(fetchCalls === 0, 'fixture mode performs no network fetches');
+}
+
+section('my contribution UI — mobile compact view');
+{
+  const { sandbox, document, store } = installRuntime(html);
+  await settle();
+  sandbox.shouldUseMobileShell = () => true;
+  store.set('skipi_seafarer_my_contribution', '1');
+  store.set('skipi_seafarer_my_contribution_fixture', 'established_contributor');
+  ok(sandbox.trustContributionEnabled() === true, 'mobile feature flag is readable');
+  sandbox.renderMobileProfile();
+  await settle();
+  let m = String((document.getElementById('mobile-main') || {}).innerHTML || '');
+  ok(String(sandbox.renderMobileProfile).includes('my-contribution-mobile-entry'), 'mobile Profile renderer contains the flagged My contribution entry');
+  sandbox.mobileShow('contribution');
+  await settle();
+  m = String((document.getElementById('mobile-main') || {}).innerHTML || '');
+  ok(m.includes('data-qa="my-contribution-screen"'), 'mobile compact contribution screen renders');
+  ok(m.includes('established_contributor'), 'mobile compact screen renders selected fixture band');
+  ok(!m.includes('data-qa="my-contribution-events"'), 'mobile compact view omits the full event journal');
+  ok(!/(score_mean|score_lower_bound|confidence|final_review_weight|token_id|raw_payload|payload_hash|email_hash|signature_raw)/i.test(m), 'mobile compact view omits score/hash/token/payload fields');
+  ok(!/(approved|rejected|blacklist|legal|rating|оценка моряка|рейтинг моряка)/i.test(m), 'mobile compact wording guard is clean');
+}
+
 console.log('\n' + (fail === 0 ? 'ALL GREEN' : 'FAILURES') + `: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

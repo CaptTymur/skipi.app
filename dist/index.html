@@ -1410,6 +1410,30 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
 .mv-list{margin:6px 0 0;padding-left:18px;}
 .mv-list li{font-size:13px;color:var(--text);line-height:1.5;}
 .mv-status-pill{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:#fff;background:#1f7a4d;border-radius:999px;padding:3px 10px;white-space:nowrap;}
+.trust-contribution-wrap{max-width:980px;margin:0 auto;padding:28px 18px 42px;box-sizing:border-box;width:100%;}
+.trust-contribution-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px;}
+.trust-contribution-title{font-size:24px;font-weight:900;line-height:1.15;color:var(--text);margin:0 0 6px;}
+.trust-contribution-sub{font-size:13px;line-height:1.45;color:var(--text2);max-width:680px;}
+.trust-contribution-card{border:1px solid var(--border);border-radius:12px;background:var(--surface);padding:16px;margin-bottom:12px;box-shadow:0 1px 2px rgba(0,0,0,.04);}
+.trust-contribution-band{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;border-color:rgba(0,69,100,.28);background:linear-gradient(180deg,rgba(0,69,100,.08),rgba(0,69,100,.03));}
+.trust-contribution-band h3{margin:0 0 6px;font-size:20px;line-height:1.2;}
+.trust-contribution-pill{display:inline-flex;align-items:center;min-height:26px;padding:0 10px;border-radius:999px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:11px;font-weight:900;white-space:nowrap;}
+.trust-contribution-pill.provisional{border-color:rgba(241,196,15,.55);background:rgba(241,196,15,.13);}
+.trust-contribution-pill.verified_contributor{border-color:rgba(39,174,96,.45);background:rgba(39,174,96,.12);}
+.trust-contribution-pill.established_contributor{border-color:rgba(0,69,100,.35);background:rgba(0,69,100,.12);color:var(--accent);}
+.trust-contribution-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;}
+.trust-contribution-list{display:flex;flex-direction:column;gap:8px;margin-top:10px;}
+.trust-contribution-item{border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:var(--bg);font-size:13px;line-height:1.42;}
+.trust-contribution-item strong{display:block;margin-bottom:3px;}
+.trust-contribution-meta{font-size:12px;color:var(--text2);line-height:1.4;}
+.trust-contribution-event{display:grid;grid-template-columns:minmax(120px,160px) 1fr auto;gap:10px;align-items:start;}
+.trust-contribution-empty{font-size:13px;color:var(--text2);line-height:1.45;}
+body.mobile-mode .trust-contribution-wrap{padding:0;max-width:none;}
+body.mobile-mode .trust-contribution-head{display:block;margin-bottom:10px;}
+body.mobile-mode .trust-contribution-title{font-size:20px;}
+body.mobile-mode .trust-contribution-grid{grid-template-columns:1fr;}
+body.mobile-mode .trust-contribution-card{border-radius:10px;padding:14px;}
+body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
 </style>
 </head>
 <body>
@@ -1485,6 +1509,8 @@ body.mobile-mode .settings-body .settings-section > div[style*="display:flex"][s
     <div class="mod-tab" onclick="showView('vessels')" id="mt-vessels" title="Суда"><span>Суда</span></div>
 
     <div class="mod-tab" onclick="showView('myvessel')" id="mt-myvessel" title="Моё судно — экипаж судна, на которое вы поднялись"><span>Моё судно</span></div>
+
+    <div class="mod-tab" onclick="showView('contribution')" id="mt-contribution" title="My contribution" style="display:none;"><span>Мой вклад</span></div>
 
     <div class="mod-tab" onclick="showView('apps')" id="mt-apps" title="Apps — plugins and tools"><span>Apps</span></div>
 
@@ -2359,6 +2385,340 @@ async function initApiBaseOverride(){
             localStorage.setItem(SKIPI_API_OVERRIDE_KEY, SKIPI_API_BASE);
         }
     }catch(e){}
+}
+
+var TRUST_CONTRIBUTION_FLAG_KEY = 'skipi_seafarer_my_contribution';
+var TRUST_CONTRIBUTION_LIVE_KEY = 'skipi_seafarer_my_contribution_live';
+var TRUST_CONTRIBUTION_FIXTURE_KEY = 'skipi_seafarer_my_contribution_fixture';
+var TRUST_CONTRIBUTION_SESSION_KEY = 'skipi-seafarer-self-session-v1';
+
+function trustContributionEnabled(){
+    try{return localStorage.getItem(TRUST_CONTRIBUTION_FLAG_KEY)==='1';}catch(e){return false;}
+}
+function trustContributionLiveEnabled(){
+    try{return localStorage.getItem(TRUST_CONTRIBUTION_LIVE_KEY)==='1';}catch(e){return false;}
+}
+function trustContributionFixtureKey(){
+    try{return localStorage.getItem(TRUST_CONTRIBUTION_FIXTURE_KEY)||'verified_contributor';}catch(e){return 'verified_contributor';}
+}
+function trustContributionText(en,ru){
+    return getUiLang()==='ru'?ru:en;
+}
+function trustContributionFixtures(){
+    var now='2026-07-08T09:00:00Z';
+    return {
+        provisional:{
+            subject_id:'SKP-SF-DEMO-0001',
+            policy_version:'trust-band-v0.1',
+            score_algorithm_version:'trust-score-v0.1',
+            band:{key:'provisional',label_ru:'На старте',label_en:'Provisional contributor'},
+            summary:{confirmed_event_count:0,recent_365d_event_count:0,last_anchor_at:null},
+            reasons:[
+                {code:'cold_start',phrase_key:'trust.reason.cold_start',label_ru:'Пока нет подтверждённых событий.',label_en:'No confirmed events yet.'}
+            ],
+            what_is_missing:[
+                {code:'accept_checkin',phrase_key:'trust.missing.accept_checkin',label_ru:'Прими подтверждённый check-in от судна или крюинга.',label_en:'Accept a confirmed check-in from a vessel or crewing context.'}
+            ],
+            events:[],
+            visibility:{company_visible:false,numeric_score_visible:false},
+            _fixture:true
+        },
+        verified_contributor:{
+            subject_id:'SKP-SF-DEMO-0002',
+            policy_version:'trust-band-v0.1',
+            score_algorithm_version:'trust-score-v0.1',
+            band:{key:'verified_contributor',label_ru:'Подтверждённый участник',label_en:'Verified contributor'},
+            summary:{confirmed_event_count:1,recent_365d_event_count:1,last_anchor_at:now},
+            reasons:[
+                {code:'eligible_anchor_history',phrase_key:'trust.reason.eligible_anchor_history',label_ru:'Есть подтверждённая история.',label_en:'Confirmed history exists.'},
+                {code:'low_sample',phrase_key:'trust.reason.low_sample',label_ru:'Пока мало подтверждений.',label_en:'More confirmed activity is needed.'}
+            ],
+            what_is_missing:[
+                {code:'more_confirmed_events',phrase_key:'trust.missing.more_confirmed_events',label_ru:'Ещё 1-2 подтверждённых события помогут твоим отзывам учитываться увереннее.',label_en:'One or two more confirmed events can help your reviews carry stronger context.'}
+            ],
+            events:[
+                {event_id:'evt-demo-verified-1',date:now,kind:'vessel_checkin',vessel_imo:'9123456',issuer_type:'crewing',status:'accepted',counts_toward_contribution:true,reason_codes:['eligible_anchor_history']}
+            ],
+            visibility:{company_visible:false,numeric_score_visible:false},
+            _fixture:true
+        },
+        established_contributor:{
+            subject_id:'SKP-SF-DEMO-0003',
+            policy_version:'trust-band-v0.1',
+            score_algorithm_version:'trust-score-v0.1',
+            band:{key:'established_contributor',label_ru:'Устойчивый вклад',label_en:'Established contributor'},
+            summary:{confirmed_event_count:4,recent_365d_event_count:4,last_anchor_at:now},
+            reasons:[
+                {code:'eligible_anchor_history',phrase_key:'trust.reason.eligible_anchor_history',label_ru:'Есть подтверждённая история.',label_en:'Confirmed history exists.'}
+            ],
+            what_is_missing:[
+                {code:'no_action_needed',phrase_key:'trust.missing.no_action_needed',label_ru:'Сейчас дополнительных действий не требуется.',label_en:'No additional action is needed right now.'}
+            ],
+            events:[
+                {event_id:'evt-demo-established-1',date:'2026-07-08T09:00:00Z',kind:'vessel_checkin',vessel_imo:'9123456',issuer_type:'crewing',status:'accepted',counts_toward_contribution:true,reason_codes:['eligible_anchor_history']},
+                {event_id:'evt-demo-established-2',date:'2026-06-02T10:30:00Z',kind:'vessel_checkin',vessel_imo:'9345678',issuer_type:'onboard',status:'accepted',counts_toward_contribution:true,reason_codes:['eligible_anchor_history']},
+                {event_id:'evt-demo-established-3',date:'2026-05-12T14:10:00Z',kind:'vessel_checkin',vessel_imo:'9456789',issuer_type:'management',status:'accepted',counts_toward_contribution:true,reason_codes:['eligible_anchor_history']},
+                {event_id:'evt-demo-established-4',date:'2026-04-20T08:25:00Z',kind:'vessel_checkin',vessel_imo:'9567890',issuer_type:'crewing',status:'accepted',counts_toward_contribution:true,reason_codes:['eligible_anchor_history']}
+            ],
+            visibility:{company_visible:false,numeric_score_visible:false},
+            _fixture:true
+        }
+    };
+}
+function trustContributionFixture(){
+    var fx=trustContributionFixtures();
+    return fx[trustContributionFixtureKey()]||fx.verified_contributor;
+}
+function trustContributionSafeSummary(raw){
+    raw=raw||{};
+    var band=raw.band||{};
+    var summary=raw.summary||{};
+    var visibility=raw.visibility||{};
+    return {
+        subject_id:String(raw.subject_id||''),
+        policy_version:String(raw.policy_version||raw.band_policy_version||'trust-band-v0.1'),
+        score_algorithm_version:String(raw.score_algorithm_version||raw.algorithm_version||'trust-score-v0.1'),
+        band:{
+            key:String(band.key||'provisional'),
+            label_ru:String(band.label_ru||'На старте'),
+            label_en:String(band.label_en||'Provisional contributor')
+        },
+        summary:{
+            confirmed_event_count:Number(summary.confirmed_event_count||0),
+            recent_365d_event_count:Number(summary.recent_365d_event_count||0),
+            last_anchor_at:summary.last_anchor_at||null
+        },
+        reasons:Array.isArray(raw.reasons)?raw.reasons.map(trustContributionSafeReason):[],
+        what_is_missing:Array.isArray(raw.what_is_missing)?raw.what_is_missing.map(trustContributionSafeReason):[],
+        events:Array.isArray(raw.events)?raw.events.map(trustContributionSafeEvent):[],
+        visibility:{
+            company_visible:visibility.company_visible===true,
+            numeric_score_visible:visibility.numeric_score_visible===true
+        },
+        _fixture:!!raw._fixture
+    };
+}
+function trustContributionSafeReason(x){
+    x=x||{};
+    return {
+        code:String(x.code||'note'),
+        phrase_key:String(x.phrase_key||'trust.note'),
+        label_ru:String(x.label_ru||x.text_ru||x.label||'Требуется просмотр.'),
+        label_en:String(x.label_en||x.text_en||x.label||'Needs review.')
+    };
+}
+function trustContributionSafeEvent(x){
+    x=x||{};
+    return {
+        event_id:String(x.event_id||x.id||''),
+        date:String(x.date||x.occurred_at||''),
+        kind:String(x.kind||x.event_type||'vessel_checkin'),
+        vessel_imo:x.vessel_imo?String(x.vessel_imo):'',
+        issuer_type:String(x.issuer_type||'source'),
+        status:String(x.status||'pending'),
+        counts_toward_contribution:x.counts_toward_contribution===true,
+        reason_codes:Array.isArray(x.reason_codes)?x.reason_codes.map(function(c){return String(c);}):[]
+    };
+}
+function trustContributionReadSession(){
+    try{
+        var raw=localStorage.getItem(TRUST_CONTRIBUTION_SESSION_KEY);
+        if(!raw)return null;
+        var s=JSON.parse(raw);
+        if(!s||!s.access_token||!s.expires_at)return null;
+        if(new Date(s.expires_at).getTime()<Date.now()+30000)return null;
+        return s;
+    }catch(e){return null;}
+}
+function trustContributionStoreSession(s){
+    try{localStorage.setItem(TRUST_CONTRIBUTION_SESSION_KEY,JSON.stringify(s));}catch(e){}
+}
+async function trustContributionCreateSession(){
+    var cached=trustContributionReadSession();
+    if(cached)return cached.access_token;
+    var status=null;
+    try{status=await invoke('get_identity_trust_status');}catch(e){}
+    var server=(status&&status.server_identity)||{};
+    var publicId=server.public_seafarer_id||localStorage.getItem('skipi-dev-public-seafarer-id')||'';
+    var vaultUserId=(status&&status.user_id)||'';
+    if(!publicId||!vaultUserId)throw new Error('self identity is not ready');
+    var challengeResp=await apiFetch('/api/me/session/challenge',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Accept':'application/json'},
+        body:JSON.stringify({vault_user_id:vaultUserId,public_seafarer_id:publicId,client:{app:'seafarer',surface:'my_contribution'}})
+    },8000);
+    if(!challengeResp.ok)throw new Error('session challenge '+challengeResp.status);
+    var challenge=await challengeResp.json();
+    if(typeof invoke!=='function')throw new Error('vault signer unavailable');
+    // Future narrow command from Identity Slice A wiring. It must sign only
+    // the self-session payload, not arbitrary bytes.
+    var signature=await invoke('sign_self_session_challenge',{payload:challenge.payload_to_sign});
+    var createdResp=await apiFetch('/api/me/session',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Accept':'application/json'},
+        body:JSON.stringify({
+            challenge_id:challenge.challenge_id,
+            vault_user_id:vaultUserId,
+            public_seafarer_id:publicId,
+            signature_b64:signature
+        })
+    },8000);
+    if(!createdResp.ok)throw new Error('self session '+createdResp.status);
+    var created=await createdResp.json();
+    var session={
+        access_token:created.access_token,
+        expires_at:new Date(Date.now()+Math.max(30,Number(created.expires_in||900))*1000).toISOString(),
+        subject_id:created.subject_id||publicId
+    };
+    trustContributionStoreSession(session);
+    return session.access_token;
+}
+async function trustContributionLoadSummary(){
+    if(trustContributionLiveEnabled()){
+        try{
+            var bearer=await trustContributionCreateSession();
+            var resp=await apiFetch('/api/me/trust-summary',{
+                method:'GET',
+                headers:{'Accept':'application/json','Authorization':'Bearer '+bearer}
+            },8000);
+            if(!resp.ok)throw new Error('trust summary '+resp.status);
+            return trustContributionSafeSummary(await resp.json());
+        }catch(e){
+            logError('trust_contribution_live',e);
+        }
+    }
+    return trustContributionSafeSummary(trustContributionFixture());
+}
+function trustContributionBandText(summary){
+    var key=summary&&summary.band&&summary.band.key;
+    if(key==='established_contributor'){
+        return trustContributionText(
+            'Your identity has several recent confirmations from different contexts. No additional action is needed right now.',
+            'У твоей личности есть несколько свежих подтверждений из разных контекстов. Дополнительных действий сейчас не требуется.'
+        );
+    }
+    if(key==='verified_contributor'){
+        return trustContributionText(
+            'There is a confirmed event for your identity. This helps Skipi weigh your contribution more accurately. This is private progress, not a public status.',
+            'Есть подтверждённое событие по твоей личности. Это помогает Skipi учитывать твой вклад точнее. Это приватный прогресс, не публичный статус.'
+        );
+    }
+    return trustContributionText(
+        'Skipi does not yet have a confirmed event for your profile. Accept a check-in or invite from a vessel, crewing, or management context so your reviews carry stronger context.',
+        'У Skipi пока нет подтверждённого события для твоего профиля. Прими check-in или инвайт от судна, крюинга или менеджмента, чтобы твои отзывы учитывались увереннее.'
+    );
+}
+function trustContributionStatusLabel(status, counts){
+    if(status==='accepted')return counts?trustContributionText('Counts toward contribution','Учитывается в твоём вкладе'):trustContributionText('Not counted yet','Пока не учитывается');
+    if(status==='pending')return trustContributionText('Waiting for review','Ожидает просмотра');
+    if(status==='disputed')return trustContributionText('Being reviewed','Оспаривается');
+    if(status==='revoked')return trustContributionText('Not counted right now','Сейчас не учитывается');
+    if(status==='blocked')return trustContributionText('Needs action','Требует действия');
+    return counts?trustContributionText('Counts toward contribution','Учитывается в твоём вкладе'):trustContributionText('Needs review','Нужен просмотр');
+}
+function trustContributionKindLabel(kind){
+    if(kind==='vessel_checkin')return trustContributionText('Vessel check-in','Check-in судна');
+    if(kind==='crewing_anchor')return trustContributionText('Crewing confirmation','Подтверждение крюинга');
+    if(kind==='management_anchor')return trustContributionText('Management confirmation','Подтверждение менеджмента');
+    return trustContributionText('Confirmed event','Подтверждённое событие');
+}
+function trustContributionIssuerLabel(kind){
+    if(kind==='crewing')return 'Crewing';
+    if(kind==='onboard')return 'On Board';
+    if(kind==='management')return 'Management';
+    return trustContributionText('Source','Источник');
+}
+function trustContributionDateLabel(value){
+    if(!value)return trustContributionText('Date pending','Дата ожидается');
+    try{return new Date(value).toISOString().slice(0,10);}catch(e){return String(value).slice(0,10);}
+}
+function trustContributionReasonHtml(item){
+    var text=getUiLang()==='ru'?(item.label_ru||item.label_en):(item.label_en||item.label_ru);
+    return '<div class="trust-contribution-item" data-qa="my-contribution-reason"><strong>'+esc(text)+'</strong><span class="trust-contribution-meta">'+esc(item.code)+'</span></div>';
+}
+function trustContributionEventHtml(item){
+    var meta=[];
+    if(item.vessel_imo)meta.push('IMO '+item.vessel_imo);
+    meta.push(trustContributionIssuerLabel(item.issuer_type));
+    var reasons=(item.reason_codes||[]).join(', ');
+    return '<div class="trust-contribution-item trust-contribution-event" data-qa="my-contribution-event">'
+        +'<div><strong>'+esc(trustContributionDateLabel(item.date))+'</strong><span class="trust-contribution-meta">'+esc(trustContributionStatusLabel(item.status,item.counts_toward_contribution))+'</span></div>'
+        +'<div><strong>'+esc(trustContributionKindLabel(item.kind))+'</strong><span class="trust-contribution-meta">'+esc(meta.join(' · '))+'</span></div>'
+        +'<div class="trust-contribution-meta">'+esc(reasons||'')+'</div>'
+        +'</div>';
+}
+function trustContributionHtml(summary, opts){
+    opts=opts||{};
+    summary=trustContributionSafeSummary(summary);
+    var ru=getUiLang()==='ru';
+    var band=summary.band||{};
+    var bandLabel=ru?band.label_ru:band.label_en;
+    var mode=summary._fixture?'fixture':'live';
+    var h='<div class="trust-contribution-wrap" data-qa="my-contribution-screen" data-mode="'+mode+'" data-network="'+(summary._fixture?'none':'api')+'">';
+    h+='<div class="trust-contribution-head"><div><h2 class="trust-contribution-title">'+esc(ru?'Мой вклад':'My contribution')+'</h2>'
+      +'<div class="trust-contribution-sub">'+esc(ru?'Показывает, какие подтверждённые события помогают Skipi учитывать твои отзывы точнее. Это приватный индикатор, не публичный профиль.':'Shows which confirmed events help Skipi weigh your contributions more accurately. This is a private progress view, not a public profile.')+'</div></div>'
+      +'<span class="trust-contribution-pill '+esc(band.key)+'" data-qa="my-contribution-band-key">'+esc(bandLabel)+'</span></div>';
+    h+='<div class="trust-contribution-card trust-contribution-band"><div><h3>'+esc(bandLabel)+'</h3><div class="trust-contribution-meta">'+esc(trustContributionBandText(summary))+'</div></div>'
+      +'<span class="trust-contribution-pill">'+esc(summary.policy_version)+'</span></div>';
+    h+='<div class="trust-contribution-grid">';
+    h+='<div class="trust-contribution-card"><strong>'+esc(ru?'Почему':'Why')+'</strong><div class="trust-contribution-list">';
+    if(summary.reasons.length)summary.reasons.forEach(function(x){h+=trustContributionReasonHtml(x);});
+    else h+='<div class="trust-contribution-empty">'+esc(ru?'Нет дополнительных причин для показа.':'No extra reasons to show.')+'</div>';
+    h+='</div></div>';
+    h+='<div class="trust-contribution-card"><strong>'+esc(ru?'Что не хватает':'What is missing')+'</strong><div class="trust-contribution-list">';
+    if(summary.what_is_missing.length)summary.what_is_missing.forEach(function(x){h+=trustContributionReasonHtml(x);});
+    else h+='<div class="trust-contribution-empty">'+esc(ru?'Сейчас дополнительных действий не требуется.':'No additional action is needed right now.')+'</div>';
+    h+='</div></div></div>';
+    if(!opts.compact){
+        h+='<div class="trust-contribution-card" data-qa="my-contribution-events"><strong>'+esc(ru?'Журнал событий':'Event journal')+'</strong><div class="trust-contribution-list">';
+        if(summary.events.length)summary.events.forEach(function(x){h+=trustContributionEventHtml(x);});
+        else h+='<div class="trust-contribution-empty">'+esc(ru?'Пока нет событий для журнала.':'There are no events in the journal yet.')+'</div>';
+        h+='</div></div>';
+    }
+    h+='</div>';
+    return h;
+}
+async function trustContributionRenderInto(hostId, opts){
+    var host=document.getElementById(hostId);
+    if(!host)return;
+    var ru=getUiLang()==='ru';
+    host.innerHTML='<div class="trust-contribution-wrap"><div class="trust-contribution-card"><strong>'+esc(ru?'Загрузка':'Loading')+'</strong><div class="trust-contribution-meta">'+esc(ru?'Готовим приватный обзор вклада.':'Preparing your private contribution view.')+'</div></div></div>';
+    try{
+        var summary=await trustContributionLoadSummary();
+        host.innerHTML=trustContributionHtml(summary,opts||{});
+    }catch(e){
+        host.innerHTML='<div class="trust-contribution-wrap"><div class="trust-contribution-card"><strong>'+esc(ru?'Не удалось открыть':'Could not open')+'</strong><div class="trust-contribution-meta">'+esc(String(e||''))+'</div></div></div>';
+    }
+}
+function trustContributionSyncEntryPoints(isSeafarer){
+    var showIt=!!isSeafarer&&trustContributionEnabled();
+    var tab=document.getElementById('mt-contribution');
+    if(tab)tab.style.display=showIt?'flex':'none';
+    if(!showIt&&currentView==='contribution'){
+        try{showView('dashboard');}catch(e){}
+    }
+}
+async function showContribution(){
+    var host=document.getElementById('scr-content');
+    if(!host)return;
+    var ru=getUiLang()==='ru';
+    host.innerHTML='<div class="trust-contribution-wrap"><div class="trust-contribution-card"><strong>'+esc(ru?'Загрузка':'Loading')+'</strong><div class="trust-contribution-meta">'+esc(ru?'Готовим приватный обзор вклада.':'Preparing your private contribution view.')+'</div></div></div>';
+    show('scr-content');
+    updateTabs('My contribution');
+    try{
+        host.innerHTML=trustContributionHtml(await trustContributionLoadSummary(),{compact:false});
+    }catch(e){
+        host.innerHTML='<div class="trust-contribution-wrap"><div class="trust-contribution-card"><strong>'+esc(ru?'Не удалось открыть':'Could not open')+'</strong><div class="trust-contribution-meta">'+esc(String(e||''))+'</div></div></div>';
+    }
+}
+function renderMobileContribution(){
+    var ru=getUiLang()==='ru';
+    mobileMainHtml('<div class="trust-contribution-wrap"><div class="trust-contribution-card"><strong>'+mobileEsc(ru?'Загрузка':'Loading')+'</strong><div class="trust-contribution-meta">'+mobileEsc(ru?'Готовим приватный обзор вклада.':'Preparing your private contribution view.')+'</div></div></div>');
+    trustContributionLoadSummary().then(function(summary){
+        mobileMainHtml(trustContributionHtml(summary,{compact:true}));
+    }).catch(function(e){
+        mobileMainHtml('<div class="trust-contribution-wrap"><div class="trust-contribution-card"><strong>'+mobileEsc(ru?'Не удалось открыть':'Could not open')+'</strong><div class="trust-contribution-meta">'+mobileEsc(String(e||''))+'</div></div></div>');
+    });
 }
 
 /* ── Double-click guard for long operations ── */
@@ -5683,6 +6043,8 @@ function renderMobileShell(){
 
     if(mobileView==='apps')return renderMobileApps();
 
+    if(mobileView==='contribution')return renderMobileContribution();
+
     if(mobileView==='assistant')return renderMobileAssistant();
     if(mobileView==='doc')return renderMobileDoc();
     if(mobileView==='pdf')return renderMobilePdfBuilder();
@@ -5890,6 +6252,9 @@ function renderMobileProfile(){
     h+='<div class="mobile-stats"><div class="mobile-stat"><strong>'+st.total+'</strong><span>Total</span></div><div class="mobile-stat"><strong>'+st.uploaded+'</strong><span>Files</span></div><div class="mobile-stat"><strong>'+st.missing+'</strong><span>Missing</span></div></div>';
     h+='<div class="mobile-card"><div class="mobile-row"><div><div class="mobile-card-title">Profile completeness</div><div class="mobile-card-sub">Required profile documents and details.</div></div><span class="mobile-pill ok" id="mobile-profile-card-pct">'+pct+'%</span></div></div>';
     h+='<div id="mobile-identity-trust"></div>';
+    if(trustContributionEnabled()){
+        h+='<button class="mobile-primary-action" type="button" data-qa="my-contribution-mobile-entry" onclick="mobileShow(\'contribution\')"><span class="mobile-action-icon">&#10003;</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(getUiLang()==='ru'?'Мой вклад':'My contribution')+'</span><span class="mobile-action-sub">'+mobileEsc(getUiLang()==='ru'?'Приватный прогресс по подтверждённым событиям.':'Private progress from confirmed events.')+'</span></span></button>';
+    }
     h+='<button class="mobile-primary-action" type="button" onclick="mobileShow(\'add\')"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">Add more documents</span><span class="mobile-action-sub">Scan or attach files from this phone.</span></span></button>';
     h+='<div class="mobile-card"><div class="mobile-card-title">Vault</div><div class="mobile-card-sub">Stored locally on this phone. Export a ZIP backup to open this profile on desktop.</div><div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-accent mobile-grow" onclick="mobileExportVaultBackup(true)">Export / share backup</button><button class="btn btn-outline mobile-grow" onclick="mobileOpenExistingVault()">Switch vault</button><button class="btn btn-outline mobile-grow" onclick="openSettings()">Settings</button></div><div class="mobile-actions" style="margin-top:8px;"><button class="btn btn-outline btn-red mobile-grow" onclick="mobileDeleteCurrentVault()">Delete this vault</button></div></div>';
     mobileMainHtml(h);
@@ -7924,6 +8289,7 @@ async function loadVault(info){
     var mtVessels=document.getElementById('mt-vessels');if(mtVessels)mtVessels.style.display=isSeafarer?'flex':'none';
     var mtMyVessel=document.getElementById('mt-myvessel');if(mtMyVessel)mtMyVessel.style.display=isSeafarer?'flex':'none';
     var mtInfo=document.getElementById('mt-info');if(mtInfo)mtInfo.style.display=isSeafarer?'flex':'none';
+    trustContributionSyncEntryPoints(isSeafarer);
     await loadOptionalCategories();
     await loadConditionalTemplateIds();
     await loadActiveTemplateIds();
@@ -8222,11 +8588,14 @@ function showView(v, opts){
         vesselDbJobContext=null;
         vesselDbPendingImo=null;
     }
+    if(v==='contribution'&&!trustContributionEnabled())v='dashboard';
     currentView=v;
     updateProfileCompletionChip();
+    var isSeafarer=currentAccountType==='seafarer'||currentAccountType===''||!currentAccountType;
+    trustContributionSyncEntryPoints(isSeafarer);
     document.querySelectorAll('.ribbon-icon').forEach(function(el){el.classList.remove('active');});
     document.querySelectorAll('.modules-bar .mod-tab').forEach(function(el){el.classList.remove('active');});
-    var shortMap={files:'files',dashboard:'dash',cv:'cv',experience:'exp',vessels:'vessels',myvessel:'myvessel',packages:'pkg',dispatch:'disp',jobs:'jobs',information:'info',apps:'apps',settings:'set'};
+    var shortMap={files:'files',dashboard:'dash',cv:'cv',experience:'exp',vessels:'vessels',myvessel:'myvessel',contribution:'contribution',packages:'pkg',dispatch:'disp',jobs:'jobs',information:'info',apps:'apps',settings:'set'};
 
     var ri=document.getElementById('ri-'+shortMap[v]);
     if(ri)ri.classList.add('active');
@@ -8236,10 +8605,10 @@ function showView(v, opts){
     if(pcNav)pcNav.classList.toggle('active',v==='dashboard');
     document.getElementById('panel-title').textContent={
         files:tr('title.files'),dashboard:tr('title.dashboard'),cv:tr('title.cv'),experience:tr('title.experience'),
-        vessels:tr('title.vessels'),myvessel:tr('title.myvessel'),packages:tr('title.packages'),dispatch:tr('title.dispatch'),jobs:tr('title.jobs'),
+        vessels:tr('title.vessels'),myvessel:tr('title.myvessel'),contribution:(getUiLang()==='ru'?'Мой вклад':'My contribution'),packages:tr('title.packages'),dispatch:tr('title.dispatch'),jobs:tr('title.jobs'),
         information:tr('title.information'),settings:tr('title.settings')
     }[v]||v;
-    document.getElementById('left-panel').style.display=(v==='dashboard'||v==='cv'||v==='experience'||v==='vessels'||v==='myvessel'||v==='dispatch'||v==='jobs'||v==='information'||v==='apps')?'none':'';
+    document.getElementById('left-panel').style.display=(v==='dashboard'||v==='cv'||v==='experience'||v==='vessels'||v==='myvessel'||v==='contribution'||v==='dispatch'||v==='jobs'||v==='information'||v==='apps')?'none':'';
 
     // The old second tabs row duplicated the selected document title.
     // Keep it disabled; the document name is already visible in the tree and editor.
@@ -8262,6 +8631,7 @@ function showView(v, opts){
     else if(v==='experience')showWorkHistory();
     else if(v==='vessels')showVesselDatabase();
     else if(v==='myvessel')showMyVessel();
+    else if(v==='contribution')showContribution();
     else if(v==='packages')showPackages();
     else if(v==='dispatch')showDispatch();
     else if(v==='jobs')showJobs();
