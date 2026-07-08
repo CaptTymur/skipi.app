@@ -18,7 +18,7 @@ window.SKIPI_REMOTE_CONFIG = {
   catalogUrl: 'https://api.skipi.app/seafarer/releases/plugins/v1/catalog.json',
 
   // Which catalog plugins are routed through the isolated remote runtime.
-  remoteSlugs: ['bnwas-time-anchor', 'navigation-calculators'],
+  remoteSlugs: ['bnwas-time-anchor', 'navigation-calculators', 'ecdis-position-reminder'],
 
   // Host identity for compatibility checks.
   host: { id: 'seafarer', version: '0.4.165' },

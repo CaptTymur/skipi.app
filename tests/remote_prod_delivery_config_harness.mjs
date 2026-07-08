@@ -13,7 +13,7 @@ const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 const CONFIG_FILE = `${ROOT}/dist/plugin-host-config.js`;
 const BOOT_FILE = `${ROOT}/dist/plugin-remote-boot.js`;
 const CATALOG_URL = 'https://api.skipi.app/seafarer/releases/plugins/v1/catalog.json';
-const EXPECTED_SLUGS = ['bnwas-time-anchor', 'navigation-calculators'];
+const EXPECTED_SLUGS = ['bnwas-time-anchor', 'navigation-calculators', 'ecdis-position-reminder'];
 const EXPECTED_VERSION = '0.4.165';
 const EXPECTED_FINGERPRINT = '28e1987f3a533e56f431a4777ac5da9e5797770c552786df3147264d6a3df5d4';
 
