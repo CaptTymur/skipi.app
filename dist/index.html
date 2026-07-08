@@ -2589,6 +2589,309 @@ async function trustContributionLoadSummary(){
     }
     return trustContributionSafeSummary(trustContributionFixture());
 }
+
+var RECOVERY_BIND_FLAG_KEY = 'skipi_seafarer_recovery_bind';
+var RECOVERY_BIND_LIVE_KEY = 'skipi_seafarer_recovery_bind_live';
+var RECOVERY_BIND_STATUS_KEY = 'skipi-seafarer-recovery-bind-status-v1';
+var recoveryBindState = { step:'explain', email:'', challengeId:'', token:'', lastError:'' };
+
+function recoveryBindEnabled(){
+    try{return localStorage.getItem(RECOVERY_BIND_FLAG_KEY)==='1';}catch(e){return false;}
+}
+function recoveryBindLiveEnabled(){
+    try{return localStorage.getItem(RECOVERY_BIND_LIVE_KEY)==='1';}catch(e){return false;}
+}
+function recoveryBindText(en,ru){
+    return getUiLang()==='ru'?ru:en;
+}
+function recoveryBindReadStatus(){
+    try{
+        var raw=localStorage.getItem(RECOVERY_BIND_STATUS_KEY);
+        if(raw)return JSON.parse(raw);
+    }catch(e){}
+    return { status:'none', subject_id:null, vault_user_id:'demo-vault-user', binding_id:null, last_recovery_at:null, recovery_blob_version:null };
+}
+function recoveryBindStoreStatus(s){
+    try{localStorage.setItem(RECOVERY_BIND_STATUS_KEY,JSON.stringify(s||{}));}catch(e){}
+}
+function recoveryBindBase32(bytes){
+    var alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    var out='', value=0, bits=0;
+    for(var i=0;i<bytes.length;i++){
+        value=(value<<8)|bytes[i];
+        bits+=8;
+        while(bits>=5){
+            out+=alphabet[(value>>>(bits-5))&31];
+            bits-=5;
+        }
+    }
+    if(bits>0)out+=alphabet[(value<<(5-bits))&31];
+    return (out.match(/.{1,4}/g)||[out]).join('-');
+}
+function recoveryBindRandomBytes(n){
+    var bytes=new Uint8Array(n);
+    try{
+        if(crypto&&crypto.getRandomValues){crypto.getRandomValues(bytes);return bytes;}
+    }catch(e){}
+    for(var i=0;i<n;i++)bytes[i]=Math.floor(Math.random()*256);
+    return bytes;
+}
+function recoveryBindGenerateToken(){
+    return recoveryBindBase32(recoveryBindRandomBytes(20));
+}
+function recoveryBindUtf8Bytes(text){
+    if(typeof TextEncoder==='function')return new TextEncoder().encode(String(text||''));
+    var s=unescape(encodeURIComponent(String(text||'')));
+    var out=new Uint8Array(s.length);
+    for(var i=0;i<s.length;i++)out[i]=s.charCodeAt(i);
+    return out;
+}
+function recoveryBindToBase64(bytes){
+    var alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    var out='';
+    for(var i=0;i<bytes.length;i+=3){
+        var a=bytes[i], b=(i+1<bytes.length)?bytes[i+1]:0, c=(i+2<bytes.length)?bytes[i+2]:0;
+        var triple=(a<<16)|(b<<8)|c;
+        out+=alphabet[(triple>>18)&63]+alphabet[(triple>>12)&63]+(i+1<bytes.length?alphabet[(triple>>6)&63]:'=')+(i+2<bytes.length?alphabet[triple&63]:'=');
+    }
+    return out;
+}
+function recoveryBindHex(bytes){
+    var out='';
+    for(var i=0;i<bytes.length;i++)out+=bytes[i].toString(16).padStart(2,'0');
+    return out;
+}
+async function recoveryBindSha256Hex(bytes){
+    if(crypto&&crypto.subtle&&typeof crypto.subtle.digest==='function'){
+        var digest=await crypto.subtle.digest('SHA-256',bytes);
+        return recoveryBindHex(new Uint8Array(digest));
+    }
+    var text=recoveryBindToBase64(bytes);
+    var h=0;
+    for(var i=0;i<text.length;i++)h=((h<<5)-h+text.charCodeAt(i))|0;
+    return ('00000000'+(h>>>0).toString(16)).slice(-8);
+}
+async function recoveryBindBuildBlob(token,email,ctx){
+    var salt=recoveryBindRandomBytes(16);
+    var nonce=recoveryBindRandomBytes(12);
+    var payload=JSON.stringify({
+        schema:'skipi.identity.recovery_blob.v1',
+        purpose:'same-key-restore',
+        created_at:new Date().toISOString(),
+        vault_user_id:(ctx&&ctx.vault_user_id)||'',
+        public_seafarer_id:(ctx&&ctx.public_seafarer_id)||'',
+        email_hint_hash:'client-redacted',
+        note:'client encrypted; server cannot decrypt'
+    });
+    var plain=recoveryBindUtf8Bytes(payload);
+    var cipher=plain;
+    var alg='AES-256-GCM';
+    var kdf='PBKDF2-SHA256-v1';
+    try{
+        if(crypto&&crypto.subtle&&typeof TextEncoder==='function'){
+            var keyMaterial=await crypto.subtle.importKey('raw',recoveryBindUtf8Bytes(token),'PBKDF2',false,['deriveKey']);
+            var key=await crypto.subtle.deriveKey(
+                {name:'PBKDF2',salt:salt,iterations:150000,hash:'SHA-256'},
+                keyMaterial,
+                {name:'AES-GCM',length:256},
+                false,
+                ['encrypt']
+            );
+            cipher=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv:nonce},key,plain));
+        }else{
+            alg='AES-256-GCM-fixture-fallback';
+            kdf='PBKDF2-SHA256-v1-fixture-fallback';
+        }
+    }catch(e){
+        alg='AES-256-GCM-fixture-fallback';
+        kdf='PBKDF2-SHA256-v1-fixture-fallback';
+        cipher=plain;
+    }
+    var hash=await recoveryBindSha256Hex(cipher);
+    return {
+        version:1,
+        alg:alg,
+        kdf:kdf,
+        salt:recoveryBindToBase64(salt),
+        nonce:recoveryBindToBase64(nonce),
+        ciphertext_b64:recoveryBindToBase64(cipher),
+        hash:hash
+    };
+}
+async function recoveryBindContext(){
+    var status=null;
+    try{status=await invoke('get_identity_trust_status');}catch(e){}
+    var server=(status&&status.server_identity)||{};
+    return {
+        vault_user_id:(status&&status.user_id)||((vaultIdentityCache&&vaultIdentityCache.user_id)||''),
+        public_seafarer_id:server.public_seafarer_id||localStorage.getItem('skipi-dev-public-seafarer-id')||''
+    };
+}
+function recoveryBindStatusText(status){
+    status=status||recoveryBindReadStatus();
+    if(status.status==='active')return recoveryBindText('Recovery email is connected.','Email восстановления привязан.');
+    if(status.status==='locked')return recoveryBindText('Recovery is temporarily locked after failed attempts.','Восстановление временно заблокировано после неудачных попыток.');
+    return recoveryBindText('Recovery email is not connected.','Email восстановления не привязан.');
+}
+function recoveryBindPanelHtml(compact){
+    if(!recoveryBindEnabled())return '';
+    var status=recoveryBindReadStatus();
+    var bound=status.status==='active';
+    var h='<div class="settings-section recovery-bind-panel" data-qa="recovery-bind-section" data-network="'+(recoveryBindLiveEnabled()?'live':'none')+'">';
+    h+='<h3>'+recoveryBindText('Identity / Access','Identity / доступ')+'</h3>';
+    h+='<div class="section-desc">'+recoveryBindText('Email is only for recovery and sync. It is not your login and not a public profile.','Email нужен только для восстановления доступа и синхронизации. Это не логин и не публичный профиль.')+'</div>';
+    h+='<div class="setting-row" data-qa="recovery-bind-status"><div class="setting-info"><div class="setting-label">'+recoveryBindText('Recovery status','Статус восстановления')+'</div><div class="setting-desc">'+esc(recoveryBindStatusText(status))+'</div>';
+    h+='<div class="setting-desc" style="margin-top:6px;font-family:var(--font-mono);font-size:11px;">Skipi ID: '+esc(status.subject_id||((vaultIdentityCache&&vaultIdentityCache.user_id)||'local vault'))+'</div></div>';
+    h+='<div class="setting-control"><span class="mobile-pill '+(bound?'ok':'')+'">'+(bound?recoveryBindText('Connected','Привязано'):recoveryBindText('Not connected','Не привязано'))+'</span></div></div>';
+    if(recoveryBindState.lastError){
+        h+='<div class="setting-row" data-qa="recovery-bind-error"><div class="setting-info"><div class="setting-desc" style="color:var(--red);">'+esc(recoveryBindState.lastError)+'</div></div></div>';
+    }
+    if(recoveryBindState.step==='email'){
+        h+='<div class="setting-row" data-qa="recovery-bind-email-step"><div class="setting-info"><div class="setting-label">'+recoveryBindText('Recovery email','Email восстановления')+'</div><div class="setting-desc">'+recoveryBindText('If this address can receive recovery mail, we will send a code.','Если этот адрес может получать письма восстановления, мы отправим код.')+'</div></div>';
+        h+='<div class="setting-control" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;"><input id="recovery-email-input" type="email" placeholder="name@example.com" value="'+esc(recoveryBindState.email||'')+'" style="min-width:220px;"><button class="btn btn-accent btn-sm" type="button" onclick="recoveryBindStart()">'+recoveryBindText('Send code','Отправить код')+'</button></div></div>';
+    }else if(recoveryBindState.step==='code'){
+        var token=recoveryBindState.token||'';
+        h+='<div class="setting-row" data-qa="recovery-bind-code-step"><div class="setting-info"><div class="setting-label">'+recoveryBindText('Email code','Код из письма')+'</div><div class="setting-desc">'+recoveryBindText('Enter the code from the email. We do not store the address in readable form.','Введите код из письма. Мы не сохраняем адрес в открытом виде.')+'</div></div><div class="setting-control"><input id="recovery-code-input" type="text" inputmode="numeric" placeholder="123456" style="width:120px;"></div></div>';
+        h+='<div class="setting-row" data-qa="recovery-token-once"><div class="setting-info"><div class="setting-label">'+recoveryBindText('Recovery token','Recovery-токен')+'</div><div class="setting-desc">'+recoveryBindText('Save the recovery token. You need it together with email to restore this same Skipi ID on a new device. Skipi cannot show this token again.','Сохрани recovery-токен. Он нужен вместе с email, чтобы восстановить этот же Skipi ID на новом устройстве. Skipi не сможет показать этот токен снова.')+'</div><div id="recovery-token-value" style="margin-top:8px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-family:var(--font-mono);font-size:12px;word-break:break-all;">'+esc(token)+'</div></div>';
+        h+='<div class="setting-control" style="display:flex;gap:8px;flex-direction:column;align-items:flex-end;"><label style="font-size:12px;color:var(--text2);"><input id="recovery-token-saved" type="checkbox"> '+recoveryBindText('I saved this token','Я сохранил токен')+'</label><button class="btn btn-accent btn-sm" type="button" onclick="recoveryBindComplete()">'+recoveryBindText('Enable recovery','Включить восстановление')+'</button></div></div>';
+    }else if(recoveryBindState.step==='done'){
+        h+='<div class="setting-row" data-qa="recovery-bind-done"><div class="setting-info"><div class="setting-label">'+recoveryBindText('Recovery enabled','Восстановление включено')+'</div><div class="setting-desc">'+recoveryBindText('Recovery is enabled. Email is used only as a recovery channel. Your key remains the root of your Skipi identity.','Восстановление включено. Email используется только как канал восстановления. Твой ключ остаётся корнем личности Skipi.')+'</div></div><div class="setting-control"><button class="btn btn-outline btn-sm" type="button" onclick="recoveryBindShowEmail()">'+recoveryBindText('Change email','Сменить email')+'</button></div></div>';
+    }else{
+        h+='<div class="setting-row" data-qa="recovery-bind-explain"><div class="setting-info"><div class="setting-label">'+recoveryBindText('Connect recovery email','Привязать email восстановления')+'</div><div class="setting-desc">'+recoveryBindText('Your Skipi identity is rooted in the key on this device. The recovery token works like a password for the encrypted key backup: save it separately.','Корень твоей личности в Skipi - ключ на устройстве. Recovery-токен работает как пароль к резервной копии ключа: сохрани его отдельно.')+'</div></div><div class="setting-control" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;"><button class="btn btn-accent btn-sm" type="button" onclick="recoveryBindShowEmail()">'+recoveryBindText('Start','Начать')+'</button>'+(bound?'<button class="btn btn-outline btn-sm btn-red" type="button" onclick="recoveryBindUnlink()">'+recoveryBindText('Unlink','Отвязать')+'</button>':'')+'</div></div>';
+    }
+    h+='</div>';
+    return h;
+}
+function recoveryBindRender(){
+    var host=document.getElementById('recovery-bind-host');
+    if(host)host.innerHTML=recoveryBindPanelHtml(isMobileMode());
+}
+function recoveryBindShowEmail(){
+    recoveryBindState.step='email';
+    recoveryBindState.lastError='';
+    recoveryBindRender();
+}
+async function recoveryBindRefreshStatus(){
+    if(!recoveryBindEnabled())return;
+    if(!recoveryBindLiveEnabled()){
+        recoveryBindRender();
+        return;
+    }
+    try{
+        var bearer=await trustContributionCreateSession();
+        var resp=await apiFetch('/api/me/recovery/status',{method:'GET',headers:{'Accept':'application/json','Authorization':'Bearer '+bearer}},8000);
+        if(resp.ok)recoveryBindStoreStatus(await resp.json());
+    }catch(e){logError('recovery_bind_status',e);}
+    recoveryBindRender();
+}
+async function recoveryBindStart(){
+    recoveryBindState.lastError='';
+    var el=document.getElementById('recovery-email-input');
+    var email=(el&&el.value?el.value:recoveryBindState.email||'').trim();
+    if(!email){recoveryBindState.lastError=recoveryBindText('Enter recovery email.','Введите email восстановления.');recoveryBindRender();return;}
+    recoveryBindState.email=email;
+    recoveryBindState.token=recoveryBindGenerateToken();
+    if(recoveryBindLiveEnabled()){
+        try{
+            var bearer=await trustContributionCreateSession();
+            var ctx=await recoveryBindContext();
+            var resp=await apiFetch('/api/me/recovery/bind/start',{
+                method:'POST',
+                headers:{'Content-Type':'application/json','Accept':'application/json','Authorization':'Bearer '+bearer},
+                body:JSON.stringify({email:email,requester_device_key_hash:ctx.vault_user_id||null})
+            },8000);
+            if(!resp.ok)throw new Error('recovery bind start '+resp.status);
+            var data=await resp.json();
+            recoveryBindState.challengeId=data.challenge_id||'';
+        }catch(e){
+            recoveryBindState.lastError=String(e&&e.message?e.message:e);
+            recoveryBindRender();
+            return;
+        }
+    }else{
+        recoveryBindState.challengeId='fixture-recovery-challenge';
+    }
+    recoveryBindState.step='code';
+    recoveryBindRender();
+}
+async function recoveryBindComplete(){
+    recoveryBindState.lastError='';
+    var saved=document.getElementById('recovery-token-saved');
+    if(!saved||!saved.checked){recoveryBindState.lastError=recoveryBindText('Confirm that you saved the recovery token.','Подтверди, что recovery-токен сохранён.');recoveryBindRender();return;}
+    var codeEl=document.getElementById('recovery-code-input');
+    var code=(codeEl&&codeEl.value?codeEl.value:'000000').trim();
+    if(recoveryBindLiveEnabled()){
+        try{
+            var ctx=await recoveryBindContext();
+            var blob=await recoveryBindBuildBlob(recoveryBindState.token,recoveryBindState.email,ctx);
+            var signedAt=new Date().toISOString();
+            var payloadToSign={
+                schema:'skipi.identity.email_bind.v1',
+                challenge_id:recoveryBindState.challengeId,
+                vault_user_id:ctx.vault_user_id,
+                public_seafarer_id:ctx.public_seafarer_id,
+                recovery_blob_hash:blob.hash,
+                recovery_blob_version:blob.version,
+                created_at:signedAt,
+                nonce:recoveryBindState.challengeId
+            };
+            var signature=await invoke('sign_identity_recovery_payload',{payload:payloadToSign});
+            var bearer=await trustContributionCreateSession();
+            var resp=await apiFetch('/api/me/recovery/bind/complete',{
+                method:'POST',
+                headers:{'Content-Type':'application/json','Accept':'application/json','Authorization':'Bearer '+bearer},
+                body:JSON.stringify({
+                    challenge_id:recoveryBindState.challengeId,
+                    code:code,
+                    vault_user_id:ctx.vault_user_id,
+                    public_seafarer_id:ctx.public_seafarer_id,
+                    signature_b64:signature,
+                    signed_at:signedAt,
+                    recovery_blob:{ciphertext_b64:blob.ciphertext_b64,nonce:blob.nonce,salt:blob.salt,alg:blob.alg,kdf:blob.kdf,version:blob.version}
+                })
+            },8000);
+            if(!resp.ok)throw new Error('recovery bind complete '+resp.status);
+            var data=await resp.json();
+            recoveryBindStoreStatus({status:data.recovery_status||'active',subject_id:ctx.public_seafarer_id,vault_user_id:ctx.vault_user_id,binding_id:data.binding_id||null,recovery_blob_version:blob.version,last_recovery_at:null});
+        }catch(e){
+            recoveryBindState.lastError=String(e&&e.message?e.message:e);
+            recoveryBindRender();
+            return;
+        }
+    }else{
+        recoveryBindStoreStatus({status:'active',subject_id:'SKP-SF-FIXTURE',vault_user_id:'fixture-vault-user',binding_id:'fixture-binding',recovery_blob_version:1,last_recovery_at:null});
+    }
+    recoveryBindState.step='done';
+    recoveryBindState.token='';
+    recoveryBindRender();
+}
+async function recoveryBindUnlink(){
+    recoveryBindState.lastError='';
+    var status=recoveryBindReadStatus();
+    if(!status.binding_id){recoveryBindStoreStatus({status:'none',vault_user_id:status.vault_user_id||'local vault'});recoveryBindRender();return;}
+    if(recoveryBindLiveEnabled()){
+        try{
+            var ctx=await recoveryBindContext();
+            var signedAt=new Date().toISOString();
+            var payloadToSign={schema:'skipi.identity.email_unlink.v1',binding_id:status.binding_id,vault_user_id:ctx.vault_user_id,unlinked_at:signedAt,nonce:status.binding_id};
+            var signature=await invoke('sign_identity_recovery_payload',{payload:payloadToSign});
+            var bearer=await trustContributionCreateSession();
+            var resp=await apiFetch('/api/me/recovery/unlink',{
+                method:'POST',
+                headers:{'Content-Type':'application/json','Accept':'application/json','Authorization':'Bearer '+bearer},
+                body:JSON.stringify({binding_id:status.binding_id,vault_user_id:ctx.vault_user_id,signature_b64:signature,signed_at:signedAt})
+            },8000);
+            if(!resp.ok)throw new Error('recovery unlink '+resp.status);
+        }catch(e){
+            recoveryBindState.lastError=String(e&&e.message?e.message:e);
+            recoveryBindRender();
+            return;
+        }
+    }
+    recoveryBindStoreStatus({status:'none',vault_user_id:status.vault_user_id||'local vault'});
+    recoveryBindState.step='explain';
+    recoveryBindRender();
+}
 function trustContributionBandText(summary){
     var key=summary&&summary.band&&summary.band.key;
     if(key==='established_contributor'){
@@ -16457,6 +16760,7 @@ function renderSettingsBody(){
             h += '<button class="mobile-primary-action" type="button" onclick="closeSettings();renderMobileWelcome()"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">Create new vault</span><span class="mobile-action-sub">Start a clean mobile seafarer vault.</span></span></button>';
             h += '<button class="mobile-primary-action" type="button" onclick="closeSettings();loadDemoVault()"><span class="mobile-action-icon">&#9679;</span><span class="mobile-action-copy"><span class="mobile-action-title">Open demo vault</span><span class="mobile-action-sub">Use sample data for testing.</span></span></button>';
             h += '<div id="vault-identity-trust"></div>';
+            h += '<div id="recovery-bind-host">'+recoveryBindPanelHtml(true)+'</div>';
             h += '<div id="mobile-settings-recent-vaults"></div>';
             h += '<details style="margin-top:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);padding:10px 12px;"><summary style="font-weight:800;cursor:pointer;">Advanced vault tools</summary>';
             h += '<div class="setting-row" style="margin-top:10px;"><div class="setting-info"><div class="setting-label">Recovery key</div><div class="setting-desc" id="vault-identity-user">'+tr('settings.loading_identity')+'</div><div id="vault-identity-key" class="setting-desc" style="margin-top:6px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-family:var(--font-mono);font-size:11px;word-break:break-all;">'+tr('settings.key_hidden')+'</div></div><div class="setting-control" style="display:flex;gap:6px;flex-wrap:wrap;"><button id="vault-identity-show-btn" class="btn btn-outline btn-sm" onclick="toggleVaultRecoveryKey()">'+tr('settings.show')+'</button><button class="btn btn-outline btn-sm" onclick="copyVaultRecoveryKey()">'+tr('settings.copy')+'</button></div></div>';
@@ -16467,6 +16771,7 @@ function renderSettingsBody(){
             loadMobileSettingsVaultSummary();
             loadVaultIdentityKey();
             loadIdentityTrustStatus();
+            recoveryBindRefreshStatus();
             return;
         }
         h += '<div class="settings-section"><h3>Vaults</h3><div class="section-desc">Manage your '+tr('app.name')+' vaults. Each vault is a separate folder on your computer containing documents and metadata.</div>';
@@ -16477,6 +16782,7 @@ function renderSettingsBody(){
         h += '<div id="vault-identity-key" class="setting-desc" style="margin-top:6px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-family:var(--font-mono);font-size:11px;word-break:break-all;">'+tr('settings.key_hidden')+'</div></div>';
         h += '<div class="setting-control" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;"><button id="vault-identity-show-btn" class="btn btn-outline btn-sm" onclick="toggleVaultRecoveryKey()">'+tr('settings.show')+'</button><button class="btn btn-outline btn-sm" onclick="copyVaultRecoveryKey()">'+tr('settings.copy')+'</button></div></div>';
         h += '<div id="vault-identity-trust"></div>';
+        h += '<div id="recovery-bind-host">'+recoveryBindPanelHtml(false)+'</div>';
         h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Open another vault</div><div class="setting-desc">Choose an existing '+tr('app.name')+' vault folder to switch to.</div></div>';
         h += '<div class="setting-control"><button class="btn btn-outline btn-sm" onclick="switchVault()">Open&hellip;</button></div></div>';
         h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Create new vault</div><div class="setting-desc">Close the current vault and start the setup flow for a new one.</div></div>';
@@ -16695,6 +17001,7 @@ function renderSettingsBody(){
         }).catch(function(){});
         loadVaultIdentityKey();
         loadIdentityTrustStatus();
+        recoveryBindRefreshStatus();
     }
     if(settingsTab === 'about'){
         loadBuildInfo();

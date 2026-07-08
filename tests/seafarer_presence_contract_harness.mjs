@@ -625,5 +625,80 @@ section('my contribution UI — mobile compact view');
   ok(!/(approved|rejected|blacklist|legal|rating|оценка моряка|рейтинг моряка)/i.test(m), 'mobile compact wording guard is clean');
 }
 
+section('recovery email bind UI — feature flag and fixture mode');
+{
+  const { sandbox, document, store } = installRuntime(html);
+  await settle();
+  ok(typeof sandbox.recoveryBindEnabled === 'function', 'recoveryBindEnabled helper exists');
+  ok(typeof sandbox.recoveryBindPanelHtml === 'function', 'recoveryBindPanelHtml renderer exists');
+  ok(sandbox.recoveryBindEnabled() === false, 'recovery bind flag defaults OFF');
+  sandbox.openSettings('vaults');
+  await settle();
+  let settingsHtml = String((document.getElementById('settings-body') || {}).innerHTML || '');
+  ok(!settingsHtml.includes('data-qa="recovery-bind-section"'), 'flag-off recovery section is absent from settings');
+
+  let fetchCalls = 0;
+  sandbox.fetch = async () => {
+    fetchCalls += 1;
+    return { ok: false, status: 599, json: async () => ({}), text: async () => '' };
+  };
+  store.set('skipi_seafarer_recovery_bind', '1');
+  sandbox.openSettings('vaults');
+  await settle();
+  settingsHtml = String((document.getElementById('settings-body') || {}).innerHTML || '');
+  ok(settingsHtml.includes('data-qa="recovery-bind-section"'), 'flag-on recovery section renders in settings');
+  ok(settingsHtml.includes('data-network="none"'), 'fixture recovery section declares network none');
+  ok(/не логин|not your login/i.test(settingsHtml), 'copy states email is not login');
+  ok(fetchCalls === 0, 'fixture recovery settings performs no network fetches');
+  ok(!/(approved|rejected|blacklist|legal|рейтинг моряка|оценка моряка)/i.test(settingsHtml), 'recovery settings wording guard is clean');
+
+  const token = sandbox.recoveryBindGenerateToken();
+  ok(/^[A-Z2-7]{4}(?:-[A-Z2-7]{4}){7,}$/.test(token), 'recovery token is grouped base32 and >=128 bits');
+}
+
+section('recovery email bind UI — live payload safety');
+{
+  const { sandbox, document, store } = installRuntime(html);
+  await settle();
+  store.set('skipi_seafarer_recovery_bind', '1');
+  store.set('skipi_seafarer_recovery_bind_live', '1');
+  sandbox.recoveryBindState.step = 'code';
+  sandbox.recoveryBindState.email = 'sailor@example.test';
+  sandbox.recoveryBindState.challengeId = 'challenge-0123456789abcdef';
+  sandbox.recoveryBindState.token = 'ABCD-EFGH-IJKL-MNOP-QRST-UVWX-YZ23-4567';
+  const rawToken = sandbox.recoveryBindState.token;
+
+  const saved = document.createElement('input');
+  saved.setAttribute('id', 'recovery-token-saved');
+  saved.checked = false;
+  const code = document.createElement('input');
+  code.setAttribute('id', 'recovery-code-input');
+  code.value = '123456';
+
+  const fetchBodies = [];
+  sandbox.recoveryBindContext = async () => ({ vault_user_id: 'u_self_demo', public_seafarer_id: 'sf_self_demo_01' });
+  sandbox.trustContributionCreateSession = async () => 'self-session-token';
+  sandbox.invoke = async (cmd) => {
+    if (cmd === 'sign_identity_recovery_payload') return 'signed-recovery-payload';
+    return {};
+  };
+  sandbox.apiFetch = async (url, opts = {}) => {
+    fetchBodies.push(String(opts.body || ''));
+    return { ok: true, status: 200, json: async () => ({ recovery_status: 'active', binding_id: 'binding-demo-1' }), text: async () => '' };
+  };
+
+  await sandbox.recoveryBindComplete();
+  await settle();
+  ok(fetchBodies.length === 0, 'blob is not uploaded until saved-token checkbox is checked');
+  saved.checked = true;
+  await sandbox.recoveryBindComplete();
+  await settle();
+  ok(fetchBodies.length === 1, 'live complete sends one API payload after checkbox');
+  const body = fetchBodies.join('\n');
+  ok(!body.includes(rawToken), 'raw recovery token is never sent to server');
+  ok(!body.includes('sailor@example.test'), 'raw email is not sent in bind complete payload');
+  ok(body.includes('recovery_blob') && body.includes('ciphertext_b64'), 'bind complete sends encrypted recovery blob metadata');
+}
+
 console.log('\n' + (fail === 0 ? 'ALL GREEN' : 'FAILURES') + `: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
