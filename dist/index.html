@@ -8711,9 +8711,24 @@ function pluginDisable(id){
 }
 function pluginEnable(id){
     if(remoteInstalledMeta(id)){
-        if(typeof window.SkipiRemoteSetEnabled==='function') window.SkipiRemoteSetEnabled(id,true);
+        var rp=remoteInstalledEntryFor(id)||pluginById(id)||{name:id};
+        if(typeof window.SkipiRemoteSetEnabled==='function'){
+            var rr=window.SkipiRemoteSetEnabled(id,true);
+            if(rr&&typeof rr.then==='function'){
+                showToast('Checking '+rp.name+' for updates…','info');
+                rr.then(function(res){
+                    __remoteCatalogCache=null;
+                    showToast(rp.name+(res&&res.updated?' updated and enabled.':' enabled.'),'success');
+                    pluginRerender();
+                }, function(e){
+                    showToast('Could not enable '+rp.name+': '+((e&&e.message)||e),'error');
+                    pluginRerender();
+                });
+                return;
+            }
+        }
         else { var re=remoteRegistryAll(); if(re[id]){ re[id].enabled=true; remoteStateSaveAll(re); } }
-        showToast((pluginById(id)||{name:id}).name+' enabled.','success'); pluginRerender(); return;
+        showToast(rp.name+' enabled.','success'); pluginRerender(); return;
     }
     pluginSetState(id,{ enabled:true }); showToast((pluginById(id)||{}).name+' enabled.','success'); pluginRerender();
 }

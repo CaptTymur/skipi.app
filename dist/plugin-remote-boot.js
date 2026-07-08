@@ -61,6 +61,19 @@
     var rec = remoteRecord(slug);
     return !!rec && rec.enabled !== false;
   }
+  function remoteVersionNewer(nextVersion, currentVersion) {
+    if (!nextVersion || !currentVersion) return !!nextVersion && nextVersion !== currentVersion;
+    var semverGte = window.SkipiPluginLoader && window.SkipiPluginLoader.semverGte;
+    if (typeof semverGte === 'function') {
+      return semverGte(nextVersion, currentVersion) && !semverGte(currentVersion, nextVersion);
+    }
+    return String(nextVersion) > String(currentVersion);
+  }
+  function findCatalogEntry(catalog, slug) {
+    var list = (catalog && catalog.plugins) || [];
+    for (var i = 0; i < list.length; i++) if (list[i] && list[i].slug === slug) return list[i];
+    return null;
+  }
   function persistInstalled(entry) {
     if (!entry || !entry.slug) return;
     var reg = readRemoteRegistry();
@@ -118,13 +131,53 @@
       return { ok: false, stage: 'install', reason: '' + (e && e.message || e) };
     });
   };
+  window.SkipiRemoteEnsureLatest = function (slug) {
+    var rec = remoteRecord(slug);
+    if (!rec) return Promise.resolve({ ok: false, reason: 'not_installed' });
+    var cache = loader && loader._cache;
+    var previousCatalog = cache && typeof cache.get === 'function' ? cache.get('catalog') : null;
+    function restorePreviousCatalog() {
+      if (previousCatalog && cache && typeof cache.set === 'function') cache.set('catalog', previousCatalog);
+    }
+    return loader.getCatalog({ allowNetwork: true }).then(function (cat) {
+      var entry = findCatalogEntry(cat && cat.catalog, slug);
+      if (!entry) return { ok: false, reason: 'not_in_catalog' };
+      if (!remoteVersionNewer(entry.version, rec.version || (rec.entry && rec.entry.version))) {
+        restorePreviousCatalog();
+        return { ok: true, updated: false, entry: rec.entry || entry, version: rec.version || (rec.entry && rec.entry.version) || entry.version };
+      }
+      return loader.install(slug, { allowNetwork: true }).then(function (res) {
+        if (res && res.ok) {
+          persistInstalled(res.entry);
+          return { ok: true, updated: true, entry: res.entry, version: res.entry && res.entry.version, source: res.source };
+        }
+        restorePreviousCatalog();
+        return res || { ok: false, reason: 'install_failed' };
+      });
+    }, function (e) {
+      return { ok: false, stage: 'catalog', reason: '' + (e && e.message || e) };
+    });
+  };
   window.SkipiRemoteSetEnabled = function (slug, enabled) {
     var reg = readRemoteRegistry();
     if (!reg[slug] || !reg[slug].installed) return { ok: false, reason: 'not_installed' };
-    reg[slug].enabled = enabled !== false;
-    reg[slug].updated_at = nowIso();
-    writeRemoteRegistry(reg);
-    return { ok: true, status: reg[slug].enabled ? 'installed' : 'disabled' };
+    function setEnabled() {
+      reg = readRemoteRegistry();
+      if (!reg[slug] || !reg[slug].installed) return { ok: false, reason: 'not_installed' };
+      reg[slug].enabled = enabled !== false;
+      reg[slug].updated_at = nowIso();
+      writeRemoteRegistry(reg);
+      return { ok: true, status: reg[slug].enabled ? 'installed' : 'disabled' };
+    }
+    if (enabled !== false && typeof window.SkipiRemoteEnsureLatest === 'function') {
+      return window.SkipiRemoteEnsureLatest(slug).then(function (refresh) {
+        var res = setEnabled();
+        res.refresh = refresh || null;
+        res.updated = !!(refresh && refresh.updated);
+        return res;
+      }, function () { return setEnabled(); });
+    }
+    return setEnabled();
   };
   window.SkipiRemoteUninstall = function (slug) {
     var reg = readRemoteRegistry();
@@ -173,8 +226,12 @@
       return;
     }
     container.innerHTML = loadingHtml();
-    var openOpts = remoteRecord(id) ? { allowNetwork: false } : undefined;
-    runtime.open(id, container, openOpts).then(function (res) {
+    var rec = remoteRecord(id);
+    var ready = rec ? window.SkipiRemoteEnsureLatest(id).then(function () { return true; }, function () { return true; }) : Promise.resolve(true);
+    ready.then(function () {
+      var openOpts = remoteRecord(id) ? { allowNetwork: false } : undefined;
+      return runtime.open(id, container, openOpts);
+    }).then(function (res) {
       if (!res || !res.ok) { currentRemote = null; container.innerHTML = failHtml(res); }
     }, function (e) {
       currentRemote = null; container.innerHTML = failHtml({ stage: 'mount', reason: '' + (e && e.message || e) });
