@@ -700,5 +700,116 @@ section('recovery email bind UI — live payload safety');
   ok(body.includes('recovery_blob') && body.includes('ciphertext_b64'), 'bind complete sends encrypted recovery blob metadata');
 }
 
+section('lost-device recovery UI — feature flag and fixture mode');
+{
+  const { sandbox, document, store } = installRuntime(html);
+  await settle();
+  ok(typeof sandbox.recoveryLostEnabled === 'function', 'recoveryLostEnabled helper exists');
+  ok(typeof sandbox.recoveryLostPanelHtml === 'function', 'lost-device recovery renderer exists');
+  ok(sandbox.recoveryLostEnabled() === false, 'lost-device recovery flag defaults OFF');
+  sandbox.openSettings('vaults');
+  await settle();
+  let settingsHtml = String((document.getElementById('settings-body') || {}).innerHTML || '');
+  ok(!settingsHtml.includes('data-qa="lost-recovery-section"'), 'flag-off lost-device recovery section is absent');
+
+  let fetchCalls = 0;
+  sandbox.fetch = async () => {
+    fetchCalls += 1;
+    return { ok: false, status: 599, json: async () => ({}), text: async () => '' };
+  };
+  store.set('skipi_seafarer_recovery_lost_device', '1');
+  store.set('skipi-seafarer-recovery-bind-status-v1', JSON.stringify({ status: 'active', subject_id: 'SKP-SF-FIXTURE', vault_user_id: 'fixture-vault-user', binding_id: 'fixture-binding' }));
+  sandbox.openSettings('vaults');
+  await settle();
+  settingsHtml = String((document.getElementById('settings-body') || {}).innerHTML || '');
+  ok(settingsHtml.includes('data-qa="lost-recovery-section"'), 'flag-on lost-device recovery section renders');
+  ok(settingsHtml.includes('data-network="none"'), 'fixture lost-device section declares network none');
+  ok(settingsHtml.includes('data-qa="lost-recovery-old-device-notice"'), 'old-device cancel notice renders when recovery binding is active');
+  ok(/not a login|не логин/i.test(settingsHtml), 'lost-device copy states email is recovery, not login');
+  ok(fetchCalls === 0, 'fixture lost-device settings performs no network fetches');
+  ok(!/(approved|rejected|blacklist|legal|fraud|rating|оценка моряка|рейтинг моряка)/i.test(settingsHtml), 'lost-device recovery wording guard is clean');
+
+  const compact = sandbox.recoveryLostPanelHtml(true);
+  ok(compact.includes('data-qa="lost-recovery-section"'), 'mobile compact lost-device panel renders');
+
+  const email = document.createElement('input');
+  email.setAttribute('id', 'lost-recovery-email-input');
+  email.value = 'sailor@example.test';
+  await sandbox.recoveryLostStart();
+  await settle();
+  const code = document.createElement('input');
+  code.setAttribute('id', 'lost-recovery-code-input');
+  code.value = '123456';
+  await sandbox.recoveryLostVerifyCode();
+  await settle();
+  const token = document.createElement('input');
+  token.setAttribute('id', 'lost-recovery-token-input');
+  token.value = 'ABCD-EFGH-IJKL-MNOP-QRST-UVWX-YZ23-4567';
+  sandbox.recoveryLostShow('token');
+  await sandbox.recoveryLostReleaseBlob();
+  await settle();
+  ok(sandbox.recoveryLostState.step === 'done', 'fixture lost-device recovery reaches local done step');
+  ok(fetchCalls === 0, 'fixture lost-device flow remains zero-fetch');
+}
+
+section('lost-device recovery UI — live payload safety');
+{
+  const { sandbox, document, store } = installRuntime(html);
+  await settle();
+  store.set('skipi_seafarer_recovery_lost_device', '1');
+  store.set('skipi_seafarer_recovery_lost_device_live', '1');
+  sandbox.recoveryLostState.challengeId = 'lost-challenge-0123456789abcdef';
+  sandbox.recoveryLostState.step = 'token';
+  const rawToken = 'LOST-TOKEN-ABCD-EFGH-IJKL-MNOP-QRST-UVWX';
+  const token = document.createElement('input');
+  token.setAttribute('id', 'lost-recovery-token-input');
+  token.value = rawToken;
+  const fixturePlain = sandbox.recoveryBindUtf8Bytes(JSON.stringify({ schema: 'skipi.identity.recovery_blob.v1', purpose: 'same-key-restore', fixture: true }));
+  const fetchBodies = [];
+  sandbox.recoveryBindContext = async () => ({ vault_user_id: 'u_self_demo', public_seafarer_id: 'sf_self_demo_01' });
+  sandbox.invoke = async (cmd) => {
+    if (cmd === 'sign_identity_recovery_payload') return 'signed-lost-recovery-payload';
+    return {};
+  };
+  sandbox.apiFetch = async (url, opts = {}) => {
+    fetchBodies.push(`${url}\n${String(opts.body || '')}`);
+    if (String(url).includes('/release-blob')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          status: 'released',
+          recovery_blob: {
+            alg: 'AES-256-GCM-fixture-fallback',
+            kdf: 'fixture',
+            salt: '',
+            nonce: 'fixture',
+            ciphertext_b64: sandbox.recoveryBindToBase64(fixturePlain),
+            hash: 'fixture-hash',
+          },
+        }),
+        text: async () => '',
+      };
+    }
+    return { ok: true, status: 200, json: async () => ({ status: 'completed' }), text: async () => '' };
+  };
+
+  await sandbox.recoveryLostReleaseBlob();
+  await settle();
+  ok(sandbox.recoveryLostState.step === 'done', 'live lost-device release decrypts blob locally before done');
+  await sandbox.recoveryLostComplete('add');
+  await settle();
+  sandbox.recoveryLostState.challengeId = 'lost-challenge-0123456789abcdef';
+  await sandbox.recoveryLostCancel();
+  await settle();
+  const body = fetchBodies.join('\n');
+  ok(body.includes('/api/identity/recovery/release-blob'), 'release-blob endpoint is called in live mode');
+  ok(body.includes('"recovery_token_present":true'), 'release payload sends only token-presence flag');
+  ok(!body.includes(rawToken), 'raw lost-device recovery token is never sent to server');
+  ok(body.includes('/api/identity/recovery/complete'), 'complete endpoint is called after local unlock');
+  ok(body.includes('/api/identity/recovery/cancel'), 'old-device cancel endpoint is available');
+  ok(!/(ciphertext_b64.*LOST-TOKEN|raw_token|recovery_token":)/i.test(body), 'live payloads do not include token material');
+}
+
 console.log('\n' + (fail === 0 ? 'ALL GREEN' : 'FAILURES') + `: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

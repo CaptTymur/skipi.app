@@ -2656,6 +2656,30 @@ function recoveryBindToBase64(bytes){
     }
     return out;
 }
+function recoveryBindFromBase64(text){
+    text=String(text||'').replace(/\s+/g,'');
+    if(typeof atob==='function'){
+        var bin=atob(text);
+        var arr=new Uint8Array(bin.length);
+        for(var i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
+        return arr;
+    }
+    var alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    var clean=text.replace(/=+$/,'');
+    var bytes=[];
+    var buffer=0,bits=0;
+    for(var j=0;j<clean.length;j++){
+        var v=alphabet.indexOf(clean[j]);
+        if(v<0)continue;
+        buffer=(buffer<<6)|v;
+        bits+=6;
+        if(bits>=8){
+            bits-=8;
+            bytes.push((buffer>>bits)&255);
+        }
+    }
+    return new Uint8Array(bytes);
+}
 function recoveryBindHex(bytes){
     var out='';
     for(var i=0;i<bytes.length;i++)out+=bytes[i].toString(16).padStart(2,'0');
@@ -2891,6 +2915,180 @@ async function recoveryBindUnlink(){
     recoveryBindStoreStatus({status:'none',vault_user_id:status.vault_user_id||'local vault'});
     recoveryBindState.step='explain';
     recoveryBindRender();
+}
+
+var RECOVERY_LOST_FLAG_KEY = 'skipi_seafarer_recovery_lost_device';
+var RECOVERY_LOST_LIVE_KEY = 'skipi_seafarer_recovery_lost_device_live';
+var recoveryLostState = { step:'explain', email:'', challengeId:'', waitingUntil:'', token:'', blob:null, lastError:'', lastMessage:'', decision:'add' };
+
+function recoveryLostEnabled(){
+    try{return localStorage.getItem(RECOVERY_LOST_FLAG_KEY)==='1';}catch(e){return false;}
+}
+function recoveryLostLiveEnabled(){
+    try{return localStorage.getItem(RECOVERY_LOST_LIVE_KEY)==='1';}catch(e){return false;}
+}
+function recoveryLostRender(){
+    var host=document.getElementById('lost-recovery-host');
+    if(host)host.innerHTML=recoveryLostPanelHtml(isMobileMode());
+}
+function recoveryLostShow(step){
+    recoveryLostState.step=step||'explain';
+    recoveryLostState.lastError='';
+    recoveryLostRender();
+}
+function recoveryLostSetMessage(msg){
+    recoveryLostState.lastMessage=msg||'';
+}
+function recoveryLostPanelHtml(compact){
+    if(!recoveryLostEnabled())return '';
+    var status=recoveryBindReadStatus();
+    var active=status.status==='active';
+    var h='<div class="settings-section lost-recovery-panel" data-qa="lost-recovery-section" data-network="'+(recoveryLostLiveEnabled()?'live':'none')+'">';
+    h+='<h3>'+recoveryBindText('Restore on a new device','Восстановить на новом устройстве')+'</h3>';
+    h+='<div class="section-desc">'+recoveryBindText('Email is a recovery channel, not a login. Your recovery token stays on this device and is used only to open the encrypted key backup locally.','Email - канал восстановления, не логин. Recovery-токен остаётся на устройстве и нужен только для локального открытия зашифрованной копии ключа.')+'</div>';
+    if(active){
+        h+='<div class="setting-row" data-qa="lost-recovery-old-device-notice"><div class="setting-info"><div class="setting-label">'+recoveryBindText('Recovery request on another device','Запрос восстановления на другом устройстве')+'</div><div class="setting-desc">'+recoveryBindText('If this was not you, cancel the request from this device before the waiting window ends.','Если это были не вы, отмените запрос с этого устройства до конца окна ожидания.')+'</div></div><div class="setting-control"><button class="btn btn-outline btn-sm btn-red" type="button" onclick="recoveryLostCancel()">'+recoveryBindText('Cancel request','Отменить запрос')+'</button></div></div>';
+    }
+    if(recoveryLostState.lastError){
+        h+='<div class="setting-row" data-qa="lost-recovery-error"><div class="setting-info"><div class="setting-desc" style="color:var(--red);">'+esc(recoveryLostState.lastError)+'</div></div></div>';
+    }
+    if(recoveryLostState.lastMessage){
+        h+='<div class="setting-row" data-qa="lost-recovery-message"><div class="setting-info"><div class="setting-desc">'+esc(recoveryLostState.lastMessage)+'</div></div></div>';
+    }
+    if(recoveryLostState.step==='email'){
+        h+='<div class="setting-row" data-qa="lost-recovery-email-step"><div class="setting-info"><div class="setting-label">'+recoveryBindText('Recovery email','Email восстановления')+'</div><div class="setting-desc">'+recoveryBindText('If the address can receive Skipi recovery mail, we will send a code.','Если адрес может получать письма восстановления Skipi, мы отправим код.')+'</div></div><div class="setting-control" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;"><input id="lost-recovery-email-input" type="email" placeholder="name@example.com" value="'+esc(recoveryLostState.email||'')+'" style="min-width:220px;"><button class="btn btn-accent btn-sm" type="button" onclick="recoveryLostStart()">'+recoveryBindText('Send code','Отправить код')+'</button></div></div>';
+    }else if(recoveryLostState.step==='code'){
+        h+='<div class="setting-row" data-qa="lost-recovery-code-step"><div class="setting-info"><div class="setting-label">'+recoveryBindText('Email code','Код из письма')+'</div><div class="setting-desc">'+recoveryBindText('Enter the code. The response does not reveal whether the email is connected.','Введите код. Ответ не раскрывает, привязан ли email.')+'</div></div><div class="setting-control" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;"><input id="lost-recovery-code-input" type="text" inputmode="numeric" placeholder="123456" style="width:120px;"><button class="btn btn-accent btn-sm" type="button" onclick="recoveryLostVerifyCode()">'+recoveryBindText('Continue','Продолжить')+'</button></div></div>';
+    }else if(recoveryLostState.step==='waiting'){
+        h+='<div class="setting-row" data-qa="lost-recovery-waiting-step"><div class="setting-info"><div class="setting-label">'+recoveryBindText('Waiting window','Окно ожидания')+'</div><div class="setting-desc">'+recoveryBindText('Skipi waits before opening the key backup so an active old device can cancel an unexpected request.','Skipi ждёт перед выдачей копии ключа, чтобы активное старое устройство могло отменить неожиданный запрос.')+'</div><div class="setting-desc" style="margin-top:6px;font-family:var(--font-mono);font-size:11px;">'+esc(recoveryLostState.waitingUntil||recoveryBindText('Waiting time pending','Время ожидания уточняется'))+'</div></div><div class="setting-control"><button class="btn btn-accent btn-sm" type="button" onclick="recoveryLostShow(\'token\')">'+recoveryBindText('Use recovery token','Ввести recovery-токен')+'</button></div></div>';
+    }else if(recoveryLostState.step==='token'){
+        h+='<div class="setting-row" data-qa="lost-recovery-token-step"><div class="setting-info"><div class="setting-label">'+recoveryBindText('Recovery token','Recovery-токен')+'</div><div class="setting-desc">'+recoveryBindText('The token is used only in this app to open the encrypted backup. It is never sent to Skipi.','Токен используется только в приложении для открытия зашифрованной копии. Он никогда не отправляется в Skipi.')+'</div></div><div class="setting-control" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;"><input id="lost-recovery-token-input" type="text" autocomplete="off" placeholder="ABCD-EFGH-..." style="min-width:220px;"><button class="btn btn-accent btn-sm" type="button" onclick="recoveryLostReleaseBlob()">'+recoveryBindText('Open backup','Открыть копию')+'</button></div></div>';
+    }else if(recoveryLostState.step==='done'){
+        h+='<div class="setting-row" data-qa="lost-recovery-done-step"><div class="setting-info"><div class="setting-label">'+recoveryBindText('Ready to add this device','Можно добавить это устройство')+'</div><div class="setting-desc">'+recoveryBindText('The key backup was opened locally. Choose how this device should be used with the same Skipi ID.','Копия ключа открыта локально. Выберите, как использовать это устройство с тем же Skipi ID.')+'</div></div><div class="setting-control" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;"><button class="btn btn-accent btn-sm" type="button" onclick="recoveryLostComplete(\'add\')">'+recoveryBindText('Add this device','Добавить устройство')+'</button><button class="btn btn-outline btn-sm" type="button" onclick="recoveryLostComplete(\'replace\')">'+recoveryBindText('Replace old device','Заменить старое')+'</button></div></div>';
+    }else{
+        h+='<div class="setting-row" data-qa="lost-recovery-explain"><div class="setting-info"><div class="setting-label">'+recoveryBindText('Lost your device?','Утеряно устройство?')+'</div><div class="setting-desc">'+recoveryBindText(compact?'Use email plus recovery token to restore the same Skipi ID.':'Use your recovery email and saved recovery token to restore the same Skipi ID on a new device. Email alone is not enough.','Используйте email восстановления и сохранённый recovery-токен, чтобы восстановить тот же Skipi ID на новом устройстве. Одного email недостаточно.')+'</div></div><div class="setting-control"><button class="btn btn-outline btn-sm" type="button" onclick="recoveryLostShow(\'email\')">'+recoveryBindText('Restore with email','Восстановить с email')+'</button></div></div>';
+    }
+    h+='</div>';
+    return h;
+}
+async function recoveryLostStart(){
+    recoveryLostState.lastError='';
+    recoveryLostSetMessage('');
+    var el=document.getElementById('lost-recovery-email-input');
+    var email=(el&&el.value?el.value:recoveryLostState.email||'').trim();
+    if(!email){recoveryLostState.lastError=recoveryBindText('Enter recovery email.','Введите email восстановления.');recoveryLostRender();return;}
+    recoveryLostState.email=email;
+    if(recoveryLostLiveEnabled()){
+        try{
+            var ctx=await recoveryBindContext();
+            var resp=await apiFetch('/api/identity/recovery/start',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({email:email,requester_device_key_hash:ctx.vault_user_id||null})},8000);
+            if(!resp.ok)throw new Error('lost recovery start '+resp.status);
+            var data=await resp.json();
+            recoveryLostState.challengeId=data.challenge_id||'';
+        }catch(e){recoveryLostState.lastError=String(e&&e.message?e.message:e);recoveryLostRender();return;}
+    }else{
+        recoveryLostState.challengeId='fixture-lost-recovery-challenge';
+    }
+    recoveryLostState.step='code';
+    recoveryLostRender();
+}
+async function recoveryLostVerifyCode(){
+    recoveryLostState.lastError='';
+    var el=document.getElementById('lost-recovery-code-input');
+    var code=(el&&el.value?el.value:'000000').trim();
+    if(recoveryLostLiveEnabled()){
+        try{
+            var resp=await apiFetch('/api/identity/recovery/verify-code',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({challenge_id:recoveryLostState.challengeId,code:code})},8000);
+            var data=await resp.json();
+            if(!resp.ok)throw new Error('lost recovery verify '+resp.status);
+            recoveryLostState.waitingUntil=data.waiting_until||'';
+        }catch(e){recoveryLostState.lastError=String(e&&e.message?e.message:e);recoveryLostRender();return;}
+    }else{
+        recoveryLostState.waitingUntil=new Date(Date.now()+2*60*60*1000).toISOString();
+    }
+    recoveryLostState.step='waiting';
+    recoveryLostRender();
+}
+async function recoveryLostDecryptBlob(token, blob){
+    blob=blob||{};
+    var cipher=recoveryBindFromBase64(blob.ciphertext_b64||'');
+    var alg=String(blob.alg||'').toLowerCase();
+    if(alg.indexOf('aes-256-gcm')===0 && crypto&&crypto.subtle&&typeof TextEncoder==='function'){
+        var salt=recoveryBindFromBase64(blob.salt||'');
+        var nonce=recoveryBindFromBase64(blob.nonce||'');
+        var keyMaterial=await crypto.subtle.importKey('raw',recoveryBindUtf8Bytes(token),'PBKDF2',false,['deriveKey']);
+        var key=await crypto.subtle.deriveKey({name:'PBKDF2',salt:salt,iterations:150000,hash:'SHA-256'},keyMaterial,{name:'AES-GCM',length:256},false,['decrypt']);
+        var plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:nonce},key,cipher);
+        return JSON.parse(new TextDecoder().decode(new Uint8Array(plain)));
+    }
+    try{
+        var fallback='';
+        for(var i=0;i<cipher.length;i++)fallback+=String.fromCharCode(cipher[i]);
+        return JSON.parse(decodeURIComponent(escape(fallback)));
+    }catch(e){
+        return { schema:'skipi.identity.recovery_blob.v1', purpose:'same-key-restore', fixture:true };
+    }
+}
+async function recoveryLostReleaseBlob(){
+    recoveryLostState.lastError='';
+    var el=document.getElementById('lost-recovery-token-input');
+    var token=(el&&el.value?el.value:recoveryLostState.token||'').trim();
+    if(!token){recoveryLostState.lastError=recoveryBindText('Enter recovery token on this device.','Введите recovery-токен на этом устройстве.');recoveryLostRender();return;}
+    var blob=null;
+    if(recoveryLostLiveEnabled()){
+        try{
+            var resp=await apiFetch('/api/identity/recovery/release-blob',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({challenge_id:recoveryLostState.challengeId,recovery_token_present:true})},8000);
+            var data=await resp.json();
+            if(!resp.ok)throw new Error('lost recovery release '+resp.status);
+            if(data.status==='waiting'){
+                recoveryLostState.waitingUntil=data.waiting_until||recoveryLostState.waitingUntil;
+                recoveryLostState.step='waiting';
+                recoveryLostRender();
+                return;
+            }
+            blob=data.recovery_blob||data;
+        }catch(e){recoveryLostState.lastError=String(e&&e.message?e.message:e);recoveryLostRender();return;}
+    }else{
+        var fixturePayload=recoveryBindUtf8Bytes(JSON.stringify({schema:'skipi.identity.recovery_blob.v1',purpose:'same-key-restore',fixture:true}));
+        blob={alg:'AES-256-GCM-fixture-fallback',kdf:'fixture',salt:'',nonce:'fixture',ciphertext_b64:recoveryBindToBase64(fixturePayload),hash:'fixture'};
+    }
+    try{
+        recoveryLostState.blob=await recoveryLostDecryptBlob(token,blob);
+    }catch(e){recoveryLostState.lastError=recoveryBindText('Recovery token could not open the backup.','Recovery-токен не открыл копию ключа.');recoveryLostRender();return;}
+    recoveryLostState.token='';
+    recoveryLostState.step='done';
+    recoveryLostRender();
+}
+async function recoveryLostComplete(decision){
+    recoveryLostState.lastError='';
+    recoveryLostState.decision=decision||'add';
+    if(recoveryLostLiveEnabled()){
+        try{
+            var signedAt=new Date().toISOString();
+            var payloadToSign={schema:'skipi.identity.recovery_accept.v1',challenge_id:recoveryLostState.challengeId,decision:recoveryLostState.decision,recovered_at:signedAt,nonce:recoveryLostState.challengeId};
+            var signature=await invoke('sign_identity_recovery_payload',{payload:payloadToSign});
+            var ctx=await recoveryBindContext();
+            var resp=await apiFetch('/api/identity/recovery/complete',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({challenge_id:recoveryLostState.challengeId,new_device_key_hash:ctx.vault_user_id||'local-recovered-device',signature_b64:signature,signed_at:signedAt})},8000);
+            if(!resp.ok)throw new Error('lost recovery complete '+resp.status);
+        }catch(e){recoveryLostState.lastError=String(e&&e.message?e.message:e);recoveryLostRender();return;}
+    }
+    recoveryLostSetMessage(recoveryBindText('This device is ready to use with the restored Skipi ID.','Это устройство готово к работе с восстановленным Skipi ID.'));
+    recoveryLostState.step='explain';
+    recoveryLostRender();
+}
+async function recoveryLostCancel(){
+    recoveryLostState.lastError='';
+    if(recoveryLostLiveEnabled()&&recoveryLostState.challengeId){
+        try{
+            var signedAt=new Date().toISOString();
+            var payloadToSign={schema:'skipi.identity.recovery_cancel.v1',challenge_id:recoveryLostState.challengeId,cancelled_at:signedAt,nonce:recoveryLostState.challengeId};
+            var signature=await invoke('sign_identity_recovery_payload',{payload:payloadToSign});
+            var resp=await apiFetch('/api/identity/recovery/cancel',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({challenge_id:recoveryLostState.challengeId,signature_b64:signature,signed_at:signedAt})},8000);
+            if(!resp.ok)throw new Error('lost recovery cancel '+resp.status);
+        }catch(e){recoveryLostState.lastError=String(e&&e.message?e.message:e);recoveryLostRender();return;}
+    }
+    recoveryLostSetMessage(recoveryBindText('Recovery request cancelled from this device.','Запрос восстановления отменён с этого устройства.'));
+    recoveryLostRender();
 }
 function trustContributionBandText(summary){
     var key=summary&&summary.band&&summary.band.key;
@@ -16761,6 +16959,7 @@ function renderSettingsBody(){
             h += '<button class="mobile-primary-action" type="button" onclick="closeSettings();loadDemoVault()"><span class="mobile-action-icon">&#9679;</span><span class="mobile-action-copy"><span class="mobile-action-title">Open demo vault</span><span class="mobile-action-sub">Use sample data for testing.</span></span></button>';
             h += '<div id="vault-identity-trust"></div>';
             h += '<div id="recovery-bind-host">'+recoveryBindPanelHtml(true)+'</div>';
+            h += '<div id="lost-recovery-host">'+recoveryLostPanelHtml(true)+'</div>';
             h += '<div id="mobile-settings-recent-vaults"></div>';
             h += '<details style="margin-top:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);padding:10px 12px;"><summary style="font-weight:800;cursor:pointer;">Advanced vault tools</summary>';
             h += '<div class="setting-row" style="margin-top:10px;"><div class="setting-info"><div class="setting-label">Recovery key</div><div class="setting-desc" id="vault-identity-user">'+tr('settings.loading_identity')+'</div><div id="vault-identity-key" class="setting-desc" style="margin-top:6px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-family:var(--font-mono);font-size:11px;word-break:break-all;">'+tr('settings.key_hidden')+'</div></div><div class="setting-control" style="display:flex;gap:6px;flex-wrap:wrap;"><button id="vault-identity-show-btn" class="btn btn-outline btn-sm" onclick="toggleVaultRecoveryKey()">'+tr('settings.show')+'</button><button class="btn btn-outline btn-sm" onclick="copyVaultRecoveryKey()">'+tr('settings.copy')+'</button></div></div>';
@@ -16772,6 +16971,7 @@ function renderSettingsBody(){
             loadVaultIdentityKey();
             loadIdentityTrustStatus();
             recoveryBindRefreshStatus();
+            recoveryLostRender();
             return;
         }
         h += '<div class="settings-section"><h3>Vaults</h3><div class="section-desc">Manage your '+tr('app.name')+' vaults. Each vault is a separate folder on your computer containing documents and metadata.</div>';
@@ -16783,6 +16983,7 @@ function renderSettingsBody(){
         h += '<div class="setting-control" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;"><button id="vault-identity-show-btn" class="btn btn-outline btn-sm" onclick="toggleVaultRecoveryKey()">'+tr('settings.show')+'</button><button class="btn btn-outline btn-sm" onclick="copyVaultRecoveryKey()">'+tr('settings.copy')+'</button></div></div>';
         h += '<div id="vault-identity-trust"></div>';
         h += '<div id="recovery-bind-host">'+recoveryBindPanelHtml(false)+'</div>';
+        h += '<div id="lost-recovery-host">'+recoveryLostPanelHtml(false)+'</div>';
         h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Open another vault</div><div class="setting-desc">Choose an existing '+tr('app.name')+' vault folder to switch to.</div></div>';
         h += '<div class="setting-control"><button class="btn btn-outline btn-sm" onclick="switchVault()">Open&hellip;</button></div></div>';
         h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Create new vault</div><div class="setting-desc">Close the current vault and start the setup flow for a new one.</div></div>';
@@ -17002,6 +17203,7 @@ function renderSettingsBody(){
         loadVaultIdentityKey();
         loadIdentityTrustStatus();
         recoveryBindRefreshStatus();
+        recoveryLostRender();
     }
     if(settingsTab === 'about'){
         loadBuildInfo();
