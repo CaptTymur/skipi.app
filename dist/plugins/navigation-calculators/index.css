@@ -1,0 +1,149 @@
+/* ===========================================================================
+   Navigation Calculators — bundled plugin shell styles
+   Scoped under .skipi-navcalc so nothing leaks into the host app.
+   The wrapped calculators render inside sandboxed iframes and are styled
+   separately (see RESET_CSS in the runtime); this file styles only the
+   launcher + viewer chrome.
+   =========================================================================== */
+
+.skipi-navcalc {
+  --nc-bg: #0f141f;
+  --nc-surface: #1a2130;
+  --nc-text: #e8edf5;
+  --nc-muted: #9fb0c8;
+  --nc-accent: #3b82f6;
+  --nc-border: #2c3649;
+  --nc-card: #161d2b;
+
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  color: var(--nc-text);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.skipi-navcalc *, .skipi-navcalc *::before, .skipi-navcalc *::after { box-sizing: border-box; }
+
+.skipi-navcalc.theme-light {
+  --nc-bg: #f4f6fa;
+  --nc-surface: #ffffff;
+  --nc-text: #111827;
+  --nc-muted: #4b5563;
+  --nc-border: #d1d5db;
+  --nc-card: #ffffff;
+}
+
+/* Top bar */
+.skipi-navcalc .nc-topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--nc-surface);
+  border: 1px solid var(--nc-border);
+  border-radius: 14px 14px 0 0;
+}
+.skipi-navcalc .nc-titlewrap { min-width: 0; }
+.skipi-navcalc .nc-title { font-size: 18px; font-weight: 800; }
+.skipi-navcalc .nc-sub { font-size: 12px; color: var(--nc-muted); margin-top: 2px; }
+.skipi-navcalc .nc-back {
+  flex: 0 0 auto;
+  background: transparent;
+  color: inherit;
+  border: 1px solid var(--nc-border);
+  border-radius: 9px;
+  font-size: 15px;
+  font-weight: 700;
+  padding: 8px 14px;
+  min-height: 40px;
+  cursor: pointer;
+}
+.skipi-navcalc .nc-back:hover { border-color: var(--nc-accent); }
+
+/* Body */
+.skipi-navcalc .nc-body {
+  background: var(--nc-bg);
+  border: 1px solid var(--nc-border);
+  border-top: none;
+  border-radius: 0 0 14px 14px;
+  padding: 16px;
+}
+
+/* Launcher */
+.skipi-navcalc .nc-section { margin-bottom: 22px; }
+.skipi-navcalc .nc-cat {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 2px 10px;
+  border-bottom: 1px solid var(--nc-border);
+  padding-bottom: 6px;
+}
+.skipi-navcalc .nc-cat-en { font-size: 13px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; }
+.skipi-navcalc .nc-cat-ru { font-size: 12px; color: var(--nc-muted); }
+
+.skipi-navcalc .nc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+.skipi-navcalc .nc-card {
+  position: relative;
+  text-align: left;
+  background: var(--nc-card);
+  border: 1px solid var(--nc-border);
+  border-radius: 12px;
+  padding: 14px;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color .12s, transform .12s;
+}
+.skipi-navcalc .nc-card:hover { border-color: var(--nc-accent); transform: translateY(-1px); }
+.skipi-navcalc .nc-card-title { font-size: 15px; font-weight: 700; }
+.skipi-navcalc .nc-card-en { font-size: 12px; color: var(--nc-muted); margin-top: 1px; }
+.skipi-navcalc .nc-card-desc { font-size: 12px; color: var(--nc-muted); margin-top: 8px; line-height: 1.35; }
+.skipi-navcalc .nc-card.recent::after {
+  content: "recent";
+  position: absolute;
+  top: 10px; right: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--nc-accent);
+  border: 1px solid var(--nc-accent);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+
+/* Viewer (wrapped calculator) */
+.skipi-navcalc .nc-viewer { background: var(--nc-bg); }
+.skipi-navcalc .nc-frame {
+  display: block;
+  width: 100%;
+  height: 70vh;
+  min-height: 460px;
+  border: 1px solid var(--nc-border);
+  border-radius: 12px;
+  background: var(--nc-bg);
+}
+
+/* Safety */
+.skipi-navcalc .nc-safety {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--nc-muted);
+  padding: 12px;
+  background: rgba(59,130,246,0.07);
+  border: 1px solid rgba(59,130,246,0.25);
+  border-radius: 8px;
+  line-height: 1.4;
+}
+.skipi-navcalc .nc-safety .ru { display: block; margin-top: 6px; opacity: .85; }
+
+@media (max-width: 480px) {
+  .skipi-navcalc .nc-grid { grid-template-columns: 1fr; }
+  .skipi-navcalc .nc-body { padding: 12px; }
+  .skipi-navcalc .nc-frame { height: 78vh; }
+}

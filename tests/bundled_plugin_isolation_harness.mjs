@@ -318,6 +318,13 @@ function bootApp({ seed = {}, onLine = true } = {}) {
 
 const settleVm = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
 const BNWAS_INSTALLED = { skipi_plugins_state: JSON.stringify({ 'bnwas-time-anchor': { installed: true, enabled: true } }) };
+const ALL_BUNDLED_UNINSTALLED = {
+  skipi_plugins_state: JSON.stringify({
+    'bnwas-time-anchor': { installed: false, enabled: false },
+    'ecdis-position-reminder': { installed: false, enabled: false },
+    'navigation-calculators': { installed: false, enabled: false }
+  })
+};
 const NAVCALC_INSTALLED = {
   skipi_remote_plugins_state: JSON.stringify({
     'navigation-calculators': {
@@ -529,14 +536,16 @@ async function runRemoteInstallOfflineHarness() {
 
 {
   section('desktop launcher v1 — hooks render through the real path');
-  const { sandbox, doc } = bootApp({ seed: BNWAS_INSTALLED });
+  const { sandbox, doc } = bootApp();
   await settleVm();
   sandbox.showApps();
   const h = appsHtml(doc);
   ok(h.includes('data-qa="seafarer-module-apps"'), 'launcher root carries seafarer-module-apps');
   ok(h.includes('data-qa="apps-search-input"'), 'search input hook present');
   ok(h.includes('data-qa="plugins-settings-open"'), 'gear (plugins-settings-open) hook present');
-  ok(h.includes('data-qa="plugin-tile-bnwas-time-anchor"'), 'installed plugin tile hook present');
+  ok(h.includes('data-qa="plugin-tile-bnwas-time-anchor"'), 'BNWAS bundled plugin tile is installed by default');
+  ok(h.includes('data-qa="plugin-tile-ecdis-position-reminder"'), 'ECDIS bundled plugin tile is installed by default');
+  ok(h.includes('data-qa="plugin-tile-navigation-calculators"'), 'Navigation Calculators bundled plugin tile is installed by default');
   ok(h.includes('data-qa="plugin-open-bnwas-time-anchor"'), 'plugin open hook present');
   ok(!h.includes('plugin-tile-distance-tables'), 'coming-soon plugin is NOT in the launcher grid');
   ok(!h.includes('data-qa="plugin-empty-state"'), 'no empty state while a plugin is installed');
@@ -544,23 +553,24 @@ async function runRemoteInstallOfflineHarness() {
 }
 
 {
-  section('desktop launcher v1 — remote installed plugins join Installed and uninstall cleanly');
+  section('desktop launcher v1 — stale remote state dedupes against bundled plugins');
   const { sandbox, doc } = bootApp({ seed: { ...BNWAS_INSTALLED, ...NAVCALC_INSTALLED } });
   await settleVm();
   sandbox.showApps();
   const h = appsHtml(doc);
   ok(h.includes('data-qa="plugin-tile-bnwas-time-anchor"'), 'bundled installed plugin remains in Installed');
-  ok(h.includes('data-qa="plugin-tile-navigation-calculators"'), 'remote installed plugin appears in Installed');
-  ok(h.includes('data-qa="plugin-open-navigation-calculators"'), 'remote installed plugin has an Installed open hook');
+  ok(h.includes('data-qa="plugin-tile-ecdis-position-reminder"'), 'ECDIS stays visible without old localStorage state');
+  ok((h.match(/data-qa="plugin-tile-navigation-calculators"/g) || []).length === 1, 'stale remote Navigation Calculators does not duplicate the bundled tile');
+  ok(h.includes('data-qa="plugin-open-navigation-calculators"'), 'Navigation Calculators has an Installed open hook');
   sandbox.pluginUninstall('navigation-calculators');
   sandbox.showApps();
   const after = appsHtml(doc);
-  ok(!after.includes('plugin-tile-navigation-calculators'), 'remote uninstall removes plugin from Installed');
+  ok(!after.includes('plugin-tile-navigation-calculators'), 'uninstall hides the bundled plugin and clears stale remote shadow state');
 }
 
 {
   section('desktop launcher v1 — State B (no installed plugins)');
-  const { sandbox, doc } = bootApp({ seed: {} });
+  const { sandbox, doc } = bootApp({ seed: ALL_BUNDLED_UNINSTALLED });
   await settleVm();
   sandbox.showApps();
   const h = appsHtml(doc);
@@ -581,7 +591,7 @@ async function runRemoteInstallOfflineHarness() {
   ok(hit.includes('data-qa="plugin-tile-bnwas-time-anchor"'), 'matching installed plugin stays in results');
   sandbox.pluginHostState.search = 'distance';
   const cat = sandbox.pluginLauncherResultsHtml();
-  ok(!cat.includes('distance-tables'), 'catalog-only name never matches launcher search');
+  ok(!cat.includes('distance-tables'), 'removed placeholder name never matches launcher search');
 }
 
 {
@@ -606,7 +616,8 @@ async function runRemoteInstallOfflineHarness() {
   sandbox.pluginOpenManage();
   const manage = appsHtml(doc);
   ok(manage.includes('data-qa="plugin-settings-bnwas-time-anchor"'), 'manage carries plugin-settings-<id> hooks');
-  ok(manage.includes('plugin-settings-distance-tables'), 'full catalog (incl. coming-soon) lives in manage');
+  ok(manage.includes('plugin-settings-navigation-calculators'), 'manage carries real Navigation Calculators plugin');
+  ok(!/plugin-settings-(distance-tables|draft-survey|education|reports)/.test(manage), 'manage has no coming-soon placeholder tiles');
   ok(manage.includes('pluginBackToLauncher()'), 'manage has the explicit «← Apps» return');
   ok(!manage.includes('Staging · remote') && !manage.includes('dev gate') && !manage.includes('transport not connected'), 'desktop manage no longer exposes staging/dev-gate remote copy');
 }
@@ -663,16 +674,17 @@ function bootMobile(opts) {
   await settleVm();
   sandbox.mobileShow('apps');
   const h = mobileHtml(doc);
-  ok(!h.includes('distance-tables') && !h.includes('draft-survey'), 'catalog/coming-soon never on the launcher');
+  ok(!h.includes('distance-tables') && !h.includes('draft-survey'), 'removed catalog placeholders never appear on the launcher');
   ok(h.includes('apps-launcher-grid'), 'installed grid renders');
   sandbox.pluginOpenManage();
   const m = mobileHtml(doc);
-  ok(m.includes('plugin-settings-distance-tables') && m.includes('plugin-settings-draft-survey'), 'full catalog lives behind the gear');
+  ok(m.includes('plugin-settings-navigation-calculators'), 'real Navigation Calculators lives behind the gear');
+  ok(!/plugin-settings-(distance-tables|draft-survey|education|reports)/.test(m), 'coming-soon placeholders do not live behind the gear');
 }
 
 {
   section('mobile v2 (M3/M4) — search + states B/C semantics (language-agnostic)');
-  const empty = bootMobile({ seed: {} });
+  const empty = bootMobile({ seed: ALL_BUNDLED_UNINSTALLED });
   await settleVm();
   empty.sandbox.mobileShow('apps');
   const hB = mobileHtml(empty.doc);
@@ -687,7 +699,7 @@ function bootMobile(opts) {
   inst.sandbox.pluginHostState.search = 'BNWAS';
   ok(inst.sandbox.pluginLauncherResultsHtml().includes('plugin-tile-bnwas-time-anchor'), 'search match is case-insensitive on installed plugins');
   inst.sandbox.pluginHostState.search = 'draft';
-  ok(!inst.sandbox.pluginLauncherResultsHtml().includes('draft-survey'), 'catalog-only names never match');
+  ok(!inst.sandbox.pluginLauncherResultsHtml().includes('draft-survey'), 'removed placeholder names never match');
 }
 
 {

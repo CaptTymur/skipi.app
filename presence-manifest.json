@@ -2,6 +2,23 @@
   "schema_version": "skipi.presence-manifest.v1",
   "home": "seafarer",
   "artifact": "dist/index.html",
+  "bundled_plugins": [
+    {
+      "slug": "bnwas-time-anchor",
+      "manifest_id": "app.skipi.plugins.bnwas-time-anchor",
+      "bundle": "dist/plugins/bnwas-time-anchor"
+    },
+    {
+      "slug": "ecdis-position-reminder",
+      "manifest_id": "app.skipi.plugins.ecdis-position-reminder",
+      "bundle": "dist/plugins/ecdis-position-reminder"
+    },
+    {
+      "slug": "navigation-calculators",
+      "manifest_id": "app.skipi.plugins.navigation-calculators",
+      "bundle": "dist/plugins/navigation-calculators"
+    }
+  ],
   "required_modules": [
     {
       "id": "documents",

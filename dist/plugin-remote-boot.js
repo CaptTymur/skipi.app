@@ -74,10 +74,11 @@
     for (var i = 0; i < list.length; i++) if (list[i] && list[i].slug === slug) return list[i];
     return null;
   }
-  function persistInstalled(entry) {
+  function persistInstalled(entry, pack) {
     if (!entry || !entry.slug) return;
     var reg = readRemoteRegistry();
     var prior = reg[entry.slug] || {};
+    var toolCount = entry.toolCount || entry.tool_count || (pack && (pack.toolCount || pack.tool_count)) || prior.toolCount || prior.tool_count;
     reg[entry.slug] = {
       installed: true,
       enabled: prior.enabled === false ? false : true,
@@ -88,9 +89,11 @@
       name: entry.name || entry.title || entry.slug,
       title: entry.title || entry.name || entry.slug,
       version: entry.version,
+      toolCount: toolCount,
       keyId: (entry.keyId || (CFG && CFG.pinnedPublicKey && CFG.pinnedPublicKey.kid) || null),
       entry: entry
     };
+    if (toolCount && reg[entry.slug].entry) reg[entry.slug].entry.toolCount = toolCount;
     writeRemoteRegistry(reg);
   }
   // Read-only helper so the Apps UI can LIST remote catalog entries when
@@ -125,7 +128,7 @@
   };
   window.SkipiRemoteInstall = function (slug, opts) {
     return loader.install(slug, opts).then(function (res) {
-      if (res && res.ok) persistInstalled(res.entry);
+      if (res && res.ok) persistInstalled(res.entry, res.pack);
       return res;
     }, function (e) {
       return { ok: false, stage: 'install', reason: '' + (e && e.message || e) };
@@ -148,7 +151,7 @@
       }
       return loader.install(slug, { allowNetwork: true }).then(function (res) {
         if (res && res.ok) {
-          persistInstalled(res.entry);
+          persistInstalled(res.entry, res.pack);
           return { ok: true, updated: true, entry: res.entry, version: res.entry && res.entry.version, source: res.source };
         }
         restorePreviousCatalog();
@@ -215,7 +218,10 @@
   // ---- route remote plugins through the isolated runtime ----
   var origMountInto = window.pluginMountInto;
   window.pluginMountInto = function (id) {
-    if (REMOTE.indexOf(id) < 0) return origMountInto(id); // unchanged path for everything else
+    // Remote runtime takes over only after a verified remote install exists.
+    // Bundled first-party plugins in CFG.remoteSlugs keep their bundled offline
+    // baseline until the user explicitly clicks Update.
+    if (REMOTE.indexOf(id) < 0 || !remoteRecord(id)) return origMountInto(id); // unchanged path for everything else
     var container = document.getElementById('plugin-host-container');
     if (!container) return;
     if (currentRemote === id) return; // already open

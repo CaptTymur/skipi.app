@@ -1,0 +1,37 @@
+{
+  "id": "app.skipi.plugins.navigation-calculators",
+  "slug": "navigation-calculators",
+  "name": "Navigation Calculators",
+  "version": "0.1.0",
+  "developer": "Tymur Rudov / Skipi",
+  "kind": "utility",
+  "category": "navigation_tools",
+  "distribution": {
+    "mode": "bundled_first_party",
+    "bundled": true,
+    "remote_code": false
+  },
+  "hosts": [
+    "seafarer",
+    "onboard"
+  ],
+  "entrypoints": {
+    "ui": "index.js",
+    "style": "index.css"
+  },
+  "permissions": [
+    "local_storage"
+  ],
+  "capabilities": {
+    "network": "none",
+    "documents": "none",
+    "account": "none",
+    "analytics": "none",
+    "server_upload": false
+  },
+  "safety": {
+    "certified_equipment": false,
+    "requires_disclaimer": true,
+    "disclaimer": "Training and planning aid only. Always verify results against official tables, publications and approved navigation equipment before use."
+  }
+}

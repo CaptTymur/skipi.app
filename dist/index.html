@@ -1100,6 +1100,7 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .apps-icon-tile button:hover { border-color:var(--accent); }
 .apps-icon-tile-icon { font-size:26px; line-height:1; }
 .apps-icon-tile-name { font-size:12px; font-weight:700; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.apps-icon-tile-meta { font-size:10.5px; color:var(--text2); line-height:1.2; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .apps-empty { padding:18px 0; display:flex; flex-direction:column; align-items:flex-start; gap:12px; max-width:480px; }
 .apps-empty-note { font-size:13px; color:var(--text2); line-height:1.5; }
 .apps-offline { font-size:12px; color:var(--text2); background:var(--hover); border:1px solid var(--border); border-radius:8px; padding:7px 10px; margin:8px 0; }
@@ -9477,6 +9478,7 @@ var SKIPI_PLUGIN_REGISTRY = [
         id:'bnwas-time-anchor',
         manifestId:'app.skipi.plugins.bnwas-time-anchor',
         name:'BNWAS / Time Anchor',
+        version:'0.1.0',
         category:'safety',
         icon:'⏱️',
         short:'Personal watchkeeping timer and time-anchor. Bundled first-party plugin.',
@@ -9486,11 +9488,35 @@ var SKIPI_PLUGIN_REGISTRY = [
         bundle:'plugins/bnwas-time-anchor/',
         firstParty:true
     },
-    // Future bundled plugins register here as their reviewed artifacts land.
-    { id:'distance-tables', name:'Distance Tables', category:'utils', icon:'📏', short:'Port-to-port distance and voyage-time helper.', comingSoon:true },
-    { id:'draft-survey',    name:'Draft Survey',    category:'utils', icon:'⚖️', short:'Draft survey calculation and report.', comingSoon:true },
-    { id:'education',       name:'Education',        category:'education', icon:'🎓', short:'Courses, trainers, interview prep.', comingSoon:true },
-    { id:'reports',         name:'Complaints / Reports', category:'reports', icon:'📝', short:'Safety reports and signals.', comingSoon:true }
+    {
+        id:'ecdis-position-reminder',
+        manifestId:'app.skipi.plugins.ecdis-position-reminder',
+        name:'ECDIS Position Reminder',
+        version:'0.1.0',
+        category:'safety',
+        icon:'📍',
+        short:'Position-fix reminder aligned to clock marks. Bundled first-party plugin.',
+        description:'Local position-fix reminder for watchkeeping. Default mode follows the prototype: a 60-minute reminder aligned to clock marks. The plugin runs inside Skipi Seafarer, works offline, stores only its own settings and produces its alarm locally.',
+        safety_note:'Personal reminder only. Not certified bridge equipment. Does not replace ECDIS, paper chart procedures, bridge log entries, watchkeeping duties, company SMS or master standing orders.',
+        permissions:{ server_access:false, documents_access:false, account_required:false, analytics:false, audio_alert:true, local_only:true },
+        bundle:'plugins/ecdis-position-reminder/',
+        firstParty:true
+    },
+    {
+        id:'navigation-calculators',
+        manifestId:'app.skipi.plugins.navigation-calculators',
+        name:'Navigation Calculators',
+        version:'0.1.0',
+        toolCount:4,
+        category:'utils',
+        icon:'▦',
+        short:'Offline navigation calculators. Bundled first-party plugin.',
+        description:'Navigation calculation tools packaged as a reviewed first-party plugin. Runs locally inside the Skipi sandbox with no account, no network and no document access.',
+        safety_note:'Training and planning aid only. Always verify results against official tables, publications and approved navigation equipment before use.',
+        permissions:{ server_access:false, documents_access:false, account_required:false, analytics:false, audio_alert:false, local_only:true },
+        bundle:'plugins/navigation-calculators/',
+        firstParty:true
+    }
 ];
 
 // surface: which Apps screen the user is on ('launcher' = compact installed-only
@@ -9500,6 +9526,8 @@ var SKIPI_PLUGIN_REGISTRY = [
 var pluginHostState = { selectedId:null, openId:null, surface:'launcher', openedFrom:null, search:'' };
 
 var REMOTE_PLUGIN_STATE_KEY = 'skipi_remote_plugins_state';
+function remoteConfigSlugs(){ try{ var cfg=window.SKIPI_REMOTE_CONFIG||{}; return cfg.remoteSlugs||[]; }catch(e){ return []; } }
+function remoteConfiguredSlug(id){ return remoteConfigSlugs().indexOf(id)>=0; }
 function bundledPluginById(id){ return SKIPI_PLUGIN_REGISTRY.find(function(p){return p.id===id;})||null; }
 function remoteRegistryAll(){ try{ return JSON.parse(localStorage.getItem(REMOTE_PLUGIN_STATE_KEY)||'{}')||{}; }catch(e){ return {}; } }
 function remoteStateSaveAll(s){ try{ localStorage.setItem(REMOTE_PLUGIN_STATE_KEY, JSON.stringify(s||{})); }catch(e){} }
@@ -9512,16 +9540,54 @@ function remotePermissionsFor(entry){
 function remoteInstalledEntryFor(id){
     var rec=remoteInstalledMeta(id); if(!rec) return null;
     var entry=rec.entry||{};
-    return { id:id, remote:true, firstParty:true, category:'utils', icon:'▦',
+    var bundled=bundledPluginById(id)||{};
+    return { id:id, remote:true, firstParty:true, category:entry.category||bundled.category||'utils', icon:entry.icon||bundled.icon||'▦',
         name:rec.name||rec.title||entry.name||entry.title||id,
-        short:'Installed remote first-party plugin · works offline after install',
-        description:'Signed first-party plugin installed from the production catalog and cached locally for offline use.',
-        safety_note:'Runs inside Skipi sandbox. Catalog signature, policy, compatibility and pack checksum are verified before install and before offline launch.',
+        short:bundled.id?'Updated first-party plugin · works offline after install':'Installed remote first-party plugin · works offline after install',
+        description:bundled.description||'Signed first-party plugin installed from the production catalog and cached locally for offline use.',
+        safety_note:bundled.safety_note||'Runs inside Skipi sandbox. Catalog signature, policy, compatibility and pack checksum are verified before install and before offline launch.',
         permissions:remotePermissionsFor(entry),
-        version:rec.version||entry.version };
+        version:rec.version||entry.version,
+        toolCount:entry.toolCount||entry.tool_count||rec.toolCount||rec.tool_count||bundled.toolCount||bundled.tool_count };
 }
-function pluginById(id){ return bundledPluginById(id)||remoteInstalledEntryFor(id)||null; }
+function remoteOverrideEntryFor(id){
+    var remote=remoteInstalledEntryFor(id);
+    if(!remote) return null;
+    if(bundledPluginById(id) && !remoteConfiguredSlug(id)) return null;
+    return remote;
+}
+function pluginById(id){ return remoteOverrideEntryFor(id)||bundledPluginById(id)||remoteInstalledEntryFor(id)||null; }
 function pluginCatLabel(key){ var c=SKIPI_PLUGIN_CATEGORIES.find(function(x){return x.key===key;}); return c?c.label:key; }
+function pluginVersionValue(p){ return p&&p.version?String(p.version):''; }
+function pluginVersionLabel(p){ var v=pluginVersionValue(p); return v?'v'+v:''; }
+function pluginToolCount(p){ var n=p&&(p.toolCount||p.tool_count); n=parseInt(n,10); return isNaN(n)||n<=0?0:n; }
+function pluginToolsLabel(p){ var n=pluginToolCount(p); return n?(n+' '+(n===1?'tool':'tools')):''; }
+function pluginMetaParts(p){
+    var out=[], v=pluginVersionLabel(p), t=pluginToolsLabel(p);
+    if(v) out.push(v);
+    if(t) out.push(t);
+    return out;
+}
+function pluginMetaLine(p){ return pluginMetaParts(p).join(' · '); }
+function pluginNameMetaLine(p){
+    var meta=pluginMetaLine(p);
+    return (p&&p.name?p.name:'Plugin')+(meta?' · '+meta:'');
+}
+function pluginSubLine(p){
+    var a=[];
+    if(p&&p.short) a.push(p.short);
+    var meta=pluginMetaLine(p);
+    if(meta) a.push(meta);
+    return a.join(' · ');
+}
+function semverParts(v){
+    return String(v||'').split(/[.+-]/).slice(0,3).map(function(x){ var n=parseInt(x,10); return isNaN(n)?0:n; });
+}
+function semverGt(a,b){
+    var x=semverParts(a), y=semverParts(b);
+    for(var i=0;i<3;i++){ if((x[i]||0)>(y[i]||0)) return true; if((x[i]||0)<(y[i]||0)) return false; }
+    return false;
+}
 function pluginNowIso(){ try{ return new Date().toISOString(); }catch(e){ return ''; } }
 
 // ---- per-plugin local install state (no server, no account) ----
@@ -9529,9 +9595,13 @@ function pluginStateAll(){ try{ return JSON.parse(localStorage.getItem('skipi_pl
 function pluginStateSaveAll(s){ try{ localStorage.setItem('skipi_plugins_state', JSON.stringify(s)); }catch(e){} }
 function pluginSetState(id, patch){ var all=pluginStateAll(); all[id]=Object.assign({}, all[id]||{}, patch); pluginStateSaveAll(all); }
 function pluginGetState(id){
-    var r=remoteInstalledMeta(id);
-    if(r) return { installed:true, enabled:r.enabled!==false };
     var s=pluginStateAll()[id]||{};
+    var r=remoteInstalledMeta(id);
+    if(r && remoteConfiguredSlug(id)) return { installed:true, enabled:r.enabled!==false };
+    if(bundledPluginById(id)){
+        return { installed:s.installed!==false, enabled:s.enabled!==false };
+    }
+    if(r) return { installed:true, enabled:r.enabled!==false };
     return { installed:!!s.installed, enabled:s.enabled!==false };
 }
 // status: available (not installed) | installed (installed+enabled) | disabled (installed, disabled)
@@ -9555,6 +9625,23 @@ function pluginInstall(id){
 }
 function pluginUninstall(id){
     if(pluginHostState.openId===id) pluginClose();
+    if(remoteInstalledMeta(id) && remoteConfiguredSlug(id)){
+        if(typeof window.SkipiRemoteUninstall==='function') window.SkipiRemoteUninstall(id);
+        else { var rr=remoteRegistryAll(); delete rr[id]; remoteStateSaveAll(rr); }
+        if(bundledPluginById(id)) pluginSetState(id,{ installed:true, enabled:true });
+        showToast((bundledPluginById(id)||{name:id}).name+' update removed.','info');
+        pluginHostState.selectedId=null;
+        pluginRerender();
+        return;
+    }
+    if(bundledPluginById(id)){
+        pluginSetState(id,{ installed:false, enabled:false });
+        if(remoteInstalledMeta(id)){ var brs=remoteRegistryAll(); delete brs[id]; remoteStateSaveAll(brs); }
+        showToast((pluginById(id)||{name:id}).name+' removed.','info');
+        pluginHostState.selectedId=null;
+        pluginRerender();
+        return;
+    }
     if(remoteInstalledMeta(id)){
         if(typeof window.SkipiRemoteUninstall==='function') window.SkipiRemoteUninstall(id);
         else { var rs=remoteRegistryAll(); delete rs[id]; remoteStateSaveAll(rs); }
@@ -9569,6 +9656,19 @@ function pluginUninstall(id){
 }
 function pluginDisable(id){
     if(pluginHostState.openId===id) pluginClose();
+    if(remoteInstalledMeta(id) && remoteConfiguredSlug(id)){
+        if(typeof window.SkipiRemoteSetEnabled==='function') window.SkipiRemoteSetEnabled(id,false);
+        else { var rr=remoteRegistryAll(); if(rr[id]){ rr[id].enabled=false; remoteStateSaveAll(rr); } }
+        showToast((pluginById(id)||{name:id}).name+' disabled.','info');
+        pluginRerender();
+        return;
+    }
+    if(bundledPluginById(id)){
+        pluginSetState(id,{ enabled:false });
+        showToast((pluginById(id)||{}).name+' disabled.','info');
+        pluginRerender();
+        return;
+    }
     if(remoteInstalledMeta(id)){
         if(typeof window.SkipiRemoteSetEnabled==='function') window.SkipiRemoteSetEnabled(id,false);
         else { var rd=remoteRegistryAll(); if(rd[id]){ rd[id].enabled=false; remoteStateSaveAll(rd); } }
@@ -9581,6 +9681,32 @@ function pluginDisable(id){
     pluginRerender();
 }
 function pluginEnable(id){
+    if(remoteInstalledMeta(id) && remoteConfiguredSlug(id)){
+        var rp=remoteInstalledEntryFor(id)||pluginById(id)||{name:id};
+        if(typeof window.SkipiRemoteSetEnabled==='function'){
+            var rr=window.SkipiRemoteSetEnabled(id,true);
+            if(rr&&typeof rr.then==='function'){
+                showToast('Checking '+rp.name+' for updates…','info');
+                rr.then(function(res){
+                    __remoteCatalogCache=null;
+                    showToast(rp.name+(res&&res.updated?' updated and enabled.':' enabled.'),'success');
+                    pluginRerender();
+                }, function(e){
+                    showToast('Could not enable '+rp.name+': '+((e&&e.message)||e),'error');
+                    pluginRerender();
+                });
+                return;
+            }
+        }
+        else { var rr2=remoteRegistryAll(); if(rr2[id]){ rr2[id].enabled=true; remoteStateSaveAll(rr2); } }
+        showToast(rp.name+' enabled.','success'); pluginRerender(); return;
+    }
+    if(bundledPluginById(id)){
+        pluginSetState(id,{ installed:true, enabled:true });
+        showToast((pluginById(id)||{}).name+' enabled.','success');
+        pluginRerender();
+        return;
+    }
     if(remoteInstalledMeta(id)){
         var rp=remoteInstalledEntryFor(id)||pluginById(id)||{name:id};
         if(typeof window.SkipiRemoteSetEnabled==='function'){
@@ -9626,7 +9752,12 @@ function pluginOpen(id){
     var p=pluginById(id); if(!p||p.comingSoon) return;
     if(pluginStatus(id)==='available'){ pluginInstall(id); return; }
     if(pluginStatus(id)==='disabled'){
-        if(remoteInstalledMeta(id)){
+        if(remoteInstalledMeta(id) && remoteConfiguredSlug(id)){
+            if(typeof window.SkipiRemoteSetEnabled==='function') window.SkipiRemoteSetEnabled(id,true);
+            else { var rr=remoteRegistryAll(); if(rr[id]){ rr[id].enabled=true; remoteStateSaveAll(rr); } }
+        } else if(bundledPluginById(id)){
+            pluginSetState(id,{ installed:true, enabled:true });
+        } else if(remoteInstalledMeta(id)){
             if(typeof window.SkipiRemoteSetEnabled==='function') window.SkipiRemoteSetEnabled(id,true);
             else { var ro=remoteRegistryAll(); if(ro[id]){ ro[id].enabled=true; remoteStateSaveAll(ro); } }
         } else pluginSetState(id,{ enabled:true });
@@ -9817,21 +9948,32 @@ function showApps(){
     if(pluginHostState.openId) setTimeout(function(){ pluginMountInto(pluginHostState.openId); },0);
     // when production remote delivery is ON, fetch remote catalog names once, then refresh the
     // manage list so the staging tile shows its real name (degrades to the slug meanwhile).
-    if(!pluginHostState.openId && !pluginHostState.selectedId && pluginHostState.surface==='manage' && remoteStagingOn() && !__remoteCatalogCache){
+    if(!pluginHostState.openId && pluginHostState.surface==='manage' && remoteStagingOn() && !__remoteCatalogCache){
         remoteLoadCatalogOnce(function(){
-            if(!pluginHostState.openId && !pluginHostState.selectedId && pluginHostState.surface==='manage'){ var c=document.getElementById('scr-content'); if(c) c.innerHTML=pluginManageHtml(); }
+            if(!pluginHostState.openId && pluginHostState.surface==='manage'){
+                var c=document.getElementById('scr-content');
+                if(c) c.innerHTML=pluginHostState.selectedId ? pluginDetailHtml(pluginById(pluginHostState.selectedId)) : pluginManageHtml();
+            }
         });
     }
 }
 // ---- compact launcher v1 (primary Apps surface, installed-only) ----
 function pluginInstalledList(){
-    var items=SKIPI_PLUGIN_REGISTRY.filter(function(p){ return !p.comingSoon && pluginStatus(p.id)==='installed'; });
+    var seen={};
+    var items=[];
+    function push(p){
+        if(!p || !p.id || seen[p.id]) return;
+        seen[p.id]=true;
+        items.push(p);
+    }
+    SKIPI_PLUGIN_REGISTRY.forEach(function(p){ if(!p.comingSoon && pluginStatus(p.id)==='installed') push(p); });
     // Desktop-only in this slice: mobile remote install/offline UX is a separate product pass.
     if(typeof shouldUseMobileShell==='function' && shouldUseMobileShell()) return items;
     Object.keys(remoteRegistryAll()).forEach(function(id){
+        if(bundledPluginById(id)) return;
         if(pluginStatus(id)==='installed'){
             var p=remoteInstalledEntryFor(id);
-            if(p) items.push(p);
+            if(p) push(p);
         }
     });
     return items;
@@ -9851,9 +9993,10 @@ function pluginLauncherSearch(v){
 }
 function pluginIconTileHtml(p){
     return '<div class="apps-icon-tile" data-qa="plugin-tile-'+escAttr(p.id)+'">'
-      + '<button type="button" data-qa="plugin-open-'+escAttr(p.id)+'" onclick="pluginLaunch(\''+jsString(p.id)+'\')" title="'+escAttr(p.name)+'">'
+      + '<button type="button" data-qa="plugin-open-'+escAttr(p.id)+'" onclick="pluginLaunch(\''+jsString(p.id)+'\')" title="'+escAttr(pluginNameMetaLine(p))+'">'
       + '<span class="apps-icon-tile-icon">'+(p.icon||'▢')+'</span>'
       + '<span class="apps-icon-tile-name">'+esc(p.name)+'</span>'
+      + (pluginMetaLine(p)?'<span class="apps-icon-tile-meta">'+esc(pluginMetaLine(p))+'</span>':'')
       + famStateChip('ready')
       + '</button></div>';
 }
@@ -9918,11 +10061,12 @@ function pluginManageTileHtml(p){
     return '<button class="apps-tile'+(soon?' soon':'')+'" type="button" data-qa="plugin-settings-'+escAttr(p.id)+'" onclick="pluginSelect(\''+jsString(p.id)+'\')">'
         + '<span class="apps-tile-icon">'+(p.icon||'▢')+'</span>'
         + '<span class="apps-tile-body"><span class="apps-tile-name">'+esc(p.name)+'</span>'
-        + '<span class="apps-tile-sub">'+esc(p.short||'')+'</span>'+pluginBadge(p.id)+'</span></button>';
+        + '<span class="apps-tile-sub">'+esc(pluginSubLine(p))+'</span>'+pluginBadge(p.id)+'</span></button>';
 }
 function pluginBadge(id){
     var p=pluginById(id);
     if(p&&p.comingSoon) return '<span class="apps-badge soon">Coming soon</span>';
+    if(remoteUpdateAvailable(id)) return '<span class="apps-badge live">Update available</span>';
     var s=pluginStatus(id);
     if(s==='installed') return '<span class="apps-badge live">Installed</span>';
     if(s==='disabled') return '<span class="apps-badge soon">Disabled</span>';
@@ -9933,7 +10077,7 @@ function pluginTileHtml(p){
     return '<button class="apps-tile'+(soon?' soon':'')+'" type="button" onclick="pluginSelect(\''+p.id+'\')">'
         + '<span class="apps-tile-icon">'+(p.icon||'▢')+'</span>'
         + '<span class="apps-tile-body"><span class="apps-tile-name">'+esc(p.name)+'</span>'
-        + '<span class="apps-tile-sub">'+esc(p.short||'')+'</span>'+pluginBadge(p.id)+'</span></button>';
+        + '<span class="apps-tile-sub">'+esc(pluginSubLine(p))+'</span>'+pluginBadge(p.id)+'</span></button>';
 }
 function pluginListHtml(){
     var h='<div class="apps-screen"><div class="apps-head"><div class="apps-head-title">Apps</div>'
@@ -9954,7 +10098,7 @@ var __remoteCatalogCache = null;
 function remoteStagingOn(){ return !!window.FEATURE_REMOTE_PLUGIN_DELIVERY; }
 function remoteStagingSlugs(){
     if(!remoteStagingOn()) return [];
-    var cfg=window.SKIPI_REMOTE_CONFIG||{}, slugs=cfg.remoteSlugs||[];
+    var slugs=remoteConfigSlugs();
     return slugs.filter(function(s){ return !bundledPluginById(s); }); // only NON-bundled remote slugs
 }
 function remoteCatalogName(slug){
@@ -9965,16 +10109,69 @@ function remoteCatalogEntry(slug){
     if(__remoteCatalogCache) return __remoteCatalogCache.find(function(p){return p.slug===slug;})||null;
     return null;
 }
+function remoteCatalogVersion(slug){
+    var e=remoteCatalogEntry(slug)||{};
+    return e.version||'';
+}
+function remoteUpdateAvailable(slug){
+    if(!remoteStagingOn()) return false;
+    if(!remoteConfiguredSlug(slug)) return false;
+    var installed=remoteInstalledEntryFor(slug);
+    var bundled=bundledPluginById(slug);
+    var baseline=installed?installed.version:(bundled?bundled.version:'');
+    if(!baseline) return false;
+    var latest=remoteCatalogVersion(slug);
+    return !!latest && semverGt(latest, baseline);
+}
+function remoteUpdateActionHtml(slug){
+    if(!remoteUpdateAvailable(slug)) return '';
+    var ru=getUiLang()==='ru';
+    return ' <button class="btn btn-accent btn-sm" type="button" data-qa="remote-plugin-update-'+escAttr(slug)+'" onclick="pluginRemoteUpdate(\''+jsString(slug)+'\')">'+esc(ru?'Обновить':'Update')+'</button>';
+}
+function pluginRemoteUpdate(slug){
+    var ru=getUiLang()==='ru';
+    var bundled=bundledPluginById(slug), hadRemote=!!remoteInstalledMeta(slug);
+    if(!remoteUpdateAvailable(slug)){
+        showToast(ru?'Обновлений нет.':'No update available.','info');
+        return;
+    }
+    if(typeof window.SkipiRemoteInstall!=='function'){
+        showToast(ru?'Доставка обновлений недоступна.':'Remote update delivery is unavailable.','error');
+        return;
+    }
+    showToast(ru?'Проверяем и устанавливаем обновление…':'Verifying and installing update…','info');
+    if(pluginHostState.openId===slug) pluginClose();
+    window.SkipiRemoteInstall(slug,{allowNetwork:true}).then(function(res){
+        if(res&&res.ok){
+            __remoteCatalogCache=null;
+            showToast((bundled?bundled.name:slug)+' updated to v'+((res.entry&&res.entry.version)||'')+'.','success');
+            if(bundled && !hadRemote){
+                pluginHostState.selectedId=null;
+                pluginHostState.openedFrom='manage';
+                pluginHostState.openId=slug;
+            }
+            pluginRerender();
+        } else {
+            showToast('Could not update '+(bundled?bundled.name:slug)+': '+((res&&res.reason)||'verification failed'),'error');
+            pluginRerender();
+        }
+    }, function(e){
+        showToast('Could not update '+(bundled?bundled.name:slug)+': '+((e&&e.message)||e),'error');
+        pluginRerender();
+    });
+}
 function remoteEntryFor(slug){
     var installed=remoteInstalledEntryFor(slug); if(installed) return installed;
     var entry=remoteCatalogEntry(slug)||{};
-    return { id:slug, remote:true, firstParty:true, category:'utils', icon:'▦',
+    var bundled=bundledPluginById(slug)||{};
+    return { id:slug, remote:true, firstParty:true, category:entry.category||bundled.category||'utils', icon:entry.icon||bundled.icon||'▦',
              name:remoteCatalogName(slug)||slug,
-             short:'Signed first-party plugin · install once, use offline',
-             description:'Signed first-party plugin from the production catalog. Install caches a verified pack for offline use.',
-             safety_note:'Runs inside Skipi sandbox. Signature, policy, compatibility and checksum are verified before install.',
+             short:bundled.id?'Updated first-party plugin · install once, use offline':'Signed first-party plugin · install once, use offline',
+             description:bundled.description||'Signed first-party plugin from the production catalog. Install caches a verified pack for offline use.',
+             safety_note:bundled.safety_note||'Runs inside Skipi sandbox. Signature, policy, compatibility and checksum are verified before install.',
              permissions:remotePermissionsFor(entry),
-             version:entry.version };
+             version:entry.version,
+             toolCount:entry.toolCount||entry.tool_count||bundled.toolCount||bundled.tool_count };
 }
 function remoteLoadCatalogOnce(cb){
     if(__remoteCatalogCache){ cb&&cb(); return; }
@@ -9986,15 +10183,17 @@ function remoteTileHtml(slug){
     var st=pluginStatus(slug);
     var actions='';
     if(st==='installed') actions='<button class="btn btn-accent btn-sm" type="button" data-qa="remote-plugin-open-'+escAttr(slug)+'" onclick="pluginOpen(\''+jsString(slug)+'\')">Open</button>'
+        + remoteUpdateActionHtml(slug)
         + ' <button class="btn btn-outline btn-sm" type="button" data-qa="remote-plugin-disable-'+escAttr(slug)+'" onclick="pluginDisable(\''+jsString(slug)+'\')">Disable</button>'
         + ' <button class="btn btn-outline btn-sm" type="button" data-qa="remote-plugin-uninstall-'+escAttr(slug)+'" onclick="pluginUninstall(\''+jsString(slug)+'\')">Remove</button>';
     else if(st==='disabled') actions='<button class="btn btn-accent btn-sm" type="button" data-qa="remote-plugin-enable-'+escAttr(slug)+'" onclick="pluginEnable(\''+jsString(slug)+'\')">Enable</button>'
+        + remoteUpdateActionHtml(slug)
         + ' <button class="btn btn-outline btn-sm" type="button" data-qa="remote-plugin-uninstall-'+escAttr(slug)+'" onclick="pluginUninstall(\''+jsString(slug)+'\')">Remove</button>';
     else actions='<button class="btn btn-accent btn-sm" type="button" data-qa="remote-plugin-install-'+escAttr(slug)+'" onclick="pluginInstall(\''+jsString(slug)+'\')">Install</button>';
     return '<div class="apps-tile" data-qa="remote-plugin-tile-'+escAttr(slug)+'">'
         + '<span class="apps-tile-icon">'+e.icon+'</span>'
         + '<span class="apps-tile-body"><span class="apps-tile-name">'+esc(e.name)+'</span>'
-        + '<span class="apps-tile-sub">'+esc(e.short)+'</span><span class="apps-badge live">'+(st==='available'?'Remote · verified':(st==='disabled'?'Installed · disabled':'Installed · offline-ready'))+'</span>'
+        + '<span class="apps-tile-sub">'+esc(pluginSubLine(e))+'</span><span class="apps-badge live">'+(st==='available'?'Remote · verified':(st==='disabled'?'Installed · disabled':'Installed · offline-ready'))+'</span>'
         + '<span class="apps-actions" style="margin-top:8px;">'+actions+'</span></span></div>';
 }
 function remoteStagingSectionHtml(){
@@ -10009,7 +10208,7 @@ function remoteStagingSectionHtml(){
 function remotePluginScreenHtml(slug){
     var e=remoteEntryFor(slug);
     return '<div class="apps-screen plugin-screen">'
-      + '<div class="plugin-host-bar"><button class="apps-back" type="button" onclick="remotePluginBack()">&larr; '+esc(e.name)+'</button>'
+      + '<div class="plugin-host-bar"><button class="apps-back" type="button" onclick="remotePluginBack()">&larr; '+esc(pluginNameMetaLine(e))+'</button>'
       + '<span class="plugin-host-title" id="plugin-host-title"></span>'
       + '<span class="apps-badge live">Remote · verified</span></div>'
       + '<div class="apps-safety" style="margin:10px 0;"><b>Remote first-party plugin</b> — signed &amp; sandboxed; no access to your vault.</div>'
@@ -10032,7 +10231,7 @@ function pluginDetailHtml(p){
     h+='<button class="apps-back" type="button" onclick="pluginBack()">← '+esc(getUiLang()==='ru'?'Управление плагинами':'Plugin management')+'</button>';
     h+='<div class="apps-detail-head"><span class="apps-tile-icon big">'+(p.icon||'▢')+'</span>'
       +'<div><div class="apps-detail-name">'+esc(p.name)+'</div>'
-      +'<div class="apps-detail-cat">'+esc(pluginCatLabel(p.category))+(p.comingSoon?' · Coming soon':(p.firstParty?' · First-party plugin':''))+'</div></div></div>';
+      +'<div class="apps-detail-cat">'+esc([pluginCatLabel(p.category)].concat(pluginMetaParts(p)).join(' · '))+(p.comingSoon?' · Coming soon':(p.firstParty?' · First-party plugin':''))+'</div></div></div>';
     if(p.description) h+='<p class="apps-detail-desc">'+esc(p.description)+'</p>';
     if(p.safety_note) h+='<div class="apps-safety"><b>Safety</b> — '+esc(p.safety_note)+'</div>';
     h+=pluginPermsHtml(p);
@@ -10041,10 +10240,12 @@ function pluginDetailHtml(p){
     else if(st==='available'){ h+='<button class="btn btn-accent" onclick="pluginInstall(\''+p.id+'\')">Install</button>'; }
     else if(st==='installed'){
         h+='<button class="btn btn-accent" onclick="pluginOpen(\''+p.id+'\')">Open</button>';
+        h+=remoteUpdateActionHtml(p.id);
         h+=' <button class="btn btn-outline" onclick="pluginDisable(\''+p.id+'\')">Disable</button>';
         h+=' <button class="btn btn-outline" onclick="pluginUninstall(\''+p.id+'\')">Remove</button>';
     } else { // disabled
         h+='<button class="btn btn-accent" onclick="pluginEnable(\''+p.id+'\')">Enable</button>';
+        h+=remoteUpdateActionHtml(p.id);
         h+=' <button class="btn btn-outline" onclick="pluginUninstall(\''+p.id+'\')">Remove</button>';
     }
     h+='</div></div>';
@@ -10055,7 +10256,7 @@ function pluginDetailHtml(p){
 function pluginScreenHtml(p){
     if(!p) return pluginListHtml();
     return '<div class="apps-screen plugin-screen">'
-      + '<div class="plugin-host-bar"><button class="apps-back" type="button" onclick="pluginBack()">← '+esc(p.name)+'</button>'
+      + '<div class="plugin-host-bar"><button class="apps-back" type="button" onclick="pluginBack()">← '+esc(pluginNameMetaLine(p))+'</button>'
       + '<span class="plugin-host-title" id="plugin-host-title"></span>'
       + '<button class="btn btn-outline btn-sm" onclick="pluginDisable(\''+p.id+'\')">Disable</button></div>'
       + '<div class="plugin-host-container" id="plugin-host-container"><div class="plugin-host-loading">Loading…</div></div>'

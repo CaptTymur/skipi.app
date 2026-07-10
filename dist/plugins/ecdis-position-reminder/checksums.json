@@ -1,0 +1,15 @@
+{
+  "plugin": "app.skipi.plugins.ecdis-position-reminder",
+  "generated": "2026-07-06T09:43:18.882Z",
+  "files": {
+    "plugin.json": {
+      "sha256": "0a5361a5e0d10fea33492f89f5489c1979a21459b5caabacce9331689ae2f644"
+    },
+    "index.js": {
+      "sha256": "f3c9554cdf9a13a73102f0cf83a6919bacb8be0861f9bf49b84fa32b00ffc764"
+    },
+    "index.css": {
+      "sha256": "a4240abdbec41475e26c86496ff4f1596be6f146b3168b7c4fbc9d0672a6bc74"
+    }
+  }
+}

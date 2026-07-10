@@ -1,0 +1,240 @@
+/* ECDIS Position Reminder - scoped plugin styles. */
+.skipi-epr {
+  --epr-bg: #f7f8fb;
+  --epr-surface: #ffffff;
+  --epr-text: #172033;
+  --epr-muted: #64748b;
+  --epr-border: #d8dde8;
+  --epr-accent: #0f766e;
+  --epr-warn: #b45309;
+  --epr-danger: #b42318;
+  --epr-soft: #e8f3f1;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 620px;
+  margin: 0 auto;
+  padding: 18px;
+  color: var(--epr-text);
+  background: var(--epr-bg);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.skipi-epr *,
+.skipi-epr *::before,
+.skipi-epr *::after { box-sizing: border-box; }
+.skipi-epr.night {
+  --epr-bg: #0c111b;
+  --epr-surface: #141b29;
+  --epr-text: #e7edf7;
+  --epr-muted: #9aa8bc;
+  --epr-border: #2b3548;
+  --epr-soft: #102d2b;
+}
+.skipi-epr.alarming {
+  --epr-accent: var(--epr-danger);
+  background: #fff4f2;
+}
+.skipi-epr.night.alarming { background: #1b1012; }
+.skipi-epr .epr-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+.skipi-epr .epr-name {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+.skipi-epr .epr-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--epr-muted);
+}
+.skipi-epr .epr-night,
+.skipi-epr button {
+  border: 1px solid var(--epr-border);
+  border-radius: 8px;
+  background: var(--epr-surface);
+  color: var(--epr-text);
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+}
+.skipi-epr .epr-night {
+  min-width: 70px;
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.skipi-epr .epr-status {
+  margin-top: 18px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 850;
+  color: var(--epr-muted);
+}
+.skipi-epr.alarming .epr-status { color: var(--epr-danger); }
+.skipi-epr .epr-clock {
+  margin: 4px 0 8px;
+  text-align: center;
+  font-size: 68px;
+  line-height: 1;
+  font-weight: 350;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.skipi-epr.alarming .epr-clock {
+  color: var(--epr-danger);
+  animation: eprPulse 1s ease-in-out infinite;
+}
+.skipi-epr .epr-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0 18px;
+}
+.skipi-epr .epr-meta span {
+  min-height: 34px;
+  display: grid;
+  place-items: center;
+  padding: 6px 8px;
+  border: 1px solid var(--epr-border);
+  border-radius: 8px;
+  background: var(--epr-surface);
+  color: var(--epr-muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+.skipi-epr .epr-settings {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.skipi-epr .epr-setting-block {
+  min-width: 0;
+}
+.skipi-epr .epr-section-title {
+  margin: 0 0 7px;
+  color: var(--epr-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+.skipi-epr .epr-segment {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.skipi-epr .epr-segment.two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.skipi-epr .epr-segment-btn {
+  min-height: 36px;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+.skipi-epr .epr-segment-btn.active {
+  background: var(--epr-accent);
+  border-color: var(--epr-accent);
+  color: #ffffff;
+}
+.skipi-epr .epr-custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 4px 8px;
+  border: 1px solid var(--epr-border);
+  border-radius: 8px;
+  background: var(--epr-surface);
+  color: var(--epr-muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+.skipi-epr .epr-custom input {
+  width: 56px;
+  min-width: 0;
+  border: 1px solid var(--epr-border);
+  border-radius: 6px;
+  padding: 4px 6px;
+  background: var(--epr-bg);
+  color: var(--epr-text);
+  font: inherit;
+  font-size: 13px;
+}
+.skipi-epr .epr-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin: 16px 0;
+}
+.skipi-epr .epr-primary,
+.skipi-epr .epr-secondary {
+  min-height: 44px;
+  padding: 10px 16px;
+  font-size: 14px;
+}
+.skipi-epr .epr-primary {
+  min-width: 170px;
+  background: var(--epr-accent);
+  border-color: var(--epr-accent);
+  color: #ffffff;
+}
+.skipi-epr .epr-secondary {
+  min-width: 118px;
+}
+.skipi-epr .epr-primary.alert {
+  min-width: 240px;
+  min-height: 70px;
+  font-size: 22px;
+  background: var(--epr-danger);
+  border-color: var(--epr-danger);
+}
+.skipi-epr .epr-log {
+  margin-top: 8px;
+}
+.skipi-epr .epr-empty,
+.skipi-epr .epr-log-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--epr-border);
+  color: var(--epr-muted);
+  font-size: 13px;
+}
+.skipi-epr .epr-log-kind {
+  color: var(--epr-text);
+  font-weight: 750;
+}
+.skipi-epr .epr-log-time {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.skipi-epr .epr-safety {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--epr-border);
+  border-radius: 8px;
+  background: var(--epr-soft);
+  color: var(--epr-muted);
+  font-size: 12px;
+}
+@keyframes eprPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .62; }
+}
+@media (max-width: 540px) {
+  .skipi-epr { padding: 14px; }
+  .skipi-epr .epr-clock { font-size: 50px; }
+  .skipi-epr .epr-settings { grid-template-columns: 1fr; }
+  .skipi-epr .epr-meta { grid-template-columns: 1fr; }
+  .skipi-epr .epr-primary,
+  .skipi-epr .epr-secondary,
+  .skipi-epr .epr-primary.alert { width: 100%; min-width: 0; }
+}

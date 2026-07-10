@@ -1,0 +1,29 @@
+{
+  "algorithm": "sha256",
+  "generated": "2026-06-25",
+  "plugin": "app.skipi.plugins.navigation-calculators",
+  "version": "0.1.0",
+  "note": "Calculators embedded in index.js; assets/ empty. checksums.json excludes itself.",
+  "files": {
+    "plugin.json": {
+      "sha256": "2635d895c15574793c54b61a41d8f3f109f493f6ba5ebfc980cb31316b1bd940",
+      "bytes": 903
+    },
+    "index.js": {
+      "sha256": "a5e787880951e08ca4faa9f061d92b863b132f75dde852b059f7b7c8ef6dea57",
+      "bytes": 50592
+    },
+    "index.css": {
+      "sha256": "53334f18c16bb5a490b30dc6b1d39346829b02e6df0d2bcb1f342632febc5c50",
+      "bytes": 4297
+    },
+    "CHANGELOG.md": {
+      "sha256": "ef7df0f53ae467cd7e6f894dfc40c99b723ea18e92f9576a94106904b9609108",
+      "bytes": 2247
+    },
+    "REPORT.md": {
+      "sha256": "57f255e0d33d29c18b08d945c16a396be324fcf0fcbac757a7a8d325a40b0eab",
+      "bytes": 5172
+    }
+  }
+}

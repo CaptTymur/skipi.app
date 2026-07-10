@@ -1,0 +1,38 @@
+{
+  "id": "app.skipi.plugins.ecdis-position-reminder",
+  "slug": "ecdis-position-reminder",
+  "name": "ECDIS Position Reminder",
+  "version": "0.1.0",
+  "developer": "Tymur Rudov / Skipi",
+  "kind": "utility",
+  "category": "safety_watchkeeping",
+  "distribution": {
+    "mode": "bundled_first_party",
+    "bundled": true,
+    "remote_code": false
+  },
+  "hosts": [
+    "seafarer",
+    "onboard"
+  ],
+  "entrypoints": {
+    "ui": "index.js",
+    "style": "index.css"
+  },
+  "permissions": [
+    "local_storage",
+    "audio_alert"
+  ],
+  "capabilities": {
+    "network": "none",
+    "documents": "none",
+    "account": "none",
+    "analytics": "none",
+    "server_upload": false
+  },
+  "safety": {
+    "certified_equipment": false,
+    "requires_disclaimer": true,
+    "disclaimer": "Personal position-fix reminder and training aid only. Not certified bridge equipment. Does not replace ECDIS, paper chart procedures, bridge log entries, watchkeeping duties, SMS, or master's standing orders."
+  }
+}
