@@ -42,7 +42,8 @@
   var loader = window.SkipiPluginLoader.create({
     catalogUrl: CFG.catalogUrl, host: CFG.host, policy: CFG.policy,
     pinnedPublicKey: CFG.pinnedPublicKey,
-    pinnedPublicKeys: CFG.pinnedPublicKeys
+    pinnedPublicKeys: CFG.pinnedPublicKeys,
+    bundledVersions: CFG.bundledVersions
   });
   var CENTRAL_KILL_STAGE = 'central_kill_switch';
   var centralDelivery = { checked: false, enabled: true, source: 'default' };
@@ -109,6 +110,16 @@
   function writeRemoteRegistry(reg) {
     try { localStorage.setItem(REMOTE_REGISTRY_KEY, JSON.stringify(reg || {})); } catch (e) {}
   }
+  function forgetRemoteRecord(slug) {
+    var reg = readRemoteRegistry();
+    if (reg[slug]) delete reg[slug];
+    writeRemoteRegistry(reg);
+    try { if (currentRemote === slug && runtime) runtime.close(); } catch (e) {}
+  }
+  function handleInstallResult(slug, res) {
+    if (res && res.stage === 'revocation') forgetRemoteRecord(slug);
+    return res;
+  }
   function remoteRecord(slug) {
     var rec = readRemoteRegistry()[slug];
     return rec && rec.installed ? rec : null;
@@ -119,11 +130,17 @@
   }
   function remoteVersionNewer(nextVersion, currentVersion) {
     if (!nextVersion || !currentVersion) return !!nextVersion && nextVersion !== currentVersion;
-    var semverGte = window.SkipiPluginLoader && window.SkipiPluginLoader.semverGte;
-    if (typeof semverGte === 'function') {
-      return semverGte(nextVersion, currentVersion) && !semverGte(currentVersion, nextVersion);
+    var semverGt = window.SkipiPluginLoader && window.SkipiPluginLoader.semverGt;
+    if (typeof semverGt === 'function') {
+      return semverGt(nextVersion, currentVersion);
     }
     return String(nextVersion) > String(currentVersion);
+  }
+  function remoteVersionOlder(nextVersion, currentVersion) {
+    if (!nextVersion || !currentVersion) return false;
+    var semverGt = window.SkipiPluginLoader && window.SkipiPluginLoader.semverGt;
+    if (typeof semverGt === 'function') return semverGt(currentVersion, nextVersion);
+    return String(nextVersion) < String(currentVersion);
   }
   function findCatalogEntry(catalog, slug) {
     var list = (catalog && catalog.plugins) || [];
@@ -190,7 +207,7 @@
       if (!sw.enabled) return centralDisabledResult();
       return loader.install(slug, opts).then(function (res) {
         if (res && res.ok) persistInstalled(res.entry, res.pack);
-        return res;
+        return handleInstallResult(slug, res);
       }, function (e) {
         return { ok: false, stage: 'install', reason: '' + (e && e.message || e) };
       });
@@ -209,9 +226,20 @@
       var cat = { catalog: sw.catalog, source: sw.source };
       var entry = findCatalogEntry(cat && cat.catalog, slug);
       if (!entry) return { ok: false, reason: 'not_in_catalog' };
-      if (!remoteVersionNewer(entry.version, rec.version || (rec.entry && rec.entry.version))) {
+      if (loader.isRevoked && loader.isRevoked(slug, cat.catalog, entry)) {
+        var revoked = { ok: false, stage: 'revocation', reason: 'revoked pack: ' + slug + '@' + (entry.version || 'unknown') };
+        forgetRemoteRecord(slug);
+        if (loader.uninstall) loader.uninstall(slug);
+        return revoked;
+      }
+      var currentVersion = rec.version || (rec.entry && rec.entry.version);
+      if (remoteVersionOlder(entry.version, currentVersion)) {
         restorePreviousCatalog();
-        return { ok: true, updated: false, entry: rec.entry || entry, version: rec.version || (rec.entry && rec.entry.version) || entry.version };
+        return { ok: false, stage: 'downgrade', reason: 'downgrade blocked: ' + entry.version + ' < ' + currentVersion, version: currentVersion };
+      }
+      if (!remoteVersionNewer(entry.version, currentVersion)) {
+        restorePreviousCatalog();
+        return { ok: true, updated: false, entry: rec.entry || entry, version: currentVersion || entry.version };
       }
       return loader.install(slug, { allowNetwork: true }).then(function (res) {
         if (res && res.ok) {
@@ -219,7 +247,7 @@
           return { ok: true, updated: true, entry: res.entry, version: res.entry && res.entry.version, source: res.source };
         }
         restorePreviousCatalog();
-        return res || { ok: false, reason: 'install_failed' };
+        return handleInstallResult(slug, res || { ok: false, reason: 'install_failed' });
       });
     });
   };
@@ -267,6 +295,8 @@
     switch (stage) {
       case 'signature': return msg('Couldn’t verify this plugin', 'Signature check failed. Not installed.');
       case 'integrity': return msg('Couldn’t verify this plugin', 'Checksum mismatch. Not installed.');
+      case 'revocation': return msg('Plugin update blocked', 'This plugin package was revoked. Skipi kept it disabled.');
+      case 'downgrade': return msg('Plugin update blocked', 'Catalog rollback was blocked. The latest verified plugin stays cached.');
       case 'compat': return msg('Update Skipi to use this plugin', reason || 'This plugin needs a newer app version.');
       case 'policy': return msg('Plugin not allowed', 'It requests permissions Skipi doesn’t allow.');
       case 'catalog':
@@ -302,9 +332,10 @@
         return { bundledFallback: true };
       }
       var rec = remoteRecord(id);
-      return (rec ? window.SkipiRemoteEnsureLatest(id).then(function () { return true; }, function () { return true; }) : Promise.resolve(true));
-    }).then(function () {
-      if (arguments[0] && arguments[0].bundledFallback) return { ok: true, bundledFallback: true };
+      return (rec ? window.SkipiRemoteEnsureLatest(id).then(function (res) { return res || true; }, function () { return true; }) : Promise.resolve(true));
+    }).then(function (refreshRes) {
+      if (refreshRes && refreshRes.bundledFallback) return { ok: true, bundledFallback: true };
+      if (refreshRes && refreshRes.stage === 'revocation') return refreshRes;
       if (centralDelivery.enabled === false) return { ok: true, bundledFallback: true };
       var openOpts = remoteRecord(id) ? { allowNetwork: false } : undefined;
       return runtime.open(id, container, openOpts);

@@ -19,6 +19,11 @@ window.SKIPI_REMOTE_CONFIG = {
 
   // Which catalog plugins are routed through the isolated remote runtime.
   remoteSlugs: ['bnwas-time-anchor', 'navigation-calculators', 'ecdis-position-reminder'],
+  bundledVersions: {
+    'bnwas-time-anchor': '0.1.0',
+    'navigation-calculators': '0.1.0',
+    'ecdis-position-reminder': '0.1.0'
+  },
 
   // Host identity for compatibility checks.
   host: { id: 'seafarer', version: '0.4.165' },

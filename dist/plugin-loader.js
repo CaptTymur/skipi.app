@@ -30,6 +30,11 @@
     for (var i = 0; i < 3; i++) { var d = (x[i] || 0) - (y[i] || 0); if (d) return d > 0; }
     return true;
   }
+  function semverGt(a, b) {
+    var x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
+    for (var i = 0; i < 3; i++) { var d = (x[i] || 0) - (y[i] || 0); if (d) return d > 0; }
+    return false;
+  }
   function baseOf(url) { return url.replace(/[^/]*$/, ''); }
 
   function defaultCache() {
@@ -56,6 +61,7 @@
     }
     if (pinnedJwk && pinnedJwk.kid && !pinnedJwks[pinnedJwk.kid]) pinnedJwks[pinnedJwk.kid] = pinnedJwk;
     var cache = config.cache || defaultCache();
+    var bundledVersions = config.bundledVersions || {};
     var doFetch = config.fetch || function (url) {
       return fetch(url, { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); });
     };
@@ -102,6 +108,69 @@
       return { ok: true };
     }
 
+    function revocationItems(catalog) {
+      var c = catalog || {};
+      if (Array.isArray(c.revoked)) return c.revoked;
+      if (Array.isArray(c.revokedPacks)) return c.revokedPacks;
+      if (c.revocations && Array.isArray(c.revocations.packs)) return c.revocations.packs;
+      return [];
+    }
+    function revocationTokens(entry, sha) {
+      var out = {};
+      if (!entry) return out;
+      var slug = entry.slug || entry.id || '';
+      var id = entry.id || entry.slug || '';
+      var version = entry.version || '';
+      if (slug && version) out[String(slug + '@' + version).toLowerCase()] = true;
+      if (id && version) out[String(id + '@' + version).toLowerCase()] = true;
+      if (entry.sha256) out[String(entry.sha256).toLowerCase()] = true;
+      if (sha) out[String(sha).toLowerCase()] = true;
+      return out;
+    }
+    function isRevokedEntry(catalog, entry, sha) {
+      var tokens = revocationTokens(entry, sha);
+      return revocationItems(catalog).some(function (item) {
+        if (!item) return false;
+        if (typeof item === 'string') return !!tokens[String(item).toLowerCase()];
+        if (item.sha256 && tokens[String(item.sha256).toLowerCase()]) return true;
+        if ((item.slug || item.id) && item.version) {
+          return !!tokens[String((item.slug || item.id) + '@' + item.version).toLowerCase()];
+        }
+        return false;
+      });
+    }
+    function readCachedEntry(slug) {
+      try { return JSON.parse(cache.get('entry:' + slug) || 'null'); } catch (e) { return null; }
+    }
+    function bundledVersion(slug) {
+      if (bundledVersions && bundledVersions[slug]) return String(bundledVersions[slug]);
+      try {
+        var reg = (typeof window !== 'undefined' && window.SKIPI_PLUGIN_REGISTRY) || [];
+        for (var i = 0; i < reg.length; i++) if (reg[i] && reg[i].id === slug && reg[i].version) return String(reg[i].version);
+      } catch (e) {}
+      return '';
+    }
+    function baselineVersion(slug) {
+      var cached = readCachedEntry(slug), a = cached && cached.version ? String(cached.version) : '';
+      var b = bundledVersion(slug);
+      if (a && b) return semverGt(a, b) ? a : b;
+      return a || b || '';
+    }
+    function removeCachedPlugin(slug) {
+      if (!slug || !cache.remove) return;
+      cache.remove('entry:' + slug);
+      if (cache.keys) {
+        cache.keys().forEach(function (k) {
+          if (k.indexOf('pack:' + slug + '@') === 0) cache.remove(k);
+        });
+      }
+      unload(slug);
+    }
+    function revocationResult(slug, entry) {
+      removeCachedPlugin(slug);
+      return { ok: false, stage: 'revocation', reason: 'revoked pack: ' + (entry && entry.slug || slug) + '@' + (entry && entry.version || 'unknown') };
+    }
+
     async function getCatalog(opts) {
       opts = opts || {};
       if (opts.allowNetwork !== false) {
@@ -123,8 +192,9 @@
       return null;
     }
 
-    async function getVerifiedPack(entry, opts) {
+    async function getVerifiedPack(entry, opts, catalog) {
       opts = opts || {};
+      if (isRevokedEntry(catalog, entry, entry.sha256)) return revocationResult(entry.slug, entry);
       var cacheKey = 'pack:' + entry.slug + '@' + entry.version;
       var packStr = null, source = null;
       if (opts.allowNetwork !== false) {
@@ -135,6 +205,7 @@
       // integrity: hash must equal the SIGNED hash (so cache tampering is caught too)
       var h = await sha256hex(packStr);
       if (h !== entry.sha256) return { ok: false, stage: 'integrity', reason: 'sha256 mismatch (expected ' + entry.sha256.slice(0, 12) + '…, got ' + h.slice(0, 12) + '…)' };
+      if (isRevokedEntry(catalog, entry, h)) return revocationResult(entry.slug, entry);
       var pack;
       try { pack = JSON.parse(packStr); } catch (e) { return { ok: false, reason: 'pack not valid JSON' }; }
       if (pack.id !== entry.id || pack.slug !== entry.slug || pack.version !== entry.version) return { ok: false, stage: 'integrity', reason: 'pack/entry identity mismatch' };
@@ -144,13 +215,23 @@
 
     // ---- install: verify entry + fetch/verify pack, cache. No code execution. ----
     async function install(slug, opts) {
+      var previousCatalog = cache.get('catalog');
+      function restoreCatalog() { if (previousCatalog && cache.set) cache.set('catalog', previousCatalog); }
       var cat;
       try { cat = await getCatalog(opts); } catch (e) { return { ok: false, stage: 'catalog', reason: e.message }; }
+      var cached = readCachedEntry(slug);
+      if (cached && isRevokedEntry(cat.catalog, cached, cached.sha256)) return revocationResult(slug, cached);
       var entry = findEntry(cat.catalog, slug);
       if (!entry) return { ok: false, reason: 'not in catalog: ' + slug };
+      if (isRevokedEntry(cat.catalog, entry, entry.sha256)) return revocationResult(slug, entry);
       var v = await verifyEntry(entry, cat.catalog);
       if (!v.ok) return v;
-      var p = await getVerifiedPack(entry, opts);
+      var baseline = baselineVersion(slug);
+      if (baseline && semverGt(baseline, entry.version)) {
+        restoreCatalog();
+        return { ok: false, stage: 'downgrade', reason: 'downgrade blocked: ' + entry.version + ' < ' + baseline };
+      }
+      var p = await getVerifiedPack(entry, opts, cat.catalog);
       if (!p.ok) return p;
       cache.set('entry:' + slug, JSON.stringify(entry));
       return { ok: true, entry: entry, pack: p.pack, source: cat.source + '/' + p.source };
@@ -213,8 +294,13 @@
       return { ok: true };
     }
 
-    return { getCatalog: getCatalog, verifyEntry: verifyEntry, install: install, load: load, unload: unload, uninstall: uninstall, isCached: isCached, _cache: cache };
+    function isRevoked(slug, catalog, entry) {
+      entry = entry || findEntry(catalog, slug) || readCachedEntry(slug);
+      return isRevokedEntry(catalog, entry, entry && entry.sha256);
+    }
+
+    return { getCatalog: getCatalog, verifyEntry: verifyEntry, install: install, load: load, unload: unload, uninstall: uninstall, isCached: isCached, isRevoked: isRevoked, _cache: cache };
   }
 
-  window.SkipiPluginLoader = { create: createLoader, canonical: canonical, sha256hex: sha256hex, semverGte: semverGte };
+  window.SkipiPluginLoader = { create: createLoader, canonical: canonical, sha256hex: sha256hex, semverGte: semverGte, semverGt: semverGt };
 })();

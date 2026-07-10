@@ -18,7 +18,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self' blob: 'sha256-4460/KG4jbeGaWewVdrxlf/4E5I5MisYZxkO0H5v2wc=' 'sha256-ewd0seFlyp+aGDPy27KmWd4R9daZcJKVATx8glDmkqI='; style-src 'self' 'unsafe-inline' blob:; img-src 'self' data: blob: asset: http://asset.localhost https://skipi.info https://*.githubusercontent.com; font-src 'self' data:; connect-src 'self' https://api.skipi.app https://api-ru.skipi.app https://api.github.com https://github.com https://objects.githubusercontent.com https://raw.githubusercontent.com https://skipi.info https://www.bimco.org https://www.imo.org https://www.numbeo.com http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; frame-src 'self' data:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'"
     }
   },
   "plugins": {

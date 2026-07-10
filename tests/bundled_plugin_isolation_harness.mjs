@@ -134,6 +134,8 @@ ok(!/"d"\s*:/.test(CONFIG) && !/\bd\s*:/.test(CONFIG), 'remote config does NOT s
 ok(/delivery_enabled/.test(REMOTE_BOOT) && /central_kill_switch/.test(REMOTE_BOOT), 'remote boot checks central catalog kill-switch before remote install/open');
 ok(/pinnedPublicKeys: CFG\.pinnedPublicKeys/.test(REMOTE_BOOT), 'remote boot passes the trusted key set to the loader');
 ok(/catalog && catalog\.keyId/.test(REMOTE_LOADER) && /pinnedJwks\[keyId\]/.test(REMOTE_LOADER), 'remote loader selects the verification key by catalog.keyId');
+ok(/revoked/.test(REMOTE_LOADER) && /revocation/.test(REMOTE_LOADER), 'remote loader enforces catalog revocation before install/offline launch');
+ok(/downgrade blocked/.test(REMOTE_LOADER) && /semverGt/.test(REMOTE_LOADER), 'remote loader blocks catalog rollback below installed/bundled baseline');
 ok(sha256Text(BRIDGE) === HOST_RUNTIME_BRIDGE_SHA256, 'plugin-host-bridge.js matches @skipi/host-runtime artifact sha256');
 ok(/function showApps\(/.test(HTML) && /function renderMobileApps\(/.test(HTML) && /function pluginMountInto\(/.test(HTML), 'desktop + mobile Apps entry points still exist');
 
@@ -412,10 +414,10 @@ async function runRemoteInstallOfflineHarness() {
   let online = true;
   let activeCatalog = fx.catalog;
   const packByVersion = { '0.1.0': fx.packStr };
-  async function setCatalogVersion(version) {
+  async function setCatalogVersion(version, catalogPatch = {}) {
     const signed = await fx.signedPack(version);
     packByVersion[version] = signed.packStr;
-    activeCatalog = await fx.signedCatalog({ version, sha256: await remoteSha256(signed.packStr) });
+    activeCatalog = await fx.signedCatalog({ version, sha256: await remoteSha256(signed.packStr) }, catalogPatch);
   }
   const ctx = {
     console, TextEncoder, TextDecoder, Uint8Array, atob: (s) => Buffer.from(s, 'base64').toString('binary'),
@@ -439,7 +441,8 @@ async function runRemoteInstallOfflineHarness() {
       host: { id: 'seafarer', version: '0.4.167' },
       policy: { maxPermissions: ['local_storage', 'audio_alert'], requireCapabilities: { network: 'none', documents: 'none', account: 'none', analytics: 'none', server_upload: false } },
       pinnedPublicKeys: { 'skipi-firstparty-prod-v1': fx.publicJwk },
-      pinnedPublicKey: fx.publicJwk
+      pinnedPublicKey: fx.publicJwk,
+      bundledVersions: { 'navigation-calculators': '0.1.0' }
     },
     APP_VERSION: '0.4.167',
     pluginMountInto: (id) => { ctx.origMount = id; },
@@ -465,8 +468,13 @@ async function runRemoteInstallOfflineHarness() {
     host: ctx.window.SKIPI_REMOTE_CONFIG.host,
     policy: ctx.window.SKIPI_REMOTE_CONFIG.policy,
     pinnedPublicKeys: ctx.window.SKIPI_REMOTE_CONFIG.pinnedPublicKeys,
-    pinnedPublicKey: ctx.window.SKIPI_REMOTE_CONFIG.pinnedPublicKey
+    pinnedPublicKey: ctx.window.SKIPI_REMOTE_CONFIG.pinnedPublicKey,
+    bundledVersions: ctx.window.SKIPI_REMOTE_CONFIG.bundledVersions
   });
+  await setCatalogVersion('0.0.9');
+  const bundledRollback = await loader.install('navigation-calculators');
+  ok(!bundledRollback.ok && bundledRollback.stage === 'downgrade', 'remote loader blocks install below bundled baseline version');
+  await setCatalogVersion('0.1.0');
   const net = await loader.install('navigation-calculators');
   ok(net.ok && net.source === 'network/network', 'remote network install verifies and caches');
   ok(!!storage.getItem('skpd.entry:navigation-calculators'), 'remote entry cache exists');
@@ -507,8 +515,16 @@ async function runRemoteInstallOfflineHarness() {
   const downgrade = await ctx.window.SkipiRemoteEnsureLatest('navigation-calculators');
   const afterDowngrade = JSON.parse(storage.getItem('skipi_remote_plugins_state') || '{}')['navigation-calculators'];
   const cachedAfterDowngrade = JSON.parse(storage.getItem('skpd.catalog') || '{}').plugins?.[0];
-  ok(downgrade.ok && downgrade.updated === false && afterDowngrade.version === '0.2.0', 'older catalog version does not downgrade installed remote plugin');
+  ok(!downgrade.ok && downgrade.stage === 'downgrade' && afterDowngrade.version === '0.2.0', 'older catalog version is rejected and does not downgrade installed remote plugin');
   ok(cachedAfterDowngrade && cachedAfterDowngrade.version === '0.2.0', 'downgrade catalog does not replace latest verified catalog cache');
+  await setCatalogVersion('0.2.0', { revoked: ['navigation-calculators@0.2.0'] });
+  const revoked = await ctx.window.SkipiRemoteEnsureLatest('navigation-calculators');
+  ok(!revoked.ok && revoked.stage === 'revocation', 'catalog revocation by slug@version rejects installed remote plugin');
+  ok(!JSON.parse(storage.getItem('skipi_remote_plugins_state') || '{}')['navigation-calculators'], 'revoked remote plugin is removed from host registry');
+  ok(!storage.getItem('skpd.entry:navigation-calculators') && !storage.getItem('skpd.pack:navigation-calculators@0.2.0'), 'revoked remote plugin removes entry and cached pack before offline launch');
+  await setCatalogVersion('0.2.0');
+  const reinstallAfterRevocationReset = await ctx.window.SkipiRemoteInstall('navigation-calculators');
+  ok(reinstallAfterRevocationReset.ok, 'remote plugin can reinstall after catalog revocation is lifted in test fixture');
   await setCatalogVersion('0.2.1');
   delete packByVersion['0.2.1'];
   const failedRefresh = await ctx.window.SkipiRemoteEnsureLatest('navigation-calculators');
