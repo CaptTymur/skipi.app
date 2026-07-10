@@ -29,17 +29,10 @@ window.SKIPI_REMOTE_CONFIG = {
     requireCapabilities: { network: 'none', documents: 'none', account: 'none', analytics: 'none', server_upload: false }
   },
 
-  // Trusted first-party signing keys (public material only — safe to ship).
-  // The loader selects by catalog.keyId. Staging stays pinned for QA catalog
-  // checks; production catalog entries must resolve to skipi-firstparty-prod-v1.
+  // Trusted production first-party signing key (public material only — safe to ship).
+  // Production builds must not trust staging keys. Dev/staging builds that need
+  // QA catalogs must inject their own non-production config.
   pinnedPublicKeys: {
-    'skipi-firstparty-staging-v1': {
-      kty: 'EC',
-      crv: 'P-256',
-      x: 'ycMaqzJTGpiFx_yGg6xub99ZnEqn_ARvHZVW_zKMkUU',
-      y: 'gC9j0u6GQL9Lh53rFbA3H5nSh85ttZJbb29fpkkjJak',
-      kid: 'skipi-firstparty-staging-v1'
-    },
     'skipi-firstparty-prod-v1': {
       kty: 'EC',
       crv: 'P-256',

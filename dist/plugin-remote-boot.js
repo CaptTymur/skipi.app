@@ -44,6 +44,62 @@
     pinnedPublicKey: CFG.pinnedPublicKey,
     pinnedPublicKeys: CFG.pinnedPublicKeys
   });
+  var CENTRAL_KILL_STAGE = 'central_kill_switch';
+  var centralDelivery = { checked: false, enabled: true, source: 'default' };
+  function catalogObject(res) {
+    return res && (res.catalog || res);
+  }
+  function catalogAllowsDelivery(res) {
+    var c = catalogObject(res);
+    if (!c) return true;
+    if (c.delivery_enabled === false) return false;
+    if (c.deliveryEnabled === false) return false;
+    if (c.remote_delivery_enabled === false) return false;
+    return true;
+  }
+  function centralDisabledResult() {
+    return { ok: false, stage: CENTRAL_KILL_STAGE, reason: 'remote delivery disabled by central catalog flag' };
+  }
+  function refreshCentralDelivery(opts) {
+    return loader.getCatalog(opts || { allowNetwork: true }).then(function (res) {
+      var enabled = catalogAllowsDelivery(res);
+      centralDelivery = {
+        checked: true,
+        enabled: enabled,
+        source: res && res.source || 'catalog',
+        reason: enabled ? '' : 'delivery_enabled=false'
+      };
+      if (!enabled) {
+        try { console.warn('[remote-plugins] disabled by central catalog flag'); } catch (e) {}
+      }
+      return { enabled: enabled, catalog: catalogObject(res), source: centralDelivery.source };
+    }, function (e) {
+      // Catalog fetch failure is not a central OFF signal. Keep existing offline
+      // behavior for installed/cached plugins and let install/open surface errors.
+      centralDelivery = {
+        checked: true,
+        enabled: true,
+        source: 'catalog_unavailable',
+        reason: '' + (e && e.message || e)
+      };
+      return { enabled: true, source: centralDelivery.source, reason: centralDelivery.reason };
+    });
+  }
+  function ensureCentralDelivery(opts) {
+    if (centralDelivery.checked && centralDelivery.enabled === false) {
+      return Promise.resolve({ enabled: false, source: centralDelivery.source, reason: centralDelivery.reason });
+    }
+    return refreshCentralDelivery(opts);
+  }
+  window.SkipiRemoteDeliveryStatus = function () {
+    return {
+      enabled: centralDelivery.enabled !== false,
+      checked: !!centralDelivery.checked,
+      source: centralDelivery.source,
+      reason: centralDelivery.reason || ''
+    };
+  };
+  refreshCentralDelivery({ allowNetwork: true });
   var REMOTE_REGISTRY_KEY = 'skipi_remote_plugins_state';
   function nowIso() { try { return new Date().toISOString(); } catch (e) { return ''; } }
   function readRemoteRegistry() {
@@ -97,7 +153,10 @@
   // ON (display only — opening still goes through the verified runtime). Resolves
   // to [] on any failure so the UI degrades to slug names.
   window.SkipiRemoteList = function () {
-    return loader.getCatalog().then(function (c) { return (c && c.catalog && c.catalog.plugins) || []; }, function () { return []; });
+    return ensureCentralDelivery({ allowNetwork: true }).then(function (sw) {
+      if (!sw.enabled) return [];
+      return (sw.catalog && sw.catalog.plugins) || [];
+    }, function () { return []; });
   };
   var runtime = window.SkipiPluginRuntime.create({
     enabled: true, loader: loader,
@@ -124,11 +183,14 @@
     return rec.enabled === false ? 'disabled' : 'installed';
   };
   window.SkipiRemoteInstall = function (slug, opts) {
-    return loader.install(slug, opts).then(function (res) {
-      if (res && res.ok) persistInstalled(res.entry);
-      return res;
-    }, function (e) {
-      return { ok: false, stage: 'install', reason: '' + (e && e.message || e) };
+    return ensureCentralDelivery({ allowNetwork: opts && opts.allowNetwork }).then(function (sw) {
+      if (!sw.enabled) return centralDisabledResult();
+      return loader.install(slug, opts).then(function (res) {
+        if (res && res.ok) persistInstalled(res.entry);
+        return res;
+      }, function (e) {
+        return { ok: false, stage: 'install', reason: '' + (e && e.message || e) };
+      });
     });
   };
   window.SkipiRemoteEnsureLatest = function (slug) {
@@ -139,7 +201,9 @@
     function restorePreviousCatalog() {
       if (previousCatalog && cache && typeof cache.set === 'function') cache.set('catalog', previousCatalog);
     }
-    return loader.getCatalog({ allowNetwork: true }).then(function (cat) {
+    return ensureCentralDelivery({ allowNetwork: true }).then(function (sw) {
+      if (!sw.enabled) return centralDisabledResult();
+      var cat = { catalog: sw.catalog, source: sw.source };
       var entry = findCatalogEntry(cat && cat.catalog, slug);
       if (!entry) return { ok: false, reason: 'not_in_catalog' };
       if (!remoteVersionNewer(entry.version, rec.version || (rec.entry && rec.entry.version))) {
@@ -154,8 +218,6 @@
         restorePreviousCatalog();
         return res || { ok: false, reason: 'install_failed' };
       });
-    }, function (e) {
-      return { ok: false, stage: 'catalog', reason: '' + (e && e.message || e) };
     });
   };
   window.SkipiRemoteSetEnabled = function (slug, enabled) {
@@ -216,6 +278,7 @@
   var origMountInto = window.pluginMountInto;
   window.pluginMountInto = function (id) {
     if (REMOTE.indexOf(id) < 0) return origMountInto(id); // unchanged path for everything else
+    if (centralDelivery.checked && centralDelivery.enabled === false) return origMountInto(id);
     var container = document.getElementById('plugin-host-container');
     if (!container) return;
     if (currentRemote === id) return; // already open
@@ -226,12 +289,21 @@
       return;
     }
     container.innerHTML = loadingHtml();
-    var rec = remoteRecord(id);
-    var ready = rec ? window.SkipiRemoteEnsureLatest(id).then(function () { return true; }, function () { return true; }) : Promise.resolve(true);
-    ready.then(function () {
+    ensureCentralDelivery({ allowNetwork: true }).then(function (sw) {
+      if (!sw.enabled) {
+        currentRemote = null;
+        origMountInto(id);
+        return { bundledFallback: true };
+      }
+      var rec = remoteRecord(id);
+      return (rec ? window.SkipiRemoteEnsureLatest(id).then(function () { return true; }, function () { return true; }) : Promise.resolve(true));
+    }).then(function () {
+      if (arguments[0] && arguments[0].bundledFallback) return { ok: true, bundledFallback: true };
+      if (centralDelivery.enabled === false) return { ok: true, bundledFallback: true };
       var openOpts = remoteRecord(id) ? { allowNetwork: false } : undefined;
       return runtime.open(id, container, openOpts);
     }).then(function (res) {
+      if (res && res.bundledFallback) return;
       if (!res || !res.ok) { currentRemote = null; container.innerHTML = failHtml(res); }
     }, function (e) {
       currentRemote = null; container.innerHTML = failHtml({ stage: 'mount', reason: '' + (e && e.message || e) });
