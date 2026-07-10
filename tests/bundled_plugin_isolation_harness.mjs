@@ -21,7 +21,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
-import { webcrypto } from 'node:crypto';
+import { createHash, webcrypto } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -31,6 +31,7 @@ const BRIDGE = fs.readFileSync(path.join(DIST, 'plugin-host-bridge.js'), 'utf8')
 const CONFIG = fs.readFileSync(path.join(DIST, 'plugin-host-config.js'), 'utf8');
 const REMOTE_BOOT = fs.readFileSync(path.join(DIST, 'plugin-remote-boot.js'), 'utf8');
 const REMOTE_LOADER = fs.readFileSync(path.join(DIST, 'plugin-loader.js'), 'utf8');
+const HOST_RUNTIME_BRIDGE_SHA256 = 'edd0ba5f8b21f05fcf55485b13b1dafc963173b2d2aa79e261611297283c307a';
 
 const PDIR = path.join(DIST, 'plugins', 'bnwas-time-anchor');
 const FILES = {
@@ -43,6 +44,7 @@ const FILES = {
 let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail++; console.error('  ✗ ' + m); } };
 const section = (t) => console.log('\n# ' + t);
+const sha256Text = (s) => createHash('sha256').update(s).digest('hex');
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const waitUntil = async (fn, n = 24) => {
   for (let i = 0; i < n; i++) {
@@ -127,10 +129,12 @@ ok(/setAttribute\('sandbox', 'allow-scripts'\)/.test(BRIDGE) && !/allow-scripts 
 ok(/return p;/.test(BRIDGE) && /storage:\s*{[\s\S]*?get: function \(k, cb\) {[\s\S]*?new Promise/.test(BRIDGE), 'frame proxy storage.get returns a Promise (async bridge contract)');
 ok(/FEATURE_REMOTE_PLUGIN_DELIVERY = true/.test(CONFIG), 'remote-delivery feature flag is ON for production by default');
 ok(/skipi\.remotePluginDelivery/.test(CONFIG) && /=== 'off'/.test(CONFIG), 'remote-delivery local override only supports explicit off kill shape');
-ok(/pinnedPublicKeys/.test(CONFIG) && /skipi-firstparty-staging-v1/.test(CONFIG) && /skipi-firstparty-prod-v1/.test(CONFIG), 'remote config pins staging + prod public keys by kid');
+ok(/pinnedPublicKeys/.test(CONFIG) && !/skipi-firstparty-staging-v1/.test(CONFIG) && /skipi-firstparty-prod-v1/.test(CONFIG), 'production remote config pins only the prod public key');
 ok(!/"d"\s*:/.test(CONFIG) && !/\bd\s*:/.test(CONFIG), 'remote config does NOT ship a private JWK d component');
+ok(/delivery_enabled/.test(REMOTE_BOOT) && /central_kill_switch/.test(REMOTE_BOOT), 'remote boot checks central catalog kill-switch before remote install/open');
 ok(/pinnedPublicKeys: CFG\.pinnedPublicKeys/.test(REMOTE_BOOT), 'remote boot passes the trusted key set to the loader');
 ok(/catalog && catalog\.keyId/.test(REMOTE_LOADER) && /pinnedJwks\[keyId\]/.test(REMOTE_LOADER), 'remote loader selects the verification key by catalog.keyId');
+ok(sha256Text(BRIDGE) === HOST_RUNTIME_BRIDGE_SHA256, 'plugin-host-bridge.js matches @skipi/host-runtime artifact sha256');
 ok(/function showApps\(/.test(HTML) && /function renderMobileApps\(/.test(HTML) && /function pluginMountInto\(/.test(HTML), 'desktop + mobile Apps entry points still exist');
 
 // ------------------------------------------------------------------ mount

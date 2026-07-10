@@ -104,6 +104,58 @@ function testOffOverrideFailClosed() {
   ok(!ctx.window.SkipiRemoteList, 'flag OFF path does not create remote catalog list helper');
 }
 
+async function testCentralCatalogKillSwitchFallsBackBundled() {
+  const bootCode = fs.readFileSync(BOOT_FILE, 'utf8');
+  let bundledMounts = 0;
+  let runtimeOpens = 0;
+  const ctx = {
+    console,
+    setTimeout,
+    clearTimeout,
+    window: {
+      FEATURE_REMOTE_PLUGIN_DELIVERY: true,
+      SKIPI_REMOTE_CONFIG: {
+        catalogUrl: 'https://unit.test/catalog.json',
+        remoteSlugs: ['navigation-calculators'],
+        host: { id: 'seafarer', version: EXPECTED_VERSION },
+        policy: {},
+        pinnedPublicKeys: { 'skipi-firstparty-prod-v1': { kid: 'skipi-firstparty-prod-v1' } },
+        pinnedPublicKey: { kid: 'skipi-firstparty-prod-v1' }
+      },
+      SkipiPluginLoader: {
+        create: () => ({
+          getCatalog: () => Promise.resolve({
+            source: 'network',
+            catalog: { schema: 'skipi-catalog/1', keyId: 'skipi-firstparty-prod-v1', delivery_enabled: false, plugins: [] }
+          }),
+          install: () => { throw new Error('central kill-switch must prevent install'); }
+        })
+      },
+      SkipiPluginRuntime: {
+        create: () => ({
+          open: () => { runtimeOpens += 1; return Promise.resolve({ ok: true }); },
+          close: () => {}
+        })
+      },
+      pluginMountInto: () => { bundledMounts += 1; },
+      SkipiPluginHost: { unmount() {} }
+    },
+    document: { getElementById: () => ({ innerHTML: '' }) }
+  };
+  ctx.window.window = ctx.window;
+  vm.createContext(ctx);
+  vm.runInContext(bootCode, ctx, { filename: BOOT_FILE });
+  await Promise.resolve();
+  await Promise.resolve();
+  ok(ctx.window.SkipiRemoteDeliveryStatus().enabled === false, 'central catalog delivery_enabled=false is observed');
+  const list = await ctx.window.SkipiRemoteList();
+  ok(Array.isArray(list) && list.length === 0, 'central kill-switch hides remote catalog list');
+  ctx.window.pluginMountInto('navigation-calculators');
+  await Promise.resolve();
+  ok(bundledMounts === 1, 'central kill-switch routes configured remote slug back to bundled mount');
+  ok(runtimeOpens === 0, 'central kill-switch prevents remote runtime open');
+}
+
 (async function main() {
   const win = runConfig();
   const cfg = win.SKIPI_REMOTE_CONFIG;
@@ -123,7 +175,9 @@ function testOffOverrideFailClosed() {
   ok(!!prodKey, 'prod public key is present');
   ok(prodKey && !Object.prototype.hasOwnProperty.call(prodKey, 'd'), 'prod public key has no private d');
   ok(prodKey && publicFingerprint(prodKey) === EXPECTED_FINGERPRINT, 'prod public key fingerprint is unchanged');
-  ok(cfg.pinnedPublicKeys && cfg.pinnedPublicKeys['skipi-firstparty-staging-v1'], 'staging public key remains pinned for QA keyId');
+  ok(!cfg.pinnedPublicKeys['skipi-firstparty-staging-v1'], 'staging public key is NOT pinned in production config');
+  ok(Object.keys(cfg.pinnedPublicKeys || {}).length === 1, 'production config trusts only the prod signing key');
+  await testCentralCatalogKillSwitchFallsBackBundled();
 
   const catalog = JSON.parse((await get(CATALOG_URL)).toString('utf8'));
   ok(catalog.env === 'production', 'live catalog env is production');
