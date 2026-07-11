@@ -1,0 +1,53 @@
+/* Skipi Intelligence lightweight module v0.1.0 */
+/* Extracted from skipi-public dist/index.html; .info-* UI only. */
+
+/* Information */
+.info-wrap { max-width:1060px; margin:0 auto; padding-bottom:24px; }
+.info-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:14px; }
+.info-head h2 { font-size:18px; margin:0 0 4px; }
+.info-sub { color:var(--text2); font-size:12px; line-height:1.45; max-width:680px; }
+.info-meta { color:var(--text2); font-size:11px; text-align:right; line-height:1.45; min-width:180px; }
+.info-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(230px,1fr)); gap:10px; margin:10px 0 18px; }
+.info-card { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:12px 14px; min-width:0; }
+.info-card.locked { border-style:dashed; background:var(--bg); }
+.info-card h3 { font-size:13px; margin:0 0 6px; color:var(--text); }
+.info-card p { margin:0; color:var(--text2); font-size:12px; line-height:1.45; }
+.info-kicker { color:var(--accent); font-size:10px; font-weight:700; letter-spacing:.7px; text-transform:uppercase; margin-bottom:6px; }
+.info-row { display:flex; align-items:center; justify-content:space-between; gap:10px; border-top:1px solid var(--border); padding-top:8px; margin-top:8px; font-size:12px; }
+.info-pill { display:inline-flex; align-items:center; border:1px solid var(--border); border-radius:999px; padding:2px 8px; color:var(--text2); font-size:10px; white-space:nowrap; }
+.info-band { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-top:10px; }
+.info-band div { background:var(--bg); border:1px solid var(--border); border-radius:5px; padding:7px 8px; text-align:center; }
+.info-band b { display:block; font-size:14px; color:var(--text); }
+.info-band span { display:block; font-size:10px; color:var(--text2); }
+.info-country-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:10px 0 12px; }
+.info-country-card { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:11px 12px; min-width:0; }
+.info-country-card .rank { color:var(--accent); font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; margin-bottom:5px; }
+.info-country-card .country { font-size:15px; font-weight:800; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.info-country-card .value { margin-top:8px; display:flex; justify-content:space-between; gap:8px; color:var(--text2); font-size:11px; }
+.info-country-card .value strong { color:var(--text); font-size:15px; }
+.info-country-details { margin:8px 0 12px; }
+.info-country-details summary { cursor:pointer; color:var(--accent); font-weight:700; font-size:12px; margin-bottom:8px; }
+.info-country-list { display:grid; gap:8px; margin:10px 0 18px; }
+.info-country-row { display:grid; grid-template-columns:32px minmax(110px,1fr) repeat(4,minmax(72px,auto)); gap:10px; align-items:center; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:10px 12px; font-size:12px; min-width:0; }
+.info-country-row.head { background:transparent; color:var(--text2); font-size:10px; font-weight:700; text-transform:uppercase; }
+.info-country-name { font-weight:700; color:var(--text); }
+.info-country-num { text-align:right; color:var(--text); }
+.info-country-num small { display:none; color:var(--text2); font-size:10px; margin-right:4px; }
+.info-offer-result { margin-top:10px; border:1px solid var(--border); border-radius:6px; padding:10px 12px; font-size:12px; line-height:1.45; }
+.info-offer-result.good { border-color:var(--green); }
+.info-offer-result.warn { border-color:var(--orange); }
+.info-offer-result.strong { border-color:var(--accent); }
+.info-web-actions { display:flex; gap:8px; flex-wrap:wrap; margin:12px 0 14px; }
+.info-web-frame { height:calc(100vh - 175px); min-height:560px; border:1px solid var(--border); border-radius:8px; overflow:hidden; background:#fff; }
+.info-web-frame iframe { width:100%; height:100%; border:0; background:#fff; display:block; }
+.info-empty { border:1px dashed var(--border); border-radius:6px; padding:14px; color:var(--text2); font-size:12px; }
+@media(max-width:720px){
+    .info-head{flex-direction:column;}
+    .info-meta{text-align:left;}
+    .info-country-summary{grid-template-columns:1fr;}
+    .info-country-row{grid-template-columns:32px 1fr 1fr; align-items:start;}
+    .info-country-row.head{display:none;}
+    .info-country-num{text-align:left;}
+    .info-country-num small{display:block;}
+    .info-web-frame{height:calc(100vh - 205px); min-height:420px;}
+}

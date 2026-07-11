@@ -420,10 +420,10 @@ function installRuntime(sourceHtml) {
     .map(([, attrs, code]) => {
       const src = /\ssrc\s*=\s*["']([^"']+)["']/.exec(attrs || '');
       if (!src) return { code, filename: 'dist/index.html#inline' };
-      if (src[1] === 'vessel-db.js') {
+      if (['vessel-db.js', 'intelligence.js'].includes(src[1])) {
         return {
-          code: fs.readFileSync(path.join(ROOT, 'dist', 'vessel-db.js'), 'utf8'),
-          filename: 'dist/vessel-db.js',
+          code: fs.readFileSync(path.join(ROOT, 'dist', src[1]), 'utf8'),
+          filename: `dist/${src[1]}`,
         };
       }
       return null;
