@@ -417,14 +417,24 @@ function installRuntime(sourceHtml) {
 
   vm.createContext(sandbox);
   const scripts = Array.from(sourceHtml.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi))
-    .filter(([, attrs]) => !/\ssrc\s*=/.test(attrs || ''))
-    .map(([, , code]) => code);
+    .map(([, attrs, code]) => {
+      const src = /\ssrc\s*=\s*["']([^"']+)["']/.exec(attrs || '');
+      if (!src) return { code, filename: 'dist/index.html#inline' };
+      if (src[1] === 'vessel-db.js') {
+        return {
+          code: fs.readFileSync(path.join(ROOT, 'dist', 'vessel-db.js'), 'utf8'),
+          filename: 'dist/vessel-db.js',
+        };
+      }
+      return null;
+    })
+    .filter(Boolean);
 
-  scripts.forEach((code, idx) => {
+  scripts.forEach((script, idx) => {
     try {
-      vm.runInContext(code, sandbox, { filename: `dist/index.html#script-${idx + 1}` });
+      vm.runInContext(script.code, sandbox, { filename: script.filename || `dist/index.html#script-${idx + 1}` });
     } catch (e) {
-      throw new Error(`inline script ${idx + 1} failed: ${e.stack || e.message}`);
+      throw new Error(`script ${idx + 1} failed: ${e.stack || e.message}`);
     }
   });
 
