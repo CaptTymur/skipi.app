@@ -1,5 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Skipi Seafarer",
-  "identifier": "app.skipi.seafarer"
+  "identifier": "app.skipi.seafarer",
+  "bundle": {
+    "iOS": {
+      "developmentTeam": "LTPV7XZ5M3",
+      "bundleVersion": "2026.7.13"
+    }
+  }
 }
