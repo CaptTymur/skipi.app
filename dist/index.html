@@ -2299,6 +2299,35 @@ function trustContributionFixture(){
     var fx=trustContributionFixtures();
     return fx[trustContributionFixtureKey()]||fx.verified_contributor;
 }
+async function trustContributionDemoModeEnabled(){
+    if(typeof mobileIsDemo!=='undefined'&&mobileIsDemo)return true;
+    try{
+        if(typeof invoke==='function'){
+            var sp=await invoke('get_profile_status');
+            return String((sp&&sp.is_demo)||'')==='1';
+        }
+    }catch(e){}
+    return false;
+}
+function trustContributionUnavailableSummary(reason){
+    return trustContributionSafeSummary({
+        subject_id:'',
+        policy_version:'trust-band-v0.1',
+        score_algorithm_version:'trust-score-v0.1',
+        band:{
+            key:'unavailable',
+            label_ru:'Пока недоступно',
+            label_en:'Not available yet'
+        },
+        summary:{confirmed_event_count:0,recent_365d_event_count:0,last_anchor_at:null},
+        reasons:[],
+        what_is_missing:[],
+        events:[],
+        visibility:{company_visible:false,numeric_score_visible:false},
+        _unavailable:true,
+        unavailable_reason:reason||'unavailable'
+    });
+}
 function trustContributionSafeSummary(raw){
     raw=raw||{};
     var band=raw.band||{};
@@ -2325,7 +2354,9 @@ function trustContributionSafeSummary(raw){
             company_visible:visibility.company_visible===true,
             numeric_score_visible:visibility.numeric_score_visible===true
         },
-        _fixture:!!raw._fixture
+        _fixture:!!raw._fixture,
+        _unavailable:!!raw._unavailable,
+        unavailable_reason:String(raw.unavailable_reason||'')
     };
 }
 function trustContributionSafeReason(x){
@@ -2404,6 +2435,9 @@ async function trustContributionCreateSession(){
     return session.access_token;
 }
 async function trustContributionLoadSummary(){
+    if(await trustContributionDemoModeEnabled()){
+        return trustContributionSafeSummary(trustContributionFixture());
+    }
     if(trustContributionLiveEnabled()){
         try{
             var bearer=await trustContributionCreateSession();
@@ -2415,9 +2449,10 @@ async function trustContributionLoadSummary(){
             return trustContributionSafeSummary(await resp.json());
         }catch(e){
             logError('trust_contribution_live',e);
+            return trustContributionUnavailableSummary('live_error');
         }
     }
-    return trustContributionSafeSummary(trustContributionFixture());
+    return trustContributionUnavailableSummary('live_off');
 }
 
 var RECOVERY_BIND_FLAG_KEY = 'skipi_seafarer_recovery_bind';
@@ -2984,11 +3019,17 @@ function trustContributionHtml(summary, opts){
     var ru=getUiLang()==='ru';
     var band=summary.band||{};
     var bandLabel=ru?band.label_ru:band.label_en;
-    var mode=summary._fixture?'fixture':'live';
-    var h='<div class="trust-contribution-wrap" data-qa="my-contribution-screen" data-mode="'+mode+'" data-network="'+(summary._fixture?'none':'api')+'">';
+    var mode=summary._fixture?'fixture':(summary._unavailable?'unavailable':'live');
+    var network=summary._fixture?'none':(summary._unavailable?'unavailable':'api');
+    var h='<div class="trust-contribution-wrap" data-qa="my-contribution-screen" data-mode="'+mode+'" data-network="'+network+'">';
     h+='<div class="trust-contribution-head"><div><h2 class="trust-contribution-title">'+esc(ru?'Мой вклад':'My contribution')+'</h2>'
       +'<div class="trust-contribution-sub">'+esc(ru?'Показывает, какие подтверждённые события помогают Skipi учитывать твои отзывы точнее. Это приватный индикатор, не публичный профиль.':'Shows which confirmed events help Skipi weigh your contributions more accurately. This is a private progress view, not a public profile.')+'</div></div>'
       +'<span class="trust-contribution-pill '+esc(band.key)+'" data-qa="my-contribution-band-key">'+esc(bandLabel)+'</span></div>';
+    if(summary._unavailable){
+        h+='<div class="trust-contribution-card" data-qa="my-contribution-unavailable"><strong>'+esc(ru?'Пока недоступно':'Not available yet')+'</strong><div class="trust-contribution-meta">'+esc(ru?'Мы покажем твой вклад, когда live-сводка станет доступна. Демо-данные здесь не используются.':'Your contribution will appear when the live summary is available. Demo data is not used here.')+'</div></div>';
+        h+='</div>';
+        return h;
+    }
     h+='<div class="trust-contribution-card trust-contribution-band"><div><h3>'+esc(bandLabel)+'</h3><div class="trust-contribution-meta">'+esc(trustContributionBandText(summary))+'</div></div>'
       +'<span class="trust-contribution-pill">'+esc(summary.policy_version)+'</span></div>';
     h+='<div class="trust-contribution-grid">';

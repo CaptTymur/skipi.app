@@ -578,6 +578,8 @@ section('my contribution UI — feature flag and fixtures');
   const { sandbox, document, store } = installRuntime(html);
   await settle();
   ok(typeof sandbox.trustContributionEnabled === 'function', 'trustContributionEnabled helper exists');
+  ok(typeof sandbox.trustContributionDemoModeEnabled === 'function', 'trustContribution demo gate helper exists');
+  ok(typeof sandbox.trustContributionLoadSummary === 'function', 'trustContribution summary loader exists');
   ok(typeof sandbox.showContribution === 'function', 'desktop My contribution renderer exists');
   ok(typeof sandbox.renderMobileContribution === 'function', 'mobile My contribution renderer exists');
   ok(sandbox.trustContributionEnabled() === false, 'feature flag defaults OFF');
@@ -599,13 +601,24 @@ section('my contribution UI — feature flag and fixtures');
   };
   sandbox.updateProfileCompletionChip = () => {};
   store.set('skipi_seafarer_my_contribution', '1');
+  sandbox.showView('contribution');
+  await settle();
+  let h = String((document.getElementById('scr-content') || {}).innerHTML || '');
+  ok(h.includes('data-qa="my-contribution-screen"'), 'non-demo fail-closed screen renders');
+  ok(h.includes('data-mode="unavailable"') && h.includes('data-network="unavailable"'), 'non-demo live-off state is unavailable, not fixture');
+  ok(h.includes('data-qa="my-contribution-unavailable"'), 'non-demo live-off state shows honest unavailable copy');
+  ok(!/data-mode="fixture"|SKP-SF-DEMO|9123456|9345678|9456789|9567890/i.test(h), 'non-demo live-off state contains no fixture identity or demo vessel IMO');
+  ok(fetchCalls === 0, 'non-demo live-off performs no network fetches');
+
+  sandbox.mobileIsDemo = true;
   for (const fixture of ['provisional', 'verified_contributor', 'established_contributor']) {
     store.set('skipi_seafarer_my_contribution_fixture', fixture);
     sandbox.showView('contribution');
     await settle();
-    const h = String((document.getElementById('scr-content') || {}).innerHTML || '');
+    h = String((document.getElementById('scr-content') || {}).innerHTML || '');
     ok(h.includes('data-qa="my-contribution-screen"'), `${fixture}: desktop screen renders`);
     ok(h.includes(`data-qa="my-contribution-band-key"`) && h.includes(fixture), `${fixture}: band key renders`);
+    ok(h.includes('data-mode="fixture"'), `${fixture}: fixture mode is explicit`);
     ok(h.includes('data-network="none"'), `${fixture}: fixture mode declares network none`);
     ok(!/(score_mean|score_lower_bound|confidence|final_review_weight|token_id|raw_payload|payload_hash|email_hash|signature_raw)/i.test(h), `${fixture}: no score/hash/token/payload fields in desktop HTML`);
     ok(!/(approved|rejected|blacklist|legal|rating|оценка моряка|рейтинг моряка)/i.test(h), `${fixture}: banned wording absent`);
@@ -613,11 +626,57 @@ section('my contribution UI — feature flag and fixtures');
   ok(fetchCalls === 0, 'fixture mode performs no network fetches');
 }
 
+section('my contribution UI — live summary happy path');
+{
+  const { sandbox, store } = installRuntime(html);
+  await settle();
+  const apiCalls = [];
+  store.set('skipi_seafarer_my_contribution', '1');
+  store.set('skipi_seafarer_my_contribution_live', '1');
+  sandbox.trustContributionCreateSession = async () => 'self-session-token';
+  sandbox.apiFetch = async (url, opts = {}) => {
+    apiCalls.push({ url: String(url), auth: String((opts.headers || {}).Authorization || '') });
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        subject_id: 'SKP-SF-LIVE-0001',
+        policy_version: 'trust-band-v0.1',
+        score_algorithm_version: 'trust-score-v0.1',
+        band: { key: 'verified_contributor', label_ru: 'Подтверждённый участник', label_en: 'Verified contributor' },
+        summary: { confirmed_event_count: 1, recent_365d_event_count: 1, last_anchor_at: '2026-07-12T10:00:00Z' },
+        reasons: [{ code: 'eligible_anchor_history', label_ru: 'Есть подтверждённая история.', label_en: 'Confirmed history exists.' }],
+        what_is_missing: [],
+        events: [{
+          event_id: 'evt-live-1',
+          date: '2026-07-12T10:00:00Z',
+          kind: 'vessel_checkin',
+          vessel_imo: '7654321',
+          issuer_type: 'crewing',
+          status: 'accepted',
+          counts_toward_contribution: true,
+          reason_codes: ['eligible_anchor_history'],
+        }],
+        visibility: { company_visible: false, numeric_score_visible: false },
+      }),
+      text: async () => '',
+    };
+  };
+  const summary = await sandbox.trustContributionLoadSummary();
+  ok(summary.subject_id === 'SKP-SF-LIVE-0001', 'live summary subject is returned');
+  ok(summary._fixture === false && summary._unavailable === false, 'live summary is neither fixture nor unavailable');
+  ok(apiCalls.length === 1 && apiCalls[0].url === '/api/me/trust-summary' && /Bearer self-session-token/.test(apiCalls[0].auth), 'live summary fetches authenticated endpoint');
+  const h = sandbox.trustContributionHtml(summary, { compact: false });
+  ok(h.includes('data-mode="live"') && h.includes('data-network="api"'), 'live summary renders as API mode');
+  ok(h.includes('7654321') && !/9123456|SKP-SF-DEMO/i.test(h), 'live summary renders live event without demo fixture values');
+}
+
 section('my contribution UI — mobile compact view');
 {
   const { sandbox, document, store } = installRuntime(html);
   await settle();
   sandbox.shouldUseMobileShell = () => true;
+  sandbox.mobileIsDemo = true;
   store.set('skipi_seafarer_my_contribution', '1');
   store.set('skipi_seafarer_my_contribution_fixture', 'established_contributor');
   ok(sandbox.trustContributionEnabled() === true, 'mobile feature flag is readable');
