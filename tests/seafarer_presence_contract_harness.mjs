@@ -573,6 +573,104 @@ for (const mod of manifest.required_modules) {
   await assertMobileNavigation(runtime.document, runtime.sandbox, mod);
 }
 
+section('jobs apply honesty — email fallback draft vs E2E sent');
+{
+  const makeVacancy = (extra = {}) => ({
+    id: extra.id || 'vac-email',
+    title: extra.title || 'Master · Bulk Carrier',
+    rank: 'Master',
+    vessel_type: 'Bulk Carrier',
+    vessel_name: 'MV Honesty',
+    vessel_imo: '9303807',
+    flag: 'PA',
+    contract_months: 4,
+    salary_min: 7200,
+    salary_currency: 'USD',
+    reply_to: 'crew@example.test',
+    crewing_ref: 'Honest Crewing',
+    published_at: '2026-07-12T08:00:00Z',
+    ...extra,
+  });
+  const addHost = (document, id) => {
+    const el = document.createElement('div');
+    el.setAttribute('id', id);
+    document.body.appendChild(el);
+    return el;
+  };
+  const installApplyScenario = (platform, vacancy) => {
+    const inst = installRuntime(html);
+    const { sandbox, document } = inst;
+    addHost(document, 'jobs-feed');
+    addHost(document, 'mobile-jobs-feed');
+    const calls = [];
+    const toasts = [];
+    sandbox.hostPlatform = platform;
+    sandbox.lastJobsItems = [vacancy];
+    sandbox.window._appliedVacancyIds = {};
+    sandbox.window._applyDraftByVacancy = {};
+    sandbox.showToast = (msg, kind) => toasts.push({ msg: String(msg), kind: kind || '' });
+    sandbox.invoke = async (cmd, args = {}) => {
+      calls.push({ cmd, args });
+      if (cmd === 'job_apply_click') return {};
+      if (cmd === 'get_seafarer_personal') return { first_name: 'Alex', surname: 'Sailor', rank: 'Master', nationality: 'UA', available_from: '2026-08-01' };
+      if (cmd === 'fetch_jobs') return [vacancy];
+      if (cmd === 'get_work_history') return [];
+      if (cmd === 'get_documents') return [];
+      if (cmd === 'get_downloads_dir') return '/tmp';
+      if (cmd === 'export_redacted_cv_pdf') return {};
+      if (cmd === 'create_email_file') return { status: 'ok', eml_path: '/tmp/Skipi/Outbox/Skipi_apply_Master.eml', folder_path: '/tmp/Skipi/Outbox' };
+      if (cmd === 'mobile_share_dispatch') return 'Share sheet opened';
+      if (cmd === 'register_my_pubkey') return {};
+      if (cmd === 'apply_via_e2e') return { application_id: 'app-e2e-1' };
+      if (cmd === 'upload_encrypted_attachment') return { id: 'att-1', original_filename: 'cv.pdf', mime_type: 'application/pdf', size_bytes: 1234 };
+      if (cmd === 'send_encrypted_message') return {};
+      return {};
+    };
+    return { sandbox, document, calls, toasts };
+  };
+
+  const fallbackVacancy = makeVacancy();
+  const fallback = installApplyScenario('linux', fallbackVacancy);
+  await settle();
+  fallback.sandbox.hostPlatform = 'linux';
+  await fallback.sandbox._jobsApplyProceed(fallbackVacancy.id, fallbackVacancy.reply_to, fallbackVacancy.title);
+  await settle();
+  const fallbackState = fallback.sandbox.window._appliedVacancyIds[fallbackVacancy.id];
+  ok(fallbackState === 'draft-created', 'email fallback records draft-created state');
+  ok(fallback.sandbox.jobsApplyIsApplied(fallbackState) === false, 'email fallback is not treated as applied');
+  ok(fallback.calls.some((c) => c.cmd === 'create_email_file'), 'email fallback creates an .eml draft');
+  ok(!fallback.calls.some((c) => c.cmd === 'apply_via_e2e'), 'email fallback does not call E2E apply');
+  ok(!fallback.calls.some((c) => c.cmd === 'mobile_share_dispatch'), 'desktop email fallback does not open mobile share sheet');
+  const fallbackHtml = String((fallback.document.getElementById('jobs-feed') || {}).innerHTML || '');
+  ok(fallbackHtml.includes('Draft created') && /not sent/i.test(fallbackHtml), 'desktop fallback card says draft is not sent');
+  ok(!fallbackHtml.includes('Applied ✓'), 'desktop fallback card does not show Applied');
+  const mobileFallbackHtml = fallback.sandbox.mobileJobCard(fallbackVacancy);
+  ok(mobileFallbackHtml.includes('Draft created') && /not sent/i.test(mobileFallbackHtml), 'mobile fallback card says draft is not sent');
+  ok(fallback.toasts.some((t) => /not sent|ещ[её] нужно отправить/i.test(t.msg) && t.msg.includes('/tmp/Skipi/Outbox')), 'email fallback toast is honest and includes draft path');
+
+  const androidVacancy = makeVacancy({ id: 'vac-android' });
+  const android = installApplyScenario('android', androidVacancy);
+  await settle();
+  android.sandbox.hostPlatform = 'android';
+  await android.sandbox._jobsApplyProceed(androidVacancy.id, androidVacancy.reply_to, androidVacancy.title);
+  await settle();
+  ok(android.sandbox.window._appliedVacancyIds[androidVacancy.id] === 'draft-created', 'Android fallback also records draft-created state');
+  const shareCall = android.calls.find((c) => c.cmd === 'mobile_share_dispatch');
+  ok(!!shareCall, 'Android fallback opens mobile share sheet');
+  ok(shareCall && shareCall.args.mode === 'email' && shareCall.args.recipients[0] === androidVacancy.reply_to, 'Android share sheet is email-mode with recipient');
+
+  const e2eVacancy = makeVacancy({ id: 'vac-e2e', crewing_user_id: 'crew-user-1', crewing_pubkey: 'pubkey-b64' });
+  const e2e = installApplyScenario('linux', e2eVacancy);
+  await settle();
+  e2e.sandbox.hostPlatform = 'linux';
+  await e2e.sandbox._jobsApplyProceed(e2eVacancy.id, e2eVacancy.reply_to, e2eVacancy.title);
+  await settle();
+  const e2eState = e2e.sandbox.window._appliedVacancyIds[e2eVacancy.id];
+  ok(e2eState === 'sent' && e2e.sandbox.jobsApplyIsApplied(e2eState) === true, 'E2E apply still records sent/applied state');
+  ok(e2e.calls.some((c) => c.cmd === 'apply_via_e2e'), 'E2E path still calls apply_via_e2e');
+  ok(!e2e.calls.some((c) => c.cmd === 'create_email_file'), 'E2E path does not create an .eml fallback draft');
+}
+
 section('my contribution UI — feature flag and fixtures');
 {
   const { sandbox, document, store } = installRuntime(html);
