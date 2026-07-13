@@ -9718,11 +9718,15 @@ function showApps(){
     if(pluginHostState.openId) setTimeout(function(){ pluginMountInto(pluginHostState.openId); },0);
     // when production remote delivery is ON, fetch remote catalog names once, then refresh the
     // manage list so the staging tile shows its real name (degrades to the slug meanwhile).
-    if(!pluginHostState.openId && pluginHostState.surface==='manage' && remoteStagingOn() && !__remoteCatalogCache){
-        remoteLoadCatalogOnce(function(){
-            if(!pluginHostState.openId && pluginHostState.surface==='manage'){
+    // Whenever the Apps launcher OR the manage list is shown (not a plugin open),
+    // re-check the remote catalog for newer signed versions — debounced to 20s so
+    // it doesn't refetch on every rerender. This makes "Update available" appear
+    // like an App Store, without waiting for an app restart.
+    if(!pluginHostState.openId && remoteStagingOn() && (!__remoteCatalogCache || (Date.now()-__remoteCatalogFetchedAt > 20000))){
+        remoteRefreshCatalog(function(){
+            if(!pluginHostState.openId){
                 var c=document.getElementById('scr-content');
-                if(c) c.innerHTML=pluginHostState.selectedId ? pluginDetailHtml(pluginById(pluginHostState.selectedId)) : pluginManageHtml();
+                if(c) c.innerHTML=pluginHostState.selectedId ? pluginDetailHtml(pluginById(pluginHostState.selectedId)) : (pluginHostState.surface==='manage' ? pluginManageHtml() : pluginLauncherHtml());
             }
         });
     }
@@ -9866,6 +9870,7 @@ function pluginListHtml(){
 }
 // ---- remote plugin entry point (visible when FEATURE_REMOTE_PLUGIN_DELIVERY is ON) ----
 var __remoteCatalogCache = null;
+var __remoteCatalogFetchedAt = 0;
 function remoteStagingOn(){ return !!window.FEATURE_REMOTE_PLUGIN_DELIVERY; }
 function remoteStagingSlugs(){
     if(!remoteStagingOn()) return [];
@@ -9951,7 +9956,14 @@ function remoteEntryFor(slug){
 function remoteLoadCatalogOnce(cb){
     if(__remoteCatalogCache){ cb&&cb(); return; }
     if(typeof window.SkipiRemoteList!=='function'){ __remoteCatalogCache=[]; cb&&cb(); return; }
-    window.SkipiRemoteList().then(function(list){ __remoteCatalogCache=list||[]; cb&&cb(); }, function(){ __remoteCatalogCache=[]; cb&&cb(); });
+    window.SkipiRemoteList().then(function(list){ __remoteCatalogCache=list||[]; __remoteCatalogFetchedAt=Date.now(); cb&&cb(); }, function(){ __remoteCatalogCache=[]; cb&&cb(); });
+}
+// App-Store-like: always re-fetch the signed catalog (network, no-store) so newly
+// published versions surface as "Update available" without an app restart. Unlike
+// remoteLoadCatalogOnce, this ignores the existing cache and refreshes it.
+function remoteRefreshCatalog(cb){
+    if(typeof window.SkipiRemoteList!=='function'){ if(!__remoteCatalogCache) __remoteCatalogCache=[]; cb&&cb(); return; }
+    window.SkipiRemoteList().then(function(list){ __remoteCatalogCache=list||[]; __remoteCatalogFetchedAt=Date.now(); cb&&cb(); }, function(){ if(!__remoteCatalogCache) __remoteCatalogCache=[]; cb&&cb(); });
 }
 function remoteTileHtml(slug){
     var e=remoteEntryFor(slug);
