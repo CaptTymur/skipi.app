@@ -9297,13 +9297,31 @@ function remoteInstalledEntryFor(id){
         description:bundled.description||'Signed first-party plugin installed from the production catalog and cached locally for offline use.',
         safety_note:bundled.safety_note||'Runs inside Skipi sandbox. Catalog signature, policy, compatibility and pack checksum are verified before install and before offline launch.',
         permissions:remotePermissionsFor(entry),
+        enabled:rec.enabled!==false,
         version:rec.version||entry.version,
         toolCount:entry.toolCount||entry.tool_count||rec.toolCount||rec.tool_count||bundled.toolCount||bundled.tool_count };
+}
+function remoteInstallCacheMatches(id, remote){
+    if(!remote||!remote.version) return false;
+    try{
+        var raw=localStorage.getItem('skpd.entry:'+id);
+        var entry=raw?JSON.parse(raw):null;
+        var version=String(remote.version||'');
+        if(!entry||String(entry.slug||'')!==String(id)||String(entry.version||'')!==version) return false;
+        return !!localStorage.getItem('skpd.pack:'+id+'@'+version);
+    }catch(e){ return false; }
+}
+function remoteCanOverrideBundled(id, remote){
+    var bundled=bundledPluginById(id);
+    if(!bundled) return !!remote;
+    if(!remote || !remoteConfiguredSlug(id)) return false;
+    if(!remoteInstallCacheMatches(id, remote)) return false;
+    return semverGt(remote.version, bundled.version);
 }
 function remoteOverrideEntryFor(id){
     var remote=remoteInstalledEntryFor(id);
     if(!remote) return null;
-    if(bundledPluginById(id) && !remoteConfiguredSlug(id)) return null;
+    if(bundledPluginById(id) && !remoteCanOverrideBundled(id, remote)) return null;
     return remote;
 }
 function pluginById(id){ return remoteOverrideEntryFor(id)||bundledPluginById(id)||remoteInstalledEntryFor(id)||null; }
@@ -9346,9 +9364,11 @@ function pluginStateSaveAll(s){ try{ localStorage.setItem('skipi_plugins_state',
 function pluginSetState(id, patch){ var all=pluginStateAll(); all[id]=Object.assign({}, all[id]||{}, patch); pluginStateSaveAll(all); }
 function pluginGetState(id){
     var s=pluginStateAll()[id]||{};
+    var remote=remoteInstalledEntryFor(id);
     var r=remoteInstalledMeta(id);
-    if(r && remoteConfiguredSlug(id)) return { installed:true, enabled:r.enabled!==false };
-    if(bundledPluginById(id)){
+    var bundled=bundledPluginById(id);
+    if(remote && (bundled ? remoteCanOverrideBundled(id, remote) : remoteConfiguredSlug(id))) return { installed:true, enabled:remote.enabled!==false };
+    if(bundled){
         return { installed:s.installed!==false, enabled:s.enabled!==false };
     }
     if(r) return { installed:true, enabled:r.enabled!==false };
@@ -9716,7 +9736,7 @@ function pluginInstalledList(){
         seen[p.id]=true;
         items.push(p);
     }
-    SKIPI_PLUGIN_REGISTRY.forEach(function(p){ if(!p.comingSoon && pluginStatus(p.id)==='installed') push(p); });
+    SKIPI_PLUGIN_REGISTRY.forEach(function(p){ if(!p.comingSoon && pluginStatus(p.id)==='installed') push(pluginById(p.id)||p); });
     // Desktop-only in this slice: mobile remote install/offline UX is a separate product pass.
     if(typeof shouldUseMobileShell==='function' && shouldUseMobileShell()) return items;
     Object.keys(remoteRegistryAll()).forEach(function(id){
@@ -9807,11 +9827,12 @@ function pluginManageHtml(){
     return h;
 }
 function pluginManageTileHtml(p){
-    var soon=!!p.comingSoon;
+    var view=pluginById(p.id)||p;
+    var soon=!!view.comingSoon;
     return '<button class="apps-tile'+(soon?' soon':'')+'" type="button" data-qa="plugin-settings-'+escAttr(p.id)+'" onclick="pluginSelect(\''+jsString(p.id)+'\')">'
-        + '<span class="apps-tile-icon">'+(p.icon||'▢')+'</span>'
-        + '<span class="apps-tile-body"><span class="apps-tile-name">'+esc(p.name)+'</span>'
-        + '<span class="apps-tile-sub">'+esc(pluginSubLine(p))+'</span>'+pluginBadge(p.id)+'</span></button>';
+        + '<span class="apps-tile-icon">'+(view.icon||'▢')+'</span>'
+        + '<span class="apps-tile-body"><span class="apps-tile-name">'+esc(view.name)+'</span>'
+        + '<span class="apps-tile-sub">'+esc(pluginSubLine(view))+'</span>'+pluginBadge(p.id)+'</span></button>';
 }
 function pluginBadge(id){
     var p=pluginById(id);
@@ -9849,7 +9870,10 @@ function remoteStagingOn(){ return !!window.FEATURE_REMOTE_PLUGIN_DELIVERY; }
 function remoteStagingSlugs(){
     if(!remoteStagingOn()) return [];
     var slugs=remoteConfigSlugs();
-    return slugs.filter(function(s){ return !bundledPluginById(s); }); // only NON-bundled remote slugs
+    return slugs.filter(function(s){
+        var bundled=bundledPluginById(s);
+        return !bundled || remoteUpdateAvailable(s);
+    });
 }
 function remoteCatalogName(slug){
     if(__remoteCatalogCache){ var e=__remoteCatalogCache.find(function(p){return p.slug===slug;}); if(e&&(e.name||e.title)) return e.name||e.title; }
@@ -9868,7 +9892,8 @@ function remoteUpdateAvailable(slug){
     if(!remoteConfiguredSlug(slug)) return false;
     var installed=remoteInstalledEntryFor(slug);
     var bundled=bundledPluginById(slug);
-    var baseline=installed?installed.version:(bundled?bundled.version:'');
+    var baseline=(installed&&(!bundled||remoteCanOverrideBundled(slug, installed)))?installed.version:'';
+    if(bundled&&bundled.version&&(!baseline||semverGt(bundled.version, baseline))) baseline=bundled.version;
     if(!baseline) return false;
     var latest=remoteCatalogVersion(slug);
     return !!latest && semverGt(latest, baseline);
