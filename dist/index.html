@@ -5452,13 +5452,38 @@ function mobileJobTitle(v){
     if(!v)return 'Vacancy';
     return v.title || ([v.rank,v.vessel_type].filter(Boolean).join(' · ')) || 'Vacancy';
 }
+function jobsApplyState(vacancyId){
+    return String(((window._appliedVacancyIds||{})[vacancyId])||'');
+}
+function jobsApplyIsApplied(state){
+    return state==='sent';
+}
+function jobsApplyIsDraft(state){
+    return state==='draft-created';
+}
+function jobsApplyRememberDraft(vacancyId, info){
+    window._appliedVacancyIds = window._appliedVacancyIds || {};
+    window._applyDraftByVacancy = window._applyDraftByVacancy || {};
+    window._appliedVacancyIds[vacancyId] = 'draft-created';
+    window._applyDraftByVacancy[vacancyId] = Object.assign({created_at:new Date().toISOString()}, info||{});
+}
+function jobsApplyDraftInfo(vacancyId){
+    return (window._applyDraftByVacancy&&window._applyDraftByVacancy[vacancyId])||{};
+}
+function jobsApplyDraftPath(vacancyId){
+    var info=jobsApplyDraftInfo(vacancyId);
+    return info.eml_path||info.folder_path||'~/Downloads/Skipi/Outbox/';
+}
+function jobsApplyDraftCopy(vacancyId){
+    return 'Draft created - not sent yet. Send it from your mail app. File: '+jobsApplyDraftPath(vacancyId);
+}
 function mobileJobCard(v){
     var title=mobileJobTitle(v);
     var salary=mobileJobSalary(v);
     var hasThread=!!(v&&v._thread);
     var mapped=jobsLoadAppMap()[v.id]||null;
     var hasMappedThread=(!hasThread&&mapped&&mapped.application_id);
-    var alreadyApplied=(window._appliedVacancyIds||{})[v.id];
+    var applyState=jobsApplyState(v.id);
     var h='<div class="mobile-card" id="mobile-vac-card-'+mobileEsc(v.id)+'">';
     h+='<div class="mobile-row" style="align-items:flex-start;">';
     h+='<div style="min-width:0;flex:1;">';
@@ -5482,13 +5507,18 @@ function mobileJobCard(v){
     }
     if(hasThread||hasMappedThread){
         h+='<button class="btn btn-accent mobile-grow" type="button" onclick="mobileOpenJobConversation(\''+jsString(v.id)+'\')">Open chat</button>';
-    }else if(alreadyApplied){
+    }else if(jobsApplyIsApplied(applyState)){
         h+='<button class="btn btn-outline mobile-grow" type="button" onclick="mobileOpenJobConversation(\''+jsString(v.id)+'\')">Applied</button>';
+    }else if(jobsApplyIsDraft(applyState)){
+        h+='<button class="btn btn-outline mobile-grow" type="button" disabled title="'+escAttr(jobsApplyDraftCopy(v.id))+'">Draft created</button>';
     }else if(v.reply_to||v.crewing_user_id){
         h+='<button id="apply-btn-'+mobileEsc(v.id)+'" class="btn btn-accent mobile-grow" type="button" onclick="mobileApplyJob(\''+jsString(v.id)+'\')">Apply</button>';
     }
     h+='<button class="btn btn-outline mobile-grow" type="button" onclick="mobileHideJob(\''+jsString(v.id)+'\')">Hide</button>';
     h+='</div>';
+    if(jobsApplyIsDraft(applyState)){
+        h+='<div class="mobile-card-sub" data-qa="job-apply-draft-state" style="margin-top:8px;">'+mobileEsc(jobsApplyDraftCopy(v.id))+'</div>';
+    }
     h+='<div id="thread-'+mobileEsc(v.id)+'" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);"></div>';
     h+='</div>';
     return h;
@@ -12700,11 +12730,14 @@ function renderJobsFeed(items){
         html += '</div>';
         html += '<div style="text-align:right;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:6px;">';
         html += '<div style="font-size:10px;color:var(--text2);">'+esc(v.published_at.slice(0,10))+'</div>';
-        var alreadyApplied = (window._appliedVacancyIds || {})[v.id];
+        var applyState = jobsApplyState(v.id);
         if (hasThread || hasMappedThread) {
             html += '<button onclick="openVacancyConversation(\''+esc(v.id)+'\')" style="padding:4px 12px;background:var(--accent);color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer;font-weight:600;">🔒 Open conversation</button>';
-        } else if (alreadyApplied) {
+        } else if (jobsApplyIsApplied(applyState)) {
             html += '<button onclick="openVacancyConversation(\''+esc(v.id)+'\')" style="padding:4px 12px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:11px;cursor:pointer;font-weight:600;">Applied ✓</button>';
+        } else if (jobsApplyIsDraft(applyState)) {
+            html += '<button disabled title="'+esc(jobsApplyDraftCopy(v.id))+'" style="padding:4px 12px;background:var(--surface2);color:var(--text2);border:1px solid var(--border);border-radius:4px;font-size:11px;cursor:not-allowed;font-weight:600;">Draft created</button>';
+            html += '<div data-qa="job-apply-draft-state" style="max-width:220px;text-align:right;font-size:11px;line-height:1.35;color:var(--orange);">'+esc(jobsApplyDraftCopy(v.id))+'</div>';
         } else if(v.reply_to){
             html += '<button id="apply-btn-'+esc(v.id)+'" onclick="jobsApply(\''+esc(v.id)+'\',\''+esc(v.reply_to)+'\',\''+esc(title).replace(/&quot;/g,'')+'\')" style="padding:4px 12px;background:var(--accent);color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer;font-weight:600;">Apply</button>';
         }
@@ -14274,16 +14307,35 @@ async function _jobsApplyProceed(vacancyId, replyTo, title){
             purpose: 'apply_'+(v.rank || sp.rank || 'job').replace(/[^A-Za-z0-9]/g,'_'),
         };
         var res = await invoke('create_email_file', { intent: intent });
-        if (res && res.eml_path) {
-            showToast('Email draft saved: '+res.eml_path+'. Open it in your mail client and Send.', 'success');
-        } else {
-            showToast('Email draft created in ~/Downloads/Skipi/Outbox/', 'success');
+        var draftInfo = {
+            eml_path: res && res.eml_path || '',
+            folder_path: res && res.folder_path || '~/Downloads/Skipi/Outbox/',
+            android_share_opened: false
+        };
+        var shareErr = null;
+        if (hostPlatform === 'android') {
+            try {
+                await invoke('mobile_share_dispatch', {
+                    recipients: replyTo ? [replyTo] : [],
+                    subject: subject,
+                    body: body,
+                    attachments: attachPath ? [attachPath] : [],
+                    mode: 'email'
+                });
+                draftInfo.android_share_opened = true;
+            } catch(e) {
+                shareErr = e;
+                draftInfo.android_share_error = String(e);
+            }
         }
-        // Even for the email path we treat it as "applied" — the user has
-        // committed to sending. Disabling Apply prevents accidentally
-        // generating a second .eml via double-click.
-        window._appliedVacancyIds = window._appliedVacancyIds || {};
-        window._appliedVacancyIds[vacancyId] = 'email-sent';
+        jobsApplyRememberDraft(vacancyId, draftInfo);
+        var draftPath = jobsApplyDraftPath(vacancyId);
+        var ru = (typeof getUiLang === 'function' && getUiLang() === 'ru');
+        var msg = ru
+            ? ('Черновик письма создан - его ещё нужно отправить. '+(draftInfo.android_share_opened?'Выберите почтовое приложение и нажмите Send. Копия: ':'Откройте черновик в почтовом клиенте и нажмите Send: ')+draftPath)
+            : ('Email draft created - not sent yet. '+(draftInfo.android_share_opened?'Choose an email app and press Send. Draft copy: ':'Open it in your mail client and press Send: ')+draftPath);
+        if (shareErr) msg += (ru ? ' Меню отправки не открылось: ' : ' Share sheet did not open: ')+shareErr;
+        showToast(msg, 'warn');
         try { renderJobsFeed(lastJobsItems || []); } catch(e){}
     } catch (e) {
         showToast('Could not create email draft: '+e, 'error');
