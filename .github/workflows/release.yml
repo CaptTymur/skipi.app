@@ -217,7 +217,7 @@ jobs:
   # ----------------------------------------------------------------------
   build-macos:
     name: Build (macOS unsigned)
-    if: ${{ false }}
+    if: ${{ true }}
     needs: [syntax-check, version-check]
     runs-on: macos-15-intel
     steps:
@@ -304,8 +304,8 @@ jobs:
   # ----------------------------------------------------------------------
   publish-latest-json:
     name: Publish latest.json
-    needs: [build-linux, build-windows]
-    if: needs.build-linux.result == 'success' && needs.build-windows.result == 'success'
+    needs: [build-linux, build-windows, build-macos]
+    if: ${{ always() && needs.build-linux.result == 'success' && needs.build-windows.result == 'success' }}
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
@@ -317,6 +317,7 @@ jobs:
           TAG: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
           WIN_OUTCOME: ${{ needs.build-windows.result }}
+          MAC_OUTCOME: ${{ needs.build-macos.result }}
         run: |
           set -eu
           VERSION="${TAG#v}"
@@ -381,6 +382,19 @@ jobs:
             exit 1
           fi
 
+          # macOS: updater artifact is *.app.tar.gz (filename may omit the version),
+          # so match by suffix only. Included only when the macOS job succeeded;
+          # if absent, the darwin entry is dropped and win/linux still publish.
+          MAC_SIG=""
+          MAC_URL=""
+          if [ "${MAC_OUTCOME:-}" = "success" ]; then
+            MAC_ASSET="$(find . -maxdepth 1 -type f -name '*.app.tar.gz.sig' -printf '%f\n' | sort | head -n1 || true)"
+            if [ -n "$MAC_ASSET" ]; then
+              MAC_SIG="$(read_sig "$MAC_ASSET")"
+              MAC_URL="$(asset_url "${MAC_ASSET%.sig}")"
+            fi
+          fi
+
           cd ..
 
           jq -n \
@@ -391,6 +405,8 @@ jobs:
             --arg win_url "$WIN_URL" \
             --arg linux_sig "$LINUX_SIG" \
             --arg linux_url "$LINUX_URL" \
+            --arg mac_sig "$MAC_SIG" \
+            --arg mac_url "$MAC_URL" \
             '
             def plat(sig; url):
               if (sig|length) > 0 and (url|length) > 0
@@ -404,7 +420,8 @@ jobs:
               platforms: (
                 {
                   "windows-x86_64": plat($win_sig; $win_url),
-                  "linux-x86_64":   plat($linux_sig; $linux_url)
+                  "linux-x86_64":   plat($linux_sig; $linux_url),
+                  "darwin-x86_64":  plat($mac_sig; $mac_url)
                 }
                 | with_entries(select(.value != null))
               )
