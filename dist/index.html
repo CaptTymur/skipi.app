@@ -8529,7 +8529,7 @@ async function loadVault(info){
     var dispIcon=document.getElementById('ri-disp');
     var vesselsIcon=document.getElementById('ri-vessels');
     var infoIcon=document.getElementById('ri-info');
-    var isSeafarer=currentAccountType==='seafarer'||currentAccountType===''||!currentAccountType;
+    var isSeafarer=isSeafarerVault();
     if(expIcon)expIcon.style.display=isSeafarer?'flex':'none';
     if(cvIcon)cvIcon.style.display=isSeafarer?'flex':'none';
     if(dispIcon)dispIcon.style.display=isSeafarer?'flex':'none';
@@ -8844,7 +8844,7 @@ function showView(v, opts){
     if(v==='contribution'&&!trustContributionEnabled())v='dashboard';
     currentView=v;
     updateProfileCompletionChip();
-    var isSeafarer=currentAccountType==='seafarer'||currentAccountType===''||!currentAccountType;
+    var isSeafarer=isSeafarerVault();
     trustContributionSyncEntryPoints(isSeafarer);
     document.querySelectorAll('.ribbon-icon').forEach(function(el){el.classList.remove('active');});
     document.querySelectorAll('.modules-bar .mod-tab').forEach(function(el){el.classList.remove('active');});
@@ -14780,7 +14780,7 @@ function openSettings(tab){
         if(settingsTab==='general' || settingsTab==='email') settingsTab = 'vaults';
     }
     // Guard: Seafarer tab only makes sense for seafarer vaults
-    if(settingsTab==='seafarer' && currentAccountType!=='' && currentAccountType && currentAccountType!=='seafarer'){
+    if(settingsTab==='seafarer' && !isSeafarerVault()){
         settingsTab='general';
     }
     // AI Recognition is hidden in the beta — redirect any stale links to General.
@@ -14802,7 +14802,7 @@ function renderSettingsNav(){
         if(['vaults','seafarer','appearance','about'].indexOf(settingsTab)<0) settingsTab='vaults';
         h += '<div class="settings-nav-title">'+tr('settings.nav_title')+'</div>';
         h += '<div class="settings-nav-item'+(settingsTab==='vaults'?' active':'')+'" onclick="openSettings(\'vaults\')"><span class="nav-icon">&#128451;</span> Vault</div>';
-        if(currentAccountType==='seafarer'||currentAccountType===''||!currentAccountType){
+        if(isSeafarerVault()){
             h += '<div class="settings-nav-item'+(settingsTab==='seafarer'?' active':'')+'" onclick="openSettings(\'seafarer\')"><span class="nav-icon">&#128100;</span> Profile</div>';
         }
         h += '<div class="settings-nav-item'+(settingsTab==='appearance'?' active':'')+'" onclick="openSettings(\'appearance\')"><span class="nav-icon">&#127912;</span> Look</div>';
@@ -14813,7 +14813,7 @@ function renderSettingsNav(){
     h += '<div class="settings-nav-title">'+tr('settings.nav_title')+'</div>';
     h += '<div class="settings-nav-item'+(settingsTab==='general'?' active':'')+'" onclick="openSettings(\'general\')"><span class="nav-icon">&#9881;</span> '+tr('settings.general')+'</div>';
     h += '<div class="settings-nav-item'+(settingsTab==='vaults'?' active':'')+'" onclick="openSettings(\'vaults\')"><span class="nav-icon">&#128451;</span> '+tr('settings.vaults')+'</div>';
-    if(currentAccountType==='seafarer'||currentAccountType===''||!currentAccountType){
+    if(isSeafarerVault()){
         h += '<div class="settings-nav-item'+(settingsTab==='seafarer'?' active':'')+'" onclick="openSettings(\'seafarer\')"><span class="nav-icon">&#128100;</span> '+tr('settings.seafarer_profile')+'</div>';
     }
     h += '<div class="settings-nav-item'+(settingsTab==='email'?' active':'')+'" onclick="openSettings(\'email\')"><span class="nav-icon">&#9993;</span> '+tr('settings.email')+'</div>';

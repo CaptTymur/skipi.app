@@ -257,6 +257,27 @@ fn migrations() -> Vec<(u32, &'static str)> {
             UPDATE documents SET is_permanent = 1 WHERE template_id = 'yellow_fever';
         "#,
         ),
+        // Migration 10: the first synthetic packaged demo used a separate
+        // account_type="demo" value. It is a Seafarer vault; is_demo is the
+        // independent marker for demo-only behavior. Normalize existing copies
+        // so both Rust and frontend Seafarer gates see the same account type.
+        (
+            10,
+            r#"
+            CREATE TABLE IF NOT EXISTS vault_info (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );
+            UPDATE vault_info
+               SET value = 'seafarer'
+             WHERE key = 'account_type'
+               AND value = 'demo'
+               AND EXISTS (
+                   SELECT 1 FROM vault_info
+                    WHERE key = 'is_demo' AND value = '1'
+               );
+        "#,
+        ),
     ]
 }
 
@@ -572,6 +593,51 @@ mod tests {
 
         drop(conn);
         let _ = fs::remove_dir_all(&vault_path);
+    }
+
+    #[test]
+    fn open_db_migrates_only_legacy_demo_account_type() {
+        let demo_path = env::temp_dir().join(format!("skipi-legacy-demo-{}", Uuid::new_v4()));
+        fs::create_dir_all(&demo_path).unwrap();
+        {
+            let conn = open_db(&demo_path).unwrap();
+            set_vault_info(&conn, "account_type", "demo").unwrap();
+            set_vault_info(&conn, "is_demo", "1").unwrap();
+            conn.execute("DELETE FROM schema_migrations WHERE version = 10", [])
+                .unwrap();
+        }
+
+        let conn = open_db(&demo_path).unwrap();
+        assert_eq!(
+            get_vault_info_value(&conn, "account_type").as_deref(),
+            Some("seafarer")
+        );
+        assert_eq!(get_vault_info_value(&conn, "is_demo").as_deref(), Some("1"));
+        assert!(migration_recorded(&conn, 10));
+        drop(conn);
+
+        let non_demo_path =
+            env::temp_dir().join(format!("skipi-non-demo-account-{}", Uuid::new_v4()));
+        fs::create_dir_all(&non_demo_path).unwrap();
+        {
+            let conn = open_db(&non_demo_path).unwrap();
+            set_vault_info(&conn, "account_type", "demo").unwrap();
+            set_vault_info(&conn, "is_demo", "0").unwrap();
+            conn.execute("DELETE FROM schema_migrations WHERE version = 10", [])
+                .unwrap();
+        }
+
+        let conn = open_db(&non_demo_path).unwrap();
+        assert_eq!(
+            get_vault_info_value(&conn, "account_type").as_deref(),
+            Some("demo")
+        );
+        assert_eq!(get_vault_info_value(&conn, "is_demo").as_deref(), Some("0"));
+        assert!(migration_recorded(&conn, 10));
+        drop(conn);
+
+        let _ = fs::remove_dir_all(demo_path);
+        let _ = fs::remove_dir_all(non_demo_path);
     }
 
     fn table_has_column(conn: &Connection, table: &str, column: &str) -> bool {
