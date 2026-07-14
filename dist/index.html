@@ -9422,6 +9422,11 @@ var SkipiPluginHost = {
     }
 };
 
+// ---- shared permissions/safety panel ----
+// (permissions/safety UI moved into @skipi/plugin-host-ui during adoption; this marker is
+// kept to delimit the bundled-plugin host runtime block for
+// tests/bundled_plugin_isolation_harness.mjs)
+
 // ---- Family UI Base v1 (Wave 1): state dictionary + shared chip/panel ----
 // Accepted dictionary + additive proposal (empty/loading/ready/stale/pending/
 // queued) plus the doc/app states already living in the product. New copy is

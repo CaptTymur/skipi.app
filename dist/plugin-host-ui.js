@@ -775,6 +775,7 @@
       pluginManageTileHtml:pluginManageTileHtml,
       pluginDetailHtml:pluginDetailHtml,
       pluginScreenHtml:pluginScreenHtml,
+      pluginPlaceholderHtml:pluginPlaceholderHtml,
       pluginMobileScreenHtml:pluginMobileScreenHtml,
       pluginMobileDetail:pluginMobileDetail,
       pluginIconTileHtml:pluginIconTileHtml,

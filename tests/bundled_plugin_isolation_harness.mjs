@@ -31,6 +31,9 @@ const BRIDGE = fs.readFileSync(path.join(DIST, 'plugin-host-bridge.js'), 'utf8')
 const CONFIG = fs.readFileSync(path.join(DIST, 'plugin-host-config.js'), 'utf8');
 const REMOTE_BOOT = fs.readFileSync(path.join(DIST, 'plugin-remote-boot.js'), 'utf8');
 const REMOTE_LOADER = fs.readFileSync(path.join(DIST, 'plugin-loader.js'), 'utf8');
+// @skipi/plugin-host-ui — the Apps/plugin UI module the app loads via <script src> before
+// its inline script (adopted 2026-07-14, retiring the inline Apps-UI fork).
+const HOST_UI_MODULE = fs.readFileSync(path.join(DIST, 'plugin-host-ui.js'), 'utf8');
 const HOST_RUNTIME_BRIDGE_SHA256 = 'edd0ba5f8b21f05fcf55485b13b1dafc963173b2d2aa79e261611297283c307a';
 
 const PDIR = path.join(DIST, 'plugins', 'bnwas-time-anchor');
@@ -137,7 +140,8 @@ ok(/catalog && catalog\.keyId/.test(REMOTE_LOADER) && /pinnedJwks\[keyId\]/.test
 ok(/revoked/.test(REMOTE_LOADER) && /revocation/.test(REMOTE_LOADER), 'remote loader enforces catalog revocation before install/offline launch');
 ok(/downgrade blocked/.test(REMOTE_LOADER) && /semverGt/.test(REMOTE_LOADER), 'remote loader blocks catalog rollback below installed/bundled baseline');
 ok(sha256Text(BRIDGE) === HOST_RUNTIME_BRIDGE_SHA256, 'plugin-host-bridge.js matches @skipi/host-runtime artifact sha256');
-ok(/function showApps\(/.test(HTML) && /function renderMobileApps\(/.test(HTML) && /function pluginMountInto\(/.test(HTML), 'desktop + mobile Apps entry points still exist');
+// After the @skipi/plugin-host-ui adoption these entry points live in the module, not inline HTML.
+ok(/function showApps\(/.test(HOST_UI_MODULE) && /function renderMobileApps\(/.test(HOST_UI_MODULE) && /function pluginMountInto\(/.test(HOST_UI_MODULE), 'desktop + mobile Apps entry points still exist (in @skipi/plugin-host-ui)');
 
 // ------------------------------------------------------------------ mount
 section('open() builds an isolated frame from verified bundled bytes');
@@ -284,12 +288,12 @@ class VmDocument {
   }
 }
 
-function bootApp({ seed = {}, onLine = true } = {}) {
+function bootApp({ seed = {}, onLine = true, platform = 'linux' } = {}) {
   const doc = new VmDocument(HTML);
   const lstore = new Map(Object.entries(seed).map(([k, v]) => [k, String(v)]));
   const invoke = async (cmd) => {
     if (cmd === 'get_build_info') return { version: '0.0.0-apps-harness', sha: 'apps-harness' };
-    if (cmd === 'get_platform') return 'linux';
+    if (cmd === 'get_platform') return platform;
     if (cmd === 'get_vault_types' || cmd === 'get_recent_vaults' || cmd === 'get_optional_categories') return [];
     if (cmd === 'get_last_vault') return null;
     return {};
@@ -315,6 +319,10 @@ function bootApp({ seed = {}, onLine = true } = {}) {
   };
   sandbox.window = sandbox; sandbox.self = sandbox; sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
+  // The app loads @skipi/plugin-host-ui via <script src> BEFORE the inline script; mirror
+  // that here so the module's create()/attachGlobals (called from the inline) can expose the
+  // plugin* UI globals (showApps, pluginSelect, …) that moved out of the inline during adoption.
+  vm.runInContext(HOST_UI_MODULE, sandbox, { filename: 'dist/plugin-host-ui.js' });
   const scripts = Array.from(HTML.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi))
     .filter(([, a]) => !/\ssrc\s*=/.test(a || ''))
     .map(([, , c]) => c);
@@ -666,7 +674,12 @@ async function runRemoteInstallOfflineHarness() {
 const mobileHtml = (doc) => String((doc.getElementById('mobile-main') || {}).innerHTML || '');
 
 function bootMobile(opts) {
-  const app = bootApp(opts);
+  // Force mobile the way production does: boot on the 'android' platform so the async init sets
+  // hostPlatform='android'. @skipi/plugin-host-ui captures the host's shouldUseMobileShell at
+  // create(); that captured function reads hostPlatform live, so booting on android makes both the
+  // host's and the module's mobile branch active (overriding the sandbox global alone no longer
+  // reaches the module after adoption).
+  const app = bootApp({ ...(opts || {}), platform: 'android' });
   app.sandbox.shouldUseMobileShell = () => true;
   return app;
 }
@@ -802,7 +815,9 @@ function bootMobile(opts) {
   sandbox.pluginLaunch('bnwas-time-anchor');
   const h = mobileHtml(doc);
   ok(h.includes('id="plugin-host-container"'), 'mobile plugin screen mounts into the single #plugin-host-container');
-  ok((HTML.match(/SkipiPluginHost\.mount\(/g) || []).length === 1, 'exactly one SkipiPluginHost.mount call site (pluginMountInto)');
+  // The single mount choke point moved into @skipi/plugin-host-ui's pluginMountInto (host.mount);
+  // the host document must carry no direct SkipiPluginHost.mount() bypass of it.
+  ok((HOST_UI_MODULE.match(/host\.mount\(/g) || []).length === 1 && (HTML.match(/SkipiPluginHost\.mount\(/g) || []).length === 0, 'exactly one plugin mount call site (module pluginMountInto), no host-side bypass');
   ok(!/srcdoc\s*=/.test(HTML), 'host document builds no iframes of its own (runtime bridge owns the frame)');
 }
 
