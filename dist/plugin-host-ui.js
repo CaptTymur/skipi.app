@@ -77,23 +77,48 @@
     function remoteInstalledEntryFor(id){
       var rec = remoteInstalledMeta(id); if(!rec) return null;
       var entry = rec.entry || {};
+      var bundled = bundledPluginById(id) || {};
       return {
         id:id,
         remote:true,
         firstParty:true,
-        category:'utils',
-        icon:'▦',
+        category:entry.category || bundled.category || 'utils',
+        icon:entry.icon || bundled.icon || '▦',
         name:rec.name || rec.title || entry.name || entry.title || id,
-        short:'Installed remote first-party plugin · works offline after install',
-        description:'Signed first-party plugin installed from the production catalog and cached locally for offline use.',
-        safety_note:'Runs inside Skipi sandbox. Catalog signature, policy, compatibility and pack checksum are verified before install and before offline launch.',
+        short:bundled.id ? 'Updated first-party plugin · works offline after install' : 'Installed remote first-party plugin · works offline after install',
+        description:bundled.description || 'Signed first-party plugin installed from the production catalog and cached locally for offline use.',
+        safety_note:bundled.safety_note || 'Runs inside Skipi sandbox. Catalog signature, policy, compatibility and pack checksum are verified before install and before offline launch.',
         permissions:remotePermissionsFor(entry),
+        enabled:rec.enabled !== false,
         version:rec.version || entry.version,
-        toolCount:entry.toolCount || entry.tool_count || rec.toolCount || rec.tool_count
+        toolCount:entry.toolCount || entry.tool_count || rec.toolCount || rec.tool_count || bundled.toolCount || bundled.tool_count
       };
     }
+    function remoteInstallCacheMatches(id, remote){
+      if(!remote || !remote.version) return false;
+      try{
+        var raw = localStorage.getItem('skpd.entry:' + id);
+        var entry = raw ? JSON.parse(raw) : null;
+        var version = String(remote.version || '');
+        if(!entry || String(entry.slug || '') !== String(id) || String(entry.version || '') !== version) return false;
+        return !!localStorage.getItem('skpd.pack:' + id + '@' + version);
+      }catch(e){ return false; }
+    }
+    function remoteCanOverrideBundled(id, remote){
+      var bundled = bundledPluginById(id);
+      if(!bundled) return !!remote;
+      if(!remote || !remoteConfiguredSlug(id)) return false;
+      if(!remoteInstallCacheMatches(id, remote)) return false;
+      return semverGt(remote.version, bundled.version);
+    }
+    function remoteOverrideEntryFor(id){
+      var remote = remoteInstalledEntryFor(id);
+      if(!remote) return null;
+      if(bundledPluginById(id) && !remoteCanOverrideBundled(id, remote)) return null;
+      return remote;
+    }
     function pluginById(id){
-      return bundledPluginById(id) || remoteInstalledEntryFor(id) || null;
+      return remoteOverrideEntryFor(id) || bundledPluginById(id) || remoteInstalledEntryFor(id) || null;
     }
     function pluginCatLabel(key){
       var c = pluginCategories().find(function(x){ return x.key === key; });
@@ -176,7 +201,9 @@
     function remoteStagingSlugs(){
       if(!remoteStagingOn()) return [];
       var cfg = remoteConfig(), slugs = cfg.remoteSlugs || [];
-      return slugs.filter(function(s){ return !bundledPluginById(s); });
+      return slugs.filter(function(s){
+        return !bundledPluginById(s) || remoteUpdateAvailable(s);
+      });
     }
     function remoteConfiguredSlug(slug){
       var cfg = remoteConfig();
@@ -202,7 +229,7 @@
       if(!remoteConfiguredSlug(slug)) return false;
       var installed = remoteInstalledEntryFor(slug);
       var bundled = bundledPluginById(slug);
-      var baseline = installed ? installed.version : '';
+      var baseline = installed && (!bundled || remoteCanOverrideBundled(slug, installed)) ? installed.version : '';
       if(bundled && bundled.version && (!baseline || semverGt(bundled.version, baseline))) baseline = bundled.version;
       if(!baseline) return false;
       var latest = remoteCatalogVersion(slug);
@@ -449,7 +476,7 @@
     function pluginInstalledList(){
       var seen = {}, items = [];
       function push(p){ if(!p || !p.id || seen[p.id]) return; seen[p.id] = true; items.push(p); }
-      plugins.forEach(function(p){ if(!p.comingSoon && pluginStatus(p.id) === 'installed') push(p); });
+      plugins.forEach(function(p){ if(!p.comingSoon && pluginStatus(p.id) === 'installed') push(pluginById(p.id) || p); });
       if(typeof shouldUseMobileShell === 'function' && shouldUseMobileShell()) return items;
       Object.keys(remoteRegistryAll()).forEach(function(id){
         if(bundledPluginById(id)) return;
@@ -808,6 +835,9 @@
       remoteRegistryAll:remoteRegistryAll,
       remoteInstalledMeta:remoteInstalledMeta,
       remoteInstalledEntryFor:remoteInstalledEntryFor,
+      remoteInstallCacheMatches:remoteInstallCacheMatches,
+      remoteCanOverrideBundled:remoteCanOverrideBundled,
+      remoteOverrideEntryFor:remoteOverrideEntryFor,
       remoteCatalogVersion:remoteCatalogVersion,
       remoteUpdateAvailable:remoteUpdateAvailable,
       remoteUpdateActionHtml:remoteUpdateActionHtml,

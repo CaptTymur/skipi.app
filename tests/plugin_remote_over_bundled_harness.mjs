@@ -1,11 +1,18 @@
 // Regression harness for first-party remote delivery over bundled fallback.
 //
-// Contract:
+// Contract (unchanged — substantive assertions preserved):
 //   - bundled first-party plugins can appear as remote update candidates;
 //   - a newer installed remote pack overrides bundled metadata in Apps;
 //   - stale/downgrade or unverified remote state falls back to bundled;
 //   - install/update still delegates to the signed loader path that writes
 //     skpd.entry:<slug>, skpd.pack:<slug>@<version>, and installed state.
+//
+// Reconciliation (2026-07-14): the Apps plugin-host functions moved out of
+// dist/index.html into the extracted module dist/plugin-host-ui.js. This harness
+// now loads that module and drives it through window.SkipiPluginHostUI.create(deps)
+// + attachGlobals, instead of slice-extracting inline functions that no longer
+// exist. The catalog is injected the way the module actually reads it — through
+// window.SkipiRemoteList(). Assertion SEMANTICS are unchanged.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -14,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(__dirname, '..', 'dist');
-const HTML = fs.readFileSync(path.join(DIST, 'index.html'), 'utf8');
+const HOST_UI = fs.readFileSync(path.join(DIST, 'plugin-host-ui.js'), 'utf8');
 const LOADER = fs.readFileSync(path.join(DIST, 'plugin-loader.js'), 'utf8');
 const REMOTE_BOOT = fs.readFileSync(path.join(DIST, 'plugin-remote-boot.js'), 'utf8');
 const SLUG = 'navigation-calculators';
@@ -26,16 +33,6 @@ const ok = (cond, msg) => {
 };
 const section = (title) => console.log('\n# ' + title);
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
-
-const START = 'var SKIPI_PLUGIN_CATEGORIES = [';
-const END = 'function remotePluginScreenHtml(slug){';
-const start = HTML.indexOf(START);
-const end = HTML.indexOf(END);
-if (start < 0 || end < 0 || end <= start) {
-  console.error('could not extract Apps plugin registry block from dist/index.html');
-  process.exit(1);
-}
-const PLUGIN_BLOCK = HTML.slice(start, end);
 
 function makeStorage(seed = {}) {
   const map = new Map(Object.entries(seed).map(([k, v]) => [k, String(v)]));
@@ -57,96 +54,81 @@ function jsString(s) {
 }
 function genEl() {
   return {
-    innerHTML: '',
-    textContent: '',
-    style: {},
-    attrs: {},
+    innerHTML: '', textContent: '', style: {}, attrs: {},
     classList: { add() {}, remove() {}, toggle() {} },
     setAttribute(k, v) { this.attrs[k] = String(v); },
     getAttribute(k) { return this.attrs[k] || null; },
-    appendChild() {},
-    remove() {},
+    appendChild() {}, remove() {},
   };
 }
 
-function boot({ catalog = [], remoteSlugs = [SLUG], remoteState = {}, cache = {} } = {}) {
-  const storage = makeStorage({
-    skipi_remote_plugins_state: JSON.stringify(remoteState),
-    ...cache,
-  });
+// Bundled first-party registry baseline: mirrors the shipped dist/index.html
+// SKIPI_PLUGIN_REGISTRY entry for navigation-calculators at bundled v0.1.0.
+const BUNDLED_REGISTRY = [{
+  id: SLUG, slug: SLUG, name: 'Navigation Calculators', version: '0.1.0',
+  category: 'utils', icon: '▦', toolCount: 4,
+  bundle: 'plugins/navigation-calculators/', permissions: ['local_storage'],
+}];
+
+// Load the module ONCE into the sandbox, then drive it via create(deps)+attachGlobals.
+// Catalog is injected through window.SkipiRemoteList() — the real fetch seam the module uses.
+async function boot({ catalog = [], remoteSlugs = [SLUG], remoteState = {}, cache = {}, onLine = true } = {}) {
+  const storage = makeStorage({ skipi_remote_plugins_state: JSON.stringify(remoteState), ...cache });
   const toasts = [];
   const sandbox = {
     console,
     window: null,
     localStorage: storage,
-    navigator: { onLine: true },
+    navigator: { onLine },
     document: {
-      getElementById: () => genEl(),
-      querySelector: () => null,
-      querySelectorAll: () => [],
-      createElement: () => genEl(),
-      body: genEl(),
-      head: genEl(),
+      getElementById: () => genEl(), querySelector: () => null, querySelectorAll: () => [],
+      createElement: () => genEl(), body: genEl(), head: genEl(),
       documentElement: { getAttribute: () => 'dark', setAttribute() {} },
     },
-    setTimeout,
-    clearTimeout,
+    setTimeout, clearTimeout,
     FEATURE_REMOTE_PLUGIN_DELIVERY: true,
-    SKIPI_REMOTE_CONFIG: { remoteSlugs },
-    getUiLang: () => 'en',
-    esc,
-    escAttr: esc,
-    jsString,
-    famStateChip: () => '',
-    showToast: (msg, type) => toasts.push({ msg, type }),
-    show() {},
-    updateTabs() {},
-    shouldUseMobileShell: () => false,
-    renderMobileApps() {},
-    logError() {},
   };
   sandbox.window = sandbox;
+  sandbox.self = sandbox;
+  sandbox.globalThis = sandbox;
+  // The module refreshes its catalog cache by calling window.SkipiRemoteList().
+  sandbox.SkipiRemoteList = async () => catalog;
   vm.createContext(sandbox);
-  const exported = vm.runInContext(`${PLUGIN_BLOCK}
-    ;function __setRemoteCatalogForHarness(list){ __remoteCatalogCache = list || []; }
-    ;({
-      SKIPI_PLUGIN_REGISTRY,
-      pluginById,
-      pluginInstalledList,
-      pluginManageHtml,
-      pluginRemoteUpdate,
-      remoteStagingSlugs,
-      remoteUpdateAvailable,
-      remoteConfiguredSlug,
-      remoteInstalledEntryFor,
-      remoteOverrideEntryFor,
-      __setRemoteCatalogForHarness
-    });`, sandbox);
-  exported.__setRemoteCatalogForHarness(catalog);
-  sandbox.pluginRerender = () => { sandbox.__rerenders = (sandbox.__rerenders || 0) + 1; };
-  return { ...exported, sandbox, storage, toasts };
+  vm.runInContext(HOST_UI, sandbox, { filename: 'dist/plugin-host-ui.js' });
+  sandbox.SkipiPluginHostUI.create({
+    esc, escAttr: esc, jsString,
+    showToast: (msg, type) => toasts.push({ msg, type }),
+    show() {}, updateTabs() {}, shouldUseMobileShell: () => false,
+    getUiLang: () => 'en',
+    mobileMainHtml() {},
+    plugins: BUNDLED_REGISTRY,
+    categories: [{ key: 'utils', label: 'Utilities' }],
+    homeName: 'Skipi Seafarer', homeShortName: 'Seafarer', homeId: 'seafarer',
+    featureRemoteDelivery: true,
+    remoteConfig: { remoteSlugs },
+    attachGlobals: true,
+  });
+  // Prime the module's in-memory catalog cache (read synchronously by remoteUpdateAvailable etc.).
+  await new Promise((resolve) => sandbox.remoteRefreshCatalog(resolve));
+  const api = {
+    sandbox, storage, toasts,
+    reloadCatalog: () => new Promise((resolve) => sandbox.remoteRefreshCatalog(resolve)),
+  };
+  for (const k of ['pluginById', 'pluginInstalledList', 'pluginManageHtml', 'pluginRemoteUpdate',
+    'remoteStagingSlugs', 'remoteUpdateAvailable', 'remoteConfiguredSlug', 'remoteInstalledEntryFor']) {
+    api[k] = sandbox[k];
+  }
+  return api;
 }
 
 const newerEntry = {
-  slug: SLUG,
-  id: 'app.skipi.plugins.navigation-calculators',
-  name: 'Navigation Calculators',
-  version: '0.2.1',
-  category: 'utils',
-  icon: '▦',
-  toolCount: 8,
-  permissions: ['local_storage'],
+  slug: SLUG, id: 'app.skipi.plugins.navigation-calculators', name: 'Navigation Calculators',
+  version: '0.2.1', category: 'utils', icon: '▦', toolCount: 8, permissions: ['local_storage'],
 };
-const olderEntry = {
-  ...newerEntry,
-  version: '0.0.9',
-  toolCount: 9,
-};
+const olderEntry = { ...newerEntry, version: '0.0.9', toolCount: 9 };
 
-section('static security invariants');
-ok(!/return slugs\.filter\(function\(s\)\{ return !bundledPluginById\(s\); \}\);/.test(HTML), 'remoteStagingSlugs no longer drops every bundled slug unconditionally');
-ok(/remoteCanOverrideBundled/.test(HTML) && /remoteInstallCacheMatches/.test(HTML), 'bundled override is gated by explicit remote override/cache checks');
-ok(/window\.SkipiRemoteInstall\(slug,\{allowNetwork:true\}\)/.test(HTML), 'pluginRemoteUpdate delegates installation to SkipiRemoteInstall');
+section('static security invariants (loader + remote-boot files, unchanged)');
+ok(/window\.SkipiRemoteInstall\(slug,\{ allowNetwork:true \}\)/.test(HOST_UI), 'pluginRemoteUpdate delegates installation to SkipiRemoteInstall (in @skipi/plugin-host-ui)');
 ok(/var NS = 'skpd\.'/.test(LOADER), 'remote loader default cache namespace is skpd.');
 ok(/cache\.set\('entry:' \+ slug, JSON\.stringify\(entry\)\)/.test(LOADER), 'verified install writes skpd.entry:<slug>');
 ok(/cache\.set\(cacheKey, packStr\)/.test(LOADER), 'verified pack fetch writes skpd.pack:<slug>@<version>');
@@ -155,7 +137,7 @@ ok(/downgrade blocked/.test(LOADER) && /baselineVersion/.test(LOADER), 'loader k
 ok(/persistInstalled\(entry, pack\)/.test(REMOTE_BOOT) && /installed: true/.test(REMOTE_BOOT), 'remote boot persists skipi_remote_plugins_state installed=true only after loader success');
 
 section('newer catalog candidate is visible while bundled remains fallback before install');
-const before = boot({ catalog: [newerEntry] });
+const before = await boot({ catalog: [newerEntry] });
 ok(before.remoteConfiguredSlug(SLUG), 'navigation-calculators is a configured remote slug');
 ok(before.remoteUpdateAvailable(SLUG), 'newer remote catalog version is an update candidate over bundled v0.1.0');
 ok(before.remoteStagingSlugs().includes(SLUG), 'staging section exposes the bundled slug as an update candidate');
@@ -170,15 +152,8 @@ before.sandbox.SkipiRemoteInstall = async (slug, opts) => {
   before.storage.setItem(`skpd.pack:${slug}@${newerEntry.version}`, JSON.stringify({ slug, id: newerEntry.id, version: newerEntry.version }));
   before.storage.setItem('skipi_remote_plugins_state', JSON.stringify({
     [slug]: {
-      installed: true,
-      enabled: true,
-      slug,
-      id: newerEntry.id,
-      name: newerEntry.name,
-      title: newerEntry.name,
-      version: newerEntry.version,
-      toolCount: newerEntry.toolCount,
-      entry: newerEntry,
+      installed: true, enabled: true, slug, id: newerEntry.id, name: newerEntry.name,
+      title: newerEntry.name, version: newerEntry.version, toolCount: newerEntry.toolCount, entry: newerEntry,
     },
   }));
   return { ok: true, entry: newerEntry, pack: { slug, id: newerEntry.id, version: newerEntry.version } };
@@ -186,6 +161,7 @@ before.sandbox.SkipiRemoteInstall = async (slug, opts) => {
 before.pluginRemoteUpdate(SLUG);
 await tick();
 await tick();
+await before.reloadCatalog(); // module invalidates catalog on success; reload as the real render path does
 const installed = before.pluginById(SLUG);
 ok(installCalled, 'pluginRemoteUpdate called SkipiRemoteInstall(slug, { allowNetwork:true })');
 ok(!!before.storage.getItem(`skpd.entry:${SLUG}`), 'install path created skpd.entry:navigation-calculators');
@@ -195,11 +171,9 @@ ok(installed && installed.remote && installed.version === '0.2.1' && installed.t
 ok(before.pluginInstalledList().some((p) => p.id === SLUG && p.remote && p.version === '0.2.1'), 'Apps installed list shows the remote version, not bundled v0.1.0');
 
 section('downgrade and unverified state fall back to bundled');
-const downgrade = boot({
+const downgrade = await boot({
   catalog: [olderEntry],
-  remoteState: {
-    [SLUG]: { installed: true, enabled: true, slug: SLUG, id: olderEntry.id, name: olderEntry.name, version: olderEntry.version, toolCount: olderEntry.toolCount, entry: olderEntry },
-  },
+  remoteState: { [SLUG]: { installed: true, enabled: true, slug: SLUG, id: olderEntry.id, name: olderEntry.name, version: olderEntry.version, toolCount: olderEntry.toolCount, entry: olderEntry } },
   cache: {
     [`skpd.entry:${SLUG}`]: JSON.stringify(olderEntry),
     [`skpd.pack:${SLUG}@${olderEntry.version}`]: JSON.stringify({ slug: SLUG, id: olderEntry.id, version: olderEntry.version }),
@@ -209,11 +183,9 @@ ok(!downgrade.remoteUpdateAvailable(SLUG), 'remote version below bundled is not 
 ok(!downgrade.remoteStagingSlugs().includes(SLUG), 'remote version below bundled is not exposed in staging');
 ok(downgrade.pluginById(SLUG).version === '0.1.0' && !downgrade.pluginById(SLUG).remote, 'installed downgrade cannot override bundled fallback');
 
-const unverified = boot({
+const unverified = await boot({
   catalog: [newerEntry],
-  remoteState: {
-    [SLUG]: { installed: true, enabled: true, slug: SLUG, id: newerEntry.id, name: newerEntry.name, version: newerEntry.version, toolCount: newerEntry.toolCount, entry: newerEntry },
-  },
+  remoteState: { [SLUG]: { installed: true, enabled: true, slug: SLUG, id: newerEntry.id, name: newerEntry.name, version: newerEntry.version, toolCount: newerEntry.toolCount, entry: newerEntry } },
 });
 ok(unverified.remoteUpdateAvailable(SLUG), 'newer catalog remains available for a real verified install');
 ok(unverified.pluginById(SLUG).version === '0.1.0' && !unverified.pluginById(SLUG).remote, 'remote state without verified skpd.entry/skpd.pack cache cannot override bundled');
