@@ -1,0 +1,53 @@
+# Skipi Seafarer — smoke (launch → first screen → demo → settings → back → overflow)
+# Tauri WebView app. Maestro reads the Android accessibility tree; WebView text IS exposed.
+#
+# CALIBRATION NOTE (2026-06-25, live run on Pixel6/android-34):
+#   На текущем Android debug-APK свежая установка сразу открывает 9-шаговый мастер
+#   «Создание профиля» (ШАГ 1/9) и тёмную тему — т.е. APK собран ДО фиксов Issue A
+#   (welcome-экран Create/Open/Demo) и light-default, которые есть на iOS-ветке.
+#   Поэтому ниже: ассертим, что приложение реально отрисовало контент (не пустой WebView,
+#   не краш), затем выходим из мастера (Отмена) → welcome → демо. Когда выйдет свежий
+#   билд с Issue A, заменить первый ассерт на строгий welcome (Create/Open/Demo).
+appId: app.skipi.seafarer
+name: "Seafarer · smoke"
+tags:
+  - smoke
+  - seafarer
+---
+# 1) launch (fresh state)
+- launchApp:
+    clearState: true
+
+# 2) first screen rendered (welcome ИЛИ мастер — главное: WebView отрисовал контент, не краш/не пусто)
+- assertVisible:
+    text: "Скипи Моряк|Создание профиля|Создать профиль|Открыть демо|Open demo|Демонстрация|ШАГ"
+- takeScreenshot: "01-first-screen"
+
+# 6) horizontal overflow (best-effort): свайп влево не должен панорамировать контент вбок
+- swipe:
+    direction: LEFT
+- assertVisible:
+    text: "Скипи Моряк|Создание профиля|Создать профиль|Открыть демо|Демонстрация|ШАГ"
+- takeScreenshot: "02-after-swipe-left-no-overflow"
+
+# выйти из мастера, если он открылся (на старых билдах fresh install сразу в мастере)
+- tapOn:
+    text: "Отмена|Cancel"
+    optional: true
+- takeScreenshot: "03-after-cancel-wizard"
+
+# 3) open demo
+- tapOn:
+    text: "Открыть демо|Open demo|Демонстрация"
+    optional: true
+- takeScreenshot: "04-demo-opened"
+
+# 4) open settings (шестерёнка в правом верхнем углу; ярлык/aria может называться Настройки)
+- tapOn:
+    text: "Настройки|Settings"
+    optional: true
+- takeScreenshot: "05-settings"
+
+# 5) back / home works
+- back
+- takeScreenshot: "06-after-back"

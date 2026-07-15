@@ -103,7 +103,7 @@ def version_consistency(repo: pathlib.Path) -> Result:
     tauri = json.loads(read_text(repo / "src-tauri" / "tauri.conf.json"))
     tauri_version = tauri.get("version", "")
     title = tauri.get("app", {}).get("windows", [{}])[0].get("title", "")
-    title_version = extract_regex(title, r"Skipi\s+([0-9]+\.[0-9]+\.[0-9]+)", "window title version")
+    title_version = extract_regex(title, r"\b([0-9]+\.[0-9]+\.[0-9]+)\b", "window title version")
     html = read_text(repo / "dist" / "index.html")
     welcome_version = extract_regex(html, r'id="welcome-version">([^<]+)<', "welcome UI version")
     values = {

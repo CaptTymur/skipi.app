@@ -9,9 +9,12 @@
 #     - installers + .sig files from GitHub release
 #     - latest.rf.json (manifest for https://api-ru.skipi.app/latest.json)
 #
-# Then upload:
-#   1) files to /downloads/seafarer/<version>/ on Timeweb
-#   2) latest.rf.json as /latest.json on Timeweb
+# Then publish ATOMICALLY (assets first, verified, manifest last) — DO NOT
+# hand-upload latest.json before the assets (that caused the v0.4.164 404):
+#   RF_SFTP_USER=... RF_SFTP_PASS=... bash scripts/publish-rf-mirror.sh \
+#     --staging /tmp/skipi-rf-seafarer-<version> \
+#     --manifest-local latest.rf.json \
+#     --manifest-url https://api-ru.skipi.app/latest.json
 
 set -euo pipefail
 
@@ -81,8 +84,14 @@ jq --arg version "$VERSION" --arg base "$BASE_URL" '
 echo "Prepared RF mirror payload:"
 echo "  $STAGE"
 echo
-echo "Upload to Timeweb:"
-echo "  1) /downloads/seafarer/${VERSION}/  <- installers + .sig files"
-echo "  2) /latest.json                    <- latest.rf.json"
+echo "Publish ATOMICALLY (assets first -> verify -> manifest last -> verify):"
+echo "  RF_SFTP_USER=<user> RF_SFTP_PASS=<pass> \\"
+echo "  bash $(dirname "$0")/publish-rf-mirror.sh \\"
+echo "    --staging \"$STAGE\" \\"
+echo "    --manifest-local latest.rf.json \\"
+echo "    --manifest-url https://api-ru.skipi.app/latest.json"
+echo
+echo "  (dry-run first: add --dry-run. NEVER hand-upload latest.json before the"
+echo "   assets — that race caused the v0.4.164 HTTP 404.)"
 echo
 ls -lh "$STAGE"

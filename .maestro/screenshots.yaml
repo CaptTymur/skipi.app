@@ -1,0 +1,28 @@
+# Skipi Seafarer — screenshot smoke (a11y-free)
+# ПОЧЕМУ: Tauri/wry WebView НЕ отдаёт DOM в Android accessibility-дерево, поэтому Maestro
+# не видит/не тапает текст внутри приложения (подтверждено 2026-06-25: hierarchy = 1 WebView, 0 текста).
+# Этот флоу не использует текстовые селекторы — только launch + скриншоты + тап по координатам.
+# Назначение: доказать, что приложение стартует без краша и снять артефакты-скриншоты экранов.
+# Текстовый smoke.yaml — целевой, заработает после включения WebView-a11y (или через Maestro AI-ассерты).
+appId: app.skipi.seafarer
+name: "Seafarer · screenshots"
+tags:
+  - screenshots
+  - seafarer
+---
+- launchApp:
+    clearState: true
+- takeScreenshot: "01-launch"
+# шестерёнка настроек — верхний правый угол (координаты в % устойчивы к разрешению)
+- tapOn:
+    point: "93%,8%"
+- takeScreenshot: "02-after-settings-tap"
+- back
+- takeScreenshot: "03-after-back"
+# если открыт мастер «Создание профиля» — кнопка Отмена внизу карточки
+- tapOn:
+    point: "72%,46%"
+    optional: true
+- takeScreenshot: "04-after-cancel"
+- back
+- takeScreenshot: "05-final"

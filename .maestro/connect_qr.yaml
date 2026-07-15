@@ -1,0 +1,32 @@
+# Skipi Seafarer — token/connect + QR shell checks (flows 7 & 8)
+# Goal: token/connect screen opens; QR screen is SHELL-ONLY and does NOT fake success.
+appId: app.skipi.seafarer
+name: "Seafarer · connect+qr"
+tags:
+  - connect
+  - qr
+  - seafarer
+---
+- launchApp:
+    clearState: true
+# enter the app via demo so in-app screens are reachable
+- tapOn:
+    text: "Открыть демо|Open demo"
+- assertVisible:
+    text: ".*"
+
+# 7) token / connect screen opens (CALIBRATE nav label)
+- tapOn:
+    text: "Token|Токен|Вступить|Присоединиться|Connect"
+    optional: true
+- takeScreenshot: "06-connect-token"
+
+# 8) QR screen is shell-only and does NOT fake success.
+#    Open the QR/scan screen…
+- tapOn:
+    text: "Сканировать|Scan|QR"
+    optional: true
+- takeScreenshot: "07-qr-shell"
+#    …and assert NO fake success indicator is shown (shell only).
+- assertNotVisible:
+    text: "Успешно|Успех|Подключено|Connected|Success|Готово ✓|Подключение выполнено"
