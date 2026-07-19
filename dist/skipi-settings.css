@@ -1,0 +1,1802 @@
+/* @skipi/settings surface. Every rule is scoped to the module root. */
+.skipi-settings {
+  --ss-fallback-bg: #f4f4f7;
+  --ss-fallback-panel: #ffffff;
+  --ss-fallback-panel-subtle: #f1f1f5;
+  --ss-fallback-text: #1d1d1f;
+  --ss-fallback-muted: #6e6e73;
+  --ss-fallback-border: #d8d8de;
+  --ss-fallback-accent: #006edb;
+  --ss-fallback-accent-hover: #005fc7;
+  --ss-fallback-accent-soft: rgba(10, 132, 255, 0.11);
+  --ss-bg: var(--skipi-settings-bg, var(--bg, var(--ss-fallback-bg)));
+  --ss-panel: var(--skipi-settings-panel, var(--panel, var(--surface, var(--ss-fallback-panel))));
+  --ss-panel-subtle: var(--skipi-settings-panel-subtle, var(--panel2, var(--surface-secondary, var(--ss-fallback-panel-subtle))));
+  --ss-text: var(--skipi-settings-text, var(--text, var(--color-text, var(--ss-fallback-text))));
+  --ss-muted: var(--skipi-settings-muted, var(--text2, var(--color-muted, var(--ss-fallback-muted))));
+  --ss-border: var(--skipi-settings-border, var(--border, var(--color-border, var(--ss-fallback-border))));
+  --ss-border-strong: var(--skipi-settings-border-strong, var(--border-strong, var(--ss-border)));
+  --ss-accent: var(--skipi-settings-accent, var(--accent, var(--color-accent, var(--ss-fallback-accent))));
+  --ss-accent-hover: var(--skipi-settings-accent-hover, var(--accent2, var(--ss-fallback-accent-hover)));
+  --ss-accent-soft: var(--skipi-settings-accent-soft, var(--accent-bg, var(--ss-fallback-accent-soft)));
+  --ss-accent-contrast: var(--skipi-settings-accent-contrast, #ffffff);
+  --ss-success: var(--skipi-settings-success, var(--ok, #22863a));
+  --ss-success-soft: var(--skipi-settings-success-soft, rgba(34, 134, 58, 0.11));
+  --ss-warning: var(--skipi-settings-warning, var(--warn, #a15c00));
+  --ss-warning-soft: var(--skipi-settings-warning-soft, rgba(191, 111, 0, 0.12));
+  --ss-danger: var(--skipi-settings-danger, var(--err, #d1242f));
+  --ss-danger-soft: var(--skipi-settings-danger-soft, rgba(209, 36, 47, 0.11));
+  --ss-focus: var(--skipi-settings-focus, var(--ss-accent));
+  --ss-radius-sm: var(--skipi-settings-radius-sm, 8px);
+  --ss-radius-md: var(--skipi-settings-radius-md, 12px);
+  --ss-radius-lg: var(--skipi-settings-radius-lg, 16px);
+  --ss-shadow: var(--skipi-settings-shadow, 0 24px 70px rgba(18, 22, 33, 0.24));
+  --ss-duration: var(--skipi-settings-duration, 160ms);
+  width: 100%;
+  min-width: 0;
+  color: var(--ss-text);
+  font-family: var(--skipi-settings-font, inherit);
+  font-size: 14px;
+  line-height: 1.45;
+  text-align: start;
+  isolation: isolate;
+  container-name: skipi-settings;
+  container-type: inline-size;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.skipi-settings,
+.skipi-settings *,
+.skipi-settings *::before,
+.skipi-settings *::after {
+  box-sizing: border-box;
+}
+
+.skipi-settings button,
+.skipi-settings input,
+.skipi-settings select,
+.skipi-settings textarea {
+  color: inherit;
+  font: inherit;
+}
+
+.skipi-settings [hidden] {
+  display: none !important;
+}
+
+.skipi-settings .skipi-settings__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--skipi-settings-z-index, 1000);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--skipi-settings-scrim, rgba(0, 0, 0, 0.48));
+}
+
+.skipi-settings.skipi-settings--desktop .skipi-settings__shell--desktop {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(220px, 242px) minmax(0, 1fr);
+  width: min(var(--skipi-settings-width, 980px), 100%);
+  height: var(--skipi-settings-height, min(720px, calc(100dvh - 48px)));
+  min-height: 480px;
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--ss-border);
+  border-radius: var(--ss-radius-lg);
+  background: var(--ss-panel);
+  box-shadow: var(--ss-shadow);
+}
+
+.skipi-settings.skipi-settings--embedded .skipi-settings__shell {
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+  box-shadow: none;
+}
+
+.skipi-settings .skipi-settings__sidebar {
+  min-width: 0;
+  min-height: 0;
+  padding: 12px 10px 18px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  border-inline-end: 1px solid var(--ss-border);
+  background: var(--ss-panel);
+}
+
+.skipi-settings .skipi-settings__sidebar-toolbar {
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+  margin-bottom: 5px;
+  padding-inline: 2px;
+}
+
+.skipi-settings .skipi-settings__sidebar-header {
+  padding: 2px 8px 17px;
+}
+
+.skipi-settings .skipi-settings__sidebar-title {
+  margin: 0;
+  color: var(--ss-text);
+  font-size: 20px;
+  font-weight: 780;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+}
+
+.skipi-settings .skipi-settings__sidebar-description {
+  margin: 6px 0 0;
+  color: var(--ss-muted);
+  font-size: 12px;
+  line-height: 1.42;
+}
+
+.skipi-settings .skipi-settings__mobile-header,
+.skipi-settings .skipi-settings__mobile-list {
+  display: none;
+}
+
+.skipi-settings .skipi-settings__mobile-group {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.skipi-settings .skipi-settings__mobile-item {
+  color: inherit;
+  font: inherit;
+  text-decoration: none;
+}
+
+.skipi-settings .skipi-settings__mobile-chevron {
+  color: var(--ss-muted);
+  font-size: 22px;
+  font-weight: 350;
+  line-height: 1;
+}
+
+.skipi-settings .skipi-settings__nav {
+  display: grid;
+  gap: 2px;
+}
+
+.skipi-settings .skipi-settings__nav-section + .skipi-settings__nav-section {
+  margin-top: 14px;
+}
+
+.skipi-settings .skipi-settings__nav-title {
+  margin: 0;
+  padding: 8px 10px 5px;
+  color: var(--ss-muted);
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.2;
+  letter-spacing: 0.065em;
+  text-transform: uppercase;
+}
+
+.skipi-settings .skipi-settings__nav-group {
+  display: grid;
+  gap: 3px;
+}
+
+.skipi-settings .skipi-settings__nav-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 39px;
+  margin: 0;
+  padding: 6px 9px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ss-text);
+  text-align: start;
+  text-decoration: none;
+  cursor: pointer;
+  appearance: none;
+  transition: background-color var(--ss-duration) ease, border-color var(--ss-duration) ease, color var(--ss-duration) ease;
+}
+
+.skipi-settings .skipi-settings__nav-item--configured {
+  min-height: 38px;
+}
+
+.skipi-settings .skipi-settings__nav-item.is-active,
+.skipi-settings .skipi-settings__nav-item[aria-current="page"] {
+  border-color: transparent;
+  background: var(--ss-panel-subtle);
+}
+
+.skipi-settings .skipi-settings__nav-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ss-text);
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1;
+}
+
+.skipi-settings .skipi-settings__nav-icon svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.skipi-settings .skipi-settings__nav-item.is-active .skipi-settings__nav-icon,
+.skipi-settings .skipi-settings__nav-item[aria-current="page"] .skipi-settings__nav-icon {
+  border-color: transparent;
+  background: transparent;
+  color: var(--ss-text);
+}
+
+.skipi-settings .skipi-settings__nav-copy {
+  min-width: 0;
+}
+
+.skipi-settings .skipi-settings__nav-label {
+  display: block;
+  overflow: hidden;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 590;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skipi-settings .skipi-settings__nav-description {
+  display: none;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--ss-muted);
+  font-size: 10.5px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skipi-settings .skipi-settings__nav-trailing {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ss-muted);
+}
+
+.skipi-settings .skipi-settings__nav-item::after {
+  display: none;
+}
+
+.skipi-settings .skipi-settings__sidebar-footer {
+  margin: 22px 8px 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--ss-border);
+  color: var(--ss-muted);
+  font-size: 11px;
+}
+
+.skipi-settings .skipi-settings__body {
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  background: var(--ss-panel);
+  scroll-behavior: smooth;
+}
+
+.skipi-settings .skipi-settings__detail {
+  width: min(100%, 760px);
+  min-height: 100%;
+  margin: 0 auto;
+  padding: 26px 38px 76px;
+}
+
+.skipi-settings .skipi-settings__detail-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.skipi-settings .skipi-settings__back {
+  display: none;
+  align-items: center;
+  gap: 5px;
+  min-height: 40px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--ss-accent);
+  font-weight: 680;
+  cursor: pointer;
+}
+
+.skipi-settings .skipi-settings__back-icon {
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.skipi-settings .skipi-settings__close {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: var(--ss-panel-subtle);
+  color: var(--ss-text);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.skipi-settings .skipi-settings__detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 22px;
+}
+
+.skipi-settings .skipi-settings__detail-heading {
+  min-width: 0;
+}
+
+.skipi-settings .skipi-settings__eyebrow {
+  margin: 0 0 5px;
+  color: var(--ss-accent);
+  font-size: 11px;
+  font-weight: 760;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.skipi-settings .skipi-settings__detail-title {
+  margin: 0;
+  color: var(--ss-text);
+  font-size: 20px;
+  font-weight: 690;
+  line-height: 1.18;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.skipi-settings .skipi-settings__detail-description {
+  max-width: 620px;
+  margin: 7px 0 0;
+  color: var(--ss-muted);
+  font-size: 13px;
+  line-height: 1.48;
+}
+
+.skipi-settings .skipi-settings__section + .skipi-settings__section {
+  margin-top: 25px;
+}
+
+.skipi-settings .skipi-settings__section-title {
+  margin: 0 3px 8px;
+  color: var(--ss-muted);
+  font-size: 11px;
+  font-weight: 780;
+  line-height: 1.25;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.skipi-settings .skipi-settings__section-description {
+  margin: -2px 3px 10px;
+  color: var(--ss-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.skipi-settings .skipi-settings__group {
+  overflow: hidden;
+  border: 1px solid var(--ss-border);
+  border-radius: var(--ss-radius-md);
+  background: var(--ss-panel);
+}
+
+.skipi-settings .skipi-settings__row {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  min-height: 66px;
+  padding: 13px 16px;
+  background: var(--ss-panel);
+}
+
+.skipi-settings .skipi-settings__row + .skipi-settings__row {
+  border-top: 1px solid var(--ss-border);
+}
+
+.skipi-settings .skipi-settings__row--link {
+  width: 100%;
+  border: 0;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.skipi-settings .skipi-settings__row-copy {
+  min-width: 0;
+}
+
+.skipi-settings .skipi-settings__row-label {
+  display: block;
+  color: var(--ss-text);
+  font-size: 13.5px;
+  font-weight: 650;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.skipi-settings .skipi-settings__row-description {
+  display: block;
+  margin-top: 3px;
+  color: var(--ss-muted);
+  font-size: 11.5px;
+  line-height: 1.42;
+  overflow-wrap: anywhere;
+}
+
+.skipi-settings .skipi-settings__row-control {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.skipi-settings .skipi-settings__row--stack,
+.skipi-settings .skipi-settings__row[data-layout="stack"] {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 10px;
+}
+
+.skipi-settings .skipi-settings__row--stack .skipi-settings__row-control,
+.skipi-settings .skipi-settings__row[data-layout="stack"] .skipi-settings__row-control {
+  justify-content: stretch;
+  width: 100%;
+}
+
+.skipi-settings .skipi-settings__cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.skipi-settings .skipi-settings__card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--ss-border);
+  border-radius: var(--ss-radius-md);
+  background: var(--ss-panel);
+}
+
+.skipi-settings .skipi-settings__card--accent {
+  border-color: var(--ss-accent);
+  background: var(--ss-accent-soft);
+}
+
+.skipi-settings .skipi-settings__card-title {
+  margin: 0;
+  color: var(--ss-text);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.skipi-settings .skipi-settings__card-description {
+  margin: 5px 0 0;
+  color: var(--ss-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.skipi-settings .skipi-settings__card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.skipi-settings .skipi-settings__notice {
+  padding: 13px 15px;
+  border: 1px solid var(--ss-border);
+  border-inline-start: 4px solid var(--ss-accent);
+  border-radius: var(--ss-radius-md);
+  background: var(--ss-accent-soft);
+}
+
+.skipi-settings .skipi-settings__notice-title {
+  display: block;
+  margin: 0 0 3px;
+  color: var(--ss-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.skipi-settings .skipi-settings__notice-text {
+  margin: 0;
+  color: var(--ss-muted);
+  font-size: 12px;
+  line-height: 1.48;
+}
+
+.skipi-settings .skipi-settings__mount {
+  width: 100%;
+  min-width: 0;
+  min-height: 120px;
+  overflow-wrap: anywhere;
+}
+
+.skipi-settings .skipi-settings__mount:empty {
+  display: none;
+}
+
+.skipi-settings .skipi-settings__about-copy {
+  min-width: 0;
+  color: var(--ss-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.skipi-settings .skipi-settings__about-copy strong {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--ss-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.skipi-settings .skipi-settings__about-copy p {
+  margin: 0;
+}
+
+.skipi-settings .skipi-settings__about-copy p + p {
+  margin-top: 5px;
+}
+
+.skipi-settings .skipi-settings__field {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+.skipi-settings .skipi-settings__field-label {
+  color: var(--ss-muted);
+  font-size: 11px;
+  font-weight: 670;
+}
+
+.skipi-settings .skipi-settings__input,
+.skipi-settings .skipi-settings__select,
+.skipi-settings .skipi-settings__textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--ss-border);
+  border-radius: var(--ss-radius-sm);
+  outline: 0;
+  background: var(--ss-panel-subtle);
+  color: var(--ss-text);
+  transition: border-color var(--ss-duration) ease, box-shadow var(--ss-duration) ease, background-color var(--ss-duration) ease;
+}
+
+.skipi-settings .skipi-settings__input {
+  width: min(var(--skipi-settings-input-width, 260px), 100%);
+}
+
+.skipi-settings .skipi-settings__select {
+  width: auto;
+  max-width: min(280px, 100%);
+  padding-inline-end: 30px;
+  cursor: pointer;
+}
+
+.skipi-settings .skipi-settings__textarea {
+  min-height: 96px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.skipi-settings .skipi-settings__input::placeholder,
+.skipi-settings .skipi-settings__textarea::placeholder {
+  color: var(--ss-muted);
+  opacity: 0.72;
+}
+
+.skipi-settings .skipi-settings__input:disabled,
+.skipi-settings .skipi-settings__select:disabled,
+.skipi-settings .skipi-settings__textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.skipi-settings .skipi-settings__field-help {
+  color: var(--ss-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.skipi-settings .skipi-settings__field-error {
+  color: var(--ss-danger);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.skipi-settings .skipi-settings__field.is-invalid .skipi-settings__input,
+.skipi-settings .skipi-settings__field.is-invalid .skipi-settings__select,
+.skipi-settings .skipi-settings__field.is-invalid .skipi-settings__textarea,
+.skipi-settings .skipi-settings__input[aria-invalid="true"],
+.skipi-settings .skipi-settings__select[aria-invalid="true"],
+.skipi-settings .skipi-settings__textarea[aria-invalid="true"] {
+  border-color: var(--ss-danger);
+}
+
+.skipi-settings .skipi-settings__segmented {
+  display: inline-grid;
+  grid-auto-columns: minmax(68px, 1fr);
+  grid-auto-flow: column;
+  gap: 3px;
+  min-width: 150px;
+  padding: 3px;
+  border: 1px solid var(--ss-border);
+  border-radius: 10px;
+  background: var(--ss-panel-subtle);
+}
+
+.skipi-settings .skipi-settings__segment {
+  min-width: 0;
+  min-height: 34px;
+  margin: 0;
+  padding: 6px 10px;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ss-muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  appearance: none;
+  transition: background-color var(--ss-duration) ease, border-color var(--ss-duration) ease, color var(--ss-duration) ease, box-shadow var(--ss-duration) ease;
+}
+
+.skipi-settings .skipi-settings__segment.is-active,
+.skipi-settings .skipi-settings__segment[aria-pressed="true"],
+.skipi-settings .skipi-settings__segment[aria-selected="true"] {
+  border-color: var(--ss-accent);
+  background: var(--ss-accent);
+  color: var(--ss-accent-contrast);
+  box-shadow: 0 1px 3px rgba(20, 25, 38, 0.16);
+}
+
+.skipi-settings .skipi-settings__switch {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  width: 44px;
+  height: 26px;
+  cursor: pointer;
+}
+
+.skipi-settings .skipi-settings__switch-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  border: 0;
+  white-space: nowrap;
+}
+
+.skipi-settings .skipi-settings__switch-track {
+  position: relative;
+  display: block;
+  width: 44px;
+  height: 26px;
+  border: 1px solid var(--ss-border-strong);
+  border-radius: 999px;
+  background: var(--ss-panel-subtle);
+  transition: background-color var(--ss-duration) ease, border-color var(--ss-duration) ease, box-shadow var(--ss-duration) ease;
+}
+
+.skipi-settings .skipi-settings__switch-track::after {
+  position: absolute;
+  top: 3px;
+  inset-inline-start: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ss-panel);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.24);
+  content: "";
+  transition: transform var(--ss-duration) ease;
+}
+
+.skipi-settings .skipi-settings__switch-input:checked + .skipi-settings__switch-track {
+  border-color: var(--ss-accent);
+  background: var(--ss-accent);
+}
+
+.skipi-settings .skipi-settings__switch-input:checked + .skipi-settings__switch-track::after {
+  transform: translateX(18px);
+}
+
+.skipi-settings .skipi-settings__switch-input:disabled + .skipi-settings__switch-track {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.skipi-settings .skipi-settings__badge,
+.skipi-settings .skipi-settings__status {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 2px 9px;
+  border: 1px solid var(--ss-border);
+  border-radius: 999px;
+  background: var(--ss-panel-subtle);
+  color: var(--ss-muted);
+  font-size: 10.5px;
+  font-weight: 720;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.skipi-settings .skipi-settings__status::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+}
+
+.skipi-settings .skipi-settings__badge--accent,
+.skipi-settings .skipi-settings__badge[data-tone="accent"],
+.skipi-settings .skipi-settings__status--accent,
+.skipi-settings .skipi-settings__status[data-tone="accent"] {
+  border-color: var(--ss-accent);
+  background: var(--ss-accent-soft);
+  color: var(--ss-accent);
+}
+
+.skipi-settings .skipi-settings__badge--success,
+.skipi-settings .skipi-settings__badge.is-success,
+.skipi-settings .skipi-settings__badge[data-tone="success"],
+.skipi-settings .skipi-settings__status--success,
+.skipi-settings .skipi-settings__status.is-success,
+.skipi-settings .skipi-settings__status[data-tone="success"] {
+  border-color: var(--ss-success);
+  background: var(--ss-success-soft);
+  color: var(--ss-success);
+}
+
+.skipi-settings .skipi-settings__badge--warning,
+.skipi-settings .skipi-settings__badge.is-warning,
+.skipi-settings .skipi-settings__badge[data-tone="warning"],
+.skipi-settings .skipi-settings__status--warning,
+.skipi-settings .skipi-settings__status.is-warning,
+.skipi-settings .skipi-settings__status[data-tone="warning"] {
+  border-color: var(--ss-warning);
+  background: var(--ss-warning-soft);
+  color: var(--ss-warning);
+}
+
+.skipi-settings .skipi-settings__badge--danger,
+.skipi-settings .skipi-settings__badge.is-danger,
+.skipi-settings .skipi-settings__badge[data-tone="danger"],
+.skipi-settings .skipi-settings__status--danger,
+.skipi-settings .skipi-settings__status.is-danger,
+.skipi-settings .skipi-settings__status[data-tone="danger"] {
+  border-color: var(--ss-danger);
+  background: var(--ss-danger-soft);
+  color: var(--ss-danger);
+}
+
+.skipi-settings .skipi-settings__value {
+  min-width: 0;
+  max-width: 310px;
+  overflow: hidden;
+  color: var(--ss-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: end;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skipi-settings .skipi-settings__code {
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: var(--ss-panel-subtle);
+  color: var(--ss-text);
+  font-family: var(--skipi-settings-mono-font, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.skipi-settings .skipi-settings__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.skipi-settings .skipi-settings__actions--sticky {
+  position: sticky;
+  inset-block-end: 0;
+  z-index: 4;
+  margin: 28px -34px -84px;
+  padding: 14px 34px calc(14px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--ss-border);
+  background: var(--ss-panel);
+  box-shadow: 0 -10px 22px rgba(20, 25, 38, 0.07);
+}
+
+.skipi-settings .skipi-settings__button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  margin: 0;
+  padding: 7px 14px;
+  border: 1px solid var(--ss-accent);
+  border-radius: var(--ss-radius-sm);
+  background: var(--ss-accent);
+  color: var(--ss-accent-contrast);
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  appearance: none;
+  transition: background-color var(--ss-duration) ease, border-color var(--ss-duration) ease, color var(--ss-duration) ease, transform var(--ss-duration) ease, opacity var(--ss-duration) ease;
+}
+
+.skipi-settings .skipi-settings__button--secondary,
+.skipi-settings .skipi-settings__button--ghost {
+  border-color: var(--ss-border);
+  background: var(--ss-panel);
+  color: var(--ss-text);
+}
+
+.skipi-settings .skipi-settings__button--ghost {
+  background: transparent;
+}
+
+.skipi-settings .skipi-settings__button--danger {
+  border-color: var(--ss-danger);
+  background: var(--ss-danger);
+  color: #ffffff;
+}
+
+.skipi-settings .skipi-settings__button--danger-ghost {
+  border-color: var(--ss-danger);
+  background: transparent;
+  color: var(--ss-danger);
+}
+
+.skipi-settings .skipi-settings__button--icon {
+  width: 38px;
+  padding: 0;
+}
+
+.skipi-settings .skipi-settings__button:disabled,
+.skipi-settings .skipi-settings__button[aria-disabled="true"],
+.skipi-settings .skipi-settings__nav-item:disabled,
+.skipi-settings .skipi-settings__nav-item[aria-disabled="true"],
+.skipi-settings .skipi-settings__segment:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.skipi-settings .skipi-settings__button.is-loading {
+  cursor: wait;
+}
+
+.skipi-settings .skipi-settings__button.is-loading::before {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-inline-end-color: transparent;
+  border-radius: 50%;
+  content: "";
+  animation: skipi-settings-spin 720ms linear infinite;
+}
+
+.skipi-settings .skipi-settings__state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 280px;
+  padding: 32px 20px;
+  color: var(--ss-muted);
+  text-align: center;
+}
+
+.skipi-settings .skipi-settings__state-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 13px;
+  border-radius: 50%;
+  background: var(--ss-panel-subtle);
+  color: var(--ss-muted);
+  font-size: 22px;
+}
+
+.skipi-settings .skipi-settings__state-title {
+  margin: 0;
+  color: var(--ss-text);
+  font-size: 15px;
+  font-weight: 720;
+}
+
+.skipi-settings .skipi-settings__state-description {
+  max-width: 430px;
+  margin: 6px 0 0;
+  color: var(--ss-muted);
+  font-size: 12.5px;
+  line-height: 1.48;
+}
+
+.skipi-settings .skipi-settings__state .skipi-settings__actions {
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.skipi-settings .skipi-settings__spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--ss-border);
+  border-inline-end-color: var(--ss-accent);
+  border-radius: 50%;
+  animation: skipi-settings-spin 720ms linear infinite;
+}
+
+.skipi-settings .skipi-settings__state--error .skipi-settings__state-icon {
+  background: var(--ss-danger-soft);
+  color: var(--ss-danger);
+}
+
+.skipi-settings .skipi-settings__error {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  padding: 13px 14px;
+  border: 1px solid var(--ss-danger);
+  border-radius: var(--ss-radius-md);
+  background: var(--ss-danger-soft);
+  color: var(--ss-danger);
+}
+
+.skipi-settings .skipi-settings__error-copy {
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.skipi-settings .skipi-settings__error-title {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--ss-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.skipi-settings .skipi-settings__skeleton {
+  position: relative;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--ss-panel-subtle);
+  color: transparent;
+}
+
+.skipi-settings .skipi-settings__skeleton::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.38), transparent);
+  content: "";
+  transform: translateX(-100%);
+  animation: skipi-settings-shimmer 1.3s ease-in-out infinite;
+}
+
+.skipi-settings.is-loading .skipi-settings__body,
+.skipi-settings [aria-busy="true"] {
+  cursor: progress;
+}
+
+.skipi-settings .skipi-settings__empty {
+  padding: 32px 18px;
+  color: var(--ss-muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.skipi-settings .skipi-settings__visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  clip-path: inset(50%) !important;
+  border: 0 !important;
+  white-space: nowrap !important;
+}
+
+.skipi-settings button:focus-visible,
+.skipi-settings a:focus-visible,
+.skipi-settings input:focus-visible,
+.skipi-settings select:focus-visible,
+.skipi-settings textarea:focus-visible,
+.skipi-settings [tabindex]:focus-visible,
+.skipi-settings .skipi-settings__switch-input:focus-visible + .skipi-settings__switch-track {
+  outline: 3px solid var(--ss-focus);
+  outline-offset: 2px;
+}
+
+.skipi-settings .skipi-settings__input:focus-visible,
+.skipi-settings .skipi-settings__select:focus-visible,
+.skipi-settings .skipi-settings__textarea:focus-visible {
+  border-color: var(--ss-focus);
+  box-shadow: 0 0 0 3px var(--ss-accent-soft);
+}
+
+.skipi-settings .skipi-settings__sidebar,
+.skipi-settings .skipi-settings__body {
+  scrollbar-color: var(--ss-border-strong) transparent;
+  scrollbar-width: thin;
+}
+
+.skipi-settings .skipi-settings__sidebar::-webkit-scrollbar,
+.skipi-settings .skipi-settings__body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.skipi-settings .skipi-settings__sidebar::-webkit-scrollbar-thumb,
+.skipi-settings .skipi-settings__body::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--ss-border-strong);
+  background-clip: padding-box;
+}
+
+@media (hover: hover) {
+  .skipi-settings .skipi-settings__nav-item:not(:disabled):hover {
+    background: var(--ss-panel-subtle);
+  }
+
+  .skipi-settings .skipi-settings__nav-item.is-active:hover,
+  .skipi-settings .skipi-settings__nav-item[aria-current="page"]:hover {
+    background: var(--ss-panel-subtle);
+  }
+
+  .skipi-settings .skipi-settings__row--link:hover {
+    background: var(--ss-panel-subtle);
+  }
+
+  .skipi-settings .skipi-settings__close:hover {
+    background: var(--ss-panel-subtle);
+    color: var(--ss-text);
+  }
+
+  .skipi-settings .skipi-settings__button:not(:disabled):hover {
+    border-color: var(--ss-accent-hover);
+    background: var(--ss-accent-hover);
+  }
+
+  .skipi-settings .skipi-settings__button--secondary:not(:disabled):hover,
+  .skipi-settings .skipi-settings__button--ghost:not(:disabled):hover {
+    border-color: var(--ss-border-strong);
+    background: var(--ss-panel-subtle);
+    color: var(--ss-text);
+  }
+
+  .skipi-settings .skipi-settings__button--danger:not(:disabled):hover {
+    border-color: var(--ss-danger);
+    background: var(--ss-danger);
+    filter: brightness(0.94);
+  }
+
+  .skipi-settings .skipi-settings__button--danger-ghost:not(:disabled):hover {
+    border-color: var(--ss-danger);
+    background: var(--ss-danger-soft);
+    color: var(--ss-danger);
+  }
+
+  .skipi-settings .skipi-settings__segment:not(:disabled):not(.is-active):hover {
+    background: var(--ss-panel);
+    color: var(--ss-text);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .skipi-settings {
+    --ss-fallback-bg: #15161a;
+    --ss-fallback-panel: #1d1f24;
+    --ss-fallback-panel-subtle: #272a31;
+    --ss-fallback-text: #f3f4f7;
+    --ss-fallback-muted: #a7abb5;
+    --ss-fallback-border: #383c45;
+    --ss-fallback-accent: #409cff;
+    --ss-fallback-accent-hover: #66afff;
+    --ss-fallback-accent-soft: rgba(64, 156, 255, 0.14);
+    --ss-accent-contrast: var(--skipi-settings-accent-contrast, #0b1220);
+  }
+}
+
+.skipi-settings[data-theme="light"] {
+  --ss-fallback-bg: #f4f4f7;
+  --ss-fallback-panel: #ffffff;
+  --ss-fallback-panel-subtle: #f1f1f5;
+  --ss-fallback-text: #1d1d1f;
+  --ss-fallback-muted: #6e6e73;
+  --ss-fallback-border: #d8d8de;
+  --ss-fallback-accent: #006edb;
+  --ss-fallback-accent-hover: #005fc7;
+  --ss-fallback-accent-soft: rgba(10, 132, 255, 0.11);
+  --ss-accent-contrast: var(--skipi-settings-accent-contrast, #ffffff);
+}
+
+.skipi-settings[data-theme="dark"] {
+  --ss-fallback-bg: #15161a;
+  --ss-fallback-panel: #1d1f24;
+  --ss-fallback-panel-subtle: #272a31;
+  --ss-fallback-text: #f3f4f7;
+  --ss-fallback-muted: #a7abb5;
+  --ss-fallback-border: #383c45;
+  --ss-fallback-accent: #409cff;
+  --ss-fallback-accent-hover: #66afff;
+  --ss-fallback-accent-soft: rgba(64, 156, 255, 0.14);
+  --ss-accent-contrast: var(--skipi-settings-accent-contrast, #0b1220);
+}
+
+/* Layout follows the explicit instance mode, independent of viewport width. */
+.skipi-settings .skipi-settings__notice {
+  margin-bottom: 18px;
+}
+
+.skipi-settings .skipi-settings__notice--success {
+  border-inline-start-color: var(--ss-success);
+  background: var(--ss-success-soft);
+}
+
+.skipi-settings .skipi-settings__notice--error {
+  border-inline-start-color: var(--ss-danger);
+  background: var(--ss-danger-soft);
+}
+
+.skipi-settings.skipi-settings--desktop {
+  background: var(--ss-panel);
+}
+
+.skipi-settings.skipi-settings--desktop .skipi-settings__body {
+  display: block;
+}
+
+.skipi-settings.skipi-settings--desktop .skipi-settings__sidebar-footer {
+  display: none;
+}
+
+.skipi-settings.skipi-settings--desktop .skipi-settings__nav-item > .skipi-settings__badge,
+.skipi-settings.skipi-settings--desktop .skipi-settings__nav-item > .skipi-settings__status {
+  display: none;
+}
+
+.skipi-settings.skipi-settings--desktop .skipi-settings__section-title {
+  margin: 0 0 8px;
+  color: var(--ss-text);
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.skipi-settings.skipi-settings--desktop .skipi-settings__group {
+  border: 0;
+  border-radius: 0;
+}
+
+.skipi-settings.skipi-settings--desktop .skipi-settings__row {
+  padding-inline: 0;
+}
+
+.skipi-settings.skipi-settings--desktop .skipi-settings__mobile-header,
+.skipi-settings.skipi-settings--desktop .skipi-settings__mobile-list {
+  display: none;
+}
+
+.skipi-settings.skipi-settings--mobile {
+  min-height: 0;
+  background: var(--ss-bg);
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__overlay {
+  display: block;
+  padding: 0;
+  background: var(--ss-bg);
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__shell--mobile {
+  display: block;
+  width: 100%;
+  max-width: none;
+  height: var(--skipi-settings-mobile-height, 100dvh);
+  min-height: 0;
+  padding: calc(10px + env(safe-area-inset-top)) 12px calc(24px + env(safe-area-inset-bottom));
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 0;
+  border-radius: 0;
+  background: var(--ss-bg);
+  box-shadow: none;
+}
+
+.skipi-settings.skipi-settings--mobile.is-detail-open .skipi-settings__shell--mobile,
+.skipi-settings.skipi-settings--mobile[data-view="detail"] .skipi-settings__shell--mobile {
+  padding: 0;
+  overflow: hidden;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__sidebar {
+  display: none;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-header {
+  display: block;
+  padding: 0 5px 18px;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 42px;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-topbar .skipi-settings__close {
+  width: 38px;
+  height: 38px;
+  background: var(--ss-panel);
+  box-shadow: 0 5px 18px rgba(18, 22, 33, 0.12);
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-profile {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  min-width: 0;
+  padding: 2px 20px 23px;
+  text-align: center;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-avatar {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  overflow: hidden;
+  border: 1px solid var(--ss-border);
+  border-radius: 50%;
+  background: var(--ss-accent-soft);
+  color: var(--ss-accent);
+  font-size: 15px;
+  font-weight: 760;
+  letter-spacing: 0.02em;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-avatar-action {
+  position: relative;
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  appearance: none;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-avatar-edit {
+  position: absolute;
+  right: -2px;
+  bottom: -1px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--ss-bg);
+  border-radius: 50%;
+  background: var(--ss-panel);
+  color: var(--ss-muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-avatar-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-profile-name {
+  max-width: 100%;
+  margin: 9px 0 0;
+  overflow: hidden;
+  color: var(--ss-text);
+  font-size: 14px;
+  font-weight: 710;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-profile-subtitle {
+  max-width: 100%;
+  margin: 4px 0 0;
+  overflow: hidden;
+  color: var(--ss-muted);
+  font-size: 11.5px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-header .skipi-settings__sidebar-title {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 780;
+  letter-spacing: -0.035em;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-header .skipi-settings__sidebar-description {
+  max-width: 520px;
+  margin: 7px 0 0;
+  font-size: 13px;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-list {
+  display: grid;
+  gap: 18px;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-section {
+  min-width: 0;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-group-title {
+  margin: 0 9px 7px;
+  color: var(--ss-muted);
+  font-size: 11px;
+  font-weight: 560;
+  line-height: 1.25;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-group {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--ss-border);
+  border-radius: 15px;
+  background: var(--ss-panel);
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-item {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto 12px;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 50px;
+  margin: 0;
+  padding: 9px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--ss-text);
+  text-align: start;
+  cursor: pointer;
+  appearance: none;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-item--info {
+  cursor: default;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-item--action {
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-listitem + .skipi-settings__mobile-listitem {
+  border-top: 1px solid var(--ss-border);
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-listitem {
+  min-width: 0;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-item > :not(.skipi-settings__nav-icon):not(.skipi-settings__badge):not(.skipi-settings__status):not(.skipi-settings__mobile-chevron) {
+  min-width: 0;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-item strong {
+  display: block;
+  color: var(--ss-text);
+  font-size: 15px;
+  font-weight: 670;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-item small,
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-item .skipi-settings__row-description {
+  display: block;
+  margin-top: 3px;
+  color: var(--ss-muted);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-item[aria-current="page"] {
+  background: var(--ss-accent-soft);
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-item:disabled,
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-item[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-item .skipi-settings__nav-icon {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ss-text);
+  font-size: 11px;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-item .skipi-settings__nav-label {
+  font-size: 13.5px;
+  font-weight: 590;
+  white-space: normal;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-item .skipi-settings__badge {
+  max-width: 112px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: var(--ss-muted);
+  font-size: 11.5px;
+  font-weight: 480;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-item .skipi-settings__nav-description {
+  margin-top: 3px;
+  font-size: 12px;
+  white-space: normal;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-value {
+  min-width: 0;
+  max-width: 128px;
+  overflow: hidden;
+  color: var(--ss-muted);
+  font-size: 11.5px;
+  font-weight: 480;
+  line-height: 1.3;
+  text-align: end;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__body {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--ss-bg);
+  scroll-behavior: auto;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__detail {
+  width: 100%;
+  min-height: 100%;
+  padding: calc(8px + env(safe-area-inset-top)) 14px calc(36px + env(safe-area-inset-bottom));
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__detail-toolbar {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 5;
+  min-height: 44px;
+  margin: calc(-8px - env(safe-area-inset-top)) -14px 4px;
+  padding: calc(8px + env(safe-area-inset-top)) 14px 0;
+  background: var(--ss-bg);
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__back {
+  display: inline-flex;
+  min-height: 40px;
+  font-size: 15px;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__close {
+  width: 40px;
+  height: 40px;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__detail-header {
+  display: block;
+  margin: 5px 3px 19px;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__detail-title {
+  font-size: 26px;
+  letter-spacing: -0.03em;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__detail-description {
+  margin-top: 6px;
+  font-size: 13px;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__detail-header > .skipi-settings__badge,
+.skipi-settings.skipi-settings--mobile .skipi-settings__detail-header > .skipi-settings__status {
+  margin-top: 10px;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__section + .skipi-settings__section {
+  margin-top: 22px;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__section-title {
+  margin: 0 5px 7px;
+  font-size: 11px;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__section-description {
+  margin-inline: 5px;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__group {
+  border-radius: 14px;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__row {
+  gap: 12px;
+  min-height: 60px;
+  padding: 12px 13px;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__row-label {
+  font-size: 14px;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__row-description {
+  font-size: 12px;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__row-control {
+  max-width: min(56%, 330px);
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__row--stack .skipi-settings__row-control,
+.skipi-settings.skipi-settings--mobile .skipi-settings__row[data-layout="stack"] .skipi-settings__row-control {
+  max-width: none;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__row--link {
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding-inline-end: 12px;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__row--link::after {
+  color: var(--ss-muted);
+  font-size: 22px;
+  line-height: 1;
+  content: "\203A";
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__cards {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__card {
+  padding: 14px;
+  border-radius: 14px;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__notice {
+  border-radius: 13px;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__input,
+.skipi-settings.skipi-settings--mobile .skipi-settings__select,
+.skipi-settings.skipi-settings--mobile .skipi-settings__textarea {
+  min-height: 42px;
+  font-size: 16px;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__input,
+.skipi-settings.skipi-settings--mobile .skipi-settings__select {
+  width: 100%;
+  max-width: 100%;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__segmented {
+  min-width: 156px;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__segment {
+  min-height: 38px;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__button {
+  min-height: 44px;
+  padding-inline: 15px;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__button--icon {
+  width: 44px;
+  padding: 0;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__actions--sticky {
+  margin: 28px -14px calc(-36px - env(safe-area-inset-bottom));
+  padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__state {
+  min-height: 55dvh;
+}
+
+.skipi-settings.skipi-settings--mobile .skipi-settings__mount {
+  min-height: 100px;
+}
+
+@container skipi-settings (max-width: 460px) {
+  .skipi-settings.skipi-settings--mobile .skipi-settings__row:not(.skipi-settings__row--link) {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .skipi-settings.skipi-settings--mobile .skipi-settings__row-control {
+    justify-content: stretch;
+    width: 100%;
+    max-width: none;
+    flex-wrap: wrap;
+  }
+
+  .skipi-settings.skipi-settings--mobile .skipi-settings__field,
+  .skipi-settings.skipi-settings--mobile .skipi-settings__segmented,
+  .skipi-settings.skipi-settings--mobile .skipi-settings__select {
+    width: 100%;
+    max-width: none;
+  }
+
+  .skipi-settings.skipi-settings--mobile .skipi-settings__segmented {
+    min-width: 0;
+  }
+
+  .skipi-settings.skipi-settings--mobile .skipi-settings__actions:not(.skipi-settings__actions--inline) {
+    align-items: stretch;
+    flex-direction: column-reverse;
+    width: 100%;
+  }
+
+  .skipi-settings.skipi-settings--mobile .skipi-settings__actions:not(.skipi-settings__actions--inline) .skipi-settings__button {
+    width: 100%;
+  }
+
+  .skipi-settings.skipi-settings--mobile .skipi-settings__error {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .skipi-settings.skipi-settings--mobile .skipi-settings__error .skipi-settings__button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}
+
+@media (forced-colors: active) {
+  .skipi-settings .skipi-settings__nav-item.is-active,
+  .skipi-settings .skipi-settings__nav-item[aria-current="page"],
+  .skipi-settings .skipi-settings__segment.is-active,
+  .skipi-settings .skipi-settings__segment[aria-pressed="true"],
+  .skipi-settings .skipi-settings__segment[aria-selected="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skipi-settings *,
+  .skipi-settings *::before,
+  .skipi-settings *::after {
+    scroll-behavior: auto !important;
+    transition-delay: 0s !important;
+    transition-duration: 0.001ms !important;
+    animation-delay: 0s !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+@keyframes skipi-settings-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes skipi-settings-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
