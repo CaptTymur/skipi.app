@@ -16267,14 +16267,73 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
     function unifiedGetStorageInfo(){
         return invoke('get_current_vault_path').then(function(p){ return { path: p || '' }; });
     }
+    // The module contract (dist/skipi-settings.js runBusy + cancelledError):
+    // ANY fulfilled promise -> success notice ("exported"/"imported");
+    // reject with error.skipiSettingsCancelled === true -> silent (no notice);
+    // any other reject -> error notice. The legacy exportVaultBackup()/
+    // importVaultBackup() always resolve undefined — on dialog cancel and on
+    // error alike — which made the module report success without any
+    // operation. So the adapters below run their own thin flows on the same
+    // primitives (saveDlg/open/uiPrompt/uiConfirm/invoke), never delegate to
+    // the legacy monoliths, never toast on their own, and never resolve
+    // unless the operation really completed. Legacy functions stay untouched
+    // for the old inline screen.
+    function unifiedBackupCancelled(){
+        var err = new Error('vault backup flow cancelled by user');
+        err.skipiSettingsCancelled = true;
+        return err;
+    }
     function unifiedExportVaultBackup(){
-        // Delegate to the existing rich flow (file picker + zip). Returns its result.
-        if(typeof exportVaultBackup === 'function'){ return exportVaultBackup(); }
-        return invoke('export_vault_backup');
+        if(!saveDlg){ return Promise.reject(new Error('File dialog not available')); }
+        return invoke('get_current_vault_path').catch(function(){ return null; })
+            .then(function(p){
+                var vaultName = 'Skipi-vault';
+                if(p){ vaultName = String(p).replace(/[\\\/]+$/,'').split(/[\\\/]/).pop() || vaultName; }
+                var def = cleanVaultFolderPart(vaultName,'Skipi-vault')+' backup '+backupTimestamp()+'.zip';
+                return saveDlg({title:'Export Skipi vault backup', defaultPath:def, filters:[{name:'ZIP archive',extensions:['zip']}]});
+            })
+            .then(function(dest){
+                if(!dest){ throw unifiedBackupCancelled(); }
+                return invoke('export_vault_backup',{outputPath:dest});
+            });
     }
     function unifiedImportVaultBackup(){
-        if(typeof importVaultBackup === 'function'){ return importVaultBackup(); }
-        return invoke('import_vault_backup');
+        if(!open){ return Promise.reject(new Error('File dialog not available')); }
+        var zipPath = null;
+        var parentDir = null;
+        var targetPath = null;
+        return open({multiple:false,title:'Select Skipi vault backup',filters:[{name:'ZIP archive',extensions:['zip']}]})
+            .then(function(z){
+                if(!z){ throw unifiedBackupCancelled(); }
+                zipPath = z;
+                return open({directory:true,title:'Choose parent folder for restored vault'});
+            })
+            .then(function(parent){
+                if(!parent){ throw unifiedBackupCancelled(); }
+                parentDir = parent;
+                var base = String(zipPath).replace(/[\\\/]+$/,'').split(/[\\\/]/).pop() || 'Skipi restored vault';
+                base = base.replace(/\.zip$/i,'').replace(/\s+backup\s+\d{4}-.*$/i,'');
+                return uiPrompt('Restored vault folder name', cleanVaultFolderPart(base,'Skipi restored vault'));
+            })
+            .then(function(folder){
+                if(!folder){ throw unifiedBackupCancelled(); }
+                targetPath = joinFolderPath(parentDir, cleanVaultFolderPart(folder,'Skipi restored vault'));
+                return uiConfirm('Import this backup into a new vault folder?<br><br><code>'+esc(targetPath)+'</code><br><br>The target folder must be empty or not exist.', {confirmLabel:'Import', allowHtml:true});
+            })
+            .then(function(ok){
+                if(!ok){ throw unifiedBackupCancelled(); }
+                return invoke('import_vault_backup',{zipPath:zipPath,targetPath:targetPath});
+            })
+            .then(function(info){
+                // Parity with the legacy flow: a successful import must
+                // actually open the imported vault. Closing the unified
+                // overlay first unmounts the module instance, so its success
+                // notice is intentionally skipped — the honest success signal
+                // is the vault itself opening, and no success is ever
+                // reported without a completed import.
+                try{ closeUnifiedSettings(); }catch(e){}
+                return Promise.resolve(loadVault(info)).then(function(){ return info; });
+            });
     }
 
     // ---- App-specific section: «Профиль моряка» (Sea Service / AI settings) ----
@@ -16376,8 +16435,12 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
         // Fail-closed if the module did not load.
         if(!window.SkipiSettings || typeof window.SkipiSettings.mount !== 'function'){
             try{ if(typeof showToast==='function'){ showToast('Settings module failed to load.', 'error'); } }catch(e){}
-            // Fall back to the legacy inline settings so the user is never stranded.
-            try{ if(typeof openSettings==='function'){ openSettings(); } }catch(e){}
+            // Fall back to the LEGACY inline settings directly. Never call the
+            // bare openSettings() here: it is rerouted to openUnifiedSettings
+            // below, so that would recurse into this very branch forever. If
+            // the legacy entry is unavailable, the single toast above is the
+            // final signal — no retry, no re-entry.
+            try{ if(typeof window._legacyOpenSettings==='function'){ window._legacyOpenSettings(); } }catch(e){}
             return;
         }
         var ov = overlay();
@@ -16404,7 +16467,14 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
         }catch(err){
             try{ console.error('[unified-settings] mount failed', err); }catch(e){}
             closeUnifiedSettings();
-            try{ if(typeof openSettings==='function'){ openSettings(); } }catch(e){}
+            // Same fail-closed rule as the module-missing branch: the bare
+            // openSettings() is rerouted to the unified shell and would loop
+            // mount-fail forever. Go straight to legacy; if it is unavailable,
+            // surface one toast and stop.
+            try{
+                if(typeof window._legacyOpenSettings==='function'){ window._legacyOpenSettings(); }
+                else if(typeof showToast==='function'){ showToast('Settings module failed to load.', 'error'); }
+            }catch(e){}
         }
     }
     window.closeUnifiedSettings = function(){
