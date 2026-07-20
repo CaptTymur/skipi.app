@@ -20,7 +20,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: CaptTymur/skipi-guard
-          ref: ecc92215f457ba34be92766a41408f301a106ed3
+          ref: 5cb3edf79142f8004a435c85a710129f4d5b0fb6
           path: .skipi-guard
 
       - name: Setup Node
@@ -56,70 +56,6 @@ jobs:
             git diff --name-only --diff-filter=ACDMRTUXB "$BASE...$GITHUB_SHA" 2>/dev/null ||
             git diff --name-only --diff-filter=ACDMRTUXB "$BASE..$GITHUB_SHA"
           )
-          GUARD_CHANGED_FILES_PATH="$(mktemp)"
-          printf '%s\n' "${GUARD_CHANGED_FILES[@]}" > "$GUARD_CHANGED_FILES_PATH"
-          export GUARD_CHANGED_FILES_PATH
-          if node <<'NODE'
-          const fs = require('fs');
-
-          function cleanPath(value) {
-            return String(value || '').replace(/\\/g, '/').replace(/^\.\//, '');
-          }
-
-          function globToRegExp(pattern) {
-            let out = '^';
-            for (let i = 0; i < pattern.length; i += 1) {
-              const char = pattern[i];
-              const next = pattern[i + 1];
-              if (char === '*' && next === '*') {
-                out += '.*';
-                i += 1;
-              } else if (char === '*') {
-                out += '[^/]*';
-              } else if (char === '?') {
-                out += '[^/]';
-              } else {
-                out += char.replace(/[\\^$+?.()|[\]{}]/g, '\\$&');
-              }
-            }
-            return new RegExp(out + '$');
-          }
-
-          function patternMatches(filePath, pattern) {
-            const path = cleanPath(filePath);
-            const pat = cleanPath(pattern);
-            if (!pat) return false;
-            if (pat.endsWith('/**')) {
-              const prefix = pat.slice(0, -3);
-              return path === prefix || path.startsWith(prefix + '/');
-            }
-            if (globToRegExp(pat).test(path)) return true;
-            if (pat.startsWith('**/') && globToRegExp(pat.slice(3)).test(path)) return true;
-            const hasGlob = /[*?[]/.test(pat);
-            if (!hasGlob && !pat.includes('/')) {
-              return path === pat || path.endsWith('/' + pat) || path.startsWith(pat + '/');
-            }
-            return false;
-          }
-
-          const config = JSON.parse(fs.readFileSync('.skipi-guard/configs/homes/seafarer.json', 'utf8'));
-          const files = fs.readFileSync(process.env.GUARD_CHANGED_FILES_PATH, 'utf8')
-            .split(/\r?\n/)
-            .filter(Boolean);
-          const releaseSensitive = files.some((file) => (config.release_sensitive_paths || []).some((rule) =>
-            (rule.patterns || []).some((pattern) => patternMatches(file, pattern))
-          ));
-
-          console.log(`changed_files=${files.length} release_sensitive=${releaseSensitive ? 'yes' : 'no'}`);
-          process.exit(releaseSensitive ? 0 : 1);
-          NODE
-          then
-            SKIPI_GUARD_TASK=release
-          else
-            SKIPI_GUARD_TASK=plugin-host
-          fi
-          echo "resolved SKIPI_GUARD_TASK=$SKIPI_GUARD_TASK"
-
           if [[ "${#GUARD_CHANGED_FILES[@]}" -eq 1 && "${GUARD_CHANGED_FILES[0]}" == ".github/workflows/skipi-guard.yml" ]]; then
             OVERRIDE_ARGS=(--override-protected skipi-guard-workflow-bootstrap)
           fi
@@ -169,7 +105,7 @@ jobs:
           fi
           .skipi-guard/bin/skipi-guard verify \
             --home "$SKIPI_GUARD_HOME" \
-            --task "$SKIPI_GUARD_TASK" \
+            --auto-task \
             "${OVERRIDE_ARGS[@]}" \
             --run-harness \
             --repo "$GITHUB_WORKSPACE" \
