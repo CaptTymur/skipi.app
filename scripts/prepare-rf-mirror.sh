@@ -9,13 +9,15 @@
 #     - installers + .sig files from GitHub release
 #     - latest.rf.json (manifest for https://api-ru.skipi.app/seafarer/latest.json)
 #
-# Then publish atomically. Do not hand-upload latest.json before assets:
-#   RF_SFTP_USER=<user> RF_SFTP_PASS=<pass> \
+# Then publish atomically over plain FTP:21. A real run makes one login attempt,
+# performs no retries, and requires a new explicit rollback evidence path:
+#   RF_FTP_USER=<user> RF_FTP_PASS=<pass> \
 #   bash scripts/publish-rf-mirror.sh \
 #     --staging /tmp/skipi-rf-seafarer-<version> \
 #     --manifest-local latest.rf.json \
 #     --manifest-url https://api-ru.skipi.app/seafarer/latest.json \
-#     --expect-version <version>
+#     --expect-version <version> \
+#     --rollback-evidence /tmp/seafarer-latest-<version>.previous.json
 
 set -euo pipefail
 
@@ -75,15 +77,16 @@ jq --arg version "$VERSION" --arg base "$BASE_URL" '
 echo "Prepared RF mirror payload:"
 echo "  $STAGE"
 echo
-echo "Publish atomically (assets first -> verify -> manifest last -> verify):"
-echo "  RF_SFTP_USER=<user> RF_SFTP_PASS=<pass> \\"
+echo "Publish atomically over FTP:21 (one login attempt, no retries):"
+echo "  RF_FTP_USER=<user> RF_FTP_PASS=<pass> \\"
 echo "  bash scripts/publish-rf-mirror.sh \\"
 echo "    --staging \"$STAGE\" \\"
 echo "    --manifest-local latest.rf.json \\"
 echo "    --manifest-url https://api-ru.skipi.app/seafarer/latest.json \\"
-echo "    --expect-version \"$VERSION\""
+echo "    --expect-version \"$VERSION\" \\"
+echo "    --rollback-evidence /tmp/seafarer-latest-${VERSION}.previous.json"
 echo
-echo "  Dry-run first: add --dry-run. Never publish latest.json before every"
-echo "  referenced asset is reachable from the public api-ru URL."
+echo "  The rollback evidence path must not already exist. Dry-run first: add"
+echo "  --dry-run; it opens no network/login and does not require credentials."
 echo
 ls -lh "$STAGE"
