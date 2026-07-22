@@ -1,13 +1,14 @@
-# RF mirror atomic publish runbook
+# RF mirror atomic FTP:21 publish runbook
 
 This runbook covers `api-ru.skipi.app` static release mirrors for Skipi
 desktop updater metadata and download assets. The invariant is:
 
 1. Stage a manifest that already points to `https://api-ru.skipi.app/...`.
-2. Upload every referenced asset first.
-3. Verify every public asset URL before the manifest goes live.
-4. Publish `latest.json` last by temporary upload plus rename.
-5. Fetch the live `latest.json` and verify every URL inside it.
+2. Capture the exact current live manifest at an explicit rollback evidence path.
+3. Open one plain FTP connection to port 21, with one login attempt and no retries.
+4. Upload every referenced asset first and verify every public asset URL.
+5. Publish `latest.json` last by versioned temporary upload plus atomic rename.
+6. Fetch the live `latest.json`, byte-compare it, and verify every URL inside it.
 
 Do not update `skipi.app/downloads` until the mirror publisher exits `PASS`.
 
@@ -16,8 +17,10 @@ Do not update `skipi.app/downloads` until the mirror publisher exits `PASS`.
 - Do not run the publish command without explicit manager GO.
 - Do not hand-upload `latest.json`.
 - Do not delete remote assets during a normal publish.
-- Do not print or paste SFTP secrets into logs, notes, commits, or chat.
-- Use `--dry-run` for rehearsal. Dry-run never opens SFTP and never mutates live state.
+- Use only plain FTP:21 and the FTP-chroot docroot `api-ru/public_html`.
+- A failed login is a STOP: never retry or make a second attempt.
+- Do not print or paste FTP credentials into logs, notes, commits, or chat.
+- Use `--dry-run` for rehearsal. Dry-run opens no network/login and never mutates live state.
 
 ## Script contract
 
@@ -38,10 +41,17 @@ The script refuses to proceed if:
 
 During a real publish it then:
 
+- refuses a missing, invalid, or already-existing `--rollback-evidence` path;
+- downloads the exact current live manifest to that path before the sole FTP login;
 - uploads all staged asset files except `latest.json` and the local manifest file;
 - checks each public asset URL for HTTP `200` or `206`, exact served size, and matching first 16 bytes;
 - uploads the manifest to a versioned temporary name and renames it to `latest.json`;
 - downloads the live manifest, byte-compares it with the staged manifest, and checks all live URLs.
+
+The entire remote sequence uses one `lftp` process and one FTP:21 login attempt,
+with no retries. A failure before rename cannot reach the manifest upload or
+rename. A failure after rename exits nonzero and prints the exact rollback
+evidence path; it does not retry or delete remote files.
 
 ## Seafarer
 
@@ -60,15 +70,16 @@ bash scripts/publish-rf-mirror.sh \
   --expect-version 0.4.164
 ```
 
-Real publish, only after GO:
+Real publish, only after GO. The rollback evidence path must not exist yet:
 
 ```bash
-RF_SFTP_USER=<user> RF_SFTP_PASS=<pass> \
+RF_FTP_USER=<user> RF_FTP_PASS=<pass> \
 bash scripts/publish-rf-mirror.sh \
   --staging /tmp/skipi-rf-seafarer-0.4.164 \
   --manifest-local latest.rf.json \
   --manifest-url https://api-ru.skipi.app/seafarer/latest.json \
-  --expect-version 0.4.164
+  --expect-version 0.4.164 \
+  --rollback-evidence /tmp/seafarer-latest-0.4.164.previous.json
 ```
 
 ## Broker
@@ -198,23 +209,20 @@ Use these concrete manifest URLs:
 
 ## Failure modes
 
-- Missing local asset: no SFTP is opened; fix staging and rerun.
-- Asset upload failure: live `latest.json` is still old; rerun after network/SFTP recovery.
-- Public asset verification failure: live `latest.json` is still old; overwrite the bad staged remote asset by rerunning the publish command.
-- Manifest temp upload failure: live `latest.json` is still old; rerun after SFTP recovery.
-- Rename succeeds but live verify fails: do not update downloads page. Treat mirror as failed and restore the previous manifest.
+- Missing local asset or invalid rollback evidence target: no FTP login is attempted; fix the local input and rerun.
+- Login or asset upload failure: live `latest.json` is still old; STOP after the one attempt and report the failure.
+- Public asset verification failure: live `latest.json` is still old; STOP without retrying.
+- Manifest temp upload failure: live `latest.json` is still old; STOP without retrying.
+- Rename succeeds but live verify fails: exit nonzero, report the rollback evidence path, and do not update the downloads page.
 - Empty or mismatched signatures: stop and rebuild staging from the GitHub release manifest. Do not edit signatures by hand.
 
 ## Rollback
 
-Before a real publish, capture the currently live manifest:
-
-```bash
-curl -fsSL https://api-ru.skipi.app/<app>/latest.json > /tmp/<app>-latest.prev.json
-```
-
-If rollback is needed after a manifest flip, re-publish the previous manifest
-only after confirming every URL in `/tmp/<app>-latest.prev.json` is reachable.
+Every real command must pass a new explicit `--rollback-evidence` path. Before
+the FTP login, the publisher writes the exact current live manifest bytes there
+and reports its path, SHA-256, and size. If rollback is needed after a manifest
+flip, re-publish that previous manifest only after confirming every URL in the
+evidence file is reachable.
 Rollback is a live manifest change and needs manager GO. Do not delete the
 newer assets; leaving them inert is safer than deleting files during incident
 response.
