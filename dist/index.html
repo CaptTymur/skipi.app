@@ -6,6 +6,8 @@
 <title>Скипи Моряк - United Seafarers</title>
 <link rel="stylesheet" href="vessel-db.css">
 <link rel="stylesheet" href="intelligence.css">
+<!-- @skipi/settings v0.3.0 — unified Settings shell (vendored from skipi-settings 9caeff6) -->
+<link rel="stylesheet" href="skipi-settings.css">
 <script>
 var APP_VERSION='0.4.178';
 var APP_BUILD_SHA='unknown';
@@ -55,7 +57,22 @@ var UI_STRINGS={
 	        'common.settings':'Settings','common.vault':'Vault','common.switch_vault':'Switch vault','jobs.languages':'Languages',
 	        'feedback.title':'Rate Skipi Seafarer','feedback.desc':'Please tell us how the beta feels. Your stars and comment help decide what to fix first.','feedback.rating_label':'Your rating','feedback.comment_label':'Comment','feedback.comment_placeholder':'What worked well, what blocked you, or what should be improved?','feedback.later':'Later','feedback.submit':'Send feedback','feedback.saved':'Thank you. Feedback saved.','feedback.required':'Choose stars and add a comment.','feedback.manual_button':'Rate Skipi Seafarer','feedback.top_button':'Feedback','feedback.top_title':'Send feedback or report a problem','feedback.menu_title':'Feedback and problems','feedback.menu_desc':'Choose what you want to send to the Skipi Seafarer team.','feedback.menu_rate_title':'Send feedback','feedback.menu_rate_desc':'Rate the beta and leave a short comment.','feedback.menu_problem_title':'Report a problem','feedback.menu_problem_desc':'Prepare a bug report with version, platform and current module.',
 	        'settings.recovery_key':'Seafarer recovery key','settings.recovery_key_desc':'This key restores the same seafarer identity on another device. Keep it private; anyone with this key can claim this vault identity.','settings.loading_identity':'Loading identity...','settings.identity_load_failed':'Could not load vault identity.','settings.key_hidden':'Hidden until you press Show','settings.vault_id':'Vault ID','settings.not_available':'not available','settings.dob':'DOB','settings.key_unavailable':'Recovery key is not available for this vault.','settings.show':'Show','settings.hide':'Hide','settings.copy':'Copy','settings.show_key':'Show key','settings.key_warning':'This is a private recovery key. Show it only when nobody can see your screen.','settings.key_copied':'Recovery key copied','settings.key_copy_failed':'Could not copy recovery key',
-	        'wizard.recovery_key_label':'Recovery key (optional)','wizard.recovery_key_hint':'Paste an existing Skipi Seafarer recovery key when creating this vault on another device. Leave empty for a new identity.'
+	        'wizard.recovery_key_label':'Recovery key (optional)','wizard.recovery_key_hint':'Paste an existing Skipi Seafarer recovery key when creating this vault on another device. Leave empty for a new identity.',
+        // --- @skipi/settings v0.3.0 generic dictionary (ported from module mock-host, en) ---
+        'settings.title':'Settings','settings.subtitle':'Manage this app and its local data.','settings.loading':'Loading settings…','settings.value.unavailable':'Unavailable',
+        'settings.section.profile':'Profile','settings.section.profile.description':'User, represented entity, identity and recovery.','settings.section.team':'Team','settings.section.team.description':'Team profile, roles, members and invitations.','settings.section.application':'Application','settings.section.application.description':'Theme, language, storage, modules and app details.','settings.section.modules':'Modules','settings.section.modules.description':'Extensions supplied by the module host.','settings.section.identity':'Identity & access','settings.section.identity.description':'Local identity, trust and recovery.','settings.section.storage':'Storage','settings.section.storage.description':'Local data location and backups.','settings.section.devices':'Devices','settings.section.devices.description':'Pair and manage trusted devices.','settings.section.appearance':'Appearance','settings.section.appearance.description':'Theme and interface language.','settings.section.about':'About','settings.section.about.description':'Application details and support.',
+        'settings.group.application':'Application','settings.group.account':'Account and data','settings.group.preferences':'Theme and language','settings.group.information':'Information','settings.group.general':'General','settings.group.team':'Team','settings.group.home_settings':'Home settings',
+        'settings.profile.user.title':'User','settings.profile.user.id':'Unique ID','settings.profile.user.id.description':'Stable identifier supplied by this home.','settings.profile.user.email':'Email','settings.profile.user.phone':'Phone','settings.profile.team_role':'Role in team','settings.profile.team_role.description':'Membership is managed in Team.','settings.profile.entity.title':'Represented entity','settings.profile.entity.type':'Type','settings.profile.entity.type.person':'Person','settings.profile.entity.type.company':'Company','settings.profile.entity.type.vessel':'Vessel','settings.profile.entity.name':'Name','settings.profile.entity.jurisdiction':'Jurisdiction','settings.profile.entity.verified_level':'Verification level','settings.profile.entity.imo':'IMO number',
+        'settings.team.profile.title':'Team profile','settings.team.name':'Name','settings.team.reply_to':'Reply-to email','settings.team.server_status':'Server status','settings.team.save':'Team profile','settings.team.save.description':'Administrators can update shared team details.','settings.team.role.title':'Membership','settings.team.current_role':'Current role','settings.team.role.administrator':'Administrator','settings.team.role.member':'Member','settings.team.members.title':'Members','settings.team.members.empty':'No team members.','settings.team.invite':'Invite a member','settings.team.invite.description':'Send access through an administrator invitation.','settings.team.invite.placeholder':'member@example.com','settings.team.join.title':'Join a team','settings.team.join':'Invitation','settings.team.join.description':'Use the invitation received from an administrator.','settings.team.join.placeholder':'Invitation code',
+        'settings.modules.title':'Installed modules','settings.modules.mount_label':'Module manager','settings.modules.mount_description':'This surface is mounted and cleaned up by the host.','settings.modules.mount_error':'The module manager could not be mounted.','settings.modules.unavailable':'Module management is not available.',
+        'settings.identity.access_title':'Access','settings.identity.key':'Identity key','settings.identity.key.description':'A public fingerprint supplied asynchronously by the host.','settings.identity.trust':'Trust status','settings.identity.trust.description':'The host remains responsible for trust decisions.','settings.identity.connection':'Connection','settings.identity.connection.description':'Connection state reported by the host identity capability.','settings.identity.connected':'Connected','settings.identity.not_connected':'Not connected','settings.identity.refresh':'Refresh status','settings.identity.refresh.description':'Read identity and trust again from the host.','settings.identity.recovery_title':'Recovery','settings.identity.recovery.bind':'Bind recovery','settings.identity.recovery.bind.description':'Attach a recovery method.','settings.identity.recovery.recover':'Recover identity','settings.identity.recovery.recover.description':'Run a recovery operation.',
+        'settings.storage.vault_title':'Local storage','settings.storage.location':'Data location','settings.storage.location.description':'Resolved by the host storage capability.','settings.storage.export':'Export backup','settings.storage.export.description':'Create a backup of the local vault.','settings.storage.import':'Import backup','settings.storage.import.description':'Restore a vault backup.',
+        'settings.devices.title':'Trusted devices','settings.devices.unnamed':'Unnamed device','settings.devices.current':'Current','settings.devices.empty':'No paired devices.','settings.devices.add':'Add a device','settings.devices.add.description':'Pair a new device or scan for one nearby.','settings.devices.one_time_code':'One-time code','settings.devices.one_time_code.description':'Use this short-lived code on the device being connected.',
+        'settings.appearance.title':'Interface','settings.appearance.theme':'Theme','settings.appearance.theme.description':'Applied and persisted by the app.','settings.appearance.language':'Language','settings.appearance.language.description':'Switch the interface language.','settings.theme.light':'Light','settings.theme.dark':'Dark','settings.language.en':'English','settings.language.ru':'Русский',
+        'settings.about.title':'Application','settings.about.app_name':'Name','settings.about.version':'Version','settings.about.support':'Support','settings.about.website':'Website','settings.about.legal':'Legal',
+        'settings.action.back':'Back','settings.action.save':'Save','settings.action.bind':'Bind','settings.action.close':'Close','settings.action.export':'Export','settings.action.import':'Import','settings.action.pair':'Pair device','settings.action.recover':'Recover','settings.action.refresh':'Refresh','settings.action.retry':'Retry','settings.action.revoke':'Revoke','settings.action.scan':'Scan','settings.action.create_code':'Create one-time code','settings.action.open_team':'Open Team','settings.action.invite':'Invite','settings.action.remove':'Remove','settings.action.join':'Join',
+        'settings.notice.saved':'Settings saved.','settings.notice.theme_applied':'Theme applied.','settings.notice.language_applied':'Language changed.','settings.notice.exported':'Backup exported.','settings.notice.imported':'Backup imported.','settings.notice.recovery_bound':'Recovery method bound.','settings.notice.recovered':'Identity recovered.','settings.notice.device_paired':'Device list updated.','settings.notice.device_scanned':'Nearby devices scanned.','settings.notice.device_revoked':'Device revoked.','settings.notice.device_code_created':'One-time device code created.','settings.notice.team_saved':'Team profile saved.','settings.notice.team_invited':'Invitation sent.','settings.notice.team_removed':'Member removed.','settings.notice.team_joined':'Team joined.',
+        'settings.error.action_failed':'The action failed.','settings.error.capability_failed':'This status could not be loaded. Retry to read it again.','settings.error.load_failed':'Settings could not be loaded.','settings.error.refresh_failed':'Settings could not be refreshed.','settings.error.section_failed':'This section failed to render.','settings.error.section_missing':'The requested section does not exist.'
 	    },
 	    ru:{
 	        'app.name':'Скипи Моряк',
@@ -67,7 +84,22 @@ var UI_STRINGS={
 	        'common.settings':'Настройки','common.vault':'Профиль','common.switch_vault':'Сменить профиль','jobs.languages':'Языки',
 	        'feedback.title':'Оцените Скипи Моряк','feedback.desc':'Пожалуйста, расскажите, как вам бета-версия. Звёзды и комментарий помогут понять, что исправлять в первую очередь.','feedback.rating_label':'Ваша оценка','feedback.comment_label':'Комментарий','feedback.comment_placeholder':'Что получилось хорошо, что мешает, что нужно улучшить?','feedback.later':'Позже','feedback.submit':'Отправить отзыв','feedback.saved':'Спасибо. Отзыв сохранён.','feedback.required':'Выберите звёзды и напишите комментарий.','feedback.manual_button':'Оценить Скипи Моряк','feedback.top_button':'Отзыв','feedback.top_title':'Отправить отзыв или сообщить о проблеме','feedback.menu_title':'Отзыв или проблема','feedback.menu_desc':'Выберите, что отправить команде Скипи Моряк.','feedback.menu_rate_title':'Отправить отзыв','feedback.menu_rate_desc':'Оценить бету и написать короткий комментарий.','feedback.menu_problem_title':'Сообщить о проблеме','feedback.menu_problem_desc':'Подготовить баг-репорт с версией, платформой и текущим модулем.',
 	        'settings.recovery_key':'Ключ восстановления моряка','settings.recovery_key_desc':'Этот ключ позволяет восстановить тот же профиль моряка на другом устройстве. Храните его приватно: любой человек с этим ключом сможет заявить цифровую identity профиля.','settings.loading_identity':'Загрузка identity...','settings.identity_load_failed':'Не удалось загрузить identity профиля.','settings.key_hidden':'Скрыт до нажатия «Показать»','settings.vault_id':'ID профиля','settings.not_available':'недоступно','settings.dob':'Дата рождения','settings.key_unavailable':'Ключ восстановления недоступен для этого профиля.','settings.show':'Показать','settings.hide':'Скрыть','settings.copy':'Копировать','settings.show_key':'Показать ключ','settings.key_warning':'Это приватный ключ восстановления. Показывайте его только если никто не видит экран.','settings.key_copied':'Ключ восстановления скопирован','settings.key_copy_failed':'Не удалось скопировать ключ восстановления',
-	        'wizard.recovery_key_label':'Ключ восстановления (необязательно)','wizard.recovery_key_hint':'Если создаёте профиль на другом устройстве, вставьте сюда существующий ключ Скипи Моряк. Оставьте поле пустым для новой identity.'
+	        'wizard.recovery_key_label':'Ключ восстановления (необязательно)','wizard.recovery_key_hint':'Если создаёте профиль на другом устройстве, вставьте сюда существующий ключ Скипи Моряк. Оставьте поле пустым для новой identity.',
+        // --- @skipi/settings v0.3.0 generic dictionary (ported from module mock-host, ru) ---
+        'settings.title':'Настройки','settings.subtitle':'Управление приложением и локальными данными.','settings.loading':'Загрузка настроек…','settings.value.unavailable':'Недоступно',
+        'settings.section.profile':'Профиль','settings.section.profile.description':'Пользователь, представляемая сущность, идентичность и восстановление.','settings.section.team':'Команда','settings.section.team.description':'Профиль команды, роли, участники и приглашения.','settings.section.application':'Приложение','settings.section.application.description':'Тема, язык, хранилище, модули и сведения о приложении.','settings.section.modules':'Модули','settings.section.modules.description':'Расширения, предоставленные хостом модулей.','settings.section.identity':'Идентичность и доступ','settings.section.identity.description':'Локальная идентичность, доверие и восстановление.','settings.section.storage':'Хранилище','settings.section.storage.description':'Расположение локальных данных и резервные копии.','settings.section.devices':'Устройства','settings.section.devices.description':'Подключение и управление доверенными устройствами.','settings.section.appearance':'Оформление','settings.section.appearance.description':'Тема и язык интерфейса.','settings.section.about':'О приложении','settings.section.about.description':'Сведения о приложении и поддержке.',
+        'settings.group.application':'Приложение','settings.group.account':'Учётная запись и данные','settings.group.preferences':'Тема и язык','settings.group.information':'Информация','settings.group.general':'Общие','settings.group.team':'Команда','settings.group.home_settings':'Настройки дома',
+        'settings.profile.user.title':'Пользователь','settings.profile.user.id':'Уникальный ID','settings.profile.user.id.description':'Постоянный идентификатор, предоставленный домом.','settings.profile.user.email':'Электронная почта','settings.profile.user.phone':'Телефон','settings.profile.team_role':'Роль в команде','settings.profile.team_role.description':'Членство управляется в разделе «Команда».','settings.profile.entity.title':'Представляемая сущность','settings.profile.entity.type':'Тип','settings.profile.entity.type.person':'Человек','settings.profile.entity.type.company':'Компания','settings.profile.entity.type.vessel':'Судно','settings.profile.entity.name':'Название','settings.profile.entity.jurisdiction':'Юрисдикция','settings.profile.entity.verified_level':'Уровень проверки','settings.profile.entity.imo':'Номер IMO',
+        'settings.team.profile.title':'Профиль команды','settings.team.name':'Название','settings.team.reply_to':'Почта для ответов','settings.team.server_status':'Статус сервера','settings.team.save':'Профиль команды','settings.team.save.description':'Администраторы могут изменять общие данные команды.','settings.team.role.title':'Членство','settings.team.current_role':'Текущая роль','settings.team.role.administrator':'Администратор','settings.team.role.member':'Участник','settings.team.members.title':'Участники','settings.team.members.empty':'В команде нет участников.','settings.team.invite':'Пригласить участника','settings.team.invite.description':'Администратор предоставляет доступ через приглашение.','settings.team.invite.placeholder':'member@example.com','settings.team.join.title':'Вступить в команду','settings.team.join':'Приглашение','settings.team.join.description':'Используйте приглашение, полученное от администратора.','settings.team.join.placeholder':'Код приглашения',
+        'settings.modules.title':'Установленные модули','settings.modules.mount_label':'Менеджер модулей','settings.modules.mount_description':'Эту область монтирует и очищает хост.','settings.modules.mount_error':'Не удалось смонтировать менеджер модулей.','settings.modules.unavailable':'Управление модулями недоступно.',
+        'settings.identity.access_title':'Доступ','settings.identity.key':'Ключ идентичности','settings.identity.key.description':'Публичный отпечаток, асинхронно полученный от хоста.','settings.identity.trust':'Статус доверия','settings.identity.trust.description':'Решения о доверии остаются ответственностью хоста.','settings.identity.connection':'Подключение','settings.identity.connection.description':'Состояние подключения от host-возможности идентичности.','settings.identity.connected':'Подключено','settings.identity.not_connected':'Не подключено','settings.identity.refresh':'Обновить статус','settings.identity.refresh.description':'Повторно получить идентичность и доверие от хоста.','settings.identity.recovery_title':'Восстановление','settings.identity.recovery.bind':'Привязать восстановление','settings.identity.recovery.bind.description':'Подключить способ восстановления.','settings.identity.recovery.recover':'Восстановить идентичность','settings.identity.recovery.recover.description':'Запустить операцию восстановления.',
+        'settings.storage.vault_title':'Локальное хранилище','settings.storage.location':'Расположение данных','settings.storage.location.description':'Определяется storage-возможностью хоста.','settings.storage.export':'Экспорт копии','settings.storage.export.description':'Создать резервную копию локального хранилища.','settings.storage.import':'Импорт копии','settings.storage.import.description':'Восстановить резервную копию хранилища.',
+        'settings.devices.title':'Доверенные устройства','settings.devices.unnamed':'Устройство без имени','settings.devices.current':'Текущее','settings.devices.empty':'Нет подключённых устройств.','settings.devices.add':'Добавить устройство','settings.devices.add.description':'Подключить новое устройство или найти находящееся рядом.','settings.devices.one_time_code':'Одноразовый код','settings.devices.one_time_code.description':'Введите этот короткоживущий код на подключаемом устройстве.',
+        'settings.appearance.title':'Интерфейс','settings.appearance.theme':'Тема','settings.appearance.theme.description':'Применяется и сохраняется приложением.','settings.appearance.language':'Язык','settings.appearance.language.description':'Переключает язык интерфейса.','settings.theme.light':'Светлая','settings.theme.dark':'Тёмная','settings.language.en':'English','settings.language.ru':'Русский',
+        'settings.about.title':'Приложение','settings.about.app_name':'Название','settings.about.version':'Версия','settings.about.support':'Поддержка','settings.about.website':'Сайт','settings.about.legal':'Правовая информация',
+        'settings.action.back':'Назад','settings.action.save':'Сохранить','settings.action.bind':'Привязать','settings.action.close':'Закрыть','settings.action.export':'Экспортировать','settings.action.import':'Импортировать','settings.action.pair':'Подключить','settings.action.recover':'Восстановить','settings.action.refresh':'Обновить','settings.action.retry':'Повторить','settings.action.revoke':'Отозвать','settings.action.scan':'Сканировать','settings.action.create_code':'Создать одноразовый код','settings.action.open_team':'Открыть «Команду»','settings.action.invite':'Пригласить','settings.action.remove':'Удалить','settings.action.join':'Вступить',
+        'settings.notice.saved':'Настройки сохранены.','settings.notice.theme_applied':'Тема применена.','settings.notice.language_applied':'Язык изменён.','settings.notice.exported':'Резервная копия экспортирована.','settings.notice.imported':'Резервная копия импортирована.','settings.notice.recovery_bound':'Способ восстановления привязан.','settings.notice.recovered':'Идентичность восстановлена.','settings.notice.device_paired':'Список устройств обновлён.','settings.notice.device_scanned':'Поиск устройств поблизости завершён.','settings.notice.device_revoked':'Доступ устройства отозван.','settings.notice.device_code_created':'Одноразовый код устройства создан.','settings.notice.team_saved':'Профиль команды сохранён.','settings.notice.team_invited':'Приглашение отправлено.','settings.notice.team_removed':'Участник удалён.','settings.notice.team_joined':'Вступление в команду выполнено.',
+        'settings.error.action_failed':'Действие не выполнено.','settings.error.capability_failed':'Не удалось загрузить этот статус. Повторите чтение.','settings.error.load_failed':'Не удалось загрузить настройки.','settings.error.refresh_failed':'Не удалось обновить настройки.','settings.error.section_failed':'Ошибка отрисовки раздела.','settings.error.section_missing':'Запрошенный раздел не существует.'
 	    },
     tl:{
         'app.name':'Skipi Seafarer',
@@ -669,6 +701,16 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .pkg-tip-icon { font-size:16px; flex-shrink:0; }
 .pkg-tip-body { line-height:1.5; }
 .pkg-tip-body b { color:var(--accent); }
+
+/* Unified Settings shell (@skipi/settings) overlay + mount panel.
+   The module owns all internal layout/CSS (scoped to .skipi-settings) and reads
+   Seafarer's theme via CSS-variable fallbacks (--bg/--surface/--text/--border/--accent…). */
+.skipi-settings-overlay { display:none; position:fixed; inset:0; z-index:120; background:rgba(0,0,0,0.5); align-items:center; justify-content:center; }
+.skipi-settings-overlay.open { display:flex; }
+.skipi-settings-panel { width:min(920px, 92vw); height:min(640px, 88vh); background:var(--surface); border-radius:12px; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,0.4); border:1px solid var(--border); display:flex; }
+.skipi-settings-panel > #settings-root { flex:1; min-width:0; height:100%; }
+body.mobile-mode .skipi-settings-overlay.open { align-items:stretch; justify-content:stretch; }
+body.mobile-mode .skipi-settings-panel { width:100vw; height:100dvh; max-width:none; max-height:none; border-radius:0; border:0; }
 
 /* Settings modal (Obsidian-style) */
 .settings-overlay { display:none; position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.5); align-items:center; justify-content:center; }
@@ -1443,12 +1485,19 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
     <span id="st-right"></span>
 </div>
 
-<!-- Settings modal -->
+<!-- Settings modal (legacy inline — retained until unified shell reaches visual parity) -->
 <div class="settings-overlay" id="settings-overlay" onclick="if(event.target===this)closeSettings();">
     <div class="settings-modal" style="position:relative;">
         <div class="settings-close" onclick="closeSettings()">&#10005;</div>
         <div class="settings-nav" id="settings-nav"></div>
         <div class="settings-body" id="settings-body"></div>
+    </div>
+</div>
+
+<!-- Unified Settings shell (@skipi/settings) — overlay + mount root -->
+<div id="skipi-settings-overlay" class="skipi-settings-overlay" onclick="if(event.target===this)closeUnifiedSettings();">
+    <div class="skipi-settings-panel">
+        <div id="settings-root"></div>
     </div>
 </div>
 
@@ -1509,6 +1558,7 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
 <datalist id="wh-prev-vessels"></datalist>
 <div id="drop-overlay"><div class="drop-card">&#128194; Drop the file to attach it to this certificate</div></div>
 
+<script src="skipi-settings.js"></script>
 <script src="vessel-db.js"></script>
 <script src="intelligence.js"></script>
 <script src="plugin-host-ui.js"></script>
@@ -16118,5 +16168,345 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
 <script src="plugin-loader.js"></script>
 <script src="plugin-host-bridge.js"></script>
 <script src="plugin-remote-boot.js"></script>
+<!-- Unified Settings adoption (@skipi/settings v0.3.0). Seafarer = person entity, NO Team.
+     Host adapter wires the 6 required contract methods to Seafarer's existing i18n/theme/store,
+     plus optional profile/identity/storage capabilities and ONE app-specific section. -->
+<script>
+(function(){
+    // ---- Settings store (getSettings/saveSettings over Seafarer's own state) ----
+    // Seafarer has no get_settings/save_settings Tauri commands, so the unified
+    // "settings object" is assembled from localStorage-backed appearance/language
+    // plus the seafarer_personal ready flag. Any shape is allowed by the contract;
+    // the generic shell only reads appearance.theme as the initial-theme hint.
+    function unifiedGetSettings(){
+        var theme;
+        try{ theme = document.documentElement.getAttribute('data-theme') || 'light'; }catch(e){ theme='light'; }
+        return {
+            appearance: { theme: (theme==='dark'?'dark':'light') },
+            interface: { language: getUiLang() }
+        };
+    }
+    function unifiedSaveSettings(next){
+        // The generic shell never calls this directly; app-specific handlers may.
+        // We persist only fields we understand and echo the object back.
+        try{
+            if(next && next.interface && next.interface.language){ setUiLang(next.interface.language); }
+        }catch(e){}
+        return next;
+    }
+
+    // applyTheme MUST apply AND persist. Map module 'light'/'dark' to Seafarer's
+    // localStorage 'skipi-theme' + applyAppearance(). (Seafarer also has 'system';
+    // the module only sends explicit light/dark, so we store those verbatim.)
+    function unifiedApplyTheme(theme){
+        var t = (theme==='dark') ? 'dark' : 'light';
+        try{ localStorage.setItem('skipi-theme', t); applyAppearance(); }catch(e){}
+    }
+
+    // ---- Optional: mobile-root account summary (display-only header) ----
+    function unifiedGetAccountSummary(){
+        var appName = tr('app.name');
+        return invoke('get_seafarer_personal').then(function(sp){ return sp || {}; }, function(){ return {}; })
+            .then(function(sp){
+                var name = [sp.first_name, sp.surname].filter(function(x){ return x && String(x).trim(); }).join(' ').trim();
+                var displayName = name || appName;
+                var summary = { displayName: displayName, sectionId: 'profile' };
+                if(sp.email){ summary.subtitle = String(sp.email); }
+                else if(sp.rank){ summary.subtitle = String(sp.rank); }
+                // Compute safe initials from displayName; the module escapes this text.
+                var words = String(displayName).replace(/^\s+|\s+$/g,'').split(/\s+/);
+                var initials = '';
+                for(var i=0;i<words.length && i<2;i++){ if(words[i]){ initials += words[i].charAt(0).toUpperCase(); } }
+                summary.avatarText = initials || 'S';
+                return summary;
+            });
+    }
+
+    // ---- Optional: Profile (person entity, PII kept local) ----
+    function unifiedGetProfile(){
+        var user = { id: 'SKP-SF-LOCAL' };
+        return Promise.resolve()
+            .then(function(){ return invoke('get_my_identity'); })
+            .then(function(me){ if(me && me.user_id){ user.id = String(me.user_id); } })
+            .catch(function(){})
+            .then(function(){ return invoke('get_seafarer_personal').catch(function(){ return {}; }); })
+            .then(function(sp){
+                sp = sp || {};
+                // Seafarer keeps PII local; surface only what the vault already holds.
+                if(sp.email){ user.email = String(sp.email); }
+                if(sp.phones){ user.phone = String(sp.phones); }
+                var name = [sp.first_name, sp.surname].filter(function(x){ return x && String(x).trim(); }).join(' ').trim();
+                var entity = { type: 'person' };
+                if(name){ entity.name = name; }
+                return { user: user, entity: entity };
+            });
+    }
+
+    // ---- Optional: Identity / trust inside Profile ----
+    function unifiedGetVaultIdentityKey(){
+        return invoke('get_vault_identity_key').then(function(k){
+            // Return a display-safe fingerprint, never the raw recovery key.
+            if(k && k.public_seafarer_id){ return { fingerprint: String(k.public_seafarer_id) }; }
+            if(k && k.vault_id){ return { id: String(k.vault_id) }; }
+            return { fingerprint: tr('settings.value.unavailable') };
+        });
+    }
+    function unifiedGetIdentityTrustStatus(){
+        return invoke('get_identity_trust_status').then(function(s){
+            var out = {};
+            if(s && typeof s === 'object'){
+                if(s.status){ out.status = String(s.status); }
+                else if(s.duplicate){ out.status = 'duplicate'; }
+                else { out.status = 'ok'; }
+            } else { out.status = 'ok'; }
+            return out;
+        });
+    }
+
+    // ---- Optional: Storage / Vault backup inside Application ----
+    function unifiedGetStorageInfo(){
+        return invoke('get_current_vault_path').then(function(p){ return { path: p || '' }; });
+    }
+    // The module contract (dist/skipi-settings.js runBusy + cancelledError):
+    // ANY fulfilled promise -> success notice ("exported"/"imported");
+    // reject with error.skipiSettingsCancelled === true -> silent (no notice);
+    // any other reject -> error notice. The legacy exportVaultBackup()/
+    // importVaultBackup() always resolve undefined — on dialog cancel and on
+    // error alike — which made the module report success without any
+    // operation. So the adapters below run their own thin flows on the same
+    // primitives (saveDlg/open/uiPrompt/uiConfirm/invoke), never delegate to
+    // the legacy monoliths, never toast on their own, and never resolve
+    // unless the operation really completed. Legacy functions stay untouched
+    // for the old inline screen.
+    function unifiedBackupCancelled(){
+        var err = new Error('vault backup flow cancelled by user');
+        err.skipiSettingsCancelled = true;
+        return err;
+    }
+    function unifiedExportVaultBackup(){
+        if(!saveDlg){ return Promise.reject(new Error('File dialog not available')); }
+        return invoke('get_current_vault_path').catch(function(){ return null; })
+            .then(function(p){
+                var vaultName = 'Skipi-vault';
+                if(p){ vaultName = String(p).replace(/[\\\/]+$/,'').split(/[\\\/]/).pop() || vaultName; }
+                var def = cleanVaultFolderPart(vaultName,'Skipi-vault')+' backup '+backupTimestamp()+'.zip';
+                return saveDlg({title:'Export Skipi vault backup', defaultPath:def, filters:[{name:'ZIP archive',extensions:['zip']}]});
+            })
+            .then(function(dest){
+                if(!dest){ throw unifiedBackupCancelled(); }
+                return invoke('export_vault_backup',{outputPath:dest});
+            });
+    }
+    function unifiedImportVaultBackup(){
+        if(!open){ return Promise.reject(new Error('File dialog not available')); }
+        var zipPath = null;
+        var parentDir = null;
+        var targetPath = null;
+        return open({multiple:false,title:'Select Skipi vault backup',filters:[{name:'ZIP archive',extensions:['zip']}]})
+            .then(function(z){
+                if(!z){ throw unifiedBackupCancelled(); }
+                zipPath = z;
+                return open({directory:true,title:'Choose parent folder for restored vault'});
+            })
+            .then(function(parent){
+                if(!parent){ throw unifiedBackupCancelled(); }
+                parentDir = parent;
+                var base = String(zipPath).replace(/[\\\/]+$/,'').split(/[\\\/]/).pop() || 'Skipi restored vault';
+                base = base.replace(/\.zip$/i,'').replace(/\s+backup\s+\d{4}-.*$/i,'');
+                return uiPrompt('Restored vault folder name', cleanVaultFolderPart(base,'Skipi restored vault'));
+            })
+            .then(function(folder){
+                if(!folder){ throw unifiedBackupCancelled(); }
+                targetPath = joinFolderPath(parentDir, cleanVaultFolderPart(folder,'Skipi restored vault'));
+                return uiConfirm('Import this backup into a new vault folder?<br><br><code>'+esc(targetPath)+'</code><br><br>The target folder must be empty or not exist.', {confirmLabel:'Import', allowHtml:true});
+            })
+            .then(function(ok){
+                if(!ok){ throw unifiedBackupCancelled(); }
+                return invoke('import_vault_backup',{zipPath:zipPath,targetPath:targetPath});
+            })
+            .then(function(info){
+                // Parity with the legacy flow: a successful import must
+                // actually open the imported vault. Closing the unified
+                // overlay first unmounts the module instance, so its success
+                // notice is intentionally skipped — the honest success signal
+                // is the vault itself opening, and no success is ever
+                // reported without a completed import.
+                try{ closeUnifiedSettings(); }catch(e){}
+                return Promise.resolve(loadVault(info)).then(function(){ return info; });
+            });
+    }
+
+    // ---- App-specific section: «Профиль моряка» (Sea Service / AI settings) ----
+    // renderHtml MUST be synchronous and MUST escape every dynamic value.
+    // We render a read-only summary from a cache primed on open, and a button
+    // that jumps to Seafarer's existing full profile editor.
+    var _spCache = null;
+    function primeSeafarerSummary(){
+        return invoke('get_seafarer_personal').then(function(sp){ _spCache = sp || {}; }).catch(function(){ _spCache = {}; });
+    }
+    function seafarerSection(){
+        return {
+            id: 'seafarer-profile',
+            order: 450,
+            label: (getUiLang()==='ru' ? 'Профиль моряка' : 'Seafarer profile'),
+            icon: '⚓', // anchor
+            renderHtml: function(ctx){
+                var ru = ctx.language === 'ru';
+                var sp = _spCache || {};
+                var e = ctx.escapeHtml;
+                function row(labelRu, labelEn, val){
+                    var shown = (val && String(val).trim()) ? String(val) : (ru ? 'не указано' : 'not set');
+                    return '<div class="setting-row"><div class="setting-info"><div class="setting-label">'
+                        + e(ru?labelRu:labelEn) + '</div></div><div class="setting-control" style="color:var(--text2);font-size:13px;">'
+                        + e(shown) + '</div></div>';
+                }
+                var name = [sp.first_name, sp.surname].filter(function(x){ return x && String(x).trim(); }).join(' ');
+                var vt = sp.preferred_vessel_types || sp.preferred_vessel_type || '';
+                var ready = (String(sp.ready_for_offers||'')==='true') ? (ru?'да':'yes') : (ru?'нет':'no');
+                var h = '';
+                h += '<div class="section-desc" style="margin-bottom:12px;">'
+                    + e(ru ? 'Данные моряка, Sea Service и AI-настройки. Хранятся только в этом хранилище на диске.'
+                          : 'Seafarer details, Sea Service and AI settings. Stored only inside this vault on disk.')
+                    + '</div>';
+                h += row('Имя', 'Name', name);
+                h += row('Должность', 'Rank', sp.rank);
+                h += row('Тип судна', 'Vessel type', vt);
+                h += row('Готов к предложениям', 'Ready for offers', ready);
+                h += '<div style="margin-top:16px;">'
+                    + '<button class="btn btn-accent btn-sm" data-settings-action="open-seafarer-editor">'
+                    + e(ru ? 'Открыть полный профиль моряка' : 'Open full seafarer profile')
+                    + '</button></div>';
+                return h;
+            },
+            handlers: {
+                'open-seafarer-editor': function(ctx){
+                    // Hand off to the existing rich editor (photo, all fields, Sea Service).
+                    closeUnifiedSettings();
+                    try{ if(typeof window._legacyOpenSettings==='function'){ window._legacyOpenSettings('seafarer'); } }catch(e){}
+                }
+            }
+        };
+    }
+
+    // ---- Host adapter ----
+    function buildHost(){
+        var host = {
+            // 6 REQUIRED methods
+            getSettings: unifiedGetSettings,
+            saveSettings: unifiedSaveSettings,
+            applyTheme: unifiedApplyTheme,
+            getUiLang: function(){ return getUiLang(); },
+            setUiLang: function(lang){ return setUiLang(lang); },
+            t: function(key){ return tr(key); },
+
+            // Application metadata
+            appName: tr('app.name'),
+            appVersion: (typeof appVersionLabel==='function') ? appVersionLabel() : (window.APP_VERSION||''),
+            languages: UI_LANG_OPTIONS.map(function(o){ return { value: o[0], label: o[1] }; }),
+
+            // Mobile-root account summary. Providing this (even minimally) is required
+            // so the module's mobileProfileHtml has a real object: without it the module
+            // falls back to valueText({}) -> JSON.stringify({}) -> the literal "{}" for
+            // name/subtitle/avatar. We source the seafarer's own local data.
+            getAccountSummary: unifiedGetAccountSummary,
+
+            // Optional capabilities (degrade gracefully if a command is missing)
+            getProfile: unifiedGetProfile,
+            getVaultIdentityKey: unifiedGetVaultIdentityKey,
+            getIdentityTrustStatus: unifiedGetIdentityTrustStatus,
+            getStorageInfo: unifiedGetStorageInfo,
+            exportVaultBackup: unifiedExportVaultBackup,
+            importVaultBackup: unifiedImportVaultBackup,
+
+            // App-specific home section (block III). NO host.team for Seafarer.
+            appSpecificSections: [ seafarerSection() ],
+
+            onError: function(err, context){ try{ console.warn('[unified-settings]', context, err); }catch(e){} }
+        };
+        return host;
+    }
+
+    // ---- Open / close (fresh instance per open, unmount on close) ----
+    var _instance = null;
+    var _overlay = null;
+    function overlay(){ if(!_overlay){ _overlay = document.getElementById('skipi-settings-overlay'); } return _overlay; }
+
+    window.openUnifiedSettings = function(){
+        // Fail-closed if the module did not load.
+        if(!window.SkipiSettings || typeof window.SkipiSettings.mount !== 'function'){
+            try{ if(typeof showToast==='function'){ showToast('Settings module failed to load.', 'error'); } }catch(e){}
+            // Fall back to the LEGACY inline settings directly. Never call the
+            // bare openSettings() here: it is rerouted to openUnifiedSettings
+            // below, so that would recurse into this very branch forever. If
+            // the legacy entry is unavailable, the single toast above is the
+            // final signal — no retry, no re-entry.
+            try{ if(typeof window._legacyOpenSettings==='function'){ window._legacyOpenSettings(); } }catch(e){}
+            return;
+        }
+        var ov = overlay();
+        if(!ov) return;
+        // Prime the seafarer summary cache before mount so the sync renderHtml has data,
+        // then always show the overlay (even if priming fails — section degrades to "not set").
+        primeSeafarerSummary().then(function(){ return mountNow(ov); }, function(){ return mountNow(ov); });
+    };
+    function mountNow(ov){
+        try{ if(_instance){ _instance.unmount(); } }catch(e){}
+        _instance = null;
+        ov.classList.add('open');
+        var root = document.getElementById('settings-root');
+        if(root){ root.innerHTML = ''; }
+        try{
+            _instance = window.SkipiSettings.mount('#settings-root', buildHost(), {
+                mode: 'auto',
+                breakpoint: 720,
+                onClose: function(){ closeUnifiedSettings(); }
+            });
+            if(_instance && _instance.ready && _instance.ready.catch){
+                _instance.ready.catch(function(err){ try{ console.error('[unified-settings] ready', err); }catch(e){} });
+            }
+        }catch(err){
+            try{ console.error('[unified-settings] mount failed', err); }catch(e){}
+            closeUnifiedSettings();
+            // Same fail-closed rule as the module-missing branch: the bare
+            // openSettings() is rerouted to the unified shell and would loop
+            // mount-fail forever. Go straight to legacy; if it is unavailable,
+            // surface one toast and stop.
+            try{
+                if(typeof window._legacyOpenSettings==='function'){ window._legacyOpenSettings(); }
+                else if(typeof showToast==='function'){ showToast('Settings module failed to load.', 'error'); }
+            }catch(e){}
+        }
+    }
+    window.closeUnifiedSettings = function(){
+        var ov = overlay();
+        if(ov){ ov.classList.remove('open'); }
+        try{ if(_instance){ _instance.unmount(); } }catch(e){}
+        _instance = null;
+        var root = document.getElementById('settings-root');
+        if(root){ root.innerHTML = ''; }
+    };
+
+    // ---- Route existing entry points to the unified shell ----
+    // Preserve the legacy openSettings under a private name for the app-specific
+    // "open full seafarer profile" hand-off and for the module-missing fallback.
+    // A bare openSettings() (the top-level gear entry) now opens the unified shell;
+    // openSettings('<tab>') deep-links still use the legacy editor (retained until
+    // full visual parity), so the seafarer hand-off keeps working.
+    if(typeof window.openSettings === 'function' && !window._legacyOpenSettings){
+        window._legacyOpenSettings = window.openSettings;
+        window.openSettings = function(tab){
+            if(!tab){ return window.openUnifiedSettings(); }
+            return window._legacyOpenSettings(tab);
+        };
+    }
+    // Escape closes the unified overlay.
+    document.addEventListener('keydown', function(ev){
+        if(ev.key === 'Escape'){
+            var ov = document.getElementById('skipi-settings-overlay');
+            if(ov && ov.classList.contains('open')){ closeUnifiedSettings(); }
+        }
+    });
+})();
+</script>
 </body>
 </html>
