@@ -276,15 +276,20 @@ SCRIPT_PATH="$SCRIPT_DIR/$(basename -- "$0")"
 VERIFY_ASSETS_COMMAND="$(shell_quote "$SCRIPT_PATH") --internal-verify-assets $(shell_quote "$STATE_FILE")"
 VERIFY_LIVE_COMMAND="$(shell_quote "$SCRIPT_PATH") --internal-verify-live $(shell_quote "$STATE_FILE") $(shell_quote "$MANIFEST_PATH") $(shell_quote "$MANIFEST_URL") $(shell_quote "$ROLLBACK_EVIDENCE")"
 
-LFTP_COMMANDS="set cmd:fail-exit yes; set cmd:parallel 1; set net:max-retries 1; set dns:max-retries 1; set net:persist-retries 0; set net:connection-limit 1; set net:idle 24h; set xfer:parallel 1; set ftp:retry-530 \"\"; set ftp:proxy \"\"; set hftp:proxy \"\"; set ftp:ssl-allow no; set ftp:ssl-force no;"
-LFTP_COMMANDS="$LFTP_COMMANDS mkdir -f -p $(lftp_quote "$ASSET_REMOTE_DIR");"
+# One command per line: the "!" command hands the rest of its line to the
+# local shell, so with ";" separators everything after the first "!" would
+# run in bash instead of lftp (live incident 2026-07-28).
+LFTP_NL='
+'
+LFTP_COMMANDS="set cmd:fail-exit yes${LFTP_NL}set cmd:parallel 1${LFTP_NL}set net:max-retries 1${LFTP_NL}set dns:max-retries 1${LFTP_NL}set net:persist-retries 0${LFTP_NL}set net:connection-limit 1${LFTP_NL}set net:idle 24h${LFTP_NL}set xfer:parallel 1${LFTP_NL}set ftp:retry-530 \"\"${LFTP_NL}set ftp:proxy \"\"${LFTP_NL}set hftp:proxy \"\"${LFTP_NL}set ftp:ssl-allow no${LFTP_NL}set ftp:ssl-force no"
+LFTP_COMMANDS="$LFTP_COMMANDS${LFTP_NL}mkdir -f -p $(lftp_quote "$ASSET_REMOTE_DIR")"
 while IFS= read -r file; do
-  LFTP_COMMANDS="$LFTP_COMMANDS put -O $(lftp_quote "$ASSET_REMOTE_DIR") $(lftp_quote "$file");"
+  LFTP_COMMANDS="$LFTP_COMMANDS${LFTP_NL}put -O $(lftp_quote "$ASSET_REMOTE_DIR") $(lftp_quote "$file")"
 done < "$UPLOAD_FILES_FILE"
-LFTP_COMMANDS="$LFTP_COMMANDS ! $VERIFY_ASSETS_COMMAND;"
-LFTP_COMMANDS="$LFTP_COMMANDS put -O $(lftp_quote "$MANIFEST_REMOTE_DIR") $(lftp_quote "$MANIFEST_PATH") -o $(lftp_quote "$MANIFEST_TEMP_BASENAME");"
-LFTP_COMMANDS="$LFTP_COMMANDS mv $(lftp_quote "$MANIFEST_REMOTE_DIR/$MANIFEST_TEMP_BASENAME") $(lftp_quote "$MANIFEST_REMOTE_DIR/$MANIFEST_BASENAME");"
-LFTP_COMMANDS="$LFTP_COMMANDS ! $VERIFY_LIVE_COMMAND; bye"
+LFTP_COMMANDS="$LFTP_COMMANDS${LFTP_NL}! $VERIFY_ASSETS_COMMAND"
+LFTP_COMMANDS="$LFTP_COMMANDS${LFTP_NL}put -O $(lftp_quote "$MANIFEST_REMOTE_DIR") $(lftp_quote "$MANIFEST_PATH") -o $(lftp_quote "$MANIFEST_TEMP_BASENAME")"
+LFTP_COMMANDS="$LFTP_COMMANDS${LFTP_NL}mv $(lftp_quote "$MANIFEST_REMOTE_DIR/$MANIFEST_TEMP_BASENAME") $(lftp_quote "$MANIFEST_REMOTE_DIR/$MANIFEST_BASENAME")"
+LFTP_COMMANDS="$LFTP_COMMANDS${LFTP_NL}! $VERIFY_LIVE_COMMAND${LFTP_NL}bye"
 
 echo "== opening the sole FTP:21 control session =="
 if ! lftp -u "$RF_FTP_USER,$RF_FTP_PASS" "ftp://$FTP_HOST:21" -e "$LFTP_COMMANDS"; then
