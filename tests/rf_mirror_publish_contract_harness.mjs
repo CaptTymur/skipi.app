@@ -46,6 +46,9 @@ ok(!/sftp:\/\//i.test(source), 'publisher has no executable SFTP URL');
 ok(!/RF_SFTP_/i.test(source), 'publisher has no legacy SFTP credential path');
 ok(!/\b(?:ssh|sftp)\b[^\n]*(?:-p|-P|port|:\/\/)/i.test(source), 'publisher has no SSH/SFTP client mode');
 ok((source.match(/\blftp\b[^\n]*(?:-u|-e)/g) || []).length === 1, 'publisher contains one FTP client invocation');
+const lftpInvocationLines = source.split('\n').filter((line) => /\blftp\b\s+-u\b/.test(line));
+ok(lftpInvocationLines.length === 1 && !/\s-e\b/.test(lftpInvocationLines[0]), 'lftp invocation has no -e (lftp 4.9.2 tokenizes -e quotes only on its first line)');
+ok(lftpInvocationLines.length === 1 && /printf '%s\\n' "\$LFTP_COMMANDS"\s*\|\s*lftp\b/.test(lftpInvocationLines[0]), 'the command script is piped into lftp over stdin');
 ok(/ftp:\/\/[^\s"']+:21/.test(source), 'publisher fixes the FTP control port at 21');
 ok(/net:max-retries\s+1/.test(source), 'publisher configures one try with no retry');
 ok(/ftp:ssl-allow\s+no/.test(source), 'publisher forces plain FTP');
@@ -67,6 +70,7 @@ fs.mkdirSync(stage);
 
 const eventsFile = path.join(tmp, 'events.log');
 const commandFile = path.join(tmp, 'lftp-command.txt');
+const channelFile = path.join(tmp, 'lftp-channel.txt');
 const manifestCountFile = path.join(tmp, 'manifest-fetch-count');
 const manifestUrl = 'https://api-ru.skipi.app/seafarer/latest.json';
 const assetFixtures = [
@@ -130,9 +134,11 @@ import { spawnSync } from 'node:child_process';
 const args = process.argv.slice(2);
 const append = (line) => fs.appendFileSync(process.env.HARNESS_EVENTS, line + '\\n');
 const e = args.indexOf('-e');
-const commands = e >= 0 ? args[e + 1] : '';
+const viaDashE = e >= 0;
+const commands = viaDashE ? (args[e + 1] || '') : fs.readFileSync(0, 'utf8');
 const remote = args.find((arg) => /^ftp:\\/\\//.test(arg)) || '';
 fs.writeFileSync(process.env.HARNESS_LFTP_COMMAND, commands);
+fs.writeFileSync(process.env.HARNESS_LFTP_CHANNEL, viaDashE ? '-e' : 'stdin');
 append('FTP_LOGIN:' + remote);
 const shellEscape = (shellCommand) => {
   const result = spawnSync('/bin/sh', ['-c', shellCommand], { env: process.env, encoding: 'utf8' });
@@ -143,7 +149,44 @@ const shellEscape = (shellCommand) => {
 // Faithful to real lftp parsing: a newline ends a command, ";" separates
 // commands within a line, and "!" hands the WHOLE remainder of its line
 // (including any ";"-separated tail) to the local shell.
-for (const rawLine of commands.split('\\n')) {
+// lftp 4.9.2 -e quirk (live incident 2026-07-28, second occurrence): quotes
+// are tokenized ONLY on the first -e line; every later line keeps quote
+// characters literally inside its arguments, so quoted put paths break.
+// Commands arriving over stdin are tokenized identically on every line.
+const tokenizeArgs = (text, quotesLive) => {
+  const tokens = [];
+  let current = '';
+  let quote = null;
+  let started = false;
+  for (const ch of text) {
+    if (quote) {
+      if (ch === quote) quote = null;
+      else current += ch;
+      continue;
+    }
+    if (quotesLive && (ch === '"' || ch === "'")) {
+      quote = ch;
+      started = true;
+      continue;
+    }
+    if (ch === ' ' || ch === '\\t') {
+      if (started) {
+        tokens.push(current);
+        current = '';
+        started = false;
+      }
+      continue;
+    }
+    current += ch;
+    started = true;
+  }
+  if (started) tokens.push(current);
+  return tokens;
+};
+const commandLines = commands.split('\\n');
+for (let lineIndex = 0; lineIndex < commandLines.length; lineIndex += 1) {
+  const rawLine = commandLines[lineIndex];
+  const quotesLive = !viaDashE || lineIndex === 0;
   const segments = rawLine.split(';');
   for (let i = 0; i < segments.length; i += 1) {
     const command = segments[i].trim();
@@ -153,6 +196,20 @@ for (const rawLine of commands.split('\\n')) {
       break;
     }
     if (command.startsWith('put ')) {
+      const parts = tokenizeArgs(command, quotesLive);
+      let localFile = '';
+      for (let j = 1; j < parts.length; j += 1) {
+        if (parts[j] === '-O' || parts[j] === '-o') {
+          j += 1;
+          continue;
+        }
+        localFile = parts[j];
+        break;
+      }
+      if (!localFile || !fs.existsSync(localFile)) {
+        process.stderr.write('put: ' + localFile + ': No such file or directory\\n');
+        process.exit(1);
+      }
       if (/ -o ["']?latest\\.json\.[^ "']+\.new/.test(command)) {
         const match = command.match(/ -o ["']?([^ "']+)/);
         append('MANIFEST_PUT:' + (match ? match[1].replace(/["']$/, '') : 'unknown'));
@@ -174,6 +231,7 @@ const baseEnv = {
   PATH: `${bin}:${process.env.PATH}`,
   HARNESS_EVENTS: eventsFile,
   HARNESS_LFTP_COMMAND: commandFile,
+  HARNESS_LFTP_CHANNEL: channelFile,
   HARNESS_MANIFEST_COUNT: manifestCountFile,
   RF_FTP_USER: 'USER_SECRET_7f58',
   RF_FTP_PASS: 'PASS_SECRET_b0d1',
@@ -188,7 +246,7 @@ const commonArgs = [
 ];
 
 function resetRuntime() {
-  for (const file of [eventsFile, commandFile, manifestCountFile]) {
+  for (const file of [eventsFile, commandFile, channelFile, manifestCountFile]) {
     fs.rmSync(file, { force: true });
   }
 }
@@ -254,6 +312,21 @@ const lastShellEscape = lftpLines.reduce((last, line, index) => (line.startsWith
 const byeLine = lftpLines.indexOf('bye');
 ok(firstShellEscape >= 0 && manifestPutLine > firstShellEscape && renameLine > manifestPutLine && lastShellEscape > renameLine && byeLine > lastShellEscape, `manifest put, atomic rename, final "!" verify and bye each survive as their own lftp lines after the first "!" (indexes: !=${firstShellEscape} put=${manifestPutLine} mv=${renameLine} !=${lastShellEscape} bye=${byeLine})`);
 ok(lftpLines.every((line) => !(/^(?:mkdir|put|mv|bye)\b/.test(line) && /;/.test(line))), 'no lftp command line chains further commands with ";"');
+
+section('Command channel: stdin, never -e (lftp 4.9.2 quote-tokenization quirk)');
+const observedChannel = fs.existsSync(channelFile) ? fs.readFileSync(channelFile, 'utf8') : '';
+ok(observedChannel === 'stdin', `runtime lftp received the command script over stdin, not -e (observed: ${observedChannel || 'none'})`);
+const controlEnv = {
+  ...baseEnv,
+  HARNESS_EVENTS: path.join(tmp, 'control-events.log'),
+  HARNESS_LFTP_COMMAND: path.join(tmp, 'control-command.txt'),
+  HARNESS_LFTP_CHANNEL: path.join(tmp, 'control-channel.txt'),
+};
+const quirkScript = `set cmd:fail-exit yes\nput -O "remote/dir" "${path.join(stage, 'latest.rf.json')}"\nbye`;
+const dashEControl = spawnSync(path.join(bin, 'lftp'), ['-u', 'u,p', 'ftp://127.0.0.1:21', '-e', quirkScript], { env: controlEnv, encoding: 'utf8' });
+ok(dashEControl.status !== 0 && /No such file/.test(dashEControl.stderr), 'negative control: the stub reproduces the -e quirk (quoted put path on line 2 stays literal and fails)');
+const stdinControl = spawnSync(path.join(bin, 'lftp'), ['-u', 'u,p', 'ftp://127.0.0.1:21'], { env: controlEnv, input: quirkScript, encoding: 'utf8' });
+ok(stdinControl.status === 0, 'negative control: the identical script over stdin tokenizes every line and succeeds');
 
 section('Failure containment');
 for (const phase of ['upload', 'asset_verify']) {
