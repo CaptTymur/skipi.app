@@ -292,7 +292,12 @@ LFTP_COMMANDS="$LFTP_COMMANDS${LFTP_NL}mv $(lftp_quote "$MANIFEST_REMOTE_DIR/$MA
 LFTP_COMMANDS="$LFTP_COMMANDS${LFTP_NL}! $VERIFY_LIVE_COMMAND${LFTP_NL}bye"
 
 echo "== opening the sole FTP:21 control session =="
-if ! lftp -u "$RF_FTP_USER,$RF_FTP_PASS" "ftp://$FTP_HOST:21" -e "$LFTP_COMMANDS"; then
+# The command script goes over stdin: with -e, lftp 4.9.2 tokenizes quotes
+# only on the first line and every later line keeps literal quote characters
+# in its paths (live incident 2026-07-28, second occurrence). Stdin parses
+# every line alike. set -o pipefail (top of file) keeps the pipeline
+# fail-closed: a failure of either stage makes the whole publish die.
+if ! printf '%s\n' "$LFTP_COMMANDS" | lftp -u "$RF_FTP_USER,$RF_FTP_PASS" "ftp://$FTP_HOST:21"; then
   die "FTP publish failed without retry; rollback evidence: $ROLLBACK_EVIDENCE"
 fi
 
