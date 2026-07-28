@@ -134,25 +134,36 @@ const commands = e >= 0 ? args[e + 1] : '';
 const remote = args.find((arg) => /^ftp:\\/\\//.test(arg)) || '';
 fs.writeFileSync(process.env.HARNESS_LFTP_COMMAND, commands);
 append('FTP_LOGIN:' + remote);
-for (const raw of commands.split(';')) {
-  const command = raw.trim();
-  if (!command) continue;
-  if (command.startsWith('put ')) {
-    if (/ -o ["']?latest\\.json\.[^ "']+\.new/.test(command)) {
-      const match = command.match(/ -o ["']?([^ "']+)/);
-      append('MANIFEST_PUT:' + (match ? match[1].replace(/["']$/, '') : 'unknown'));
-    } else {
-      const match = command.match(/put(?: -O ["'][^"']+["'])? ["']([^"']+)["']/);
-      append('ASSET_PUT:' + (match ? match[1].split('/').pop() : 'unknown'));
-      if (process.env.FAIL_PHASE === 'upload') process.exit(41);
+const shellEscape = (shellCommand) => {
+  const result = spawnSync('/bin/sh', ['-c', shellCommand], { env: process.env, encoding: 'utf8' });
+  process.stdout.write(result.stdout || '');
+  process.stderr.write(result.stderr || '');
+  if (result.status !== 0) process.exit(result.status || 1);
+};
+// Faithful to real lftp parsing: a newline ends a command, ";" separates
+// commands within a line, and "!" hands the WHOLE remainder of its line
+// (including any ";"-separated tail) to the local shell.
+for (const rawLine of commands.split('\\n')) {
+  const segments = rawLine.split(';');
+  for (let i = 0; i < segments.length; i += 1) {
+    const command = segments[i].trim();
+    if (!command) continue;
+    if (command.startsWith('!')) {
+      shellEscape(segments.slice(i).join(';').trim().slice(1).trim());
+      break;
     }
-  } else if (command.startsWith('mv ')) {
-    append('MANIFEST_RENAME');
-  } else if (command.startsWith('!')) {
-    const result = spawnSync('/bin/sh', ['-c', command.slice(1).trim()], { env: process.env, encoding: 'utf8' });
-    process.stdout.write(result.stdout || '');
-    process.stderr.write(result.stderr || '');
-    if (result.status !== 0) process.exit(result.status || 1);
+    if (command.startsWith('put ')) {
+      if (/ -o ["']?latest\\.json\.[^ "']+\.new/.test(command)) {
+        const match = command.match(/ -o ["']?([^ "']+)/);
+        append('MANIFEST_PUT:' + (match ? match[1].replace(/["']$/, '') : 'unknown'));
+      } else {
+        const match = command.match(/put(?: -O ["'][^"']+["'])? ["']([^"']+)["']/);
+        append('ASSET_PUT:' + (match ? match[1].split('/').pop() : 'unknown'));
+        if (process.env.FAIL_PHASE === 'upload') process.exit(41);
+      }
+    } else if (command.startsWith('mv ')) {
+      append('MANIFEST_RENAME');
+    }
   }
 }
 process.exit(0);
@@ -228,9 +239,21 @@ ok(fs.existsSync(evidence) && !persistedEvidence.includes(baseEnv.RF_FTP_USER) &
 ok(/rollback evidence:.+SHA-256:.+bytes:/is.test(successOutput), 'publisher reports only rollback evidence path, SHA-256, and size');
 const lftpCommands = fs.existsSync(commandFile) ? fs.readFileSync(commandFile, 'utf8') : '';
 ok(/set net:max-retries 1/.test(lftpCommands) && /set net:idle 24h/.test(lftpCommands) && /set ftp:proxy ""/.test(lftpCommands) && /set ftp:ssl-allow no/.test(lftpCommands), 'runtime FTP session disables retries/proxies and retains its sole control connection');
-const remoteMutationCommands = lftpCommands.split(';').map((command) => command.trim()).filter((command) => /^(?:put|mv)\s/.test(command));
+const remoteMutationCommands = lftpCommands.split(/[;\n]/).map((command) => command.trim()).filter((command) => /^(?:put|mv)\s/.test(command));
 ok(!remoteMutationCommands.some((command) => command.startsWith('put ') && / -o ["']?latest\.json["']?$/.test(command)) && remoteMutationCommands.some((command) => command.startsWith('mv ') && /latest\.json["']?$/.test(command)), 'live manifest basename is a rename target, never a direct upload target');
-ok(!/(^|;)\s*(?:rm|glob\s+-f\s+rm|mrm)\b/.test(lftpCommands), 'normal publish command contains no remote deletion');
+ok(!/(^|[;\n])\s*(?:rm|glob\s+-f\s+rm|mrm)\b/.test(lftpCommands), 'normal publish command contains no remote deletion');
+
+section('Shell-escape line separation ("!" consumes the rest of its lftp line)');
+const lftpLines = lftpCommands.split('\n').map((line) => line.trim()).filter(Boolean);
+ok(lftpLines.filter((line) => line.startsWith('!')).length === 2, 'both local verification hooks are "!" commands starting their own lines');
+ok(lftpLines.every((line) => !line.startsWith('!') || !line.includes(';')), 'no ";" on any "!" line (the local shell would swallow every later lftp command)');
+const firstShellEscape = lftpLines.findIndex((line) => line.startsWith('!'));
+const manifestPutLine = lftpLines.findIndex((line) => /^put\b.* -o /.test(line));
+const renameLine = lftpLines.findIndex((line) => line.startsWith('mv '));
+const lastShellEscape = lftpLines.reduce((last, line, index) => (line.startsWith('!') ? index : last), -1);
+const byeLine = lftpLines.indexOf('bye');
+ok(firstShellEscape >= 0 && manifestPutLine > firstShellEscape && renameLine > manifestPutLine && lastShellEscape > renameLine && byeLine > lastShellEscape, `manifest put, atomic rename, final "!" verify and bye each survive as their own lftp lines after the first "!" (indexes: !=${firstShellEscape} put=${manifestPutLine} mv=${renameLine} !=${lastShellEscape} bye=${byeLine})`);
+ok(lftpLines.every((line) => !(/^(?:mkdir|put|mv|bye)\b/.test(line) && /;/.test(line))), 'no lftp command line chains further commands with ";"');
 
 section('Failure containment');
 for (const phase of ['upload', 'asset_verify']) {
