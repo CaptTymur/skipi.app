@@ -24,6 +24,17 @@
 //      success must still actually open the imported vault (loadVault) with
 //      no success signal of the adapter's own.
 //
+//   3. Android system Back backgrounds the whole app instead of closing the
+//      open unified overlay (28.07 real-tap smoke on v0.4.179). The generated
+//      WryActivity maps hardware Back to WebView history: canGoBack()=false ->
+//      onBackPressed() -> app is backgrounded. Contract: opening the overlay
+//      pushes exactly ONE history marker entry (history.pushState); popping it
+//      (system Back -> popstate) closes the overlay through the SAME standard
+//      close path as Escape/backdrop; every other close path (Escape, backdrop,
+//      module close button) consumes the marker via one history.back() so
+//      phantom entries never accumulate; stray popstate events without the
+//      marker are a no-op (app navigation untouched).
+//
 // The harness executes the REAL code from dist/index.html: the legacy backup
 // functions and the whole unified-settings integration script run unmodified
 // in a VM with stubbed primitives (saveDlg/open/uiPrompt/uiConfirm/invoke/
@@ -127,6 +138,27 @@ function makeSandbox({ module = null, withLegacy = true, invokeHandlers = {}, di
   const overlayEl = makeOverlayElement('skipi-settings-overlay');
   const rootEl = makeOverlayElement('settings-root');
 
+  // Captured event listeners (window + document) so tests can dispatch
+  // popstate / keydown into the real handlers registered by the script.
+  const winListeners = {};
+  const docListeners = {};
+  const listenInto = (map) => (type, fn) => { (map[type] = map[type] || []).push(fn); };
+  const dispatchInto = (map) => (type, ev) => { for (const fn of map[type] || []) fn(ev || {}); };
+
+  // History stub with an honest depth counter: pushState pushes, back() pops
+  // and (like a real browser) fires popstate synchronously into the window
+  // listeners — the strictest re-entrancy check for the close path.
+  const historyCalls = { pushes: [], backs: 0 };
+  let historyDepth = 0;
+  const historyStub = {
+    pushState: (st) => { historyCalls.pushes.push({ state: st }); historyDepth++; },
+    back: () => {
+      historyCalls.backs++;
+      if (historyDepth > 0) historyDepth--;
+      dispatchInto(winListeners)('popstate', { state: null });
+    },
+  };
+
   const invoke = (cmd, args) => {
     state.invokes.push({ cmd, args });
     if (Object.prototype.hasOwnProperty.call(invokeHandlers, cmd)) {
@@ -145,9 +177,12 @@ function makeSandbox({ module = null, withLegacy = true, invokeHandlers = {}, di
     console: { log() {}, warn() {}, error() {} },
     document: {
       getElementById: (id) => (id === 'skipi-settings-overlay' ? overlayEl : id === 'settings-root' ? rootEl : null),
-      addEventListener() {},
+      addEventListener: listenInto(docListeners),
       documentElement: { getAttribute: () => 'light', setAttribute() {} },
     },
+    addEventListener: listenInto(winListeners),
+    removeEventListener() {},
+    history: historyStub,
     localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
     // primitives shared by legacy flows and (post-fix) unified adapters
     invoke,
@@ -196,7 +231,21 @@ function makeSandbox({ module = null, withLegacy = true, invokeHandlers = {}, di
     return realOpenUnified.apply(this, args);
   };
 
-  return { sandbox, state, overlayEl };
+  return {
+    sandbox,
+    state,
+    overlayEl,
+    history: historyCalls,
+    historyDepth: () => historyDepth,
+    dispatchWindow: dispatchInto(winListeners),
+    dispatchDocument: dispatchInto(docListeners),
+    // Simulate the user pressing system Back: the WebView pops the top history
+    // entry itself and fires popstate (it does NOT go through history.back()).
+    systemBack: () => {
+      if (historyDepth > 0) historyDepth--;
+      dispatchInto(winListeners)('popstate', { state: null });
+    },
+  };
 }
 
 async function settle(ticks = 400) {
@@ -382,11 +431,92 @@ async function assertImportContract() {
   }
 }
 
+// ---- (e) system Back (popstate): marker pushed on open, popstate closes overlay ----
+
+const unmountTrackingModule = (state) => ({
+  mount(_sel, host) {
+    state.mountCalls++;
+    state.host = host;
+    return { unmount() { state.unmounts = (state.unmounts || 0) + 1; }, ready: Promise.resolve() };
+  },
+});
+
+async function assertSystemBackClosesOverlay() {
+  section('system Back: open pushes ONE history marker, popstate closes the overlay');
+  const sb = makeSandbox({ module: unmountTrackingModule });
+  const { sandbox, state, overlayEl } = sb;
+
+  sandbox.openSettings(); // real gear entry, rerouted to the unified shell
+  await settle();
+  ok(overlayEl.classList.contains('open'), 'unified overlay is open');
+  ok(sb.history.pushes.length === 1, `exactly one history entry pushed on open (got ${sb.history.pushes.length}; 0 = system Back backgrounds the whole app)`);
+  ok(!!(sb.history.pushes[0] && sb.history.pushes[0].state && sb.history.pushes[0].state.skipiUnifiedSettings === true),
+    'pushed entry carries the unified-settings marker state');
+  ok(sb.historyDepth() === 1, `history depth is 1 while the overlay is open (got ${sb.historyDepth()})`);
+
+  // System Back: WebView pops the marker entry itself, then fires popstate.
+  sb.systemBack();
+  await settle();
+  ok(!overlayEl.classList.contains('open'), 'popstate closes the unified overlay');
+  ok((state.unmounts || 0) === 1, `overlay closed through the standard close path — instance unmounted (got ${state.unmounts || 0})`);
+  ok(sb.history.backs === 0, `close-from-popstate does NOT call history.back() again (got ${sb.history.backs}; >0 = eats a real app history entry)`);
+  ok(sb.historyDepth() === 0, 'no phantom history entries remain after system Back close');
+
+  // Stray popstate without our marker must be a no-op (app navigation untouched).
+  sb.dispatchWindow('popstate', { state: null });
+  await settle();
+  ok(!overlayEl.classList.contains('open') && sb.history.backs === 0 && (state.unmounts || 0) === 1,
+    'stray popstate after close is a no-op (no extra back()/unmount)');
+
+  // Re-open pushes a fresh marker; double-open while open does not stack markers.
+  sandbox.openSettings();
+  await settle();
+  ok(overlayEl.classList.contains('open') && sb.history.pushes.length === 2,
+    `re-open pushes a fresh marker (got ${sb.history.pushes.length} total pushes)`);
+  sandbox.openSettings();
+  await settle();
+  ok(sb.history.pushes.length === 2 && sb.historyDepth() === 1,
+    `double open does not stack markers (pushes=${sb.history.pushes.length}, depth=${sb.historyDepth()})`);
+
+  // Programmatic close (module close button via onClose) consumes the marker.
+  const unmountsBefore = state.unmounts || 0;
+  sandbox.closeUnifiedSettings();
+  await settle();
+  ok(!overlayEl.classList.contains('open'), 'programmatic close closes the overlay');
+  ok(sb.history.backs === 1, `programmatic close consumes the marker via exactly one history.back() (got ${sb.history.backs})`);
+  ok(sb.historyDepth() === 0, 'history depth back to 0 after close (no accumulated entries)');
+  ok((state.unmounts || 0) === unmountsBefore + 1,
+    `popstate echo from history.back() does not double-close (unmounts ${unmountsBefore}->${state.unmounts || 0})`);
+}
+
+// ---- (f) Escape / backdrop close paths remain and consume the marker ----
+
+async function assertEscapeAndBackdropCloseRemain() {
+  section('Escape / backdrop close paths remain and consume the history marker');
+  const sb = makeSandbox({ module: captureHostModule });
+  const { sandbox, overlayEl } = sb;
+  sandbox.openSettings();
+  await settle();
+  ok(overlayEl.classList.contains('open'), 'overlay open before Escape');
+  sb.dispatchDocument('keydown', { key: 'Escape' });
+  await settle();
+  ok(!overlayEl.classList.contains('open'), 'Escape still closes the unified overlay');
+  ok(sb.history.backs === 1, `Escape close consumes the history marker via one history.back() (got ${sb.history.backs})`);
+  ok(sb.historyDepth() === 0, 'no phantom history entry left after Escape close');
+
+  // Backdrop click-to-close is static markup outside the extracted script —
+  // semantic presence check on the real dist/index.html.
+  ok(/id="skipi-settings-overlay"[^>]*onclick="if\(event\.target===this\)closeUnifiedSettings\(\);"/.test(html),
+    'backdrop click-to-close handler still present on the overlay element');
+}
+
 await assertModuleLoadFailFallsBackOnce();
 await assertModuleLoadFailWithoutLegacyIsFailClosed();
 await assertMountThrowFallsBackOnce();
 await assertExportContract();
 await assertImportContract();
+await assertSystemBackClosesOverlay();
+await assertEscapeAndBackdropCloseRemain();
 
 console.log('');
 if (fail > 0) {
