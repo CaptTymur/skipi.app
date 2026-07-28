@@ -16453,6 +16453,7 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
         try{ if(_instance){ _instance.unmount(); } }catch(e){}
         _instance = null;
         ov.classList.add('open');
+        pushOverlayHistory();
         var root = document.getElementById('settings-root');
         if(root){ root.innerHTML = ''; }
         try{
@@ -16484,7 +16485,43 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
         _instance = null;
         var root = document.getElementById('settings-root');
         if(root){ root.innerHTML = ''; }
+        consumeOverlayHistory();
     };
+
+    // ---- System Back (Android) closes the unified overlay ----
+    // The generated WryActivity maps hardware Back to WebView history: with no
+    // history entry canGoBack()=false -> onBackPressed() backgrounds the whole
+    // app. Opening the overlay therefore pushes ONE marker entry; popping it
+    // (system Back -> popstate) closes the overlay through the same
+    // closeUnifiedSettings path as Escape/backdrop. Every other close path
+    // consumes the marker via one history.back() so phantom entries never
+    // accumulate. On popstate the flag is cleared BEFORE closing, making the
+    // close path's consume step a no-op (no double back(), no re-entrancy).
+    var _histMark = false;
+    function pushOverlayHistory(){
+        if(_histMark) return;
+        try{
+            if(window.history && typeof window.history.pushState === 'function'){
+                window.history.pushState({ skipiUnifiedSettings: true }, '');
+                _histMark = true;
+            }
+        }catch(e){}
+    }
+    function consumeOverlayHistory(){
+        if(!_histMark) return;
+        _histMark = false;
+        try{
+            if(window.history && typeof window.history.back === 'function'){
+                window.history.back();
+            }
+        }catch(e){}
+    }
+    window.addEventListener('popstate', function(){
+        if(!_histMark) return; // not our marker — leave app navigation alone
+        _histMark = false;     // our marker entry is the one being popped
+        var ov = overlay();
+        if(ov && ov.classList.contains('open')){ closeUnifiedSettings(); }
+    });
 
     // ---- Route existing entry points to the unified shell ----
     // Preserve the legacy openSettings under a private name for the app-specific
