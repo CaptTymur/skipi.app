@@ -112,7 +112,7 @@ const legacyFragment = [
 
 function makeOverlayElement(id) {
   const classes = new Set();
-  return {
+  const el = {
     id,
     innerHTML: '',
     classList: {
@@ -120,10 +120,18 @@ function makeOverlayElement(id) {
       remove: (c) => classes.delete(c),
       contains: (c) => classes.has(c),
     },
+    // Minimal '#id' lookup over the element's current innerHTML string — enough
+    // for the embed side-effect's "is the form committed to the DOM yet?" probe.
+    querySelector: (sel) => {
+      const m = /^#([A-Za-z0-9_-]+)$/.exec(String(sel || ''));
+      if (!m) return null;
+      return el.innerHTML.indexOf('id="' + m[1] + '"') !== -1 ? { id: m[1] } : null;
+    },
   };
+  return el;
 }
 
-function makeSandbox({ module = null, withLegacy = true, invokeHandlers = {}, dialogs = {} } = {}) {
+function makeSandbox({ module = null, withLegacy = true, invokeHandlers = {}, dialogs = {}, queuedTimers = false, extraElements = null } = {}) {
   const state = {
     legacyCalls: [],       // args of every _legacyOpenSettings (original openSettings) call
     unifiedCalls: 0,       // window.openUnifiedSettings entries (depth limiter)
@@ -173,10 +181,19 @@ function makeSandbox({ module = null, withLegacy = true, invokeHandlers = {}, di
     return Promise.resolve({});
   };
 
+  // Queued timers (opt-in): the embed side-effect schedules its DOM-commit wait
+  // through setTimeout; queuing lets a test commit the rendered markup first
+  // and then flush the loop deterministically. Default stays synchronous.
+  const timerQueue = [];
+  let timerSeq = 1;
+
   const sandbox = {
     console: { log() {}, warn() {}, error() {} },
     document: {
-      getElementById: (id) => (id === 'skipi-settings-overlay' ? overlayEl : id === 'settings-root' ? rootEl : null),
+      getElementById: (id) => {
+        if (extraElements && Object.prototype.hasOwnProperty.call(extraElements, id)) return extraElements[id];
+        return id === 'skipi-settings-overlay' ? overlayEl : id === 'settings-root' ? rootEl : null;
+      },
       addEventListener: listenInto(docListeners),
       documentElement: { getAttribute: () => 'light', setAttribute() {} },
     },
@@ -204,8 +221,12 @@ function makeSandbox({ module = null, withLegacy = true, invokeHandlers = {}, di
     UI_LANG_OPTIONS: [['en', 'English'], ['ru', 'Русский']],
     appVersionLabel: () => '0.0.0-harness',
     applyAppearance() {},
-    setTimeout: (fn) => { fn(); return 0; },
-    clearTimeout() {},
+    setTimeout: queuedTimers
+      ? (fn) => { const id = timerSeq++; timerQueue.push({ id, fn }); return id; }
+      : (fn) => { fn(); return 0; },
+    clearTimeout: queuedTimers
+      ? (id) => { const i = timerQueue.findIndex((t) => t.id === id); if (i >= 0) timerQueue.splice(i, 1); }
+      : () => {},
   };
   sandbox.window = sandbox;
   sandbox.globalThis = sandbox;
@@ -235,6 +256,13 @@ function makeSandbox({ module = null, withLegacy = true, invokeHandlers = {}, di
     sandbox,
     state,
     overlayEl,
+    rootEl,
+    // Run queued timer callbacks (including ones they re-schedule) to quiescence.
+    flushTimers: (cap = 500) => {
+      let n = 0;
+      while (timerQueue.length && n < cap) { const t = timerQueue.shift(); n++; t.fn(); }
+      return n;
+    },
     history: historyCalls,
     historyDepth: () => historyDepth,
     dispatchWindow: dispatchInto(winListeners),
@@ -510,6 +538,129 @@ async function assertEscapeAndBackdropCloseRemain() {
     'backdrop click-to-close handler still present on the overlay element');
 }
 
+// ---- (g)+(h) seafarer section: FULL profile editor embedded (OWNER PRODUCT-GO 2026-07-29) ----
+//
+// The unified 'seafarer-profile' section must render the complete existing
+// profile editor directly (same markup as the legacy screen, via the shared
+// seafarerProfileFormHtml builder) instead of a 4-row summary with an
+// "Open full seafarer profile" hand-off button, and openSettings('seafarer')
+// deep-links must land in the unified shell, not the legacy editor.
+
+const escapeHtmlStub = (s) => String(s == null ? '' : s)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+// Module stub that emulates the real draw() contract for app-specific sections:
+// renderHtml(ctx) is called synchronously and its string return is the DOM markup.
+const renderingModule = (state) => ({
+  mount(_sel, host, opts) {
+    state.mountCalls++;
+    state.host = host;
+    state.mountOptions = opts || {};
+    const sections = (host && host.appSpecificSections) || [];
+    const sec = sections.find((s) => s && s.id === 'seafarer-profile') || null;
+    state.section = sec;
+    if (sec) {
+      state.renderedHtml = String(sec.renderHtml({
+        language: 'en', theme: 'light', mode: 'desktop',
+        escapeHtml: escapeHtmlStub, escapeAttr: escapeHtmlStub,
+      }));
+    }
+    return { unmount() {}, ready: Promise.resolve() };
+  },
+});
+
+function extractSeafarerFormFns() {
+  return [
+    extractFunction('function spField(id,label,type)'),
+    extractFunction('function seafarerProfileFormHtml()'),
+  ].join('\n');
+}
+
+async function assertSeafarerSectionEmbedsFullEditor() {
+  section('seafarer section: renderHtml IS the full profile editor, summary hop removed');
+  let formFns = null;
+  try { formFns = extractSeafarerFormFns(); } catch (e) { /* pre-fix dist: builder absent */ }
+  ok(!!formFns, 'shared form builder seafarerProfileFormHtml (+spField) present in dist/index.html');
+
+  // A stale LEGACY seafarer form (same sp-* ids, earlier in the document) —
+  // closeSettings() never clears #settings-body, only drops the .open class.
+  const legacyBody = makeOverlayElement('settings-body');
+  legacyBody.innerHTML = '<div class="settings-section"><input id="sp-surname"><div id="sp-photo-box"></div></div>';
+  const legacyOverlay = makeOverlayElement('settings-overlay'); // closed: no .open class
+
+  const sb = makeSandbox({
+    module: renderingModule,
+    queuedTimers: true,
+    extraElements: { 'settings-body': legacyBody, 'settings-overlay': legacyOverlay },
+  });
+  const { sandbox, state, rootEl } = sb;
+  if (formFns) vm.runInContext(formFns, sandbox, { filename: 'dist/index.html#seafarer-form-fns' });
+  const spLoadCalls = [];
+  sandbox.spLoad = () => { spLoadCalls.push(1); };
+
+  sandbox.openSettings(); // bare gear entry -> unified shell
+  await settle();
+  ok(state.mountCalls === 1, `unified shell mounted (got ${state.mountCalls})`);
+  const htmlOut = String(state.renderedHtml || '');
+  for (const marker of ['id="sp-photo-box"', 'id="sp-surname"', 'id="sp-rank"', 'id="sp-nearest_airport"', 'id="sp-min_salary"', 'onclick="spSave()"']) {
+    ok(htmlOut.indexOf(marker) !== -1, `renderHtml contains full-editor marker ${marker}`);
+  }
+  ok(htmlOut.indexOf('data-settings-action="open-seafarer-editor"') === -1,
+    'NEGATIVE: renderHtml has NO open-seafarer-editor hand-off button');
+  ok(htmlOut.indexOf('Open full seafarer profile') === -1,
+    'NEGATIVE: renderHtml has NO "Open full seafarer profile" text');
+
+  // Population side effect: only after the markup is committed to the DOM may
+  // the scheduled loop clear the stale legacy sp-* copy and call spLoad().
+  ok(spLoadCalls.length === 0, 'spLoad NOT called before the form reaches the DOM');
+  rootEl.innerHTML = htmlOut; // the real module assigns renderHtml -> innerHTML itself
+  const ran = sb.flushTimers();
+  ok(ran > 0, `renderHtml scheduled a DOM-commit wait loop (flushed ${ran} timer callbacks)`);
+  ok(spLoadCalls.length === 1, `spLoad() called exactly once after the form reached the DOM (got ${spLoadCalls.length})`);
+  ok(legacyBody.innerHTML === '', 'stale legacy seafarer form (duplicate sp-* ids earlier in the document) cleared before spLoad');
+}
+
+async function assertSeafarerDeepLinkRoutesUnified() {
+  section("deep-link: openSettings('seafarer') opens the unified seafarer-profile section, not the legacy editor");
+  let formFns = null;
+  try { formFns = extractSeafarerFormFns(); } catch (e) {}
+
+  const sb = makeSandbox({ module: renderingModule, queuedTimers: true });
+  const { sandbox, state, overlayEl } = sb;
+  if (formFns) vm.runInContext(formFns, sandbox, { filename: 'dist/index.html#seafarer-form-fns' });
+  sandbox.spLoad = () => {};
+
+  sandbox.openSettings('seafarer');
+  await settle();
+  ok(state.legacyCalls.length === 0, `legacy editor NOT called for the seafarer deep-link (got ${state.legacyCalls.length} legacy calls)`);
+  ok(state.mountCalls === 1, `unified shell mounted for the deep-link (got ${state.mountCalls})`);
+  ok(overlayEl.classList.contains('open'), 'unified overlay is open');
+  ok(!!(state.mountOptions && state.mountOptions.initialSection === 'seafarer-profile'),
+    `mount lands on the seafarer-profile section via initialSection (got ${state.mountOptions && state.mountOptions.initialSection})`);
+  ok(!!(state.mountOptions && state.mountOptions.mobileInitialView === 'section'),
+    'mobile widths land on the section page, not the list (mobileInitialView=section)');
+
+  // Other deep-links stay legacy; the bare entry stays unified without a pinned section.
+  sandbox.openSettings('email');
+  await settle();
+  ok(state.legacyCalls.length === 1 && state.legacyCalls[0][0] === 'email',
+    `openSettings('email') still routes to the legacy editor (got ${JSON.stringify(state.legacyCalls)})`);
+  sandbox.openSettings();
+  await settle();
+  ok(state.mountCalls === 2 && !(state.mountOptions && state.mountOptions.initialSection),
+    'bare openSettings() still mounts unified WITHOUT a pinned initial section');
+
+  // Non-seafarer vault: the legacy guard (redirect to General) must keep working.
+  const sb2 = makeSandbox({ module: renderingModule, queuedTimers: true });
+  if (formFns) vm.runInContext(formFns, sb2.sandbox, { filename: 'dist/index.html#seafarer-form-fns' });
+  sb2.sandbox.spLoad = () => {};
+  sb2.sandbox.isSeafarerVault = () => false;
+  sb2.sandbox.openSettings('seafarer');
+  await settle();
+  ok(sb2.state.mountCalls === 0 && sb2.state.legacyCalls.length === 1,
+    'non-seafarer vault: seafarer deep-link falls through to the legacy guard path');
+}
+
 await assertModuleLoadFailFallsBackOnce();
 await assertModuleLoadFailWithoutLegacyIsFailClosed();
 await assertMountThrowFallsBackOnce();
@@ -517,6 +668,8 @@ await assertExportContract();
 await assertImportContract();
 await assertSystemBackClosesOverlay();
 await assertEscapeAndBackdropCloseRemain();
+await assertSeafarerSectionEmbedsFullEditor();
+await assertSeafarerDeepLinkRoutesUnified();
 
 console.log('');
 if (fail > 0) {
