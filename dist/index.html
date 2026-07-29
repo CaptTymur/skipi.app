@@ -14924,6 +14924,54 @@ async function mobileSettingsDeleteVaultPath(path){
     await mobileDeleteVaultPath(path);
 }
 
+// Full seafarer profile form markup (photo panel + all fields + Save/Reload).
+// Shared VERBATIM by the legacy settings screen (renderSettingsBody 'seafarer'
+// tab, which wraps it in its .settings-section header) and by the unified
+// Settings shell (seafarerSection renderHtml). All handlers are inline
+// (onclick/onchange/oninput), so the same string works wherever it is inserted
+// via innerHTML; population and save go through the existing global
+// spLoad()/spSave() by sp-* element ids.
+function seafarerProfileFormHtml(){
+    var h = '';
+    h += '<div style="display:flex;gap:20px;align-items:flex-start;">';
+    // Photo panel
+    h += '<div style="flex:0 0 120px;">';
+    h += '<div id="sp-photo-box" style="width:120px;height:160px;border:1px dashed var(--border);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:11px;text-align:center;padding:6px;background:var(--bg);overflow:hidden;">No photo</div>';
+    h += '<button class="btn btn-outline btn-sm" style="margin-top:8px;width:120px;" onclick="spUploadPhoto()">Upload photo…</button>';
+    h += '<button class="btn btn-outline btn-sm btn-red" style="margin-top:4px;width:120px;" onclick="spRemovePhoto()">Remove</button>';
+    h += '</div>';
+    // Form panel
+    h += '<div style="flex:1;min-width:0;">';
+    h += '<div class="field-grid">';
+    // Rank + Vessel Type are the most load-bearing seafarer attributes —
+    // surface them at the top so the user can see/adjust them without
+    // scrolling past personal details first.
+    h += '<div class="field"><label>Rank</label><select id="sp-rank" onchange="syncRankCustom(\'sp\',true)"></select><input id="sp-rank_custom" placeholder="Type your rank" style="display:none;margin-top:6px;"></div>';
+    h += '<div class="field"><label>Vessel type</label><select id="sp-preferred_vessel_type"></select></div>';
+    h += spField('sp-surname','Surname');
+    h += spField('sp-first_name','First name');
+    h += spField('sp-middle_name','Middle name');
+    h += spField('sp-date_of_birth','Date of birth','date');
+    h += spField('sp-place_of_birth','Place of birth');
+    h += '<div class="field"><label>Citizenship</label><select id="sp-nationality"></select></div>';
+    h += '<div class="field"><label>Phones</label><div style="display:flex;gap:6px;"><input id="sp-phones" style="flex:1;min-width:0;"><select id="sp-preferred_messenger" style="width:110px;flex:0 0 110px;"><option value="WhatsApp">WhatsApp</option><option value="Telegram">Telegram</option><option value="Viber">Viber</option><option value="Signal">Signal</option><option value="Other">Other</option></select></div></div>';
+    h += spField('sp-email','Email','email');
+    h += '<div class="field"><label>Marital status</label><select id="sp-marital_status"><option value="">-- Select --</option><option value="Single">Single</option><option value="Married">Married</option><option value="Divorced">Divorced</option><option value="Widowed">Widowed</option></select></div>';
+    h += '<div class="field"><label>Children</label><input id="sp-children_count" type="number" min="0" step="1" placeholder="0"></div>';
+    h += '<div class="field"><label>English level</label><select id="sp-english_level"><option value="">-- Select --</option><option value="Basic">Basic</option><option value="Intermediate">Intermediate</option><option value="Advanced">Advanced</option><option value="Fluent">Fluent</option><option value="Native">Native</option></select></div>';
+    h += '<div class="field"><label>Nearest airport</label><input id="sp-nearest_airport" placeholder="Start typing…"></div>';
+    h += '<div class="field"><label>Nearest intl airport</label><input id="sp-nearest_intl_airport" placeholder="Start typing…"></div>';
+    h += spField('sp-available_from','Available for joining','date');
+    h += '<div class="field"><label>Minimum salary per month</label><div style="display:flex;gap:6px;"><input id="sp-min_salary" type="number" min="0" style="flex:1;min-width:0;"><select id="sp-min_salary_currency" style="width:80px;flex:0 0 80px;"></select></div></div>';
+    h += '</div>';
+    h += '<div class="field"><label>Home address</label><input id="sp-home_address" placeholder="Street, city, country, ZIP"></div>';
+    h += '<div style="margin-top:14px;display:flex;align-items:center;gap:10px;"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;"><input type="checkbox" id="sp-ready_for_offers" onchange="spToggleReady(this.checked)" style="width:16px;height:16px;accent-color:var(--accent);"> Ready to accept job offers</label></div>';
+    h += '<div style="margin-top:16px;display:flex;gap:8px;"><button class="btn btn-accent btn-sm" onclick="spSave()">Save</button><button class="btn btn-outline btn-sm" onclick="spLoad()">Reload</button></div>';
+    h += '</div>';
+    h += '</div>';
+    return h;
+}
+
 function renderSettingsBody(){
     var cur = document.documentElement.getAttribute('data-theme')||'light';
     var h = '';
@@ -14991,42 +15039,8 @@ function renderSettingsBody(){
 
     if(settingsTab === 'seafarer'){
         h += '<div class="settings-section"><h3>Seafarer Profile</h3><div class="section-desc">Personal details used to generate your CV/Application Form PDF. Stored only inside this vault on disk.</div>';
-        h += '<div style="display:flex;gap:20px;align-items:flex-start;">';
-        // Photo panel
-        h += '<div style="flex:0 0 120px;">';
-        h += '<div id="sp-photo-box" style="width:120px;height:160px;border:1px dashed var(--border);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:11px;text-align:center;padding:6px;background:var(--bg);overflow:hidden;">No photo</div>';
-        h += '<button class="btn btn-outline btn-sm" style="margin-top:8px;width:120px;" onclick="spUploadPhoto()">Upload photo…</button>';
-        h += '<button class="btn btn-outline btn-sm btn-red" style="margin-top:4px;width:120px;" onclick="spRemovePhoto()">Remove</button>';
+        h += seafarerProfileFormHtml();
         h += '</div>';
-        // Form panel
-        h += '<div style="flex:1;min-width:0;">';
-        h += '<div class="field-grid">';
-        // Rank + Vessel Type are the most load-bearing seafarer attributes —
-        // surface them at the top so the user can see/adjust them without
-        // scrolling past personal details first.
-        h += '<div class="field"><label>Rank</label><select id="sp-rank" onchange="syncRankCustom(\'sp\',true)"></select><input id="sp-rank_custom" placeholder="Type your rank" style="display:none;margin-top:6px;"></div>';
-        h += '<div class="field"><label>Vessel type</label><select id="sp-preferred_vessel_type"></select></div>';
-        h += spField('sp-surname','Surname');
-        h += spField('sp-first_name','First name');
-        h += spField('sp-middle_name','Middle name');
-        h += spField('sp-date_of_birth','Date of birth','date');
-        h += spField('sp-place_of_birth','Place of birth');
-        h += '<div class="field"><label>Citizenship</label><select id="sp-nationality"></select></div>';
-        h += '<div class="field"><label>Phones</label><div style="display:flex;gap:6px;"><input id="sp-phones" style="flex:1;min-width:0;"><select id="sp-preferred_messenger" style="width:110px;flex:0 0 110px;"><option value="WhatsApp">WhatsApp</option><option value="Telegram">Telegram</option><option value="Viber">Viber</option><option value="Signal">Signal</option><option value="Other">Other</option></select></div></div>';
-        h += spField('sp-email','Email','email');
-        h += '<div class="field"><label>Marital status</label><select id="sp-marital_status"><option value="">-- Select --</option><option value="Single">Single</option><option value="Married">Married</option><option value="Divorced">Divorced</option><option value="Widowed">Widowed</option></select></div>';
-        h += '<div class="field"><label>Children</label><input id="sp-children_count" type="number" min="0" step="1" placeholder="0"></div>';
-        h += '<div class="field"><label>English level</label><select id="sp-english_level"><option value="">-- Select --</option><option value="Basic">Basic</option><option value="Intermediate">Intermediate</option><option value="Advanced">Advanced</option><option value="Fluent">Fluent</option><option value="Native">Native</option></select></div>';
-        h += '<div class="field"><label>Nearest airport</label><input id="sp-nearest_airport" placeholder="Start typing…"></div>';
-        h += '<div class="field"><label>Nearest intl airport</label><input id="sp-nearest_intl_airport" placeholder="Start typing…"></div>';
-        h += spField('sp-available_from','Available for joining','date');
-        h += '<div class="field"><label>Minimum salary per month</label><div style="display:flex;gap:6px;"><input id="sp-min_salary" type="number" min="0" style="flex:1;min-width:0;"><select id="sp-min_salary_currency" style="width:80px;flex:0 0 80px;"></select></div></div>';
-        h += '</div>';
-        h += '<div class="field"><label>Home address</label><input id="sp-home_address" placeholder="Street, city, country, ZIP"></div>';
-        h += '<div style="margin-top:14px;display:flex;align-items:center;gap:10px;"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;"><input type="checkbox" id="sp-ready_for_offers" onchange="spToggleReady(this.checked)" style="width:16px;height:16px;accent-color:var(--accent);"> Ready to accept job offers</label></div>';
-        h += '<div style="margin-top:16px;display:flex;gap:8px;"><button class="btn btn-accent btn-sm" onclick="spSave()">Save</button><button class="btn btn-outline btn-sm" onclick="spLoad()">Reload</button></div>';
-        h += '</div>';
-        h += '</div></div>';
     }
 
     if(settingsTab === 'email'){
@@ -16336,13 +16350,54 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
             });
     }
 
-    // ---- App-specific section: «Профиль моряка» (Sea Service / AI settings) ----
-    // renderHtml MUST be synchronous and MUST escape every dynamic value.
-    // We render a read-only summary from a cache primed on open, and a button
-    // that jumps to Seafarer's existing full profile editor.
-    var _spCache = null;
-    function primeSeafarerSummary(){
-        return invoke('get_seafarer_personal').then(function(sp){ _spCache = sp || {}; }).catch(function(){ _spCache = {}; });
+    // ---- App-specific section: «Профиль моряка» — FULL profile editor ----
+    // renderHtml MUST be synchronous; the module assigns the returned string to
+    // innerHTML as-is (trusted in-home boundary). The section embeds the SAME
+    // full profile form the legacy screen renders (shared builder
+    // seafarerProfileFormHtml) so the unified shell shows the complete editor
+    // directly — no read-only summary, no hand-off hop to the legacy screen
+    // (OWNER PRODUCT-GO 2026-07-29 «Seafarer Full Profile Restoration»).
+    //
+    // Population (spLoad) cannot run inside renderHtml itself: the vendored
+    // module offers NO post-render hook for app-specific sections, and the
+    // markup is not in the DOM until the module commits it. So renderHtml
+    // schedules a bounded wait-for-DOM loop as a side effect; the single
+    // timer handle re-arms on every render, which also guards against
+    // parallel loaders when the section re-renders in quick succession.
+    var _spEmbedTimer = null;
+    function scheduleSeafarerFormLoad(){
+        try{ if(_spEmbedTimer !== null){ clearTimeout(_spEmbedTimer); } }catch(e){}
+        _spEmbedTimer = null;
+        var attempts = 0;
+        function tick(){
+            _spEmbedTimer = null;
+            var root = document.getElementById('settings-root');
+            var present = root && root.querySelector && root.querySelector('#sp-photo-box');
+            if(!present){
+                attempts += 1;
+                // ~2s at 50ms: the section was closed/navigated away — stop silently.
+                if(attempts > 40){ return; }
+                _spEmbedTimer = setTimeout(tick, 50);
+                return;
+            }
+            // Stale-copy guard: legacy closeSettings() only removes the .open
+            // class and never clears #settings-body, so an old seafarer form
+            // with the SAME sp-* ids can sit earlier in the document. Global
+            // getElementById would then hit that stale legacy copy and
+            // spLoad/spSave would silently read/write invisible fields. The
+            // legacy screen always re-renders its body on open, so dropping
+            // the stale copy (only while the legacy overlay is closed) is safe.
+            try{
+                var legacyBody = document.getElementById('settings-body');
+                var legacyOverlay = document.getElementById('settings-overlay');
+                var legacyOpen = !!(legacyOverlay && legacyOverlay.classList && legacyOverlay.classList.contains('open'));
+                if(!legacyOpen && legacyBody && legacyBody.innerHTML && legacyBody.innerHTML.indexOf('id="sp-') !== -1){
+                    legacyBody.innerHTML = '';
+                }
+            }catch(e){}
+            try{ spLoad(); }catch(err){ try{ logError('unified seafarer spLoad', err); }catch(e){} }
+        }
+        _spEmbedTimer = setTimeout(tick, 0);
     }
     function seafarerSection(){
         return {
@@ -16352,38 +16407,17 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
             icon: '⚓', // anchor
             renderHtml: function(ctx){
                 var ru = ctx.language === 'ru';
-                var sp = _spCache || {};
                 var e = ctx.escapeHtml;
-                function row(labelRu, labelEn, val){
-                    var shown = (val && String(val).trim()) ? String(val) : (ru ? 'не указано' : 'not set');
-                    return '<div class="setting-row"><div class="setting-info"><div class="setting-label">'
-                        + e(ru?labelRu:labelEn) + '</div></div><div class="setting-control" style="color:var(--text2);font-size:13px;">'
-                        + e(shown) + '</div></div>';
-                }
-                var name = [sp.first_name, sp.surname].filter(function(x){ return x && String(x).trim(); }).join(' ');
-                var vt = sp.preferred_vessel_types || sp.preferred_vessel_type || '';
-                var ready = (String(sp.ready_for_offers||'')==='true') ? (ru?'да':'yes') : (ru?'нет':'no');
                 var h = '';
                 h += '<div class="section-desc" style="margin-bottom:12px;">'
-                    + e(ru ? 'Данные моряка, Sea Service и AI-настройки. Хранятся только в этом хранилище на диске.'
-                          : 'Seafarer details, Sea Service and AI settings. Stored only inside this vault on disk.')
+                    + e(ru ? 'Личные данные для генерации CV/Application Form PDF. Хранятся только в этом хранилище на диске.'
+                          : 'Personal details used to generate your CV/Application Form PDF. Stored only inside this vault on disk.')
                     + '</div>';
-                h += row('Имя', 'Name', name);
-                h += row('Должность', 'Rank', sp.rank);
-                h += row('Тип судна', 'Vessel type', vt);
-                h += row('Готов к предложениям', 'Ready for offers', ready);
-                h += '<div style="margin-top:16px;">'
-                    + '<button class="btn btn-accent btn-sm" data-settings-action="open-seafarer-editor">'
-                    + e(ru ? 'Открыть полный профиль моряка' : 'Open full seafarer profile')
-                    + '</button></div>';
+                h += seafarerProfileFormHtml();
+                // Side effect by necessity (see scheduleSeafarerFormLoad above):
+                // data population must wait for this very markup to hit the DOM.
+                scheduleSeafarerFormLoad();
                 return h;
-            },
-            handlers: {
-                'open-seafarer-editor': function(ctx){
-                    // Hand off to the existing rich editor (photo, all fields, Sea Service).
-                    closeUnifiedSettings();
-                    try{ if(typeof window._legacyOpenSettings==='function'){ window._legacyOpenSettings('seafarer'); } }catch(e){}
-                }
             }
         };
     }
@@ -16431,7 +16465,13 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
     var _overlay = null;
     function overlay(){ if(!_overlay){ _overlay = document.getElementById('skipi-settings-overlay'); } return _overlay; }
 
-    window.openUnifiedSettings = function(){
+    // Legacy tab equivalent of a unified section id — used ONLY by the
+    // fail-closed fallbacks so a deep-link still lands on the right legacy tab
+    // when the module is unavailable.
+    function legacyTabForSection(sectionId){
+        return sectionId === 'seafarer-profile' ? 'seafarer' : undefined;
+    }
+    window.openUnifiedSettings = function(initialSectionId){
         // Fail-closed if the module did not load.
         if(!window.SkipiSettings || typeof window.SkipiSettings.mount !== 'function'){
             try{ if(typeof showToast==='function'){ showToast('Settings module failed to load.', 'error'); } }catch(e){}
@@ -16440,16 +16480,14 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
             // below, so that would recurse into this very branch forever. If
             // the legacy entry is unavailable, the single toast above is the
             // final signal — no retry, no re-entry.
-            try{ if(typeof window._legacyOpenSettings==='function'){ window._legacyOpenSettings(); } }catch(e){}
+            try{ if(typeof window._legacyOpenSettings==='function'){ window._legacyOpenSettings(legacyTabForSection(initialSectionId)); } }catch(e){}
             return;
         }
         var ov = overlay();
         if(!ov) return;
-        // Prime the seafarer summary cache before mount so the sync renderHtml has data,
-        // then always show the overlay (even if priming fails — section degrades to "not set").
-        primeSeafarerSummary().then(function(){ return mountNow(ov); }, function(){ return mountNow(ov); });
+        mountNow(ov, initialSectionId);
     };
-    function mountNow(ov){
+    function mountNow(ov, initialSectionId){
         try{ if(_instance){ _instance.unmount(); } }catch(e){}
         _instance = null;
         ov.classList.add('open');
@@ -16457,11 +16495,19 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
         var root = document.getElementById('settings-root');
         if(root){ root.innerHTML = ''; }
         try{
-            _instance = window.SkipiSettings.mount('#settings-root', buildHost(), {
+            var mountOpts = {
                 mode: 'auto',
                 breakpoint: 720,
                 onClose: function(){ closeUnifiedSettings(); }
-            });
+            };
+            if(initialSectionId){
+                // Deep-link: land straight on the requested section. On mobile
+                // widths skip the section list and open the section page itself
+                // (vendored module options: initialSection + mobileInitialView).
+                mountOpts.initialSection = initialSectionId;
+                mountOpts.mobileInitialView = 'section';
+            }
+            _instance = window.SkipiSettings.mount('#settings-root', buildHost(), mountOpts);
             if(_instance && _instance.ready && _instance.ready.catch){
                 _instance.ready.catch(function(err){ try{ console.error('[unified-settings] ready', err); }catch(e){} });
             }
@@ -16473,7 +16519,7 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
             // mount-fail forever. Go straight to legacy; if it is unavailable,
             // surface one toast and stop.
             try{
-                if(typeof window._legacyOpenSettings==='function'){ window._legacyOpenSettings(); }
+                if(typeof window._legacyOpenSettings==='function'){ window._legacyOpenSettings(legacyTabForSection(initialSectionId)); }
                 else if(typeof showToast==='function'){ showToast('Settings module failed to load.', 'error'); }
             }catch(e){}
         }
@@ -16524,15 +16570,28 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
     });
 
     // ---- Route existing entry points to the unified shell ----
-    // Preserve the legacy openSettings under a private name for the app-specific
-    // "open full seafarer profile" hand-off and for the module-missing fallback.
-    // A bare openSettings() (the top-level gear entry) now opens the unified shell;
-    // openSettings('<tab>') deep-links still use the legacy editor (retained until
-    // full visual parity), so the seafarer hand-off keeps working.
+    // Preserve the legacy openSettings under a private name for the fail-closed
+    // fallbacks. A bare openSettings() (the top-level gear entry) opens the
+    // unified shell; openSettings('seafarer') deep-links now ALSO open the
+    // unified shell directly on the embedded full profile editor (OWNER
+    // PRODUCT-GO 2026-07-29); every other openSettings('<tab>') deep-link
+    // still uses the legacy editor (retained until full visual parity).
     if(typeof window.openSettings === 'function' && !window._legacyOpenSettings){
         window._legacyOpenSettings = window.openSettings;
         window.openSettings = function(tab){
             if(!tab){ return window.openUnifiedSettings(); }
+            if(tab === 'seafarer'){
+                // Non-seafarer vaults keep the legacy guard behavior
+                // (redirect to General) by falling through to the legacy path.
+                var seafarerVault = true;
+                try{ seafarerVault = (typeof isSeafarerVault !== 'function') || !!isSeafarerVault(); }catch(e){ seafarerVault = false; }
+                if(seafarerVault){
+                    // The legacy overlay may be open (its own nav deep-links
+                    // here); close it so two settings screens never stack.
+                    try{ if(typeof closeSettings === 'function'){ closeSettings(); } }catch(e){}
+                    return window.openUnifiedSettings('seafarer-profile');
+                }
+            }
             return window._legacyOpenSettings(tab);
         };
     }
