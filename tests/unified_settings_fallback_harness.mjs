@@ -47,11 +47,19 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
-const html = fs.readFileSync(path.join(ROOT, 'dist/index.html'), 'utf8');
+const historicalPhotoRef = process.env.SKIPI_PHOTO_HARNESS_REF || '';
+const html = historicalPhotoRef
+  ? execFileSync('git', ['show', `${historicalPhotoRef}:dist/index.html`], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      maxBuffer: 16 * 1024 * 1024,
+    })
+  : fs.readFileSync(path.join(ROOT, 'dist/index.html'), 'utf8');
 
 const DEPTH_LIMIT = 25;
 
@@ -661,6 +669,121 @@ async function assertSeafarerDeepLinkRoutesUnified() {
     'non-seafarer vault: seafarer deep-link falls through to the legacy guard path');
 }
 
+// ---- (i) photo replacement preserves unsaved seafarer fields ----
+//
+// Both desktop and mobile upload paths used to call spLoad() after writing the
+// photo. That re-populated the complete form from saved vault bytes and erased
+// any edits the user had not saved yet. Exercise the real upload functions and
+// model the destructive spLoad side effect with three unsaved fields.
+
+function extractSeafarerPhotoUploadFns() {
+  const fragments = [];
+  if (html.indexOf('async function spLoadPhoto()') !== -1) {
+    fragments.push(extractFunction('async function spLoadPhoto()'));
+  }
+  fragments.push(extractFunction('function spUploadPhotoMobile()'));
+  fragments.push(extractFunction('async function spUploadPhoto()'));
+  return fragments.join('\n');
+}
+
+const unsavedPhotoDraft = {
+  'sp-surname': 'Draft-Surname-UNSAVED',
+  'sp-email': 'draft-unsaved@example.test',
+  'sp-nearest_airport': 'Draft Airport UNSAVED',
+};
+
+function makeSeafarerPhotoSandbox(mobile) {
+  const stored = {
+    'sp-surname': 'Stored-Surname',
+    'sp-email': 'stored@example.test',
+    'sp-nearest_airport': 'Stored Airport',
+  };
+  const elements = Object.fromEntries(
+    Object.entries(unsavedPhotoDraft).map(([id, value]) => [id, { id, value }]),
+  );
+  elements['sp-photo-box'] = { id: 'sp-photo-box', innerHTML: 'Old photo' };
+  const state = { invokes: [], reloads: 0, input: null };
+
+  const sandbox = {
+    console: { log() {}, warn() {}, error() {} },
+    document: {
+      getElementById: (id) => elements[id] || null,
+      createElement: (tag) => {
+        if (tag !== 'input') throw new Error(`unexpected createElement(${tag})`);
+        const input = { files: [], style: {}, parentNode: null, click() {} };
+        state.input = input;
+        return input;
+      },
+      body: {
+        appendChild: (node) => {
+          node.parentNode = { removeChild: () => { node.parentNode = null; } };
+        },
+      },
+    },
+    invoke: async (command, args) => {
+      state.invokes.push({ command, args });
+      if (command === 'get_profile_photo_data_url') {
+        return 'data:image/png;base64,NEW_PHOTO_BYTES';
+      }
+      return {};
+    },
+    open: async () => '/tmp/new-profile-photo.png',
+    isMobileMode: () => mobile,
+    hostPlatform: mobile ? 'android' : 'linux',
+    mobileReadFileAsBase64: async () => 'TkVXX1BIT1RPX0JZVEVT',
+    showToast() {},
+    logError() {},
+    spLoad: async () => {
+      state.reloads++;
+      for (const [id, value] of Object.entries(stored)) elements[id].value = value;
+      elements['sp-photo-box'].innerHTML = '<img src="data:image/png;base64,NEW_PHOTO_BYTES">';
+    },
+  };
+  sandbox.window = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(extractSeafarerPhotoUploadFns(), sandbox, {
+    filename: 'dist/index.html#seafarer-photo-upload',
+  });
+  return { sandbox, state, elements };
+}
+
+function assertUnsavedPhotoDraft(elements, platform) {
+  for (const [id, value] of Object.entries(unsavedPhotoDraft)) {
+    ok(elements[id].value === value,
+      `${platform}: unsaved ${id} survives photo replacement (got ${JSON.stringify(elements[id].value)})`);
+  }
+}
+
+async function assertPhotoUploadPreservesUnsavedFields() {
+  section('seafarer photo upload: desktop + mobile preserve three unsaved fields');
+
+  const desktop = makeSeafarerPhotoSandbox(false);
+  await desktop.sandbox.spUploadPhoto();
+  ok(desktop.state.invokes.some((entry) => entry.command === 'upload_profile_photo'),
+    'desktop keeps the existing upload_profile_photo command');
+  ok(desktop.state.reloads === 0,
+    `desktop does not reload the complete profile after upload (got ${desktop.state.reloads})`);
+  ok(desktop.state.invokes.some((entry) => entry.command === 'get_profile_photo_data_url'),
+    'desktop refreshes only the photo preview from the vault');
+  ok(desktop.elements['sp-photo-box'].innerHTML.indexOf('NEW_PHOTO_BYTES') !== -1,
+    'desktop displays the replacement photo');
+  assertUnsavedPhotoDraft(desktop.elements, 'desktop');
+
+  const mobile = makeSeafarerPhotoSandbox(true);
+  mobile.sandbox.spUploadPhotoMobile();
+  mobile.state.input.files = [{ name: 'mobile-photo.png', size: 1024 }];
+  await mobile.state.input.onchange();
+  ok(mobile.state.invokes.some((entry) => entry.command === 'upload_profile_photo_bytes'),
+    'mobile keeps the existing upload_profile_photo_bytes command');
+  ok(mobile.state.reloads === 0,
+    `mobile does not reload the complete profile after upload (got ${mobile.state.reloads})`);
+  ok(mobile.state.invokes.some((entry) => entry.command === 'get_profile_photo_data_url'),
+    'mobile refreshes only the photo preview from the vault');
+  ok(mobile.elements['sp-photo-box'].innerHTML.indexOf('NEW_PHOTO_BYTES') !== -1,
+    'mobile displays the replacement photo');
+  assertUnsavedPhotoDraft(mobile.elements, 'mobile');
+}
+
 await assertModuleLoadFailFallsBackOnce();
 await assertModuleLoadFailWithoutLegacyIsFailClosed();
 await assertMountThrowFallsBackOnce();
@@ -670,6 +793,7 @@ await assertSystemBackClosesOverlay();
 await assertEscapeAndBackdropCloseRemain();
 await assertSeafarerSectionEmbedsFullEditor();
 await assertSeafarerDeepLinkRoutesUnified();
+await assertPhotoUploadPreservesUnsavedFields();
 
 console.log('');
 if (fail > 0) {

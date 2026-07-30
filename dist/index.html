@@ -15357,6 +15357,18 @@ function spField(id,label,type){
     }
     return '<div class="field"><label>'+label+'</label><input id="'+id+'" type="'+type+'"></div>';
 }
+async function spLoadPhoto(){
+    var box=document.getElementById('sp-photo-box');
+    if(!box)return;
+    try{
+        var durl=await invoke('get_profile_photo_data_url');
+        if(durl){
+            box.innerHTML='<img src="'+durl+'" style="width:100%;height:100%;object-fit:cover;border-radius:5px;">';
+        } else {
+            box.innerHTML='No photo';
+        }
+    }catch(e){box.innerHTML='No photo';logError('load profile photo',e);}
+}
 async function spLoad(){
     try{
         var data=await invoke('get_seafarer_personal');
@@ -15392,17 +15404,7 @@ async function spLoad(){
         if(rdy){rdy.checked=rdyVal;spToggleReady(rdyVal);}
         // Photo — fetched as a data URL so we don't depend on the asset
         // protocol (which would need an extra capability + vault scope).
-        var box=document.getElementById('sp-photo-box');
-        if(box){
-            try{
-                var durl=await invoke('get_profile_photo_data_url');
-                if(durl){
-                    box.innerHTML='<img src="'+durl+'" style="width:100%;height:100%;object-fit:cover;border-radius:5px;">';
-                } else {
-                    box.innerHTML='No photo';
-                }
-            }catch(e){box.innerHTML='No photo';logError('load profile photo',e);}
-        }
+        await spLoadPhoto();
     }catch(e){showToast('Load error: '+e,'error');logError('Load error',e);}
 }
 async function refreshDocsAfterFrameworkChange(){
@@ -15515,7 +15517,7 @@ function spUploadPhotoMobile(){
             var b64=await mobileReadFileAsBase64(file);
             await invoke('upload_profile_photo_bytes',{fileName:file.name||'photo.jpg',dataBase64:b64});
             showToast('Photo uploaded','success');
-            try{await spLoad();}catch(e){logError('spUploadPhoto:reload',e);}
+            try{await spLoadPhoto();}catch(e){logError('spUploadPhoto:reload',e);}
         }catch(e){
             showToast('Upload failed: '+(e&&e.message?e.message:e),'error');
             logError('spUploadPhotoMobile',e);
@@ -15556,7 +15558,7 @@ async function spUploadPhoto(){
         return;
     }
     try{
-        await spLoad();
+        await spLoadPhoto();
     }catch(e){
         showToast('Reload failed: '+(e&&e.message?e.message:e),'error');
         logError('spUploadPhoto:reload',e);
