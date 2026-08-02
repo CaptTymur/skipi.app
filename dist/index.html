@@ -9,29 +9,72 @@
 <!-- @skipi/settings v0.3.0 — unified Settings shell (vendored from skipi-settings 9caeff6) -->
 <link rel="stylesheet" href="skipi-settings.css">
 <script>
-var APP_VERSION='0.4.182';
-var APP_BUILD_SHA='unknown';
+var APP_BUILD_METADATA={
+    component: 'Seafarer',
+    component_version: '0.4.183',
+    stack_id: 'SKIPI-2026.08-R1',
+    source_identifier: 'unknown',
+    manifest_url: 'https://api.skipi.app/.well-known/skipi-stack/SKIPI-2026.08-R1.json',
+    verification_status: 'unavailable'
+};
+var APP_VERSION=APP_BUILD_METADATA.component_version;
+var APP_BUILD_SHA=APP_BUILD_METADATA.source_identifier;
+function stackVerificationState(info){
+    if(info&&info.verification_status==='mismatch')return 'mismatch';
+    return 'unavailable';
+}
+function stackHeaderLabel(){
+    return 'Skipi '+APP_BUILD_METADATA.component+' · Stack '+APP_BUILD_METADATA.stack_id;
+}
+function stackVerificationLabel(){
+    return APP_BUILD_METADATA.verification_status==='mismatch'?'Stack mismatch':'Stack verification unavailable';
+}
+function buildSourceLabel(){
+    return APP_BUILD_METADATA.source_identifier&&APP_BUILD_METADATA.source_identifier!=='unknown'
+        ? APP_BUILD_METADATA.source_identifier : 'unknown';
+}
+function stackAboutSummary(){
+    return 'Component '+APP_BUILD_METADATA.component+' '+APP_BUILD_METADATA.component_version
+        +' · Stack '+APP_BUILD_METADATA.stack_id
+        +' · Source '+buildSourceLabel()
+        +' · '+stackVerificationLabel();
+}
 function buildShortSha(){
-    return APP_BUILD_SHA && APP_BUILD_SHA !== 'unknown' ? APP_BUILD_SHA.slice(0,7) : '';
+    return buildSourceLabel() !== 'unknown' ? buildSourceLabel().slice(0,12) : '';
 }
 function appVersionLabel(){
     var sha=buildShortSha();
-    return APP_VERSION+(sha?' · '+sha:'');
+    return APP_BUILD_METADATA.component_version+(sha?' · '+sha:'');
 }
 function updateBuildLabels(){
     var label=appVersionLabel();
     var wv=document.getElementById('welcome-version');if(wv)wv.textContent=label;
-    var av=document.getElementById('about-version');if(av)av.textContent=label;
+    var av=document.getElementById('about-version');if(av)av.textContent=APP_BUILD_METADATA.component_version;
+    var as=document.getElementById('about-stack-id');if(as)as.textContent=APP_BUILD_METADATA.stack_id;
+    var ai=document.getElementById('about-source-identifier');if(ai)ai.textContent=buildSourceLabel();
+    var ax=document.getElementById('about-stack-verification');if(ax)ax.textContent=stackVerificationLabel();
+    var mh=document.getElementById('mobile-brand-title');if(mh)mh.textContent=stackHeaderLabel();
+    var wh=document.getElementById('welcome-title');if(wh)wh.textContent=stackHeaderLabel();
+    var dh=document.getElementById('desktop-stack-label');if(dh)dh.textContent=stackHeaderLabel();
     updateTitlebar();
 }
-function setBuildInfo(info){
-    if(info&&info.version)APP_VERSION=String(info.version);
-    if(info&&info.sha)APP_BUILD_SHA=String(info.sha);
-    else if(info&&info.short_sha)APP_BUILD_SHA=String(info.short_sha);
+function setBuildMetadata(info){
+    info=info||{};
+    APP_BUILD_METADATA={
+        component:String(info.component||APP_BUILD_METADATA.component),
+        component_version:String(info.component_version||info.version||APP_BUILD_METADATA.component_version),
+        stack_id:String(info.stack_id||APP_BUILD_METADATA.stack_id),
+        source_identifier:String(info.source_identifier||info.sha||info.short_sha||'unknown'),
+        manifest_url:String(info.manifest_url||APP_BUILD_METADATA.manifest_url),
+        verification_status:stackVerificationState(info)
+    };
+    APP_VERSION=APP_BUILD_METADATA.component_version;
+    APP_BUILD_SHA=APP_BUILD_METADATA.source_identifier;
     updateBuildLabels();
 }
+function setBuildInfo(info){setBuildMetadata(info);}
 async function loadBuildInfo(){
-    try{if(typeof invoke==='function')setBuildInfo(await invoke('get_build_info'));}
+    try{if(typeof invoke==='function')setBuildMetadata(await invoke('get_build_info'));}
     catch(e){updateBuildLabels();}
 }
 var UI_LANG_KEY='skipi-ui-language';
@@ -153,8 +196,6 @@ function applyI18nChrome(){
     document.documentElement.lang=getUiLang();
     var pairs=[
         ['mt-files','nav.files'],['mt-exp','nav.experience'],['mt-cv','nav.cv'],['mt-pkg','nav.packages'],['mt-disp','nav.dispatch'],['mt-jobs','nav.jobs'],['mt-info','nav.information'],['mt-vessels','nav.vessels'],['mt-myvessel','nav.myvessel'],
-        ['welcome-title','app.name'],
-        ['mobile-brand-title','app.name'],
         ['welcome-subtitle','welcome.subtitle'],['btn-create-vault','welcome.create'],['btn-open-vault','welcome.open'],['welcome-folder-hint','welcome.hint'],['welcome-demo-prefix','welcome.demo_prefix'],['welcome-demo-link-text','welcome.demo']
     ];
     pairs.forEach(function(p){
@@ -173,6 +214,8 @@ function applyI18nChrome(){
         var mobileFeedbackText=mobileFeedback.querySelector('.mobile-feedback-text');
         if(mobileFeedbackText)mobileFeedbackText.textContent=tr('feedback.top_button');
     }
+    var stackHeader=document.getElementById('mobile-brand-title');if(stackHeader)stackHeader.textContent=stackHeaderLabel();
+    var welcomeHeader=document.getElementById('welcome-title');if(welcomeHeader)welcomeHeader.textContent=stackHeaderLabel();
 }
 // Window title is set via `set_window_title` Rust command inside
 // updateTitlebar() — direct JS setTitle() is blocked by Tauri 2 ACL.
@@ -189,7 +232,7 @@ function updateTitlebar(vaultName,accountType){
     var label=accountType?(ACCOUNT_TYPE_LABELS[accountType]||accountType):'';
     // Format: "Skipi Seafarer 0.4.69 — Seafarer — Adrian V. Seaborne". Version always
     // visible for dev/QA — single source of truth = APP_VERSION.
-    var base=tr('app.name')+' '+appVersionLabel();
+    var base=stackHeaderLabel()+' · '+appVersionLabel();
     var os=label?base+' — '+label+(vaultName?' — '+vaultName:''):base;
     document.title=os;
     // Push it to the actual OS titlebar via the Rust helper. Fire-and-forget —
@@ -298,7 +341,9 @@ input, select, textarea, button { font-family:var(--font-ui); }
 .modules-bar .mb-gear:hover { color:var(--accent); background:var(--accent-bg); border-color:var(--accent); }
 
 /* App layout */
-.app { display:flex; flex:1; overflow:hidden; }
+.app { display:flex; flex:1; overflow:hidden; position:relative; }
+.desktop-stack-label { position:absolute; right:10px; bottom:8px; z-index:8; max-width:calc(100% - 20px); padding:4px 8px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--text2); font-size:11px; font-weight:700; line-height:1.2; white-space:nowrap; pointer-events:none; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+body.mobile-mode .desktop-stack-label { display:none; }
 .modules-bar { display:flex; align-items:center; height:34px; background:var(--surface); border-bottom:1px solid var(--border); padding:0 8px; gap:2px; flex-shrink:0; }
 .modules-bar .mod-tab { display:flex; align-items:center; justify-content:center; gap:6px; height:26px; min-width:90px; padding:0 12px; border-radius:5px; cursor:pointer; color:var(--text2); font-size:12px; }
 .modules-bar .mod-tab:hover { color:var(--text); background:var(--hover); }
@@ -1327,7 +1372,7 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
         <div class="mobile-brand-wrap">
             <span class="fam-app-icon" data-qa="app-header-icon" aria-hidden="true">S</span>
             <div class="mobile-brand">
-                <div class="mobile-brand-title" id="mobile-brand-title" data-qa="app-header-title">Скипи Моряк</div>
+                <div class="mobile-brand-title" id="mobile-brand-title" data-qa="app-header-title">Skipi Seafarer · Stack SKIPI-2026.08-R1</div>
                 <div class="mobile-brand-sub" id="mobile-vault-sub" data-qa="app-header-context">Mobile seafarer vault</div>
             </div>
         </div>
@@ -1414,6 +1459,7 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
 </div>
 
 <div class="app">
+    <div class="desktop-stack-label" id="desktop-stack-label" data-qa="desktop-stack-label">Skipi Seafarer · Stack SKIPI-2026.08-R1</div>
     <!-- Legacy ribbon kept hidden for back-compat with showView() logic -->
     <div class="ribbon" id="ribbon" style="display:none !important;">
         <div class="ribbon-icon active" onclick="showView('files')" id="ri-files" title="Files">&#128451;</div>
@@ -15180,7 +15226,13 @@ function renderSettingsBody(){
     if(settingsTab === 'about'){
         h += '<div class="settings-section"><h3>'+tr('settings.about')+'</h3><div class="section-desc">'+tr('welcome.subtitle')+'</div>';
         h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Version</div><div class="setting-desc">Current application version.</div></div>';
-        h += '<div class="setting-control" style="font-size:13px;color:var(--text2);" id="about-version" data-qa="app-build-sha">'+appVersionLabel()+'</div></div>';
+        h += '<div class="setting-control" style="font-size:13px;color:var(--text2);" id="about-version" data-qa="app-build-sha">'+APP_BUILD_METADATA.component_version+'</div></div>';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Stack ID</div><div class="setting-desc">Candidate Stack allocation.</div></div>';
+        h += '<div class="setting-control" style="font-size:13px;color:var(--text2);" id="about-stack-id" data-qa="app-stack-id">'+APP_BUILD_METADATA.stack_id+'</div></div>';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Build / source</div><div class="setting-desc">Identifier embedded in this application candidate.</div></div>';
+        h += '<div class="setting-control" style="font-size:13px;color:var(--text2);" id="about-source-identifier" data-qa="app-build-source">'+buildSourceLabel()+'</div></div>';
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Manifest verification</div><div class="setting-desc">Requires a sealed manifest and matching local application bytes.</div></div>';
+        h += '<div class="setting-control" style="font-size:13px;color:var(--text2);" id="about-stack-verification" data-qa="app-stack-verification">'+stackVerificationLabel()+'</div></div>';
         h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Platform</div><div class="setting-desc">Detected host platform.</div></div>';
         h += '<div class="setting-control" style="font-size:13px;color:var(--text2);" id="about-platform">…</div></div>';
         h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Author</div><div class="setting-desc">Developed by Tymur Rudov, Master Mariner.</div></div>';
@@ -16437,7 +16489,10 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
 
             // Application metadata
             appName: tr('app.name'),
-            appVersion: (typeof appVersionLabel==='function') ? appVersionLabel() : (window.APP_VERSION||''),
+            appVersion: (typeof APP_BUILD_METADATA!=='undefined' && APP_BUILD_METADATA.component_version)
+                ? APP_BUILD_METADATA.component_version
+                : ((typeof appVersionLabel==='function') ? appVersionLabel() : (window.APP_VERSION||'')),
+            about: { description: (typeof stackAboutSummary==='function') ? stackAboutSummary() : '' },
             languages: UI_LANG_OPTIONS.map(function(o){ return { value: o[0], label: o[1] }; }),
 
             // Mobile-root account summary. Providing this (even minimally) is required
