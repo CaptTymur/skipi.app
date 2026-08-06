@@ -20,6 +20,11 @@
 
 use rusqlite::Connection;
 use serde_json::{json, Map, Value};
+use tauri::State;
+
+use crate::db;
+use crate::identity;
+use crate::AppState;
 
 /// Profile host. Separate from api::PRIMARY_API on purpose: the profile
 /// endpoints do not exist on api.skipi.app and the existing api.rs fallback
@@ -78,38 +83,68 @@ pub(crate) const PROFILE_WIRE_KEYS: [&str; 38] = [
 /// SKIPI_API_BASE pattern of api.rs (single base — no fallback chain here:
 /// the profile lives on exactly one host).
 pub(crate) fn assistant_api_base() -> String {
-    let _ = ASSISTANT_API;
-    unimplemented_base()
-}
-
-fn unimplemented_base() -> String {
-    // RED stub — replaced by the real implementation.
-    String::new()
-}
-
-fn not_implemented<T>() -> Result<T, String> {
-    Err("not implemented".to_string())
+    std::env::var("SKIPI_ASSISTANT_API_BASE")
+        .ok()
+        .map(|s| s.trim().trim_end_matches('/').to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| ASSISTANT_API.to_string())
 }
 
 // ── vault-side (Connection-level, unit-testable) ─────────────────────────
 
 /// Import/export are seafarer-vault-only (same gate as other seafarer cmds).
 pub(crate) fn require_seafarer_vault(conn: &Connection) -> Result<(), String> {
-    let _ = conn;
-    not_implemented()
+    if db::get_vault_info_value(conn, "account_type").as_deref() != Some("seafarer") {
+        return Err(
+            "Account profile import/export is available only for seafarer vaults".to_string(),
+        );
+    }
+    Ok(())
 }
 
 /// Stored bearer token; honest error when the device was never linked.
 pub(crate) fn stored_device_token(conn: &Connection) -> Result<String, String> {
-    let _ = conn;
-    not_implemented()
+    match db::get_vault_info_value(conn, DEVICE_TOKEN_KEY).filter(|s| !s.trim().is_empty()) {
+        Some(token) => Ok(token.trim().to_string()),
+        None => Err(
+            "This device is not linked to your Skipi account yet. Get a link code at \
+             assistant.skipi.app (Linked devices) and link this device first."
+                .to_string(),
+        ),
+    }
 }
 
 /// Read the canonical 38 keys from vault_info; only non-empty values are
 /// exported; `personal_photo_path` and legacy aliases are never read.
 pub(crate) fn export_profile_fields(conn: &Connection) -> Map<String, Value> {
-    let _ = conn;
-    Map::new()
+    let mut out = Map::new();
+    for key in PROFILE_WIRE_KEYS.iter() {
+        if let Some(value) = db::get_vault_info_value(conn, key) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                out.insert((*key).to_string(), Value::String(trimmed.to_string()));
+            }
+        }
+    }
+    out
+}
+
+fn truthy_flag(s: &str) -> bool {
+    s.eq_ignore_ascii_case("true") || s == "1" || s.eq_ignore_ascii_case("yes")
+}
+
+fn readiness_missing_labels(readiness: &Value) -> Vec<String> {
+    readiness
+        .get("missing")
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.get("label").and_then(|v| v.as_str()))
+                .map(|s| s.to_string())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Apply an account profile object to vault_info. Fail-closed: unknown key
@@ -123,12 +158,136 @@ pub(crate) fn apply_profile_import(
     vault_path: Option<&std::path::Path>,
     profile: &Value,
 ) -> Result<Value, String> {
-    let _ = (conn, vault_path, profile);
-    let _ = json!({});
-    not_implemented()
+    require_seafarer_vault(conn)?;
+    let obj = profile
+        .as_object()
+        .ok_or("Import payload must be a JSON object")?;
+    // Fail-closed validation before any write: only the 38 wire keys, only
+    // string/null values (in particular personal_photo_path is rejected).
+    for (key, value) in obj.iter() {
+        if !PROFILE_WIRE_KEYS.contains(&key.as_str()) {
+            return Err(format!("unknown_field: {key}"));
+        }
+        if !(value.is_string() || value.is_null()) {
+            return Err(format!("invalid_value: {key} must be a string"));
+        }
+    }
+
+    let mut applied: Vec<String> = Vec::new();
+    let mut ready_request: Option<String> = None;
+    for key in PROFILE_WIRE_KEYS.iter() {
+        let Some(value) = obj.get(*key) else { continue };
+        let incoming = value.as_str().unwrap_or("").trim().to_string();
+        if incoming.is_empty() {
+            // Empty/null source = "do not touch the local value" (§4.3).
+            continue;
+        }
+        if *key == "personal_ready_for_offers" {
+            // Applied last, behind the app readiness gate (§4.1).
+            ready_request = Some(incoming);
+            continue;
+        }
+        if db::get_vault_info_value(conn, key).as_deref() != Some(incoming.as_str()) {
+            db::set_vault_info(conn, key, &incoming).map_err(|e| e.to_string())?;
+            applied.push((*key).to_string());
+        }
+    }
+
+    let mut ready_skipped = false;
+    let mut ready_missing: Vec<String> = Vec::new();
+    if let Some(requested) = ready_request {
+        let key = "personal_ready_for_offers";
+        if truthy_flag(&requested) {
+            // Same gate as set_seafarer_personal: profile completeness +
+            // documents + experience. Runs AFTER the fact-fields above, so
+            // an import that completes the profile can honestly enable it.
+            let readiness =
+                super::profile::seafarer_jobs_readiness_status(conn, &json!({}))?;
+            if readiness.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
+                if db::get_vault_info_value(conn, key).as_deref() != Some("true") {
+                    db::set_vault_info(conn, key, "true").map_err(|e| e.to_string())?;
+                    applied.push(key.to_string());
+                }
+            } else {
+                ready_skipped = true;
+                ready_missing = readiness_missing_labels(&readiness);
+                if ready_missing.is_empty() {
+                    ready_missing.push("profile readiness".to_string());
+                }
+            }
+        } else if db::get_vault_info_value(conn, key).as_deref() != Some(requested.as_str()) {
+            db::set_vault_info(conn, key, &requested).map_err(|e| e.to_string())?;
+            applied.push(key.to_string());
+        }
+    }
+
+    if !applied.is_empty() {
+        let _ = identity::sync_identity_fingerprint(conn);
+        let _ = db::log_event(conn, "profile_updated", "vault_info", None, None);
+    }
+    // Rank / vessel type may have changed → recompute the document
+    // framework exactly like set_seafarer_personal does (reads vault_info).
+    let framework = if let Some(path) = vault_path {
+        super::profile::sync_seafarer_document_framework(conn, path, &json!({}))?
+    } else {
+        json!({
+            "metadata_changed": false,
+            "requirements_changed": false,
+            "docs_added": 0,
+            "requirements_added": [],
+            "requirements_removed": [],
+        })
+    };
+
+    Ok(json!({
+        "applied": applied,
+        "ready_for_offers_skipped": ready_skipped,
+        "ready_missing": ready_missing,
+        "framework": framework,
+    }))
 }
 
 // ── network (base passed in, unit-testable against a local mock) ─────────
+
+fn http_client() -> Result<reqwest::blocking::Client, String> {
+    reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .connect_timeout(std::time::Duration::from_secs(4))
+        .build()
+        .map_err(|e| e.to_string())
+}
+
+fn profile_url(base: &str) -> String {
+    format!("{}/api/seafarer-profile", base.trim_end_matches('/'))
+}
+
+/// Honest user-facing messages for the bearer failure modes of
+/// /api/seafarer-profile (401 = guest/unknown token, 403 = revoked/role).
+fn profile_auth_error(status: u16, body: &str) -> Option<String> {
+    match status {
+        401 => Some(
+            "Your Skipi account did not accept this device link. Get a new link code at \
+             assistant.skipi.app and link this device again."
+                .to_string(),
+        ),
+        403 => {
+            if body.contains("token_revoked") {
+                Some(
+                    "This device link was revoked in your Skipi account. Get a new link \
+                     code at assistant.skipi.app and link this device again."
+                        .to_string(),
+                )
+            } else {
+                Some(
+                    "Your Skipi account refused this request (a seafarer account is \
+                     required)."
+                        .to_string(),
+                )
+            }
+        }
+        _ => None,
+    }
+}
 
 /// POST {base}/api/device-pairing/claim {code, label} → plaintext token.
 pub(crate) fn claim_device_token(
@@ -137,8 +296,36 @@ pub(crate) fn claim_device_token(
     code: &str,
     label: &str,
 ) -> Result<String, String> {
-    let _ = (base, client, code, label);
-    not_implemented()
+    let url = format!("{}/api/device-pairing/claim", base.trim_end_matches('/'));
+    let resp = client
+        .post(&url)
+        .json(&json!({"code": code, "label": label}))
+        .send()
+        .map_err(|e| format!("assistant.skipi.app network: {e}"))?;
+    let status = resp.status();
+    let body = resp.text().unwrap_or_default();
+    match status.as_u16() {
+        403 => Err(
+            "Invalid or expired link code. Get a fresh code at assistant.skipi.app \
+             (codes live 10 minutes and work once) and try again."
+                .to_string(),
+        ),
+        429 => Err("Too many attempts. Wait a minute and try again.".to_string()),
+        code_status if (200..300).contains(&code_status) => {
+            let parsed: Value =
+                serde_json::from_str(&body).map_err(|e| format!("bad JSON: {e}"))?;
+            let token = parsed
+                .get("token")
+                .and_then(|t| t.as_str())
+                .unwrap_or("")
+                .to_string();
+            if token.is_empty() {
+                return Err("assistant.skipi.app returned no device token".to_string());
+            }
+            Ok(token)
+        }
+        _ => Err(format!("assistant.skipi.app returned {status}: {body}")),
+    }
 }
 
 /// GET {base}/api/seafarer-profile with `Authorization: Bearer` → profile
@@ -148,8 +335,24 @@ pub(crate) fn fetch_account_profile(
     client: &reqwest::blocking::Client,
     token: &str,
 ) -> Result<Value, String> {
-    let _ = (base, client, token);
-    not_implemented()
+    let resp = client
+        .get(profile_url(base))
+        .bearer_auth(token)
+        .send()
+        .map_err(|e| format!("assistant.skipi.app network: {e}"))?;
+    let status = resp.status();
+    let body = resp.text().unwrap_or_default();
+    if let Some(msg) = profile_auth_error(status.as_u16(), &body) {
+        return Err(msg);
+    }
+    if !status.is_success() {
+        return Err(format!("assistant.skipi.app returned {status}: {body}"));
+    }
+    let parsed: Value = serde_json::from_str(&body).map_err(|e| format!("bad JSON: {e}"))?;
+    parsed
+        .get("profile")
+        .cloned()
+        .ok_or_else(|| "assistant.skipi.app response had no profile".to_string())
 }
 
 /// POST {base}/api/seafarer-profile with bearer; body = non-empty canonical
@@ -160,8 +363,162 @@ pub(crate) fn push_account_profile(
     token: &str,
     fields: &Map<String, Value>,
 ) -> Result<(), String> {
-    let _ = (base, client, token, fields);
-    not_implemented()
+    let resp = client
+        .post(profile_url(base))
+        .bearer_auth(token)
+        .json(&Value::Object(fields.clone()))
+        .send()
+        .map_err(|e| format!("assistant.skipi.app network: {e}"))?;
+    let status = resp.status();
+    let body = resp.text().unwrap_or_default();
+    if let Some(msg) = profile_auth_error(status.as_u16(), &body) {
+        return Err(msg);
+    }
+    if status.as_u16() == 400 {
+        return Err(format!("Your Skipi account rejected the data: {body}"));
+    }
+    if !status.is_success() {
+        return Err(format!("assistant.skipi.app returned {status}: {body}"));
+    }
+    Ok(())
+}
+
+// ── Tauri commands (explicit user actions only — no background sync) ─────
+
+#[tauri::command]
+pub fn link_account_device(
+    state: State<AppState>,
+    code: String,
+    label: String,
+) -> Result<Value, String> {
+    let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = lock.as_ref().ok_or("No vault open")?;
+    require_seafarer_vault(conn)?;
+    let code = code.trim().to_string();
+    if code.is_empty() {
+        return Err("Enter the link code from assistant.skipi.app".to_string());
+    }
+    let label = label.trim().to_string();
+    let client = http_client()?;
+    let token = claim_device_token(&assistant_api_base(), &client, &code, &label)?;
+    db::set_vault_info(conn, DEVICE_TOKEN_KEY, &token).map_err(|e| e.to_string())?;
+    db::set_vault_info(conn, DEVICE_TOKEN_LABEL_KEY, &label).map_err(|e| e.to_string())?;
+    db::set_vault_info(
+        conn,
+        DEVICE_TOKEN_LINKED_AT_KEY,
+        &chrono::Utc::now().to_rfc3339(),
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(json!({"linked": true, "label": label}))
+}
+
+#[tauri::command]
+pub fn get_account_link_status(state: State<AppState>) -> Result<Value, String> {
+    let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = lock.as_ref().ok_or("No vault open")?;
+    let linked = db::get_vault_info_value(conn, DEVICE_TOKEN_KEY)
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false);
+    Ok(json!({
+        "linked": linked,
+        "label": db::get_vault_info_value(conn, DEVICE_TOKEN_LABEL_KEY).unwrap_or_default(),
+        "linked_at": db::get_vault_info_value(conn, DEVICE_TOKEN_LINKED_AT_KEY)
+            .unwrap_or_default(),
+    }))
+}
+
+/// Forget the token in THIS vault. Server-side revocation lives in the
+/// assistant.skipi.app cabinet (Linked devices → revoke).
+#[tauri::command]
+pub fn unlink_account_device(state: State<AppState>) -> Result<Value, String> {
+    let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = lock.as_ref().ok_or("No vault open")?;
+    for key in [
+        DEVICE_TOKEN_KEY,
+        DEVICE_TOKEN_LABEL_KEY,
+        DEVICE_TOKEN_LINKED_AT_KEY,
+    ] {
+        db::set_vault_info(conn, key, "").map_err(|e| e.to_string())?;
+    }
+    Ok(json!({"linked": false}))
+}
+
+/// GET the account profile and compute the preview diff. Nothing is written:
+/// the user confirms the diff first, then apply_account_profile_import runs.
+#[tauri::command]
+pub fn preview_account_profile_import(state: State<AppState>) -> Result<Value, String> {
+    let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = lock.as_ref().ok_or("No vault open")?;
+    require_seafarer_vault(conn)?;
+    let token = stored_device_token(conn)?;
+    let client = http_client()?;
+    let remote = fetch_account_profile(&assistant_api_base(), &client, &token)?;
+    let remote_obj = remote
+        .as_object()
+        .ok_or("assistant.skipi.app profile is not an object")?;
+    // Keep only the known wire keys (fail-closed against server drift) and
+    // list what would change: remote non-empty AND different from local.
+    let mut profile = Map::new();
+    let mut changes: Vec<Value> = Vec::new();
+    for key in PROFILE_WIRE_KEYS.iter() {
+        let incoming = remote_obj
+            .get(*key)
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if incoming.is_empty() {
+            continue;
+        }
+        profile.insert((*key).to_string(), Value::String(incoming.clone()));
+        let local = db::get_vault_info_value(conn, key).unwrap_or_default();
+        if local.trim() != incoming {
+            changes.push(json!({"key": key, "local": local, "remote": incoming}));
+        }
+    }
+    Ok(json!({"profile": Value::Object(profile), "changes": changes}))
+}
+
+/// Write the user-confirmed profile object into vault_info (38 long keys).
+#[tauri::command]
+pub fn apply_account_profile_import(
+    state: State<AppState>,
+    profile: Value,
+) -> Result<Value, String> {
+    let vault_path = state
+        .vault_path
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = lock.as_ref().ok_or("No vault open")?;
+    apply_profile_import(conn, vault_path.as_deref(), &profile)
+}
+
+/// Show exactly which fields would leave the vault (nothing is sent yet).
+#[tauri::command]
+pub fn preview_account_profile_export(state: State<AppState>) -> Result<Value, String> {
+    let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = lock.as_ref().ok_or("No vault open")?;
+    require_seafarer_vault(conn)?;
+    stored_device_token(conn)?; // fail early with the honest link-first error
+    Ok(json!({"fields": Value::Object(export_profile_fields(conn))}))
+}
+
+/// POST the canonical non-empty fields to the account (explicit action).
+#[tauri::command]
+pub fn send_account_profile(state: State<AppState>) -> Result<Value, String> {
+    let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = lock.as_ref().ok_or("No vault open")?;
+    require_seafarer_vault(conn)?;
+    let token = stored_device_token(conn)?;
+    let fields = export_profile_fields(conn);
+    if fields.is_empty() {
+        return Err("Nothing to send — the seafarer profile in this vault is empty".to_string());
+    }
+    let client = http_client()?;
+    push_account_profile(&assistant_api_base(), &client, &token, &fields)?;
+    Ok(json!({"sent": fields.len()}))
 }
 
 // ── tests (failing-first RED harness for Фаза 2) ─────────────────────────
