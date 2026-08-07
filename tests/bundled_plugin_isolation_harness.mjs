@@ -694,9 +694,12 @@ function bootMobile(opts) {
   ok(h.includes('data-qa="apps-search-input"'), 'apps-search-input renders');
   ok(h.includes('data-qa="plugins-settings-open"'), 'plugins-settings-open (gear) renders');
   ok(h.includes('data-qa="plugin-tile-bnwas-time-anchor"') && h.includes('data-qa="plugin-open-bnwas-time-anchor"'), 'plugin-tile-/plugin-open-<id> render for the installed plugin');
-  for (const qa of ['bottom-nav-home', 'bottom-nav-workspace', 'bottom-nav-apps', 'bottom-nav-settings']) {
+  // Canonical rail (волна №73): 5 pinned module slots; Home lives in the
+  // header (app-header-home), Settings only behind the header gear.
+  for (const qa of ['bottom-nav-docs', 'bottom-nav-experience', 'bottom-nav-cv', 'bottom-nav-dispatch', 'bottom-nav-apps']) {
     ok(doc.querySelectorAll(`[data-qa="${qa}"]`).length === 1, `${qa} exists exactly once in the rail`);
   }
+  ok(doc.querySelectorAll('[data-qa="bottom-nav-settings"]').length === 0 && doc.querySelectorAll('[data-qa="bottom-nav-home"]').length === 0, 'no Settings/Home slot on the canonical rail');
   sandbox.pluginOpenManage();
   ok(mobileHtml(doc).includes('data-qa="plugin-settings-bnwas-time-anchor"'), 'plugin-settings-<id> renders in manage');
 }
@@ -778,17 +781,24 @@ function bootMobile(opts) {
   sandbox.mobileShow('apps');
   const btn = (qa) => doc.querySelector(`[data-qa="${qa}"]`);
   ok(btn('bottom-nav-apps').classList.contains('active'), 'bottom-nav-apps is active on the launcher');
-  ok(!btn('bottom-nav-home').classList.contains('active'), 'home slot not active on Apps');
+  ok(!btn('bottom-nav-docs').classList.contains('active'), 'docs slot not active on Apps');
   sandbox.pluginLaunch('bnwas-time-anchor');
   ok(sandbox.pluginHostState.openId === 'bnwas-time-anchor', 'plugin open before leaving');
   sandbox.mobileShow('home');
   ok(sandbox.pluginHostState.openId === null, 'leaving Apps unmounts the open plugin');
-  ok(!btn('bottom-nav-apps').classList.contains('active') && btn('bottom-nav-home').classList.contains('active'), 'active moves from Apps to Home');
+  // Canonical rail: Home is the header ⌂ button, not a rail slot.
+  ok(!btn('bottom-nav-apps').classList.contains('active'), 'active leaves Apps on going Home');
+  ok(!!doc.getElementById('mobile-top-home') && doc.getElementById('mobile-top-home').classList.contains('active'), 'header ⌂ (mobile-top-home) is active on Home');
   sandbox.mobileShow('docs');
-  ok(btn('bottom-nav-workspace').classList.contains('active'), 'workspace (Vault) active on docs');
+  ok(btn('bottom-nav-docs').classList.contains('active'), 'docs slot active on docs');
   sandbox.mobileShow('experience');
-  ok(!btn('bottom-nav-home').classList.contains('active') && !btn('bottom-nav-workspace').classList.contains('active') && !btn('bottom-nav-apps').classList.contains('active'), 'no primary slot claims a grid-module view');
-  ok(!!btn('bottom-nav-settings'), 'settings slot present (opens the settings overlay)');
+  ok(btn('bottom-nav-experience').classList.contains('active'), 'experience slot active on experience');
+  sandbox.mobileShow('cv');
+  ok(btn('bottom-nav-cv').classList.contains('active'), 'cv slot active on cv');
+  sandbox.mobileShow('myvessel');
+  ok(['bottom-nav-docs', 'bottom-nav-experience', 'bottom-nav-cv', 'bottom-nav-dispatch', 'bottom-nav-apps'].every((qa) => !btn(qa).classList.contains('active')), 'no rail slot claims a non-rail grid-module view');
+  ok(!btn('bottom-nav-settings'), 'no settings slot on the rail (Settings only behind the header gear)');
+  ok(/openSettings\(\)/.test(doc.querySelector('[data-qa="app-header-settings"]').getAttribute('onclick') || ''), 'header gear remains the Settings entry');
 }
 
 {

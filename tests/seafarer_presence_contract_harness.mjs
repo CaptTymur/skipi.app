@@ -978,5 +978,60 @@ section('lost-device recovery UI — live payload safety');
   ok(!/(ciphertext_b64.*LOST-TOKEN|raw_token|recovery_token":)/i.test(body), 'live payloads do not include token material');
 }
 
+section('mobile rail canon — 5 fixed slots, header home+gear, modules-first Apps grid');
+{
+  // Canonical mobile rail (волна №73, CANON-mobile-unified-standard-v1, OWNER
+  // 23.07): exactly 5 pinned slots Документы·Опыт·Резюме·Рассылка·Apps, no
+  // scrolling/paging, Settings only via the header gear, Home via the header
+  // home button, and the mobile Apps grid renders module tiles BEFORE plugins.
+  // All checks are static against dist/index.html bytes.
+  const CANON_SLOTS = ['docs', 'experience', 'cv', 'dispatch', 'apps'];
+
+  // 1-3: the rail carries exactly 5 buttons in canonical order.
+  const railMatch = /<div class="mobile-primary-rail" id="mobile-primary-rail">([\s\S]*?)<\/div>/.exec(html);
+  ok(!!railMatch, 'static #mobile-primary-rail markup found');
+  const railHtml = railMatch ? railMatch[1] : '';
+  const railButtons = Array.from(railHtml.matchAll(/<button\b[^>]*>/g)).map((m) => m[0]);
+  ok(railButtons.length === 5, `rail has exactly 5 buttons (got ${railButtons.length})`);
+  const railQas = railButtons.map((b) => (/data-qa="([^"]+)"/.exec(b) || [])[1] || '');
+  ok(
+    railQas.join(',') === CANON_SLOTS.map((s) => `bottom-nav-${s}`).join(','),
+    `rail data-qa order is canonical bottom-nav-{docs,experience,cv,dispatch,apps} (got ${railQas.join(',') || 'none'})`
+  );
+  const railRoutes = railButtons.map((b) => (/mobileShow\('([^']+)'\)/.exec(b) || [])[1] || '');
+  ok(railRoutes.join(',') === CANON_SLOTS.join(','), `rail buttons call mobileShow('<slug>') in canonical order (got ${railRoutes.join(',') || 'none'})`);
+  ok(railQas[railQas.length - 1] === 'bottom-nav-apps', 'last rail slot is Apps');
+
+  // 4: neither Settings nor Home lives on the rail.
+  ok(!railHtml.includes('bottom-nav-settings') && !railHtml.includes('openSettings'), 'rail has no Settings entry (gear is the only Settings entry)');
+  ok(!railHtml.includes('bottom-nav-home') && !/mobileShow\('home'\)/.test(railHtml), 'rail has no Home slot (home lives in the header)');
+
+  // 5: mobile header carries the home button AND the settings gear.
+  const headerMatch = /<div class="mobile-top">([\s\S]*?)<main /.exec(html);
+  ok(!!headerMatch, 'static mobile header markup found');
+  const headerHtml = headerMatch ? headerMatch[1] : '';
+  const headerHome = /<button\b[^>]*data-qa="app-header-home"[^>]*>/.exec(headerHtml);
+  ok(!!headerHome, 'header home button (data-qa="app-header-home") exists');
+  ok(!!headerHome && /mobileShow\('home'\)/.test(headerHome[0]), 'header home button routes to mobileShow(\'home\')');
+  ok(!!headerHome && /class="[^"]*fam-icon-btn[^"]*"/.test(headerHome[0]), 'header home button uses the .fam-icon-btn style like the gear');
+  const headerGear = /<button\b[^>]*data-qa="app-header-settings"[^>]*>/.exec(headerHtml);
+  ok(!!headerGear && /openSettings\(\)/.test(headerGear[0]), 'header settings gear (data-qa="app-header-settings") opens Settings');
+
+  // 6: rail CSS is fixed — no horizontal scrolling and no paging.
+  const railRules = Array.from(html.matchAll(/\.mobile-primary-rail[^{}]*\{([^}]*)\}/g)).map((m) => m[1]);
+  ok(railRules.length > 0, 'rail CSS rule exists');
+  ok(railRules.every((r) => !/overflow(?:-x)?\s*:\s*(?:auto|scroll)/i.test(r)), 'rail CSS has no overflow-x auto/scroll');
+  ok(railRules.every((r) => !/scroll-snap/i.test(r)) && !/has-more|has-before/.test(railHtml), 'rail CSS/markup has no scroll-snap paging');
+
+  // 7: mobile Apps grid renders module tiles BEFORE plugins.
+  ok(html.includes('data-qa="apps-module-tiles"'), 'mobile Apps grid module-tiles wrapper marker exists');
+  const tilesDecl = /var MOBILE_APPS_MODULE_TILES\s*=\s*\[([\s\S]*?)\];/.exec(html);
+  ok(!!tilesDecl, 'module tile list for the mobile Apps grid is declared');
+  for (const slug of ['docs', 'experience', 'cv', 'dispatch']) {
+    ok(!!tilesDecl && new RegExp(`\\['${slug}',`).test(tilesDecl[1]), `Apps grid module tiles include rail module '${slug}'`);
+  }
+  ok(/main\.innerHTML\s*=\s*mobileAppsModuleTilesHtml\(\)\s*\+/.test(html), 'module tiles are injected BEFORE the plugin launcher markup');
+}
+
 console.log('\n' + (fail === 0 ? 'ALL GREEN' : 'FAILURES') + `: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
