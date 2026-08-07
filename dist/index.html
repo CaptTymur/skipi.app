@@ -1152,8 +1152,11 @@ body.mobile-mode .apps-launcher-grid { grid-template-columns:repeat(3,1fr); max-
 .fam-settings-row { min-height:64px; padding:var(--sp-3); border:1px solid var(--border); border-radius:var(--radius-lg); background:var(--surface); display:flex; justify-content:space-between; gap:var(--sp-3); align-items:center; margin-bottom:10px; }
 .fam-settings-row strong { display:block; font-size:14px; line-height:1.2; }
 .fam-settings-row span.meta { display:block; color:var(--text2); font-size:12px; line-height:1.3; margin-top:3px; }
-/* R2 primary rail (4 slots) */
+/* Canonical primary rail (волна №73): 5 fixed slots, no scrolling/paging */
 .mobile-primary-rail { display:flex; gap:6px; }
+/* Canon mobile Apps grid: compact module tiles above the plugin launcher */
+.mobile-apps-module-grid { margin:0 0 14px; }
+.mobile-apps-module-grid .fam-module-card { min-height:72px; }
 .mobile-rail-btn { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; padding:7px 4px; background:var(--bg); border:1px solid var(--border); border-radius:8px; color:var(--text2); font-size:11px; font-weight:700; cursor:pointer; }
 .mobile-rail-btn span { font-size:16px; line-height:1; }
 .mobile-rail-btn em { font-style:normal; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -1366,9 +1369,12 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
 <body>
 
 <div class="mobile-shell" id="mobile-shell">
-    <!-- Family AppHeader (card 1): product icon + name + context + gear.
-         The old top-home button is gone — Home lives on the bottom rail. -->
+    <!-- Family AppHeader (card 1) + canonical rail (волна №73): ⌂ Home on the
+         left, product icon + name + context, gear on the right. Home moved
+         here from the bottom rail — the rail now carries the 5 pinned module
+         slots (CANON-mobile-unified-standard-v1). -->
     <div class="mobile-top">
+        <button class="fam-icon-btn mobile-top-home" id="mobile-top-home" type="button" data-qa="app-header-home" onclick="mobileShow('home')" title="Home" aria-label="Home">&#8962;</button>
         <div class="mobile-brand-wrap">
             <span class="fam-app-icon" data-qa="app-header-icon" aria-hidden="true">S</span>
             <div class="mobile-brand">
@@ -1387,14 +1393,18 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
             <span class="mobile-profile-meter-track"><span class="mobile-profile-meter-fill" id="mobile-profile-meter-fill"></span></span>
             <span class="mobile-profile-meter-value" id="mobile-profile-meter-value">0%</span>
         </button>
-        <!-- Family rail (card 2): 4 slots Home / Vault / Apps / Settings.
-             Module navigation moved to the home module grid (card 12);
-             labels are set per-language in mobileSetBottomNav. -->
+        <!-- Canonical rail (волна №73, CANON-mobile-unified-standard-v1):
+             exactly 5 pinned slots Документы · Опыт · Резюме · Рассылка · Apps,
+             no scrolling/paging. These are pinned shortcuts, not an exclusive
+             surface — the full module grid stays on Home (card 12). Home lives
+             as ⌂ in the header, Settings only behind the header gear.
+             Labels are set per-language in mobileSetBottomNav. -->
         <div class="mobile-primary-rail" id="mobile-primary-rail">
-            <button class="mobile-rail-btn" type="button" data-qa="bottom-nav-home" onclick="mobileShow('home')"><span>&#8962;</span><em id="mobile-rail-label-home">Home</em></button>
-            <button class="mobile-rail-btn" type="button" data-qa="bottom-nav-workspace" onclick="mobileShow('docs')"><span>&#9636;</span><em id="mobile-rail-label-workspace">Vault</em></button>
+            <button class="mobile-rail-btn" type="button" data-qa="bottom-nav-docs" onclick="mobileShow('docs')"><span>&#9633;</span><em id="mobile-rail-label-docs">Documents</em></button>
+            <button class="mobile-rail-btn" type="button" data-qa="bottom-nav-experience" onclick="mobileShow('experience')"><span>&#9873;&#65038;</span><em id="mobile-rail-label-experience">Experience</em></button>
+            <button class="mobile-rail-btn" type="button" data-qa="bottom-nav-cv" onclick="mobileShow('cv')"><span>CV</span><em id="mobile-rail-label-cv">CV</em></button>
+            <button class="mobile-rail-btn" type="button" data-qa="bottom-nav-dispatch" onclick="mobileShow('dispatch')"><span>&#9993;&#65038;</span><em id="mobile-rail-label-dispatch">Mailings</em></button>
             <button class="mobile-rail-btn" type="button" data-qa="bottom-nav-apps" onclick="mobileShow('apps')"><span>&#9638;</span><em id="mobile-rail-label-apps">Apps</em></button>
-            <button class="mobile-rail-btn" type="button" data-qa="bottom-nav-settings" onclick="openSettings()"><span>&#9881;</span><em id="mobile-rail-label-settings">Settings</em></button>
         </div>
     </nav>
     <!-- Family home module grid source (card 12). Single source of truth for
@@ -4040,24 +4050,27 @@ function mobileSetBottomNav(showNav){
         var active=(mobileView===v)||(v==='docs'&&docViews.indexOf(mobileView)>=0);
         btn.classList.toggle('active',active);
     });
-    // Family rail (card 2): active states and per-language labels.
-    var ru=getUiLang()==='ru';
+    // Canonical rail (волна №73): active states and per-language labels for
+    // the 5 pinned slots. Labels reuse the existing UI_STRINGS nav.* keys via
+    // tr(), so every supported language falls out of the same dictionary.
     var docViews2=['docs','doc','add','pdf'];
     var railStates={
-        'bottom-nav-home': mobileView==='home',
-        'bottom-nav-workspace': docViews2.indexOf(mobileView)>=0,
-        'bottom-nav-apps': mobileView==='apps',
-        'bottom-nav-settings': false
+        'bottom-nav-docs': docViews2.indexOf(mobileView)>=0,
+        'bottom-nav-experience': mobileView==='experience',
+        'bottom-nav-cv': mobileView==='cv',
+        'bottom-nav-dispatch': mobileView==='dispatch',
+        'bottom-nav-apps': mobileView==='apps'
     };
     document.querySelectorAll('.mobile-rail-btn').forEach(function(btn){
         var qa=btn.getAttribute('data-qa');
         btn.classList.toggle('active',!!railStates[qa]);
     });
     var railLabels={
-        'mobile-rail-label-home': ru?'Дом':'Home',
-        'mobile-rail-label-workspace': 'Vault',
-        'mobile-rail-label-apps': 'Apps',
-        'mobile-rail-label-settings': ru?'Настройки':'Settings'
+        'mobile-rail-label-docs': tr('nav.files'),
+        'mobile-rail-label-experience': tr('nav.experience'),
+        'mobile-rail-label-cv': tr('nav.cv'),
+        'mobile-rail-label-dispatch': tr('nav.dispatch'),
+        'mobile-rail-label-apps': 'Apps'
     };
     Object.keys(railLabels).forEach(function(id){
         var el=document.getElementById(id);
@@ -9397,6 +9410,66 @@ var REMOTE_PLUGIN_STATE_KEY = 'skipi_remote_plugins_state';
 if(typeof window.renderMobileApps!=='function' && typeof window.pluginRerender==='function'){
   window.renderMobileApps = window.pluginRerender;
 }
+// ---- Canon mobile Apps grid (волна №73): module tiles FIRST, then plugins ----
+// The vendored @skipi/plugin-host-ui delegate renders the plugin launcher; its
+// bytes are untouched. This home-side wrapper prepends the home modules as
+// tiles ABOVE the plugin launcher (mobile shell only, launcher surface only),
+// so the canonical Apps grid reads: modules first, plugins after.
+var MOBILE_APPS_MODULE_TILES=[
+  ['docs','&#9633;','Documents'],
+  ['experience','&#9873;&#65038;','Experience'],
+  ['cv','CV','CV'],
+  ['dispatch','&#9993;&#65038;','Mailings'],
+  ['jobs','J','Jobs'],
+  ['information','i','Information'],
+  ['vessels','&#9872;&#65038;','Vessel DB'],
+  ['myvessel','&#9875;&#65038;','My Vessel'],
+  ['assistant','&#128172;','Assistant']
+];
+function mobileAppsModuleTilesHtml(){
+  var ru=getUiLang()==='ru';
+  var h='<div class="fam-module-grid mobile-apps-module-grid" data-qa="apps-module-tiles">';
+  MOBILE_APPS_MODULE_TILES.forEach(function(t){
+    var key=t[0],icon=t[1],en=t[2];
+    var l10n=MOBILE_HOME_MODULE_L10N[key]||[];
+    var name=ru?(l10n[0]||en):en;
+    h+='<button class="fam-module-card mobile-apps-module-tile" type="button" data-qa="apps-module-tile-'+key+'" onclick="mobileShow(\''+key+'\')">'
+      +'<span class="fam-module-top"><span class="fam-module-icon">'+icon+'</span></span>'
+      +'<span><span class="fam-module-name">'+mobileEsc(name)+'</span></span></button>';
+  });
+  h+='</div>';
+  return h;
+}
+function mobileAppsEnsureModuleTiles(){
+  if(!shouldUseMobileShell())return;
+  if(mobileView!=='apps')return;
+  if(pluginHostState.openId||pluginHostState.selectedId||pluginHostState.surface==='manage')return;
+  var main=document.getElementById('mobile-main');
+  if(!main)return;
+  var h=String(main.innerHTML||'');
+  if(h.indexOf('data-qa="apps-module-tiles"')>=0)return;
+  main.innerHTML=mobileAppsModuleTilesHtml()+h;
+}
+(function(){
+  var pluginRenderMobileApps=window.renderMobileApps;
+  if(typeof pluginRenderMobileApps==='function'){
+    window.renderMobileApps=function(){
+      pluginRenderMobileApps();
+      mobileAppsEnsureModuleTiles();
+    };
+  }
+  // The module's own back/close entries re-render the launcher through its
+  // internal renderMobileApps; re-apply the module tiles after those too.
+  ['pluginBackToLauncher','pluginClose'].forEach(function(name){
+    var orig=window[name];
+    if(typeof orig!=='function')return;
+    window[name]=function(){
+      var r=orig.apply(this,arguments);
+      mobileAppsEnsureModuleTiles();
+      return r;
+    };
+  });
+})();
 // The kept isolated-runtime code below (SkipiPluginHost.mount) records
 // last_opened_at via pluginNowIso(); the module defines it internally but does
 // not attach it as a global. Provide a local fallback so the timestamp keeps
