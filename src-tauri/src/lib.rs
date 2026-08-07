@@ -100,8 +100,8 @@ pub(crate) fn base64_encode(data: &[u8]) -> String {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     use commands::{
-        agency_mailing, ai, assistant, cv_commands, documents, email, jobs, mail_intent, messaging,
-        packages, profile, review, vault, work_history,
+        account_sync, agency_mailing, ai, assistant, cv_commands, documents, email, jobs,
+        mail_intent, messaging, packages, profile, review, vault, work_history,
     };
 
     tauri::Builder::default()
@@ -218,6 +218,14 @@ pub fn run() {
             profile::clear_profile_photo,
             profile::get_profile_photo_abs_path,
             profile::get_profile_photo_data_url,
+            // Skipi account profile sync (№96(б): explicit import/export only)
+            account_sync::link_account_device,
+            account_sync::get_account_link_status,
+            account_sync::unlink_account_device,
+            account_sync::preview_account_profile_import,
+            account_sync::apply_account_profile_import,
+            account_sync::preview_account_profile_export,
+            account_sync::send_account_profile,
             // CV
             cv_commands::get_cv_data,
             cv_commands::export_cv_docx,

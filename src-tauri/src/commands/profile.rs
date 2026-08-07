@@ -423,7 +423,9 @@ fn required_document_gaps(conn: &Connection) -> Result<Vec<serde_json::Value>, S
     Ok(gaps)
 }
 
-fn seafarer_jobs_readiness_status(
+// pub(crate): account_sync reuses the exact readiness gate on import so the
+// imported personal_ready_for_offers flag cannot bypass the app invariant.
+pub(crate) fn seafarer_jobs_readiness_status(
     conn: &Connection,
     fields: &serde_json::Value,
 ) -> Result<serde_json::Value, String> {
@@ -496,7 +498,9 @@ fn template_change_items(
         .collect()
 }
 
-fn sync_seafarer_document_framework(
+// pub(crate): account_sync recomputes the document framework after an import
+// changes rank / preferred vessel type, exactly like set_seafarer_personal.
+pub(crate) fn sync_seafarer_document_framework(
     conn: &Connection,
     vault_path: &std::path::Path,
     fields: &serde_json::Value,

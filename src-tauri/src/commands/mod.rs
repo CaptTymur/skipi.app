@@ -1,3 +1,4 @@
+pub mod account_sync;
 pub mod agency_mailing;
 pub mod ai;
 pub mod assistant;

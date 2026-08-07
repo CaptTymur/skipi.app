@@ -15013,6 +15013,22 @@ function seafarerProfileFormHtml(){
     h += '<div class="field"><label>Home address</label><input id="sp-home_address" placeholder="Street, city, country, ZIP"></div>';
     h += '<div style="margin-top:14px;display:flex;align-items:center;gap:10px;"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;"><input type="checkbox" id="sp-ready_for_offers" onchange="spToggleReady(this.checked)" style="width:16px;height:16px;accent-color:var(--accent);"> Ready to accept job offers</label></div>';
     h += '<div style="margin-top:16px;display:flex;gap:8px;"><button class="btn btn-accent btn-sm" onclick="spSave()">Save</button><button class="btn btn-outline btn-sm" onclick="spLoad()">Reload</button></div>';
+    // ── Skipi account (№96(б) Фаза 2, OWNER DECISIONS 2026-08-05 (22) +
+    // 2026-08-06 (25)): device pairing + explicit Import/Send. Both network
+    // directions run ONLY from these buttons — never automatically.
+    h += '<div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border);">';
+    h += '<div style="font-weight:800;font-size:13px;">Skipi account</div>';
+    h += '<div class="section-desc" style="margin:4px 0 10px;">Import these details from — or send them to — your account at assistant.skipi.app. Each transfer happens only when you tap a button below and shows exactly which fields move. Your photo never syncs.</div>';
+    h += '<div id="sp-acc-status" style="font-size:12px;color:var(--text2);margin-bottom:8px;">Checking device link…</div>';
+    h += '<div id="sp-acc-link-row" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">';
+    h += '<input id="sp-acc-code" placeholder="Link code from assistant.skipi.app" maxlength="8" autocapitalize="characters" autocomplete="off" style="flex:1;min-width:170px;">';
+    h += '<button class="btn btn-outline btn-sm" onclick="spAccountLink()">Link device</button>';
+    h += '</div>';
+    h += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+    h += '<button class="btn btn-outline btn-sm" onclick="spAccountImport()">Import from account…</button>';
+    h += '<button class="btn btn-outline btn-sm" onclick="spAccountSend()">Send to account…</button>';
+    h += '</div>';
+    h += '</div>';
     h += '</div>';
     h += '</div>';
     return h;
@@ -15084,7 +15100,7 @@ function renderSettingsBody(){
     }
 
     if(settingsTab === 'seafarer'){
-        h += '<div class="settings-section"><h3>Seafarer Profile</h3><div class="section-desc">Personal details used to generate your CV/Application Form PDF. Stored only inside this vault on disk.</div>';
+        h += '<div class="settings-section"><h3>Seafarer Profile</h3><div class="section-desc">Personal details used to generate your CV/Application Form PDF. Stored inside this vault on disk. Leaves the vault only when you tap ‘Send to account’.</div>';
         h += seafarerProfileFormHtml();
         h += '</div>';
     }
@@ -15457,6 +15473,8 @@ async function spLoad(){
         // Photo — fetched as a data URL so we don't depend on the asset
         // protocol (which would need an extra capability + vault scope).
         await spLoadPhoto();
+        // Device-link status line (local vault read only — no network here).
+        try{spAccountRefreshStatus();}catch(e){}
     }catch(e){showToast('Load error: '+e,'error');logError('Load error',e);}
 }
 async function refreshDocsAfterFrameworkChange(){
@@ -15549,6 +15567,122 @@ async function spSave(){
         showToast(changed?'Saved - requirements updated'+(added>0?' (+'+added+' slots)':''):'Saved','success');
         scheduleDeveloperGroupInviteCheck(900);
     }catch(e){showToast('Save error: '+e,'error');logError('Save error',e);}
+}
+// ── Skipi account profile sync (№96(б) Фаза 2) ──────────────────────────
+// Device pairing + import/export against assistant.skipi.app (separate host
+// from api.skipi.app). Explicit-action-only by owner decision (DECISIONS
+// 2026-08-05 (22)): every network transfer below starts from a button the
+// user just pressed and is confirmed through a preview of the exact fields.
+var _spAccImportProfile=null;
+function spAccFieldLabel(k){return String(k||'').replace(/^personal_/,'').replace(/_/g,' ');}
+async function spAccountRefreshStatus(){
+    var el=document.getElementById('sp-acc-status');
+    if(!el)return;
+    try{
+        var st=await invoke('get_account_link_status');
+        var row=document.getElementById('sp-acc-link-row');
+        if(st&&st.linked){
+            el.innerHTML='Linked to your Skipi account'+(st.label?' as &quot;'+esc(st.label)+'&quot;':'')+(st.linked_at?' since '+esc(String(st.linked_at).slice(0,10)):'')+'. <a href="#" onclick="spAccountUnlink();return false;">Unlink</a>';
+            if(row)row.style.display='none';
+        } else {
+            el.textContent='Not linked. Get a link code in your account at assistant.skipi.app (Linked devices) and enter it below.';
+            if(row)row.style.display='flex';
+        }
+    }catch(e){el.textContent='Device link status unavailable: '+e;}
+}
+async function spAccountLink(){
+    var inp=document.getElementById('sp-acc-code');
+    var code=inp?inp.value.trim():'';
+    if(!code){showToast('Enter the link code from assistant.skipi.app','warn');return;}
+    var label='Seafarer app ('+(isMobileMode()?'mobile':'desktop')+')';
+    try{
+        await invoke('link_account_device',{code:code,label:label});
+        if(inp)inp.value='';
+        showToast('Device linked to your Skipi account','success');
+    }catch(e){showToast('Link error: '+e,'error');logError('account link',e);}
+    await spAccountRefreshStatus();
+}
+async function spAccountUnlink(){
+    try{
+        await invoke('unlink_account_device');
+        showToast('Device link removed from this vault. You can also revoke it at assistant.skipi.app.','info');
+    }catch(e){showToast('Unlink error: '+e,'error');logError('account unlink',e);}
+    await spAccountRefreshStatus();
+}
+function spAccCloseModal(){var el=document.getElementById('sp-acc-modal');if(el)el.remove();}
+function spAccOpenModal(title,desc,rowsHtml,actionLabel,actionFn){
+    spAccCloseModal();
+    var h='<div id="sp-acc-modal" class="modal-overlay open" onclick="if(event.target===this)spAccCloseModal();">';
+    h+='<div class="modal-panel" style="width:min(640px,92vw);max-height:80vh;overflow:auto;">';
+    h+='<h3 style="margin-top:0;margin-bottom:6px;">'+esc(title)+'</h3>';
+    h+='<div style="font-size:12px;color:var(--text2);margin-bottom:12px;">'+desc+'</div>';
+    h+=rowsHtml;
+    h+='<div style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px;">';
+    h+='<button class="btn btn-outline btn-sm" onclick="spAccCloseModal()">Cancel</button>';
+    h+='<button class="btn btn-accent btn-sm" onclick="'+actionFn+'">'+esc(actionLabel)+'</button>';
+    h+='</div></div></div>';
+    document.body.insertAdjacentHTML('beforeend',h);
+}
+async function spAccountImport(){
+    try{
+        var prev=await invoke('preview_account_profile_import');
+        var changes=(prev&&prev.changes)||[];
+        if(!changes.length){showToast('Your account profile has nothing new for this vault','info');return;}
+        _spAccImportProfile=(prev&&prev.profile)||{};
+        var rows='';
+        changes.forEach(function(c){
+            rows+='<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px;">'
+                +'<div style="flex:0 0 160px;font-weight:600;text-transform:capitalize;">'+esc(spAccFieldLabel(c.key))+'</div>'
+                +'<div style="flex:1;min-width:0;color:var(--text2);text-decoration:line-through;word-break:break-word;">'+(c.local?esc(c.local):'&mdash;')+'</div>'
+                +'<div style="flex:1;min-width:0;word-break:break-word;">'+esc(c.remote)+'</div>'
+                +'</div>';
+        });
+        spAccOpenModal('Import from account',
+            'These '+changes.length+' fields will be overwritten in this vault with your account values (current &rarr; account). Empty account fields never touch local data. The photo is not imported.',
+            rows,'Import '+changes.length+' field'+(changes.length===1?'':'s'),'spAccountImportApply()');
+    }catch(e){showToast('Import error: '+e,'error');logError('account import',e);}
+}
+async function spAccountImportApply(){
+    spAccCloseModal();
+    try{
+        var res=await invoke('apply_account_profile_import',{profile:_spAccImportProfile||{}});
+        _spAccImportProfile=null;
+        var n=(res&&res.applied)?res.applied.length:0;
+        if(res&&res.ready_for_offers_skipped){
+            showToast('Imported '+n+' field'+(n===1?'':'s')+'. “Ready for offers” was NOT enabled — complete first: '+((res.ready_missing||[]).join(', ')||'profile readiness'),'warn');
+        } else {
+            showToast('Imported '+n+' field'+(n===1?'':'s')+' from your account','success');
+        }
+        try{await refreshDocsAfterFrameworkChange();}catch(e){}
+        try{showRequirementChangeNotice(res);}catch(e){}
+        try{await spLoad();}catch(e){}
+    }catch(e){showToast('Import error: '+e,'error');logError('account import apply',e);}
+}
+async function spAccountSend(){
+    try{
+        var prev=await invoke('preview_account_profile_export');
+        var fields=(prev&&prev.fields)||{};
+        var keys=Object.keys(fields);
+        if(!keys.length){showToast('Nothing to send — the profile is empty','info');return;}
+        var rows='';
+        keys.forEach(function(k){
+            rows+='<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px;">'
+                +'<div style="flex:0 0 180px;font-weight:600;text-transform:capitalize;">'+esc(spAccFieldLabel(k))+'</div>'
+                +'<div style="flex:1;min-width:0;word-break:break-word;">'+esc(fields[k])+'</div>'
+                +'</div>';
+        });
+        spAccOpenModal('Send to account',
+            'These '+keys.length+' fields will leave this vault and replace the profile in your Skipi account at assistant.skipi.app. The photo is not sent.',
+            rows,'Send '+keys.length+' field'+(keys.length===1?'':'s'),'spAccountSendApply()');
+    }catch(e){showToast('Send error: '+e,'error');logError('account send',e);}
+}
+async function spAccountSendApply(){
+    spAccCloseModal();
+    try{
+        var res=await invoke('send_account_profile');
+        var n=(res&&res.sent)||0;
+        showToast('Sent '+n+' field'+(n===1?'':'s')+' to your account','success');
+    }catch(e){showToast('Send error: '+e,'error');logError('account send apply',e);}
 }
 function spUploadPhotoMobile(){
     // Android/iOS pickers give a content:// URI with no filesystem path, so the
@@ -16464,8 +16598,8 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
                 var e = ctx.escapeHtml;
                 var h = '';
                 h += '<div class="section-desc" style="margin-bottom:12px;">'
-                    + e(ru ? 'Личные данные для генерации CV/Application Form PDF. Хранятся только в этом хранилище на диске.'
-                          : 'Personal details used to generate your CV/Application Form PDF. Stored only inside this vault on disk.')
+                    + e(ru ? 'Личные данные для генерации CV/Application Form PDF. Хранятся в этом хранилище на диске и покидают его только по нажатию «Send to account».'
+                          : 'Personal details used to generate your CV/Application Form PDF. Stored inside this vault on disk. Leaves the vault only when you tap ‘Send to account’.')
                     + '</div>';
                 h += seafarerProfileFormHtml();
                 // Side effect by necessity (see scheduleSeafarerFormLoad above):
