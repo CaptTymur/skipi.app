@@ -8723,14 +8723,18 @@ function openRegisterPage(){
 }
 async function appLogoutToGate(){
     try{ await invoke('app_logout'); }catch(e){}
-    // Re-run the startup gate: no token now → login screen blocks the shell.
-    // Vault data is untouched; we just re-gate access.
+    // Token is cleared. Logout MUST always end at the login gate, even if the
+    // re-open below fails: hide the shell and raise the gate unconditionally
+    // FIRST, so no app content ever stays on screen. Vault data is untouched.
+    try{ hide('scr-content'); hide('left-panel'); }catch(e){}
+    showLoginGate();
+    // Happy path: re-run the startup gate so it re-binds the current vault
+    // context (loadVault re-hides the shell + shows the gate too). Any failure
+    // here is harmless — the gate is already up from the lines above.
     try{
         var lv=await invoke('get_current_vault_path');
-        if(lv){ var info=await invoke('open_vault',{path:lv}); await loadVault(info); return; }
+        if(lv){ var info=await invoke('open_vault',{path:lv}); await loadVault(info); }
     }catch(e){}
-    // Fallback: at least show the gate with the last-known vault context.
-    if(_loginGatePending){ showLoginGate(); }
 }
 // Returns true when a valid cached login token exists in the open vault.
 async function _hasLoginToken(){

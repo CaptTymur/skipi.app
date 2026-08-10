@@ -5,8 +5,9 @@
 //! The user registers on assistant.skipi.app (unchanged web flow) and then
 //! logs into the packaged app with the SAME email+password. The app POSTs to
 //! `assistant.skipi.app/api/app/login` and receives a narrow revocable bearer
-//! token (scope `app_full`), which it stores in the vault under
-//! `skipi_user_token`. On startup the frontend blocks the whole shell until a
+//! token (scope `app_full`), which it stores in plaintext in the vault under
+//! `skipi_user_token` (the vault is a plain, UNENCRYPTED SQLite file). On
+//! startup the frontend blocks the whole shell until a
 //! valid token exists; a cached token allows reopening offline (only the FIRST
 //! login needs network). Logout revokes the token server-side (best-effort)
 //! and clears it locally — WITHOUT wiping any vault data (the gate is on
@@ -15,8 +16,9 @@
 //! The endpoint lives on assistant.skipi.app (the webapp with the users
 //! table), NOT api.skipi.app — same host as account_sync's device pairing.
 //! Token is stored plaintext in vault_info, exactly like the existing
-//! device-pairing token (`skipi_device_token`); the vault itself is the
-//! encryption boundary.
+//! device-pairing token (`skipi_device_token`). The vault is NOT an encryption
+//! boundary — it is a plain SQLite file (0644 perms) on the local filesystem;
+//! the boundary is the local filesystem / OS user account, not cryptography.
 
 use rusqlite::Connection;
 use serde_json::{json, Value};
