@@ -16962,16 +16962,23 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
         if(o && o.classList.contains('open')){ closeAssistant(); }
     });
 
-    window.openAssistant = function(){
+    // Restore the pre-existing data-sharing consent gate that the bespoke
+    // mobile view (renderMobileAssistant, ~line 6357) shows before the chat.
+    // The new module entry points (desktop #mt-assistant tab, mobile header
+    // button) route through openAssistant() and must show the SAME consent
+    // before opening the chat. Reuses the same consent flag + copy as the
+    // bespoke path (skipi-assistant-consent) so accepting in either place
+    // sticks for both. Status-quo restoration, not new copy.
+    function _assistantConsented(){
+        try{ if(typeof mobileAssistantConsented==='function') return mobileAssistantConsented(); }catch(e){}
+        try{ return localStorage.getItem('skipi-assistant-consent')==='1'; }catch(e){ return false; }
+    }
+    function _assistantSetConsent(){
+        try{ localStorage.setItem('skipi-assistant-consent','1'); }catch(e){}
+    }
+    function _mountAssistant(){
         var o = ov();
         if(!o) return;
-        if(!window.SkipiAssistant || typeof window.SkipiAssistant.mount !== 'function'){
-            try{ if(typeof showToast==='function'){ showToast('Assistant module failed to load.', 'error'); } }catch(e){}
-            return;
-        }
-        // Demo vaults: the assistant answers from the real profile, so gate it
-        // off in demo exactly like the bespoke mobile view does.
-        try{ if(typeof mobileIsDemo !== 'undefined' && mobileIsDemo){ if(typeof showToast==='function'){ showToast(currentLocale()==='ru' ? 'Создайте свой профиль, чтобы задавать вопросы ассистенту.' : 'Create your own profile to ask the assistant.', 'info'); } return; } }catch(e){}
         try{ if(_instance){ _instance.destroy(); } }catch(e){}
         _instance = null;
         var root = document.getElementById('assistant-root');
@@ -16985,6 +16992,41 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
             try{ console.error('[skipi-assistant] mount failed', err); }catch(e){}
             closeAssistant();
         }
+    }
+    function _showAssistantConsent(){
+        var o = ov();
+        if(!o) return;
+        var root = document.getElementById('assistant-root');
+        if(!root) return;
+        var ru = (function(){ try{ return currentLocale()==='ru'; }catch(e){ return false; } })();
+        // Same copy as the bespoke mobile consent screen (dist/index.html ~6357).
+        var title = ru?'AI-ассистент моряка':'Seafarer AI assistant';
+        var l1 = ru?'Бесплатный AI-ассистент по карьере и документам. Использует ваш профиль и сертификаты из приложения, чтобы отвечать точнее.':'A free AI assistant for your maritime career and documents. It uses your profile and certificates from the app to answer more precisely.';
+        var l2 = ru?'Чтобы улучшать ассистента, ваши переписки отправляются в Skipi. Не делитесь паролями или личными данными. Это не официальная и не юридическая консультация.':'To improve the assistant, your conversations are sent to Skipi. Do not share passwords or sensitive personal data. This is not official or legal advice.';
+        var btn = ru?'Понятно, начать':'Got it, start';
+        function esc(t){ return String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+        root.innerHTML = '<div class="mobile-card" style="margin:16px;max-width:520px;"><div class="mobile-card-title">'+esc(title)+'</div>'
+            +'<div class="mobile-card-sub" style="margin-top:8px;">'+esc(l1)+'</div>'
+            +'<div class="mobile-card-sub" style="margin-top:10px;">'+esc(l2)+'</div>'
+            +'<button class="btn btn-accent" id="assistant-consent-ok" type="button" style="margin-top:14px;width:100%;">'+esc(btn)+'</button></div>';
+        o.classList.add('open');
+        pushHist();
+        var okBtn = document.getElementById('assistant-consent-ok');
+        if(okBtn){ okBtn.addEventListener('click', function(){ _assistantSetConsent(); _mountAssistant(); }); }
+    }
+    window.openAssistant = function(){
+        var o = ov();
+        if(!o) return;
+        if(!window.SkipiAssistant || typeof window.SkipiAssistant.mount !== 'function'){
+            try{ if(typeof showToast==='function'){ showToast('Assistant module failed to load.', 'error'); } }catch(e){}
+            return;
+        }
+        // Demo vaults: the assistant answers from the real profile, so gate it
+        // off in demo exactly like the bespoke mobile view does.
+        try{ if(typeof mobileIsDemo !== 'undefined' && mobileIsDemo){ if(typeof showToast==='function'){ showToast(currentLocale()==='ru' ? 'Создайте свой профиль, чтобы задавать вопросы ассистенту.' : 'Create your own profile to ask the assistant.', 'info'); } return; } }catch(e){}
+        // Consent gate (restored): first open shows data-sharing consent.
+        if(!_assistantConsented()){ _showAssistantConsent(); return; }
+        _mountAssistant();
     };
     window.closeAssistant = function(){
         var o = ov();
