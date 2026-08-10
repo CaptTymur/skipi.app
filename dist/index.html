@@ -8,6 +8,8 @@
 <link rel="stylesheet" href="intelligence.css">
 <!-- @skipi/settings v0.3.0 — unified Settings shell (vendored from skipi-settings 9caeff6) -->
 <link rel="stylesheet" href="skipi-settings.css">
+<!-- @skipi/assistant v0.1.0 — generic chat Assistant module (vendored from skipi-assistant) -->
+<link rel="stylesheet" href="skipi-assistant.css">
 <script>
 var APP_BUILD_METADATA={
     component: 'Seafarer',
@@ -757,6 +759,15 @@ body.mobile-mode .desktop-stack-label { display:none; }
 body.mobile-mode .skipi-settings-overlay.open { align-items:stretch; justify-content:stretch; }
 body.mobile-mode .skipi-settings-panel { width:100vw; height:100dvh; max-width:none; max-height:none; border-radius:0; border:0; }
 
+/* @skipi/assistant overlay + mount panel — same overlay chrome as Settings.
+   The module owns its internal layout/CSS (scoped to .skipi-assistant) and reads
+   Seafarer's theme via CSS-variable fallbacks. */
+.skipi-assistant-overlay { display:none; position:fixed; inset:0; z-index:121; background:rgba(0,0,0,0.5); align-items:center; justify-content:center; }
+.skipi-assistant-overlay.open { display:flex; }
+.skipi-assistant-panel { width:min(720px, 92vw); height:min(680px, 88vh); background:var(--surface); border-radius:12px; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,0.4); border:1px solid var(--border); display:flex; padding:8px 12px; }
+body.mobile-mode .skipi-assistant-overlay.open { align-items:stretch; justify-content:stretch; }
+body.mobile-mode .skipi-assistant-panel { width:100vw; height:100dvh; max-width:none; max-height:none; border-radius:0; border:0; }
+
 /* Settings modal (Obsidian-style) */
 .settings-overlay { display:none; position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.5); align-items:center; justify-content:center; }
 .settings-overlay.open { display:flex; }
@@ -1383,6 +1394,7 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
             </div>
         </div>
         <button class="fam-icon-btn mobile-feedback-btn" id="mobile-feedback-btn" type="button" data-qa="app-header-feedback" onclick="openMobileFeedbackMenu()" title="Отправить отзыв или сообщить о проблеме" aria-label="Отправить отзыв или сообщить о проблеме"><span class="mobile-feedback-mark">!</span><span class="mobile-feedback-text" style="display:none;"></span></button>
+        <button class="fam-icon-btn" type="button" data-qa="app-header-assistant" onclick="openAssistant()" title="Assistant" aria-label="Assistant">&#128172;</button>
         <button class="fam-icon-btn" type="button" data-qa="app-header-settings" onclick="openSettings()" title="Settings" aria-label="Settings">&#9881;</button>
     </div>
     <main class="mobile-main" id="mobile-main"></main>
@@ -1450,6 +1462,8 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
     <div class="mod-tab" onclick="showView('contribution')" id="mt-contribution" title="My contribution" style="display:none;"><span>Мой вклад</span></div>
 
     <div class="mod-tab" onclick="showView('apps')" id="mt-apps" title="Apps — plugins and tools"><span>Apps</span></div>
+
+    <div class="mod-tab" onclick="openAssistant()" id="mt-assistant" title="Assistant — maritime helper"><span>Assistant</span></div>
 
     <div class="mb-spacer"></div>
     <div class="profile-completion-chip" id="profile-completion-chip" onclick="openProfileDashboard()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openProfileDashboard();}" role="button" tabindex="0" title="Profile completeness">
@@ -1557,6 +1571,15 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
     </div>
 </div>
 
+<!-- @skipi/assistant — generic chat Assistant overlay + mount root. The module
+     owns its own internal layout/CSS (scoped to .skipi-assistant); this host
+     shell only provides the overlay chrome and the mount container. -->
+<div id="skipi-assistant-overlay" class="skipi-assistant-overlay" onclick="if(event.target===this)closeAssistant();">
+    <div class="skipi-assistant-panel">
+        <div id="assistant-root" style="flex:1;min-width:0;height:100%;"></div>
+    </div>
+</div>
+
 <!-- Forced profile onboarding overlay (Seafarer) — blocks app until all required fields are filled -->
 <div id="forced-profile-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9998;align-items:flex-start;justify-content:center;overflow:auto;padding:40px 20px;">
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;max-width:720px;width:100%;padding:24px;box-shadow:0 10px 40px rgba(0,0,0,.4);position:relative;">
@@ -1615,6 +1638,7 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
 <div id="drop-overlay"><div class="drop-card">&#128194; Drop the file to attach it to this certificate</div></div>
 
 <script src="skipi-settings.js"></script>
+<script src="skipi-assistant.js"></script>
 <script src="vessel-db.js"></script>
 <script src="intelligence.js"></script>
 <script src="plugin-host-ui.js"></script>
@@ -16865,6 +16889,115 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
             var ov = document.getElementById('skipi-settings-overlay');
             if(ov && ov.classList.contains('open')){ closeUnifiedSettings(); }
         }
+    });
+})();
+
+// ==================== @skipi/assistant host + overlay ====================
+// Mounts the generic chat Assistant module (window.SkipiAssistant) in an
+// overlay and wires host.sendMessage to the home's existing production
+// transport: invoke('assistant_chat', {messages, locale}) -> Rust proxy ->
+// HTTPS POST to the Skipi Assistant backend, synchronous {reply, model,
+// remaining_today}. The module owns the chat UI; this host owns transport,
+// history persistence, theme and locale. Policy №108 is enforced inside the
+// module (no architecture disclosure, no consult/training CTA).
+(function(){
+    var CONV_KEY = 'skipi-assistant-conv';
+    var _instance = null;
+    function ov(){ return document.getElementById('skipi-assistant-overlay'); }
+
+    function loadConv(){
+        try{ var raw = localStorage.getItem(CONV_KEY); var a = raw ? JSON.parse(raw) : []; return Array.isArray(a) ? a : []; }
+        catch(e){ return []; }
+    }
+    function saveConv(messages){
+        try{ localStorage.setItem(CONV_KEY, JSON.stringify((messages||[]).slice(-40))); }catch(e){}
+    }
+    function currentLocale(){
+        try{ return (typeof getUiLang === 'function') ? getUiLang() : 'en'; }catch(e){ return 'en'; }
+    }
+    function currentTheme(){
+        try{ return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'; }catch(e){ return 'light'; }
+    }
+
+    function buildHost(){
+        return {
+            getContext: function(){
+                return {
+                    surface: (typeof isMobileMode === 'function' && isMobileMode()) ? 'mobile' : 'desktop',
+                    locale: currentLocale(),
+                    theme: currentTheme()
+                };
+            },
+            getI18n: function(){ return null; }, // use module built-ins
+            getHistory: function(){ return loadConv(); },
+            persistHistory: function(messages){ saveConv(messages); },
+            onClose: function(){ closeAssistant(); },
+            onError: function(e){ try{ if(typeof logError==='function'){ logError('skipi-assistant', e); } }catch(_){} },
+            // Real production transport: same path the bespoke mobile assistant
+            // already uses. `messages` is the full conversation snapshot from the
+            // module; forward it as the backend expects.
+            sendMessage: function(text, history){
+                var msgs = (history||[]).map(function(m){ return { role: m.role, content: m.content }; });
+                return invoke('assistant_chat', { messages: msgs, locale: currentLocale() })
+                    .then(function(resp){ return { reply: (resp && resp.reply) || '' }; });
+            }
+        };
+    }
+
+    // ---- System Back (Android): mirror the Settings-overlay history marker ----
+    var _histMark = false;
+    function pushHist(){
+        if(_histMark) return;
+        try{ if(window.history && window.history.pushState){ window.history.pushState({ skipiAssistant: true }, ''); _histMark = true; } }catch(e){}
+    }
+    function consumeHist(){
+        if(!_histMark) return;
+        _histMark = false;
+        try{ if(window.history && window.history.back){ window.history.back(); } }catch(e){}
+    }
+    window.addEventListener('popstate', function(){
+        if(!_histMark) return;
+        _histMark = false;
+        var o = ov();
+        if(o && o.classList.contains('open')){ closeAssistant(); }
+    });
+
+    window.openAssistant = function(){
+        var o = ov();
+        if(!o) return;
+        if(!window.SkipiAssistant || typeof window.SkipiAssistant.mount !== 'function'){
+            try{ if(typeof showToast==='function'){ showToast('Assistant module failed to load.', 'error'); } }catch(e){}
+            return;
+        }
+        // Demo vaults: the assistant answers from the real profile, so gate it
+        // off in demo exactly like the bespoke mobile view does.
+        try{ if(typeof mobileIsDemo !== 'undefined' && mobileIsDemo){ if(typeof showToast==='function'){ showToast(currentLocale()==='ru' ? 'Создайте свой профиль, чтобы задавать вопросы ассистенту.' : 'Create your own profile to ask the assistant.', 'info'); } return; } }catch(e){}
+        try{ if(_instance){ _instance.destroy(); } }catch(e){}
+        _instance = null;
+        var root = document.getElementById('assistant-root');
+        if(root){ root.innerHTML = ''; }
+        o.classList.add('open');
+        pushHist();
+        try{
+            _instance = window.SkipiAssistant.mount(root, buildHost());
+            if(_instance){ _instance.applyTheme(currentTheme()); _instance.focus(); }
+        }catch(err){
+            try{ console.error('[skipi-assistant] mount failed', err); }catch(e){}
+            closeAssistant();
+        }
+    };
+    window.closeAssistant = function(){
+        var o = ov();
+        if(o){ o.classList.remove('open'); }
+        try{ if(_instance){ _instance.destroy(); } }catch(e){}
+        _instance = null;
+        var root = document.getElementById('assistant-root');
+        if(root){ root.innerHTML = ''; }
+        consumeHist();
+    };
+    // Escape closes the assistant overlay.
+    document.addEventListener('keydown', function(e){
+        if(e.key === 'Escape'){ var o = ov(); if(o && o.classList.contains('open')){ closeAssistant(); } }
     });
 })();
 </script>

@@ -1,0 +1,199 @@
+/*!
+ * @skipi/assistant — namespaced styles. Light theme is the default (Skipi
+ * canon); dark only applies when [data-skipi-assistant-theme="dark"] is set by
+ * the host. Every selector is scoped under .skipi-assistant so the module never
+ * leaks styles into the host page.
+ *
+ * The module also reads a small set of host CSS variables when present
+ * (--accent, --bg, --surface, --text, --border) so it visually matches the
+ * host; when absent it falls back to its own light defaults below.
+ */
+
+.skipi-assistant {
+  /* self-contained light defaults; host --vars override when present */
+  --sa-bg: var(--bg, #ffffff);
+  --sa-surface: var(--surface, #f6f7f9);
+  --sa-surface2: var(--surface2, #eef0f3);
+  --sa-text: var(--text, #16181d);
+  --sa-text2: var(--text2, #5b626e);
+  --sa-border: var(--border, #dfe3e8);
+  --sa-accent: var(--accent, #3C3489);
+  --sa-accent-contrast: #ffffff;
+  --sa-error-bg: rgba(220, 80, 80, 0.10);
+  --sa-error-border: rgba(220, 80, 80, 0.4);
+
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  background: var(--sa-bg);
+  color: var(--sa-text);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.skipi-assistant[data-skipi-assistant-theme="dark"] {
+  --sa-bg: var(--bg, #16181d);
+  --sa-surface: var(--surface, #1e2128);
+  --sa-surface2: var(--surface2, #262a33);
+  --sa-text: var(--text, #e8eaed);
+  --sa-text2: var(--text2, #9aa2ad);
+  --sa-border: var(--border, #333844);
+}
+
+.skipi-assistant * { box-sizing: border-box; }
+
+/* ── header ── */
+.skipi-assistant__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 4px 10px;
+  border-bottom: 1px solid var(--sa-border);
+  flex: 0 0 auto;
+}
+.skipi-assistant__title-wrap { min-width: 0; }
+.skipi-assistant__title { font-size: 16px; font-weight: 700; color: var(--sa-text); }
+.skipi-assistant__sub { font-size: 12px; color: var(--sa-text2); margin-top: 2px; }
+.skipi-assistant__head-actions { display: flex; gap: 6px; flex: 0 0 auto; }
+
+.skipi-assistant__btn {
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--sa-border);
+  background: var(--sa-bg);
+  color: var(--sa-text);
+  cursor: pointer;
+}
+.skipi-assistant__btn--ghost:hover { background: var(--sa-surface); }
+.skipi-assistant__close { padding: 6px 9px; }
+
+/* ── message stream ── */
+.skipi-assistant__stream {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 4px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.skipi-assistant__msg { display: flex; flex-direction: column; max-width: 88%; }
+.skipi-assistant__msg--user { align-self: flex-end; align-items: flex-end; }
+.skipi-assistant__msg--assistant { align-self: flex-start; align-items: flex-start; }
+
+.skipi-assistant__role { font-size: 11px; color: var(--sa-text2); margin: 0 4px 3px; }
+
+.skipi-assistant__bubble {
+  padding: 9px 12px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+.skipi-assistant__msg--user .skipi-assistant__bubble {
+  background: var(--sa-accent);
+  color: var(--sa-accent-contrast);
+  border-bottom-right-radius: 4px;
+}
+.skipi-assistant__msg--assistant .skipi-assistant__bubble {
+  background: var(--sa-surface2);
+  color: var(--sa-text);
+  border: 1px solid var(--sa-border);
+  border-bottom-left-radius: 4px;
+}
+.skipi-assistant__msg--assistant .skipi-assistant__bubble.skipi-assistant__typing {
+  padding: 12px 14px;
+}
+
+/* ── typing indicator ── */
+.skipi-assistant__typing { display: inline-flex; }
+.skipi-assistant__typing span {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--sa-text2); display: inline-block; margin-right: 5px;
+  animation: skipiAssistantTyping 1.2s infinite ease-in-out;
+}
+.skipi-assistant__typing span:last-child { margin-right: 0; }
+.skipi-assistant__typing span:nth-child(2) { animation-delay: .18s; }
+.skipi-assistant__typing span:nth-child(3) { animation-delay: .36s; }
+@keyframes skipiAssistantTyping {
+  0%, 60%, 100% { transform: translateY(0); opacity: .4; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+
+/* ── empty / suggestions ── */
+.skipi-assistant__empty { text-align: center; padding: 34px 14px 10px; color: var(--sa-text2); margin: auto 0; }
+.skipi-assistant__empty-title { font-size: 18px; font-weight: 800; color: var(--sa-text); }
+.skipi-assistant__empty-sub { font-size: 13px; margin-top: 6px; }
+.skipi-assistant__suggest { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
+.skipi-assistant__chip {
+  text-align: left;
+  padding: 11px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--sa-border);
+  background: var(--sa-bg);
+  color: var(--sa-text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.skipi-assistant__chip:hover { background: var(--sa-surface); }
+.skipi-assistant__chip:active { background: var(--sa-accent); color: var(--sa-accent-contrast); border-color: var(--sa-accent); }
+
+/* ── composer ── */
+.skipi-assistant__composer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px 4px 4px;
+  border-top: 1px solid var(--sa-border);
+}
+.skipi-assistant__input {
+  flex: 1 1 auto;
+  resize: none;
+  min-height: 40px;
+  max-height: 160px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--sa-border);
+  background: var(--sa-bg);
+  color: var(--sa-text);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.skipi-assistant__input:focus {
+  outline: none;
+  border-color: var(--sa-accent);
+  box-shadow: 0 0 0 2px rgba(60, 52, 137, .15);
+}
+.skipi-assistant__input:disabled { opacity: .6; }
+.skipi-assistant__send {
+  flex: 0 0 auto;
+  width: 40px; height: 40px;
+  border-radius: 12px;
+  border: 0;
+  background: var(--sa-accent);
+  color: var(--sa-accent-contrast);
+  font-size: 16px;
+  cursor: pointer;
+}
+.skipi-assistant__send:disabled { opacity: .4; cursor: default; }
+
+/* ── desktop vs mobile surface tweaks ── */
+.skipi-assistant--mobile { font-size: 14px; }
+.skipi-assistant--mobile .skipi-assistant__stream { padding: 12px 2px; }
+.skipi-assistant--mobile .skipi-assistant__composer { padding-bottom: env(safe-area-inset-bottom, 4px); }
+
+.skipi-assistant--desktop { max-width: 100%; }
+.skipi-assistant--desktop .skipi-assistant__bubble { max-width: 100%; }
