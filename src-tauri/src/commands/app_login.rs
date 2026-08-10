@@ -48,7 +48,15 @@ pub(crate) fn stored_user_token(conn: &Connection) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-/// POST {base}/api/app/login {email,password,label} → plaintext token.
+/// Successful login response: the app-bearer token plus the account's declared
+/// role from the server (`seafarer` | `broker` | `crewing` | None). Role drives
+/// the per-app policy check (DECISIONS 59/60 «one email = one role»).
+struct AppLoginOk {
+    token: String,
+    role: Option<String>,
+}
+
+/// POST {base}/api/app/login {email,password,label} → token + role.
 /// Wrong password AND unknown email both return a uniform 403 from the server
 /// (no email-existence leak); we surface one honest message for both.
 fn post_app_login(
@@ -57,7 +65,7 @@ fn post_app_login(
     email: &str,
     password: &str,
     label: &str,
-) -> Result<String, String> {
+) -> Result<AppLoginOk, String> {
     let url = format!("{}/api/app/login", base.trim_end_matches('/'));
     let resp = client
         .post(&url)
@@ -80,9 +88,46 @@ fn post_app_login(
             if token.is_empty() {
                 return Err("assistant.skipi.app returned no token".to_string());
             }
-            Ok(token)
+            // role may be absent/null (legacy or brand-new seafarer with no
+            // declared role yet) — treated as "unset" by the policy check.
+            let role = parsed
+                .get("role")
+                .and_then(|r| r.as_str())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            Ok(AppLoginOk { token, role })
         }
         _ => Err(format!("assistant.skipi.app returned {status}: {body}")),
+    }
+}
+
+/// This is the FREE seafarer app. Per-app role check (DECISIONS 59/60 «one
+/// email = one role», roles mutually exclusive). Returns Err with a clear,
+/// policy-safe message when the account belongs to another app; Ok(()) when
+/// the account may use the seafarer app.
+///
+/// Manager's flagged default (owner may adjust): ALLOW `seafarer` OR unset/null
+/// role (legacy/new seafarers may not have a role yet); REJECT explicit
+/// `broker` / `crewing`. The rejection does NOT store a token — the login gate
+/// stays shown.
+fn seafarer_role_allowed(role: Option<&str>) -> Result<(), String> {
+    match role {
+        Some("broker") => Err(
+            "This account is registered as Broker. \
+             Please sign in with the Skipi Broker app.\n\
+             Этот аккаунт зарегистрирован как Broker. \
+             Войдите в приложение Skipi Broker."
+                .to_string(),
+        ),
+        Some("crewing") => Err(
+            "This account is registered as Crewing. \
+             Please sign in with the Skipi Crewing app.\n\
+             Этот аккаунт зарегистрирован как Crewing. \
+             Войдите в приложение Skipi Crewing."
+                .to_string(),
+        ),
+        // "seafarer", unset/null, or any unknown value → allowed on this app.
+        _ => Ok(()),
     }
 }
 
@@ -125,7 +170,12 @@ pub fn app_login(
     let conn = lock.as_ref().ok_or("No vault open")?;
     let client = http_client()?;
     let label = format!("Skipi app ({})", std::env::consts::OS);
-    let token = post_app_login(&assistant_api_base(), &client, &email, &password, &label)?;
+    let ok = post_app_login(&assistant_api_base(), &client, &email, &password, &label)?;
+    // Per-app role gate (DECISIONS 59/60): reject foreign roles BEFORE storing
+    // the token, so a rejected broker/crewing account never unlocks the shell
+    // and no token is persisted (the login gate stays shown).
+    seafarer_role_allowed(ok.role.as_deref())?;
+    let token = ok.token;
     db::set_vault_info(conn, USER_TOKEN_KEY, &token).map_err(|e| e.to_string())?;
     db::set_vault_info(conn, USER_EMAIL_KEY, &email).map_err(|e| e.to_string())?;
     db::set_vault_info(conn, USER_LOGIN_AT_KEY, &chrono::Utc::now().to_rfc3339())

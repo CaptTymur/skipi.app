@@ -1631,7 +1631,7 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;max-width:400px;width:100%;padding:28px;box-shadow:0 12px 44px rgba(0,0,0,.28);">
         <h2 style="margin:0 0 6px;font-size:20px;" id="lg-title">Sign in to Skipi</h2>
         <p style="margin:0 0 18px;color:var(--text2);font-size:13px;" id="lg-sub">Use your Skipi account email and password.</p>
-        <div id="lg-err" style="display:none;background:var(--red);color:#fff;padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:14px;"></div>
+        <div id="lg-err" style="display:none;background:var(--red);color:#fff;padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:14px;white-space:pre-line;"></div>
         <div class="field" style="margin-bottom:12px;"><label id="lg-email-label">Email</label><input id="lg-email" type="email" autocomplete="username" inputmode="email" placeholder="you@example.com"></div>
         <div class="field" style="margin-bottom:16px;"><label id="lg-pass-label">Password</label><input id="lg-password" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter'){doAppLogin();}"></div>
         <button class="btn btn-accent" id="lg-submit" style="width:100%;" onclick="doAppLogin()">Sign in</button>
