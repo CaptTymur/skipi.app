@@ -100,8 +100,8 @@ pub(crate) fn base64_encode(data: &[u8]) -> String {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     use commands::{
-        account_sync, agency_mailing, ai, assistant, cv_commands, documents, email, jobs,
-        mail_intent, messaging, packages, profile, review, vault, work_history,
+        account_sync, agency_mailing, ai, app_login, assistant, cv_commands, documents, email,
+        jobs, mail_intent, messaging, packages, profile, review, vault, work_history,
     };
 
     tauri::Builder::default()
@@ -226,6 +226,10 @@ pub fn run() {
             account_sync::apply_account_profile_import,
             account_sync::preview_account_profile_export,
             account_sync::send_account_profile,
+            // App login hard gate (№117): login/logout/status
+            app_login::app_login,
+            app_login::app_logout,
+            app_login::app_login_status,
             // CV
             cv_commands::get_cv_data,
             cv_commands::export_cv_docx,

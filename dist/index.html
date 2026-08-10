@@ -1623,6 +1623,25 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
     </div>
 </div>
 
+<!-- Hard login gate (BACKLOG №117, OWNER 2026-08-10): no login → no app.
+     Blocks the whole shell until a valid skipi_user_token exists. Opaque
+     full-screen, no dismiss. Registration reused as-is (opens
+     assistant.skipi.app/register in the external browser). -->
+<div id="login-gate-overlay" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:100000;align-items:center;justify-content:center;overflow:auto;padding:32px 20px;">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;max-width:400px;width:100%;padding:28px;box-shadow:0 12px 44px rgba(0,0,0,.28);">
+        <h2 style="margin:0 0 6px;font-size:20px;" id="lg-title">Sign in to Skipi</h2>
+        <p style="margin:0 0 18px;color:var(--text2);font-size:13px;" id="lg-sub">Use your Skipi account email and password.</p>
+        <div id="lg-err" style="display:none;background:var(--red);color:#fff;padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:14px;"></div>
+        <div class="field" style="margin-bottom:12px;"><label id="lg-email-label">Email</label><input id="lg-email" type="email" autocomplete="username" inputmode="email" placeholder="you@example.com"></div>
+        <div class="field" style="margin-bottom:16px;"><label id="lg-pass-label">Password</label><input id="lg-password" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter'){doAppLogin();}"></div>
+        <button class="btn btn-accent" id="lg-submit" style="width:100%;" onclick="doAppLogin()">Sign in</button>
+        <div style="margin-top:16px;text-align:center;font-size:13px;color:var(--text2);">
+            <span id="lg-noacct">No account?</span>
+            <a href="#" id="lg-register" onclick="openRegisterPage();return false;" style="color:var(--accent);text-decoration:none;">Register</a>
+        </div>
+    </div>
+</div>
+
 <div class="update-banner" id="update-banner">
     <span class="ub-msg" id="ub-msg">A new version of Skipi Seafarer is available!</span>
     <button id="ub-action" onclick="doUpdate()">Update now</button>
@@ -8634,7 +8653,103 @@ async function browseExistingVault(){
     try{var info=await invoke('open_vault',{path:dir});await loadVault(info);}catch(e){showToast('Could not open vault: '+e+'. Select the named folder that contains skipi.db, for example "Skipi Seafarer - Your Name".','error');logError('open_vault',e);}
 }
 
+// ========== Hard login gate (BACKLOG №117) ==========
+// Owner 2026-08-10: shipped apps require login (no login → no app). The token
+// lives in the open vault (skipi_user_token); a cached token lets the app open
+// offline (only the FIRST login needs network). Logout clears the token but
+// NEVER wipes vault data (gate is on access, not on data).
+var _loginGatePending = null; // vault info to resume after successful login
+function _lgTxt(){
+    var ru=false; try{ ru=getUiLang()==='ru'; }catch(e){}
+    return ru ? {
+        title:'Вход в Skipi', sub:'Введите email и пароль вашего аккаунта Skipi.',
+        email:'Email', pass:'Пароль', submit:'Войти', signing:'Вход…',
+        noacct:'Нет аккаунта?', register:'Регистрация',
+        fill:'Введите email и пароль.'
+    } : {
+        title:'Sign in to Skipi', sub:'Use your Skipi account email and password.',
+        email:'Email', pass:'Password', submit:'Sign in', signing:'Signing in…',
+        noacct:'No account?', register:'Register',
+        fill:'Enter your email and password.'
+    };
+}
+function _lgApplyI18n(){
+    var t=_lgTxt();
+    function set(id,v){var el=document.getElementById(id);if(el)el.textContent=v;}
+    set('lg-title',t.title);set('lg-sub',t.sub);set('lg-email-label',t.email);
+    set('lg-pass-label',t.pass);set('lg-submit',t.submit);set('lg-noacct',t.noacct);
+    set('lg-register',t.register);
+}
+function _lgError(msg){
+    var e=document.getElementById('lg-err');
+    if(e){e.textContent=msg||'';e.style.display=msg?'block':'none';}
+}
+function showLoginGate(){
+    var o=document.getElementById('login-gate-overlay');
+    if(!o)return;
+    _lgApplyI18n();_lgError('');
+    o.style.display='flex';
+    var em=document.getElementById('lg-email');if(em&&!em.value)setTimeout(function(){try{em.focus();}catch(e){}},50);
+}
+function hideLoginGate(){
+    var o=document.getElementById('login-gate-overlay');
+    if(o)o.style.display='none';
+}
+async function doAppLogin(){
+    var t=_lgTxt();
+    var em=(document.getElementById('lg-email')||{}).value||'';
+    var pw=(document.getElementById('lg-password')||{}).value||'';
+    em=em.trim();
+    if(!em||!pw){_lgError(t.fill);return;}
+    var btn=document.getElementById('lg-submit');
+    if(btn){btn.disabled=true;btn.textContent=t.signing;}
+    _lgError('');
+    try{
+        await invoke('app_login',{email:em,password:pw});
+        // Success: clear the password field, hide the gate, resume the shell.
+        var pwEl=document.getElementById('lg-password');if(pwEl)pwEl.value='';
+        hideLoginGate();
+        var resume=_loginGatePending;_loginGatePending=null;
+        if(resume){ await loadVault(resume); }
+    }catch(e){
+        _lgError(String(e||'Login failed'));
+    }finally{
+        if(btn){btn.disabled=false;btn.textContent=t.submit;}
+    }
+}
+function openRegisterPage(){
+    // Registration is reused as-is on the web — open it in the system browser.
+    try{ invoke('open_external_url',{url:'https://assistant.skipi.app/register'}); }catch(e){}
+}
+async function appLogoutToGate(){
+    try{ await invoke('app_logout'); }catch(e){}
+    // Re-run the startup gate: no token now → login screen blocks the shell.
+    // Vault data is untouched; we just re-gate access.
+    try{
+        var lv=await invoke('get_current_vault_path');
+        if(lv){ var info=await invoke('open_vault',{path:lv}); await loadVault(info); return; }
+    }catch(e){}
+    // Fallback: at least show the gate with the last-known vault context.
+    if(_loginGatePending){ showLoginGate(); }
+}
+// Returns true when a valid cached login token exists in the open vault.
+async function _hasLoginToken(){
+    try{ var st=await invoke('app_login_status'); return !!(st&&st.logged_in); }catch(e){ return false; }
+}
+
 async function loadVault(info){
+    // HARD LOGIN GATE (№117): block the entire shell until a valid token
+    // exists in this vault. A cached token → offline reopen allowed. First
+    // login requires network. Vault is already open here, so vault_info is
+    // readable/writable by the app_login* commands.
+    if(!(await _hasLoginToken())){
+        _loginGatePending = info;
+        // Keep the shell hidden behind the opaque gate.
+        try{ hide('scr-content'); hide('left-panel'); }catch(e){}
+        showLoginGate();
+        return;
+    }
+    hideLoginGate();
     hide('scr-welcome');hide('scr-setup');show('scr-content');show('left-panel');hide('tabs');show('statusbar');
     var mb=document.getElementById('modules-bar');if(mb)mb.style.display='flex';
     currentAccountType=info.account_type||'';
@@ -15356,6 +15471,9 @@ function renderSettingsBody(){
         h += '<div class="setting-control" style="font-size:13px;color:var(--text2);">Beta</div></div>';
         h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Updates</div><div class="setting-desc">Check for a newer version of '+tr('app.name')+'.</div></div>';
         h += '<div class="setting-control"><button class="btn btn-outline btn-sm" id="btn-check-update" onclick="checkForUpdate(false);this.textContent=\'Checking…\';this.disabled=true;">Check for updates</button></div></div>';
+        // Skipi account (hard login gate, №117): show logged-in email + Sign out.
+        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Skipi account</div><div class="setting-desc" id="about-account-email">…</div></div>';
+        h += '<div class="setting-control"><button class="btn btn-outline btn-sm" id="btn-app-logout" onclick="appLogoutToGate()">'+(getUiLang()==='ru'?'Выйти':'Sign out')+'</button></div></div>';
         h += '<div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-accent btn-sm" onclick="openFeedbackDialog(\'about\')">'+tr('feedback.manual_button')+'</button><button class="btn btn-outline btn-sm" onclick="reportIssue()">Сообщить о проблеме</button></div>';
         h += '</div>';
     }
@@ -15381,6 +15499,10 @@ function renderSettingsBody(){
         invoke('get_platform').then(function(p){
             var el=document.getElementById('about-platform');
             if(el) el.textContent = p || '(unknown)';
+        }).catch(function(){});
+        invoke('app_login_status').then(function(st){
+            var el=document.getElementById('about-account-email');
+            if(el) el.textContent = (st&&st.email) ? st.email : (getUiLang()==='ru'?'Вошли':'Signed in');
         }).catch(function(){});
     }
 }
