@@ -40,6 +40,21 @@ class MainActivity : TauriActivity() {
     }
   }
 
+  fun openSkipiUrl(url: String): String? {
+    return try {
+      val uri = android.net.Uri.parse(url)
+      val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
+      startActivity(Intent.createChooser(intent, "Open link"))
+      null
+    } catch (e: ActivityNotFoundException) {
+      "No app installed to open this link."
+    } catch (e: Exception) {
+      e.localizedMessage ?: e.toString()
+    }
+  }
+
   private fun guessMime(path: String): String {
     val lower = path.lowercase()
     return when {
