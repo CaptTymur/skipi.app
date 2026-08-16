@@ -23,10 +23,10 @@ pub struct ChatMsg {
     pub content: String,
 }
 
-#[derive(Serialize)]
-struct ChatMsgOut<'a> {
-    role: &'a str,
-    content: &'a str,
+#[derive(Serialize, Clone)]
+struct ChatMsgOut {
+    role: String,
+    content: String,
 }
 
 #[derive(Serialize)]
@@ -39,9 +39,9 @@ struct KeyResp {
     key: String,
 }
 
-#[derive(Serialize)]
-struct ChatReq<'a> {
-    messages: &'a [ChatMsgOut<'a>],
+#[derive(Serialize, Clone)]
+struct ChatReq {
+    messages: Vec<ChatMsgOut>,
     #[serde(skip_serializing_if = "Option::is_none")]
     profile_context: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -140,6 +140,17 @@ pub fn ensure_key(conn: &Connection, client: &Client) -> Result<String, String> 
     Ok(resp.key)
 }
 
+/// Blocking HTTP client with the assistant's timeouts. Must only be built and
+/// used inside `spawn_blocking` tasks: a `reqwest::blocking` client on the
+/// async runtime (or the main thread) blocks/panics — that was bug №140.
+fn chat_client() -> Result<Client, String> {
+    Client::builder()
+        .timeout(Duration::from_secs(70))
+        .connect_timeout(Duration::from_secs(6))
+        .build()
+        .map_err(|e| e.to_string())
+}
+
 /// Bearer-authenticated POST that walks the same api_bases() fallback chain
 /// the rest of the app uses. Auth/limit failures (401/429) are returned
 /// immediately; transport/5xx failures fall through to the next base.
@@ -165,43 +176,90 @@ fn post_authed(client: &Client, path: &str, key: &str, body: &ChatReq) -> Result
     Err(last)
 }
 
+/// Lock-frugal async counterpart of `ensure_key` for the chat path: vault
+/// reads/writes happen under short-lived conn locks, while the HTTP key
+/// request runs in `spawn_blocking` with no lock held.
+async fn issue_and_store_key(state: &AppState) -> Result<String, String> {
+    let device_id = {
+        let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = lock.as_ref().ok_or("No vault open")?;
+        ensure_device_id(conn)?
+    };
+    let key = tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
+        let client = chat_client()?;
+        let resp: KeyResp =
+            api::post_json(&client, "/api/assistant/key", &KeyReq { device_id: &device_id })?;
+        Ok(resp.key)
+    })
+    .await
+    .map_err(|e| format!("assistant task failed: {}", e))??;
+    {
+        let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = lock.as_ref().ok_or("No vault open")?;
+        db::set_vault_info(conn, "assistant_key", &key).map_err(|e| e.to_string())?;
+    }
+    Ok(key)
+}
+
+/// One chat POST in a blocking task — no vault lock is (or can be) held here.
+async fn send_chat(key: String, body: ChatReq) -> Result<ChatReply, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let client = chat_client()?;
+        post_authed(&client, "/api/assistant/chat", &key, &body)
+    })
+    .await
+    .map_err(|e| format!("assistant task failed: {}", e))?
+}
+
+/// Async command (№140): a sync #[tauri::command] runs on the main thread, so
+/// the old blocking version froze the whole webview for up to 70s per message.
+/// Vault access happens under short-lived conn locks; all HTTP runs in
+/// `spawn_blocking` tasks with no lock held, so other vault commands (and the
+/// UI) stay responsive while the assistant is thinking.
 #[tauri::command]
-pub fn assistant_chat(
-    state: State<AppState>,
+pub async fn assistant_chat(
+    state: State<'_, AppState>,
     messages: Vec<ChatMsg>,
     app_context: Option<String>,
     app_context_version: Option<String>,
     locale: Option<String>,
 ) -> Result<ChatReply, String> {
-    let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
-    let conn = lock.as_ref().ok_or("No vault open")?;
-    let client = Client::builder()
-        .timeout(Duration::from_secs(70))
-        .connect_timeout(Duration::from_secs(6))
-        .build()
-        .map_err(|e| e.to_string())?;
+    // Vault reads under a short-lived lock; released before any network I/O.
+    let (profile, cached_key) = {
+        let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = lock.as_ref().ok_or("No vault open")?;
+        let profile = build_profile_context(conn);
+        let key = db::get_vault_info_value(conn, "assistant_key").filter(|k| !k.trim().is_empty());
+        (profile, key)
+    };
 
-    let profile = build_profile_context(conn);
-    let out: Vec<ChatMsgOut> = messages
-        .iter()
-        .map(|m| ChatMsgOut { role: &m.role, content: &m.content })
-        .collect();
     let body = ChatReq {
-        messages: &out,
+        messages: messages
+            .into_iter()
+            .map(|m| ChatMsgOut { role: m.role, content: m.content })
+            .collect(),
         profile_context: if profile.is_empty() { None } else { Some(profile) },
         app_context,
         app_context_version,
         locale,
     };
 
-    let key = ensure_key(conn, &client)?;
-    match post_authed(&client, "/api/assistant/chat", &key, &body) {
+    let key = match cached_key {
+        Some(k) => k,
+        None => issue_and_store_key(&state).await?,
+    };
+
+    match send_chat(key, body.clone()).await {
         Ok(r) => Ok(r),
         Err(e) if e.contains("HTTP 401") => {
             // Key unknown/revoked — drop it, re-issue, retry once.
-            let _ = db::set_vault_info(conn, "assistant_key", "");
-            let key = ensure_key(conn, &client)?;
-            post_authed(&client, "/api/assistant/chat", &key, &body)
+            {
+                let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+                let conn = lock.as_ref().ok_or("No vault open")?;
+                let _ = db::set_vault_info(conn, "assistant_key", "");
+            }
+            let key = issue_and_store_key(&state).await?;
+            send_chat(key, body).await
         }
         Err(e) => Err(e),
     }
