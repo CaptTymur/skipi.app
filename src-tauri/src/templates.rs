@@ -18,6 +18,7 @@ pub fn get_template(template_id: &str) -> Option<&'static str> {
         "passport" => Some(PASSPORT),
         "sid" => Some(SID),
         "seamans_book" => Some(SEAMANS_BOOK),
+        "radar_arpa" => Some(RADAR_ARPA),
         _ => None,
     }
 }
@@ -161,4 +162,59 @@ page (e.g. 'Prolonged till DD.MM.YYYY'), use that as valid_to. Otherwise \
 leave it null.
 - The rank on page 1 (if shown) is typically the rank at first issue — \
 do NOT assume it is the current rank.
+";
+
+// ---------------------------------------------------------------------------
+// Radar Navigation, Radar Plotting and ARPA — STCW training certificate
+// profile id: "radar_arpa"  (has_expiry: false)
+//
+// This is a course-completion CERTIFICATE, not an identity document. Its layout
+// is a single-page training certificate (holder name, course title, certificate
+// number, issue date, issuing training centre/authority) — not a bio-data page.
+// Without this guide, recognition fell back to the identity-document prompt and
+// returned null fields ("No reliable fields were found").
+// ---------------------------------------------------------------------------
+const RADAR_ARPA: &str = "\
+DOCUMENT TYPE CONTEXT: This is a training CERTIFICATE for 'Radar Navigation, \
+Radar Plotting and ARPA' (Automatic Radar Plotting Aid) issued under STCW \
+(typically A-II/1, A-II/2). It is a course-completion certificate, NOT an \
+identity document — there is no photo bio-data page, no MRZ, and no passport/ \
+seaman's-book serial. Do not treat it like a passport, SID, or seaman's book.
+
+LAYOUT (what to look for and where):
+- Title: the course name is printed prominently, usually near the top, e.g. \
+'Radar Navigation, Radar Plotting and the use of ARPA', 'Radar Observer', or \
+'RADAR / ARPA'. This confirms the document type.
+- Holder's full name: printed in the body of the certificate ('This is to \
+certify that <NAME> has successfully completed ...'). Use the Latin \
+transliteration for full_name.
+- Certificate number (document number): labelled 'Certificate No.', \
+'Cert. No.', 'No.', 'Serial No.', or 'Registration No.', usually near the top \
+or bottom. Copy it exactly, including letters, digits and separators. This is \
+the document_number — it is NOT the STCW regulation code (e.g. 'A-II/1').
+- Date of issue: labelled 'Date of issue', 'Issued on', 'Date', or a date \
+printed next to the signature/stamp at the bottom. Return as 'YYYY-MM-DD'. \
+If a course completion date and an issue date both appear, prefer the issue \
+date; if only a completion date is shown, use that.
+- Issuing authority: the maritime training centre, academy, or approved \
+training provider that issued the certificate (e.g. a named training centre \
+or maritime academy), often shown in the header/logo area or beside the \
+official stamp. Copy the name as printed.
+- Type / course details: if the certificate distinguishes a level (e.g. \
+'operational level' / 'management level' or 'ARPA' vs 'radar observer'), \
+capture it as part of the document context, but the primary fields remain \
+number, issue date and authority.
+
+COMMON TRAPS (do not fall into these):
+- This certificate MOST OFTEN HAS NO EXPIRY DATE. STCW radar/ARPA training \
+certificates are generally issued without an expiry. If there is no explicit \
+'Valid until' / 'Date of expiry' / 'Expires' field, return null for valid_to. \
+Do NOT invent a 5- or 10-year expiry.
+- Do NOT return the STCW regulation reference ('STCW A-II/1', 'Regulation \
+I/11', etc.) as the certificate number. The certificate number is the \
+document's own serial/registration number.
+- Do NOT confuse the training centre / issuing authority with the course \
+title or with the assessor's personal name.
+- There is no MRZ and no photo page — do not look for '<<<' lines or a \
+passport-style number block; they are not present on this document.
 ";

@@ -6430,8 +6430,70 @@ async function mobileAssistantSend(){
     mobileAssistantSaveConv();
     renderMobileAssistant();
 }
+// ---- Bug #2: in-app Back for the mobile shell (Android hardware Back) ----
+// The generated WryActivity routes hardware Back to WebView history: with no
+// history entry canGoBack()=false -> the app exits on the first Back. The mobile
+// shell navigates by mutating `mobileView`, so we mirror each forward navigation
+// with ONE marked History entry ({skipiMobileNav: <view>}). A popstate on our
+// marker restores the previous view instead of exiting. The marker is distinct
+// from the Settings (skipiUnifiedSettings) and Assistant (skipiAssistant) overlay
+// markers, and each handler ignores states that are not its own — no collision.
+var _mobileNavStack=['home'];
+var _mobileNavPopping=false;   // set while WE drive history.back() / restore
+function mobileNavTrack(view){
+    view=view||'home';
+    if(_mobileNavPopping)return;                 // change caused by our own back
+    var top=_mobileNavStack[_mobileNavStack.length-1];
+    if(view===top)return;                        // same view, nothing to push
+    if(view==='home'){
+        // Returning home collapses the in-app stack to its root. Rewind our
+        // pushed entries (if any) so phantom entries never accumulate.
+        var extra=_mobileNavStack.length-1;
+        _mobileNavStack=['home'];
+        if(extra>0){
+            try{
+                if(window.history&&typeof window.history.go==='function'){
+                    _mobileNavPopping=true;
+                    window.history.go(-extra);   // popstate fires; guarded below
+                    setTimeout(function(){_mobileNavPopping=false;},0);
+                }
+            }catch(e){_mobileNavPopping=false;}
+        }
+        return;
+    }
+    _mobileNavStack.push(view);
+    try{
+        if(window.history&&typeof window.history.pushState==='function'){
+            window.history.pushState({skipiMobileNav:view},'');
+        }
+    }catch(e){}
+}
+if(typeof window!=='undefined'&&window.addEventListener){
+    window.addEventListener('popstate',function(ev){
+        // Only act when OUR marker is being popped (or when we still have in-app
+        // depth to unwind). Overlay markers are handled by their own listeners.
+        var st=ev&&ev.state;
+        var isOurs=st&&st.skipiMobileNav;
+        if(!isOurs&&_mobileNavStack.length<=1)return; // not ours, no depth -> leave app nav alone
+        if(_mobileNavPopping)return;                  // we are driving history ourselves
+        if(_mobileNavStack.length<=1)return;          // already at root
+        _mobileNavStack.pop();
+        var prev=_mobileNavStack[_mobileNavStack.length-1]||'home';
+        _mobileNavPopping=true;
+        try{
+            mobileView=prev;
+            if(typeof renderMobileShell==='function')renderMobileShell();
+        }catch(e){ try{ if(typeof logError==='function')logError('mobileBack',e); }catch(_e){} }
+        _mobileNavPopping=false;
+    });
+}
 function renderMobileShell(){
     if(!shouldUseMobileShell())return;
+    // Bug #2: track this view in the History stack so Android hardware Back
+    // navigates within the app instead of exiting on the first press. Called
+    // here (the single render choke point) so it also captures the sub-views
+    // that set mobileView= directly (doc/add/pdf/experience form).
+    mobileNavTrack(mobileView);
     mobileSetSub(mobileVaultLabel());
     mobileSetBottomNav(mobileView!=='dispatch');
     if(mobileView==='docs')return renderMobileDocs();
@@ -6595,7 +6657,7 @@ async function mobileAttachPendingFileToDoc(docId){
         mobileView='doc';
         mobileOcrState={docId:docId,status:'offer'};
         renderMobileShell();
-        setTimeout(function(){mobileAutoStartOcrIfConfigured(docId);},450);
+        setTimeout(function(){mobileAutoStartOcrIfConfigured(docId).catch(function(err){try{logError('mobileAutoStartOcr',err);}catch(_e){}});},450);
         showToast('File attached','success');
     }catch(e){
         showToast('Attach failed: '+e,'error');
@@ -6812,8 +6874,16 @@ async function mobileEnsureAiKey(){
     return await mobileStoredAiKey();
 }
 async function mobileAutoStartOcrIfConfigured(docId){
-    var key=await mobileStoredAiKey();
-    if(key&&key.length>10)mobileStartOcr(docId,{auto:true,key:key});
+    // Bug #1: this runs from a setTimeout with no caller-side error boundary.
+    // A reject here (e.g. a recognition error carrying the raw model response)
+    // would escape to the global unhandledrejection handler and paint the
+    // full-width red error surface. Contain it at the source.
+    try{
+        var key=await mobileStoredAiKey();
+        if(key&&key.length>10)mobileStartOcr(docId,{auto:true,key:key});
+    }catch(e){
+        try{ if(typeof logError==='function')logError('mobileAutoStartOcr',e); else if(typeof console!=='undefined')console.error('auto-OCR failed',e); }catch(_e){}
+    }
 }
 function mobileOcrResultValue(field){
     var result=mobileOcrState&&mobileOcrState.result?mobileOcrState.result:{};
@@ -7158,7 +7228,7 @@ async function mobileSavePdfBuilder(){
         mobileView='doc';
         mobileOcrState={docId:d.id,status:'offer'};
         renderMobileShell();
-        setTimeout(function(){mobileAutoStartOcrIfConfigured(d.id);},450);
+        setTimeout(function(){mobileAutoStartOcrIfConfigured(d.id).catch(function(err){try{logError('mobileAutoStartOcr',err);}catch(_e){}});},450);
         showToast('PDF attached','success');
     }catch(e){
         if(mobilePdfBuilder)mobilePdfBuilder.busy=false;
@@ -7230,7 +7300,7 @@ async function mobileHandleFilePicked(files){
         mobileView='doc';
         mobileOcrState={docId:docId,status:'offer'};
         renderMobileShell();
-        setTimeout(function(){mobileAutoStartOcrIfConfigured(docId);},450);
+        setTimeout(function(){mobileAutoStartOcrIfConfigured(docId).catch(function(err){try{logError('mobileAutoStartOcr',err);}catch(_e){}});},450);
         showToast('File attached','success');
     }catch(e){
         showToast('Attach failed: '+e,'error');

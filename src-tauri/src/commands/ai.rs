@@ -114,6 +114,22 @@ fn repair_unquoted_scalars(s: &str) -> String {
     out
 }
 
+/// Truncate a raw model response for inclusion in an error message.
+///
+/// Bug #1: `parse_ai_result` used to embed the ENTIRE raw model output in its
+/// error string. When that error reached the UI it painted a full-width red
+/// surface flooded with the raw response. Cap it at a short, codepoint-safe
+/// prefix (slice by chars, never by byte index) so the error stays a hint, not
+/// a screen-filling dump.
+fn truncate_raw(s: &str) -> String {
+    const MAX: usize = 200;
+    let mut out: String = s.chars().take(MAX).collect();
+    if s.chars().count() > MAX {
+        out.push('…');
+    }
+    out
+}
+
 fn parse_ai_result(content_text: &str) -> Result<AiRecognizeResult, String> {
     // Extract JSON from response
     let json_str = if let Some(start) = content_text.find('{') {
@@ -163,17 +179,24 @@ fn parse_ai_result(content_text: &str) -> Result<AiRecognizeResult, String> {
                     }
                     if let Some(s) = val.as_str() {
                         if s.len() > 10 && s.contains('T') {
-                            *val = serde_json::Value::String(s[..10].to_string());
+                            // Keep the leading date (YYYY-MM-DD) but slice by
+                            // codepoints, never by byte index: a byte-index slice
+                            // panics when byte 10 lands mid-UTF-8 (bug #1 latent
+                            // panic on multi-byte model output).
+                            let date: String = s.chars().take(10).collect();
+                            *val = serde_json::Value::String(date);
                         }
                     }
                 }
             }
-            serde_json::from_value(v)
-                .map_err(|e| format!("Cannot parse AI response: {} — raw: {}", e, json_str))
+            serde_json::from_value(v).map_err(|e| {
+                format!("Cannot parse AI response: {} — raw: {}", e, truncate_raw(&json_str))
+            })
         }
         Err(e) => Err(format!(
             "Cannot parse AI response: {} — raw: {}",
-            e, json_str
+            e,
+            truncate_raw(&json_str)
         )),
     }
 }
