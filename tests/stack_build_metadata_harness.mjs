@@ -15,7 +15,7 @@ const tauri = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
 
 console.log('# Stack v1 Stage 4 build metadata contract');
 ok(html.includes("component: 'Seafarer'"), 'one UI build-metadata input names Seafarer');
-ok(html.includes("component_version: '0.4.183'"), 'build-metadata input carries component version 0.4.183');
+ok(html.includes("component_version: '0.4.185'"), 'build-metadata input carries component version 0.4.185');
 ok(html.includes("stack_id: 'SKIPI-2026.08-R1'"), 'build-metadata input carries Stack ID');
 ok(html.includes("source_identifier: 'unknown'"), 'source identifier starts honest and is not a candidate SHA literal');
 ok(html.includes('function setBuildMetadata(info)'), 'runtime build metadata is accepted through one input function');
@@ -32,9 +32,9 @@ ok(rust.includes('pub stack_id: String'), 'native build metadata includes Stack 
 ok(rust.includes('pub source_identifier: String'), 'native build metadata includes source identifier');
 ok(rust.includes('pub verification_status: String'), 'native build metadata includes honest verification status');
 
-ok(cargo.includes('version = "0.4.183"'), 'Cargo package version is 0.4.183');
-ok(lock.includes('name = "skipi"\nversion = "0.4.183"'), 'Cargo lock root package version is 0.4.183');
-ok(tauri.version === '0.4.183', 'Tauri component version is 0.4.183');
+ok(cargo.includes('version = "0.4.185"'), 'Cargo package version is 0.4.185');
+ok(lock.includes('name = "skipi"\nversion = "0.4.185"'), 'Cargo lock root package version is 0.4.185');
+ok(tauri.version === '0.4.185', 'Tauri component version is 0.4.185');
 ok(tauri.identifier === 'app.skipi.desktop', 'desktop app identity is preserved');
 
 console.log(`ALL GREEN: ${passed} Stack build-metadata checks passed`);
