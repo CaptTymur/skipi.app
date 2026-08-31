@@ -84,30 +84,30 @@ for (const [cmd, flags] of Object.entries(WHITELIST)) {
 }
 
 // ---------------------------------------------------------------------------
-// 2. assistant_chat non-blocking contract (№140, 2026-08-16).
+// 2. Non-blocking command contract:
+//    - assistant_chat (№140, 2026-08-16, src-tauri/src/commands/assistant.rs)
+//    - app_login / app_logout (№162, 2026-08-31, App Review 2.1(a) reject:
+//      reviewer's login POST never left the device — same defect class,
+//      src-tauri/src/commands/app_login.rs)
 //
-// Bug: `assistant_chat` was a synchronous #[tauri::command] doing
-// reqwest::blocking HTTP (timeout 70s). Tauri v2 runs non-async commands on
-// the main thread, so sending a chat message froze the entire webview until
-// the reply arrived. The vault conn mutex was also held across the whole
-// network exchange (profile + key + chat + 401 retry), which would freeze
-// every other vault command even after the command went async.
+// Bug class: a synchronous #[tauri::command] doing reqwest::blocking HTTP.
+// Tauri v2 runs non-async commands on the main thread, so the whole webview
+// froze until the reply arrived. The vault conn mutex was also held across
+// the whole network exchange, which would freeze every other vault command
+// even after the command went async.
 //
-// Contract locked here (mechanical, source-level, on src-tauri/src/commands/assistant.rs):
-//   C1.  assistant_chat is declared `#[tauri::command] pub async fn`.
-//   C1b. assistant.rs delegates blocking work via tauri::async_runtime::spawn_blocking.
-//   C2.  in every fn of assistant.rs that takes the conn lock, network tokens
-//        (ensure_key / post_authed / post_json / .send) appear ONLY inside
-//        spawn_blocking closures — never on the command's direct path.
+// Contract locked here (mechanical, source-level, per file):
+//   C1.  each listed command is declared `#[tauri::command] pub async fn`.
+//   C1b. the file delegates blocking work via tauri::async_runtime::spawn_blocking.
+//   C2.  in every fn of the file that takes the conn lock, network tokens
+//        appear ONLY inside spawn_blocking closures — never on the command's
+//        direct path.
 //   C3.  no spawn_blocking closure touches state.conn / the conn lock
 //        (network work never runs while holding the vault lock).
 //   C4.  every conn.lock() sits in an innermost brace block that does not
 //        contain spawn_blocking (guard scope closes before the blocking task).
 // Limitations: literal/comment stripping is heuristic (no raw strings in the
-// file); this is a source contract, not a runtime scheduler test.
-
-const asstPath = join(root, 'src-tauri', 'src', 'commands', 'assistant.rs');
-const asstRaw = readFileSync(asstPath, 'utf8');
+// files); this is a source contract, not a runtime scheduler test.
 
 // Blank out string/char literals and comments (length-preserving) so brace
 // and paren matching is not confused by braces inside text.
@@ -157,8 +157,6 @@ function blankLiterals(sr) {
   return out;
 }
 
-const asst = blankLiterals(asstRaw);
-
 function matchDelim(s, openIdx, open, close) {
   let depth = 0;
   for (let i = openIdx; i < s.length; i++) {
@@ -171,92 +169,123 @@ function matchDelim(s, openIdx, open, close) {
   return -1;
 }
 
-// fn spans (all fns in assistant.rs are top-level; signatures contain no braces).
-const fnSpans = [];
-for (const m of asst.matchAll(/(?:pub(?:\(crate\))?\s+)?(?:async\s+)?fn\s+([A-Za-z0-9_]+)/g)) {
-  const open = asst.indexOf('{', m.index);
-  if (open === -1) continue;
-  const close = matchDelim(asst, open, '{', '}');
-  if (close === -1) continue;
-  fnSpans.push({ name: m[1], open, close });
-}
+// One non-blocking contract check per file. `asyncCommands` = the #[tauri::command]
+// fns that must be async; `netRe` = the file's network tokens (fn calls / .send)
+// that must only ever run inside spawn_blocking when a fn also takes the conn lock.
+function checkNonBlockingContract({ file, asyncCommands, netRe, bugRef }) {
+  const src = blankLiterals(
+    readFileSync(join(root, 'src-tauri', 'src', 'commands', file), 'utf8')
+  );
 
-// spawn_blocking(...) call spans.
-const spawnSpans = [];
-for (const m of asst.matchAll(/spawn_blocking/g)) {
-  const open = asst.indexOf('(', m.index);
-  if (open === -1) continue;
-  const close = matchDelim(asst, open, '(', ')');
-  if (close === -1) continue;
-  spawnSpans.push({ open, close });
-}
-const inSpawn = (idx) => spawnSpans.some((s) => idx > s.open && idx < s.close);
+  // fn spans (all fns in these files are top-level; signatures contain no braces).
+  const fnSpans = [];
+  for (const m of src.matchAll(/(?:pub(?:\(crate\))?\s+)?(?:async\s+)?fn\s+([A-Za-z0-9_]+)/g)) {
+    const open = src.indexOf('{', m.index);
+    if (open === -1) continue;
+    const close = matchDelim(src, open, '{', '}');
+    if (close === -1) continue;
+    fnSpans.push({ name: m[1], open, close });
+  }
 
-// C1: command must be async.
-if (!/#\[tauri::command\]\s*pub\s+async\s+fn\s+assistant_chat\b/.test(asst)) {
-  console.error('FAIL: assistant_chat is not `#[tauri::command] pub async fn` — a sync command runs on the main thread and freezes the webview for the whole HTTP round-trip (№140).');
-  fail = 1;
-} else {
-  console.log('OK: assistant_chat is an async #[tauri::command].');
-}
+  // spawn_blocking(...) call spans.
+  const spawnSpans = [];
+  for (const m of src.matchAll(/spawn_blocking/g)) {
+    const open = src.indexOf('(', m.index);
+    if (open === -1) continue;
+    const close = matchDelim(src, open, '(', ')');
+    if (close === -1) continue;
+    spawnSpans.push({ open, close });
+  }
+  const inSpawn = (idx) => spawnSpans.some((s) => idx > s.open && idx < s.close);
 
-// C1b: blocking work must be delegated off the async runtime.
-if (spawnSpans.length === 0) {
-  console.error('FAIL: assistant.rs never uses tauri::async_runtime::spawn_blocking — blocking reqwest HTTP would run on the main thread / async runtime (№140).');
-  fail = 1;
-} else {
-  console.log(`OK: assistant.rs delegates blocking work via spawn_blocking (${spawnSpans.length} task(s)).`);
-}
+  let localFail = 0;
 
-// C2: in lock-taking fns, network tokens only inside spawn_blocking closures.
-const netRe = /(?:\bensure_key|\bpost_authed|\bpost_json|\.send)\s*\(/g;
-for (const f of fnSpans) {
-  const body = asst.slice(f.open, f.close + 1);
-  if (!body.includes('.conn.lock(')) continue;
-  for (const m of body.matchAll(netRe)) {
-    const abs = f.open + m.index;
-    if (!inSpawn(abs)) {
-      console.error(`FAIL: fn ${f.name} takes the conn lock and calls network token '${m[0].trim()}' outside spawn_blocking — HTTP on the command's direct path (№140).`);
-      fail = 1;
+  // C1: each listed command must be async.
+  for (const cmd of asyncCommands) {
+    const re = new RegExp(`#\\[tauri::command\\]\\s*pub\\s+async\\s+fn\\s+${cmd}\\b`);
+    if (!re.test(src)) {
+      console.error(`FAIL: ${cmd} is not \`#[tauri::command] pub async fn\` — a sync command runs on the main thread and freezes the webview for the whole HTTP round-trip (${bugRef}).`);
+      localFail = 1;
+    } else {
+      console.log(`OK: ${cmd} is an async #[tauri::command].`);
     }
   }
-}
 
-// C3: no spawn_blocking closure touches the conn lock.
-for (const s of spawnSpans) {
-  const t = asst.slice(s.open, s.close + 1);
-  if (t.includes('.conn.lock(') || t.includes('state.conn')) {
-    console.error('FAIL: a spawn_blocking closure touches state.conn / the conn lock — network task would hold the vault lock (№140).');
-    fail = 1;
+  // C1b: blocking work must be delegated off the async runtime.
+  if (spawnSpans.length === 0) {
+    console.error(`FAIL: ${file} never uses tauri::async_runtime::spawn_blocking — blocking reqwest HTTP would run on the main thread / async runtime (${bugRef}).`);
+    localFail = 1;
+  } else {
+    console.log(`OK: ${file} delegates blocking work via spawn_blocking (${spawnSpans.length} task(s)).`);
   }
-}
 
-// C4: each conn.lock() lives in an innermost brace block without spawn_blocking.
-const bracePairs = [];
-{
-  const stack = [];
-  for (let i = 0; i < asst.length; i++) {
-    if (asst[i] === '{') stack.push(i);
-    else if (asst[i] === '}') {
-      const o = stack.pop();
-      if (o !== undefined) bracePairs.push([o, i]);
+  // C2: in lock-taking fns, network tokens only inside spawn_blocking closures.
+  for (const f of fnSpans) {
+    const body = src.slice(f.open, f.close + 1);
+    if (!body.includes('.conn.lock(')) continue;
+    for (const m of body.matchAll(netRe)) {
+      const abs = f.open + m.index;
+      if (!inSpawn(abs)) {
+        console.error(`FAIL: fn ${f.name} takes the conn lock and calls network token '${m[0].trim()}' outside spawn_blocking — HTTP on the command's direct path (${bugRef}).`);
+        localFail = 1;
+      }
     }
   }
-}
-for (const m of asst.matchAll(/\.conn\.lock\(/g)) {
-  let best = null;
-  for (const [o, c] of bracePairs) {
-    if (o < m.index && m.index < c && (best === null || c - o < best[1] - best[0])) best = [o, c];
+
+  // C3: no spawn_blocking closure touches the conn lock.
+  for (const s of spawnSpans) {
+    const t = src.slice(s.open, s.close + 1);
+    if (t.includes('.conn.lock(') || t.includes('state.conn')) {
+      console.error(`FAIL: a spawn_blocking closure in ${file} touches state.conn / the conn lock — network task would hold the vault lock (${bugRef}).`);
+      localFail = 1;
+    }
   }
-  if (best && asst.slice(best[0], best[1]).includes('spawn_blocking')) {
-    console.error('FAIL: a conn.lock() guard scope encloses spawn_blocking — the vault lock would be held across the blocking network task (№140).');
-    fail = 1;
+
+  // C4: each conn.lock() lives in an innermost brace block without spawn_blocking.
+  const bracePairs = [];
+  {
+    const stack = [];
+    for (let i = 0; i < src.length; i++) {
+      if (src[i] === '{') stack.push(i);
+      else if (src[i] === '}') {
+        const o = stack.pop();
+        if (o !== undefined) bracePairs.push([o, i]);
+      }
+    }
   }
+  for (const m of src.matchAll(/\.conn\.lock\(/g)) {
+    let best = null;
+    for (const [o, c] of bracePairs) {
+      if (o < m.index && m.index < c && (best === null || c - o < best[1] - best[0])) best = [o, c];
+    }
+    if (best && src.slice(best[0], best[1]).includes('spawn_blocking')) {
+      console.error(`FAIL: a conn.lock() guard scope in ${file} encloses spawn_blocking — the vault lock would be held across the blocking network task (${bugRef}).`);
+      localFail = 1;
+    }
+  }
+
+  if (!localFail) {
+    console.log(`OK: ${file} non-blocking contract holds (async command(s), HTTP only in spawn_blocking, conn lock never held across network).`);
+  }
+  return localFail;
 }
 
-if (!fail) {
-  console.log('OK: assistant_chat non-blocking contract holds (async command, HTTP only in spawn_blocking, conn lock never held across network).');
-}
+fail |= checkNonBlockingContract({
+  file: 'assistant.rs',
+  asyncCommands: ['assistant_chat'],
+  netRe: /(?:\bensure_key|\bpost_authed|\bpost_json|\.send)\s*\(/g,
+  bugRef: '№140',
+});
+
+// №162 (App Review 2.1(a), 2026-08-31): app_login held the vault lock across a
+// blocking login POST (15s timeout) on the main thread — the reviewer's login
+// never reached the network. app_login_status stays sync ON PURPOSE (no HTTP).
+fail |= checkNonBlockingContract({
+  file: 'app_login.rs',
+  asyncCommands: ['app_login', 'app_logout'],
+  netRe: /(?:\bpost_app_login|\bpost_app_logout|\.send)\s*\(/g,
+  bugRef: '№162',
+});
 
 if (fail) {
   console.error('\n>>> A user-reachable UI path invokes a Tauri command with no Rust definition — it throws.');

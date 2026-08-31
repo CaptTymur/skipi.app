@@ -33,6 +33,9 @@ pub(crate) const USER_TOKEN_KEY: &str = "skipi_user_token";
 pub(crate) const USER_EMAIL_KEY: &str = "skipi_user_email";
 pub(crate) const USER_LOGIN_AT_KEY: &str = "skipi_user_login_at";
 
+/// Blocking HTTP client with the login timeouts. Must only be built and used
+/// inside `spawn_blocking` tasks: a `reqwest::blocking` client on the async
+/// runtime (or the main thread) blocks/panics — that was bug class №140/№162.
 fn http_client() -> Result<reqwest::blocking::Client, String> {
     reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
@@ -156,9 +159,17 @@ pub fn app_login_status(state: State<AppState>) -> Result<Value, String> {
 
 /// Log in with email+password against assistant.skipi.app, store the returned
 /// bearer token in the vault. First login requires network.
+///
+/// Async command (№162, App Review 2.1(a) reject 29.08; same defect class as
+/// №140 assistant_chat, fixed mirroring efa5d2f): the old sync version ran on
+/// the main thread AND held the vault conn mutex across a blocking login POST
+/// (15s timeout) — the reviewer's login never even left the device. Now the
+/// vault lock is only taken in short-lived scopes (open-vault check before,
+/// token store after); the HTTP round-trip runs in `spawn_blocking` with no
+/// lock held.
 #[tauri::command]
-pub fn app_login(
-    state: State<AppState>,
+pub async fn app_login(
+    state: State<'_, AppState>,
     email: String,
     password: String,
 ) -> Result<Value, String> {
@@ -166,37 +177,68 @@ pub fn app_login(
     if email.is_empty() || password.is_empty() {
         return Err("Enter your email and password.".to_string());
     }
-    let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
-    let conn = lock.as_ref().ok_or("No vault open")?;
-    let client = http_client()?;
-    let label = format!("Skipi app ({})", std::env::consts::OS);
-    let ok = post_app_login(&assistant_api_base(), &client, &email, &password, &label)?;
+    // Short-lived lock: fail fast with the same "No vault open" error BEFORE
+    // any network I/O; the guard scope closes before the blocking task.
+    {
+        let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+        lock.as_ref().ok_or("No vault open")?;
+    }
+    let ok = {
+        let email = email.clone();
+        tauri::async_runtime::spawn_blocking(move || -> Result<AppLoginOk, String> {
+            let client = http_client()?;
+            let label = format!("Skipi app ({})", std::env::consts::OS);
+            post_app_login(&assistant_api_base(), &client, &email, &password, &label)
+        })
+        .await
+        .map_err(|e| format!("app login task failed: {}", e))??
+    };
     // Per-app role gate (DECISIONS 59/60): reject foreign roles BEFORE storing
     // the token, so a rejected broker/crewing account never unlocks the shell
     // and no token is persisted (the login gate stays shown).
     seafarer_role_allowed(ok.role.as_deref())?;
     let token = ok.token;
-    db::set_vault_info(conn, USER_TOKEN_KEY, &token).map_err(|e| e.to_string())?;
-    db::set_vault_info(conn, USER_EMAIL_KEY, &email).map_err(|e| e.to_string())?;
-    db::set_vault_info(conn, USER_LOGIN_AT_KEY, &chrono::Utc::now().to_rfc3339())
-        .map_err(|e| e.to_string())?;
+    {
+        let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = lock.as_ref().ok_or("No vault open")?;
+        db::set_vault_info(conn, USER_TOKEN_KEY, &token).map_err(|e| e.to_string())?;
+        db::set_vault_info(conn, USER_EMAIL_KEY, &email).map_err(|e| e.to_string())?;
+        db::set_vault_info(conn, USER_LOGIN_AT_KEY, &chrono::Utc::now().to_rfc3339())
+            .map_err(|e| e.to_string())?;
+    }
     Ok(json!({"logged_in": true, "email": email}))
 }
 
 /// Log out: best-effort server-side revoke of the token, then clear it
 /// locally. Vault DATA is untouched — the gate is on access, not on data.
+///
+/// Async command (№162, same pattern as app_login): token read and local
+/// clear happen under short-lived vault locks; the best-effort revoke POST
+/// runs in `spawn_blocking` with no lock held.
 #[tauri::command]
-pub fn app_logout(state: State<AppState>) -> Result<Value, String> {
-    let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
-    let conn = lock.as_ref().ok_or("No vault open")?;
-    if let Some(token) = stored_user_token(conn) {
-        // Best-effort revoke; ignore network errors (we still clear locally).
-        if let Ok(client) = http_client() {
-            post_app_logout(&assistant_api_base(), &client, &token);
-        }
+pub async fn app_logout(state: State<'_, AppState>) -> Result<Value, String> {
+    // Short-lived lock: read the stored token; released before any network.
+    let token = {
+        let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = lock.as_ref().ok_or("No vault open")?;
+        stored_user_token(conn)
+    };
+    if let Some(token) = token {
+        // Best-effort revoke; ignore network errors AND task-join errors
+        // (we still clear locally either way).
+        let _ = tauri::async_runtime::spawn_blocking(move || {
+            if let Ok(client) = http_client() {
+                post_app_logout(&assistant_api_base(), &client, &token);
+            }
+        })
+        .await;
     }
-    for key in [USER_TOKEN_KEY, USER_EMAIL_KEY, USER_LOGIN_AT_KEY] {
-        db::set_vault_info(conn, key, "").map_err(|e| e.to_string())?;
+    {
+        let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = lock.as_ref().ok_or("No vault open")?;
+        for key in [USER_TOKEN_KEY, USER_EMAIL_KEY, USER_LOGIN_AT_KEY] {
+            db::set_vault_info(conn, key, "").map_err(|e| e.to_string())?;
+        }
     }
     Ok(json!({"logged_in": false}))
 }
