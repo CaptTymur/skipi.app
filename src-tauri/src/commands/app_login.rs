@@ -20,6 +20,8 @@
 //! boundary — it is a plain SQLite file (0644 perms) on the local filesystem;
 //! the boundary is the local filesystem / OS user account, not cryptography.
 
+use std::sync::Mutex;
+
 use rusqlite::Connection;
 use serde_json::{json, Value};
 use tauri::State;
@@ -32,6 +34,78 @@ use crate::AppState;
 pub(crate) const USER_TOKEN_KEY: &str = "skipi_user_token";
 pub(crate) const USER_EMAIL_KEY: &str = "skipi_user_email";
 pub(crate) const USER_LOGIN_AT_KEY: &str = "skipi_user_login_at";
+
+/// Login accepted BEFORE any vault exists (№162b, App Review 2.1(a) reject №2,
+/// 2026-09-02 «we had no option to log in»). The durable store for the token
+/// stays the vault (`vault_info`, plaintext, see above) — but on a fresh
+/// install the login gate is now the FIRST screen, ahead of the profile wizard
+/// that creates the first vault, so at sign-in time there is no vault to
+/// write into yet. The accepted login is parked here and persisted into the
+/// first vault that opens (`app_login_status` → `persist_pending_login`).
+/// Process-scoped: lost on app restart — the user simply signs in again (the
+/// gate stays fail-closed; nothing is weakened).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PendingLogin {
+    pub token: String,
+    pub email: String,
+    pub login_at: String,
+}
+
+pub(crate) type PendingLoginSlot = Mutex<Option<PendingLogin>>;
+
+/// Write the three login keys into the open vault.
+fn write_login(conn: &Connection, token: &str, email: &str, login_at: &str) -> Result<(), String> {
+    db::set_vault_info(conn, USER_TOKEN_KEY, token).map_err(|e| e.to_string())?;
+    db::set_vault_info(conn, USER_EMAIL_KEY, email).map_err(|e| e.to_string())?;
+    db::set_vault_info(conn, USER_LOGIN_AT_KEY, login_at).map_err(|e| e.to_string())
+}
+
+/// Move a parked pre-vault login into the open vault. Returns Ok(true) when
+/// the pending login was written. A token already stored in the vault wins
+/// (the vault is the authoritative store); the slot is cleared either way so
+/// a stale pre-vault login can never leak into a later vault.
+pub(crate) fn persist_pending_login(
+    conn: &Connection,
+    slot: &PendingLoginSlot,
+) -> Result<bool, String> {
+    let pending = slot.lock().unwrap_or_else(|e| e.into_inner()).take();
+    let pending = match pending {
+        Some(p) => p,
+        None => return Ok(false),
+    };
+    if stored_user_token(conn).is_some() {
+        return Ok(false);
+    }
+    write_login(conn, &pending.token, &pending.email, &pending.login_at)?;
+    Ok(true)
+}
+
+/// Login status as seen by the startup gate. With an open vault the vault
+/// token is authoritative (a parked login is persisted first). Without a
+/// vault (fresh install, gate-first screen) only a parked login counts —
+/// fail-closed: no login → `logged_in: false`, never an error.
+fn login_status_json(conn: Option<&Connection>, slot: &PendingLoginSlot) -> Result<Value, String> {
+    match conn {
+        Some(conn) => {
+            persist_pending_login(conn, slot)?;
+            Ok(json!({
+                "logged_in": stored_user_token(conn).is_some(),
+                "email": db::get_vault_info_value(conn, USER_EMAIL_KEY).unwrap_or_default(),
+                "login_at": db::get_vault_info_value(conn, USER_LOGIN_AT_KEY).unwrap_or_default(),
+                "pending": false,
+            }))
+        }
+        None => {
+            let parked = slot.lock().unwrap_or_else(|e| e.into_inner());
+            Ok(json!({
+                "logged_in": parked.is_some(),
+                "email": parked.as_ref().map(|p| p.email.clone()).unwrap_or_default(),
+                "login_at": parked.as_ref().map(|p| p.login_at.clone()).unwrap_or_default(),
+                "pending": parked.is_some(),
+            }))
+        }
+    }
+}
 
 /// Blocking HTTP client with the login timeouts. Must only be built and used
 /// inside `spawn_blocking` tasks: a `reqwest::blocking` client on the async
@@ -143,22 +217,22 @@ fn post_app_logout(base: &str, client: &reqwest::blocking::Client, token: &str) 
 
 // ── Tauri commands (explicit user actions only) ─────────────────────────
 
-/// True when a cached login token exists in the open vault. Used by the
-/// startup gate to decide whether to block the shell. Does NOT hit the
-/// network — a cached token allows opening the app offline.
+/// True when a cached login token exists in the open vault — or, with no
+/// vault open yet (fresh install), when a login was accepted on the
+/// gate-first screen (№162b; persisted into the first vault that opens).
+/// Used by the startup gate to decide whether to block the shell. Does NOT
+/// hit the network — a cached token allows opening the app offline. Never
+/// errors on "no vault": answers fail-closed instead.
 #[tauri::command]
 pub fn app_login_status(state: State<AppState>) -> Result<Value, String> {
     let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
-    let conn = lock.as_ref().ok_or("No vault open")?;
-    Ok(json!({
-        "logged_in": stored_user_token(conn).is_some(),
-        "email": db::get_vault_info_value(conn, USER_EMAIL_KEY).unwrap_or_default(),
-        "login_at": db::get_vault_info_value(conn, USER_LOGIN_AT_KEY).unwrap_or_default(),
-    }))
+    login_status_json(lock.as_ref(), &state.login_pending)
 }
 
 /// Log in with email+password against assistant.skipi.app, store the returned
-/// bearer token in the vault. First login requires network.
+/// bearer token in the vault — or, when no vault is open yet (fresh install,
+/// gate-first screen, №162b), park it in `AppState::login_pending` until the
+/// first vault opens. First login requires network.
 ///
 /// Async command (№162, App Review 2.1(a) reject 29.08; same defect class as
 /// №140 assistant_chat, fixed mirroring efa5d2f): the old sync version ran on
@@ -177,12 +251,6 @@ pub async fn app_login(
     if email.is_empty() || password.is_empty() {
         return Err("Enter your email and password.".to_string());
     }
-    // Short-lived lock: fail fast with the same "No vault open" error BEFORE
-    // any network I/O; the guard scope closes before the blocking task.
-    {
-        let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
-        lock.as_ref().ok_or("No vault open")?;
-    }
     let ok = {
         let email = email.clone();
         tauri::async_runtime::spawn_blocking(move || -> Result<AppLoginOk, String> {
@@ -198,15 +266,28 @@ pub async fn app_login(
     // and no token is persisted (the login gate stays shown).
     seafarer_role_allowed(ok.role.as_deref())?;
     let token = ok.token;
-    {
+    let login_at = chrono::Utc::now().to_rfc3339();
+    // Short-lived lock (no network inside): vault open → store now; no vault
+    // yet → park until the first vault opens (persisted by app_login_status).
+    let pending = {
         let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
-        let conn = lock.as_ref().ok_or("No vault open")?;
-        db::set_vault_info(conn, USER_TOKEN_KEY, &token).map_err(|e| e.to_string())?;
-        db::set_vault_info(conn, USER_EMAIL_KEY, &email).map_err(|e| e.to_string())?;
-        db::set_vault_info(conn, USER_LOGIN_AT_KEY, &chrono::Utc::now().to_rfc3339())
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(json!({"logged_in": true, "email": email}))
+        match lock.as_ref() {
+            Some(conn) => {
+                write_login(conn, &token, &email, &login_at)?;
+                false
+            }
+            None => {
+                *state.login_pending.lock().unwrap_or_else(|e| e.into_inner()) =
+                    Some(PendingLogin {
+                        token,
+                        email: email.clone(),
+                        login_at,
+                    });
+                true
+            }
+        }
+    };
+    Ok(json!({"logged_in": true, "email": email, "pending": pending}))
 }
 
 /// Log out: best-effort server-side revoke of the token, then clear it
@@ -217,11 +298,19 @@ pub async fn app_login(
 /// runs in `spawn_blocking` with no lock held.
 #[tauri::command]
 pub async fn app_logout(state: State<'_, AppState>) -> Result<Value, String> {
-    // Short-lived lock: read the stored token; released before any network.
+    // Short-lived lock: read the stored token (vault, or the parked pre-vault
+    // login when no vault is open); released before any network.
     let token = {
         let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
-        let conn = lock.as_ref().ok_or("No vault open")?;
-        stored_user_token(conn)
+        match lock.as_ref() {
+            Some(conn) => stored_user_token(conn),
+            None => state
+                .login_pending
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_ref()
+                .map(|p| p.token.clone()),
+        }
     };
     if let Some(token) = token {
         // Best-effort revoke; ignore network errors AND task-join errors
@@ -235,10 +324,121 @@ pub async fn app_logout(state: State<'_, AppState>) -> Result<Value, String> {
     }
     {
         let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
-        let conn = lock.as_ref().ok_or("No vault open")?;
-        for key in [USER_TOKEN_KEY, USER_EMAIL_KEY, USER_LOGIN_AT_KEY] {
-            db::set_vault_info(conn, key, "").map_err(|e| e.to_string())?;
+        if let Some(conn) = lock.as_ref() {
+            for key in [USER_TOKEN_KEY, USER_EMAIL_KEY, USER_LOGIN_AT_KEY] {
+                db::set_vault_info(conn, key, "").map_err(|e| e.to_string())?;
+            }
         }
+        *state.login_pending.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
     Ok(json!({"logged_in": false}))
+}
+
+#[cfg(test)]
+mod tests {
+    //! №162b regression: a login accepted before the first vault exists must
+    //! (1) count as logged-in for the gate, (2) land in the first vault that
+    //! opens, (3) never override or leak past a token the vault already has.
+    use super::*;
+    use std::{env, fs, path::PathBuf};
+    use uuid::Uuid;
+
+    fn temp_vault() -> (PathBuf, Connection) {
+        let path = env::temp_dir().join(format!("skipi-login-gate-{}", Uuid::new_v4()));
+        fs::create_dir_all(&path).unwrap();
+        let conn = db::open_db(&path).unwrap();
+        (path, conn)
+    }
+
+    fn parked(token: &str) -> PendingLogin {
+        PendingLogin {
+            token: token.to_string(),
+            email: "reviewer@example.com".to_string(),
+            login_at: "2026-09-02T00:00:00+00:00".to_string(),
+        }
+    }
+
+    #[test]
+    fn status_without_vault_is_fail_closed_until_a_login_is_parked() {
+        let slot: PendingLoginSlot = Mutex::new(None);
+        let st = login_status_json(None, &slot).unwrap();
+        assert_eq!(st["logged_in"], false, "no vault + no login → gate stays up");
+        assert_eq!(st["pending"], false);
+
+        *slot.lock().unwrap() = Some(parked("tok-1"));
+        let st = login_status_json(None, &slot).unwrap();
+        assert_eq!(st["logged_in"], true, "pre-vault login counts for the gate");
+        assert_eq!(st["pending"], true);
+        assert_eq!(st["email"], "reviewer@example.com");
+        assert!(slot.lock().unwrap().is_some(), "nothing to persist into yet — slot kept");
+    }
+
+    #[test]
+    fn parked_login_is_persisted_into_the_first_opened_vault() {
+        let (path, conn) = temp_vault();
+        let slot: PendingLoginSlot = Mutex::new(Some(parked("tok-2")));
+        assert!(stored_user_token(&conn).is_none());
+
+        assert!(persist_pending_login(&conn, &slot).unwrap());
+        assert_eq!(stored_user_token(&conn).as_deref(), Some("tok-2"));
+        assert_eq!(
+            db::get_vault_info_value(&conn, USER_EMAIL_KEY).as_deref(),
+            Some("reviewer@example.com")
+        );
+        assert_eq!(
+            db::get_vault_info_value(&conn, USER_LOGIN_AT_KEY).as_deref(),
+            Some("2026-09-02T00:00:00+00:00")
+        );
+        assert!(slot.lock().unwrap().is_none(), "slot cleared once persisted");
+
+        let st = login_status_json(Some(&conn), &slot).unwrap();
+        assert_eq!(st["logged_in"], true);
+        assert_eq!(st["pending"], false, "vault token is now authoritative");
+
+        drop(conn);
+        let _ = fs::remove_dir_all(&path);
+    }
+
+    #[test]
+    fn status_with_vault_persists_a_parked_login_on_first_call() {
+        let (path, conn) = temp_vault();
+        let slot: PendingLoginSlot = Mutex::new(Some(parked("tok-3")));
+
+        let st = login_status_json(Some(&conn), &slot).unwrap();
+        assert_eq!(st["logged_in"], true);
+        assert_eq!(stored_user_token(&conn).as_deref(), Some("tok-3"));
+        assert!(slot.lock().unwrap().is_none());
+
+        drop(conn);
+        let _ = fs::remove_dir_all(&path);
+    }
+
+    #[test]
+    fn vault_token_wins_and_a_stale_parked_login_never_leaks() {
+        let (path, conn) = temp_vault();
+        write_login(&conn, "vault-tok", "owner@example.com", "2026-01-01T00:00:00+00:00").unwrap();
+        let slot: PendingLoginSlot = Mutex::new(Some(parked("stale")));
+
+        assert!(!persist_pending_login(&conn, &slot).unwrap());
+        assert_eq!(stored_user_token(&conn).as_deref(), Some("vault-tok"));
+        assert_eq!(
+            db::get_vault_info_value(&conn, USER_EMAIL_KEY).as_deref(),
+            Some("owner@example.com")
+        );
+        assert!(slot.lock().unwrap().is_none(), "stale pre-vault login discarded");
+
+        drop(conn);
+        let _ = fs::remove_dir_all(&path);
+    }
+
+    #[test]
+    fn empty_vault_without_parked_login_stays_gated() {
+        let (path, conn) = temp_vault();
+        let slot: PendingLoginSlot = Mutex::new(None);
+        let st = login_status_json(Some(&conn), &slot).unwrap();
+        assert_eq!(st["logged_in"], false);
+        assert!(stored_user_token(&conn).is_none());
+        drop(conn);
+        let _ = fs::remove_dir_all(&path);
+    }
 }

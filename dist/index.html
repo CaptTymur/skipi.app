@@ -3651,6 +3651,26 @@ async function init() {
             }
         }
     }catch(e){err('Init:'+e);}
+    // Check for updates even without a vault open
+    setTimeout(function(){checkForUpdate(true);},3000);
+    // No vault could be opened (fresh install, or a remembered vault that no
+    // longer opens). HARD LOGIN GATE FIRST (№117 + №162b, App Review 2.1(a)
+    // reject №2 2026-09-02 «we had no option to log in»): the gate used to be
+    // raised only from loadVault(), i.e. only AFTER the user had created a
+    // vault through the profile wizard or opened the demo — so a fresh install
+    // landed on the wizard with no Sign in anywhere. The gate is now the first
+    // screen; a login accepted here is parked by the backend and persisted
+    // into the first vault that opens (app_login_status).
+    if(!(await _hasLoginToken())){
+        _loginGatePending=null;
+        _loginGateNext=function(){ initNoVaultLanding(hadVaultPath); };
+        showLoginGate();
+        return;
+    }
+    initNoVaultLanding(hadVaultPath);
+}
+// Startup landing when no vault could be opened (runs only once signed in).
+function initNoVaultLanding(hadVaultPath){
     // No vault opened. On a mobile fresh install, lead the user directly into
     // the seafarer profile wizard: department → vessel type → rank → profile
     // fields. If a previous vault path existed but could not reopen, show the
@@ -3661,8 +3681,6 @@ async function init() {
     }else{
         showWelcome();
     }
-    // Check for updates even without a vault open
-    setTimeout(function(){checkForUpdate(true);},3000);
     // No vault is open yet. Do not touch the jobs board here: network polling
     // starts only after a seafarer vault is opened and "Ready for offers" is on.
 }
@@ -8729,6 +8747,7 @@ async function browseExistingVault(){
 // offline (only the FIRST login needs network). Logout clears the token but
 // NEVER wipes vault data (gate is on access, not on data).
 var _loginGatePending = null; // vault info to resume after successful login
+var _loginGateNext = null; // continuation after a pre-vault login (fresh install → welcome / profile wizard)
 function _lgTxt(){
     var ru=false; try{ ru=getUiLang()==='ru'; }catch(e){}
     return ru ? {
@@ -8780,7 +8799,9 @@ async function doAppLogin(){
         var pwEl=document.getElementById('lg-password');if(pwEl)pwEl.value='';
         hideLoginGate();
         var resume=_loginGatePending;_loginGatePending=null;
+        var next=_loginGateNext;_loginGateNext=null;
         if(resume){ await loadVault(resume); }
+        else if(next){ await next(); }
     }catch(e){
         _lgError(String(e||'Login failed'));
     }finally{
@@ -8797,6 +8818,10 @@ async function appLogoutToGate(){
     // re-open below fails: hide the shell and raise the gate unconditionally
     // FIRST, so no app content ever stays on screen. Vault data is untouched.
     try{ hide('scr-content'); hide('left-panel'); }catch(e){}
+    // If the vault below cannot be re-bound, the next sign-in lands on the
+    // welcome screen instead of a blank shell (№162b continuation).
+    _loginGatePending=null;
+    _loginGateNext=function(){ initNoVaultLanding(true); };
     showLoginGate();
     // Happy path: re-run the startup gate so it re-binds the current vault
     // context (loadVault re-hides the shell + shows the gate too). Any failure

@@ -17,6 +17,9 @@ use std::sync::Mutex;
 pub(crate) struct AppState {
     pub conn: Mutex<Option<Connection>>,
     pub vault_path: Mutex<Option<PathBuf>>,
+    /// Login accepted before the first vault exists (№162b): parked here until
+    /// the first vault opens, then persisted into that vault's `vault_info`.
+    pub login_pending: Mutex<Option<commands::app_login::PendingLogin>>,
 }
 
 pub(crate) fn config_path() -> PathBuf {
@@ -108,6 +111,7 @@ pub fn run() {
         .manage(AppState {
             conn: Mutex::new(None),
             vault_path: Mutex::new(None),
+            login_pending: Mutex::new(None),
         })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
