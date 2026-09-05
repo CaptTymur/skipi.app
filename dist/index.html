@@ -4346,12 +4346,19 @@ function mobileVaultPickPosition(id){
         if(el)el.focus();
     }
 }
+// "Ready for job offers" decides whether the step 8 contact fields are
+// REQUIRED (see mobileVaultWizardNext), never whether they can be typed into.
+// The hint under the checkbox promises the profile saves "without requiring"
+// salary, phone and airports, and a live beta report (0.4.184 Android,
+// 2026-09-04) hit the opposite: with the checkbox off the fields were greyed
+// out and unfillable. Keep them editable in both states, and clear any stale
+// disabled/dimmed state a previous render may have left behind.
 function mobileSetupToggleReady(on){
     ['mobile-setup-phones','mobile-setup-preferred_messenger','mobile-setup-nearest_airport','mobile-setup-nearest_intl_airport','mobile-setup-available_from','mobile-setup-min_salary','mobile-setup-currency'].forEach(function(id){
         var el=document.getElementById(id);
         if(el){
-            el.disabled=!on;
-            el.style.opacity=on?'1':'0.45';
+            el.disabled=false;
+            el.style.opacity='1';
         }
     });
 }
@@ -4381,12 +4388,16 @@ function mobileSetupPersonalFields(){
         home_address:s.homeAddress,
         rank:rank,
         preferred_vessel_types:(s.vessel_leaf||s.vessel_root),
-        phones:s.readyForOffers?s.phones:'',
+        // Optional is not the same as discarded: contact details typed while
+        // "Ready for job offers" is off used to be blanked out here, so the
+        // user silently lost them (same bug report as above). Save what was
+        // entered; the readiness flag below stays independent of it.
+        phones:s.phones,
         preferred_messenger:s.preferredMessenger||'WhatsApp',
-        nearest_airport:s.readyForOffers?s.nearestAirport:'',
-        nearest_intl_airport:s.readyForOffers?s.nearestIntlAirport:'',
-        available_from:s.readyForOffers?s.availableFrom:'',
-        min_salary:s.readyForOffers?s.minSalary:'',
+        nearest_airport:s.nearestAirport,
+        nearest_intl_airport:s.nearestIntlAirport,
+        available_from:s.availableFrom,
+        min_salary:s.minSalary,
         currency:s.currency||'USD',
         // A fresh mobile vault cannot be truly "ready for offers" yet: the
         // backend requires mandatory docs and sea service first. Save the

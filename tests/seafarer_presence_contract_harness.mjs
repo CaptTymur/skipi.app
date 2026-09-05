@@ -1033,5 +1033,138 @@ section('mobile rail canon — 5 fixed slots, header home+gear, modules-first Ap
   ok(/main\.innerHTML\s*=\s*mobileAppsModuleTilesHtml\(\)\s*\+/.test(html), 'module tiles are injected BEFORE the plugin launcher markup');
 }
 
+section('mobile setup wizard step 8 — "Ready for job offers" gates REQUIREDNESS, not availability');
+{
+  // Live beta bug report (0.4.184 Android, 2026-09-04, broker@capt-tymur.com):
+  // "Step 8 Job offer readiness: impossible to fill contact information if
+  // Ready for job checkbox is unchecked. The text below the checkbox says:
+  // When off, ... saves without REQUIRING..."
+  //
+  // The hint under the checkbox promises the profile saves WITHOUT REQUIRING
+  // those fields; the code instead made them unavailable. Two halves are
+  // locked down here:
+  //   1. the toggle never disables/greys the offer contact fields;
+  //   2. what the user typed while the toggle is off still reaches the saved
+  //      profile (mobileSetupPersonalFields() used to blank it out).
+  // What must stay: with the toggle ON the same fields are still mandatory
+  // before step 8 can be left.
+  const OFFER_FIELD_IDS = [
+    'mobile-setup-phones',
+    'mobile-setup-preferred_messenger',
+    'mobile-setup-nearest_airport',
+    'mobile-setup-nearest_intl_airport',
+    'mobile-setup-available_from',
+    'mobile-setup-min_salary',
+    'mobile-setup-currency',
+  ];
+  const { sandbox, document } = installRuntime(html);
+  await settle();
+
+  ok(
+    html.includes('saves the profile without requiring salary, phone and airports'),
+    'step 8 still promises "saves the profile without requiring salary, phone and airports"'
+  );
+  ok(typeof sandbox.mobileSetupToggleReady === 'function', 'mobileSetupToggleReady is loaded');
+  ok(typeof sandbox.mobileSetupPersonalFields === 'function', 'mobileSetupPersonalFields is loaded');
+  ok(typeof sandbox.mobileVaultWizardNext === 'function', 'mobileVaultWizardNext is loaded');
+
+  const makeField = (id) => {
+    const tag = /currency|messenger/.test(id) ? 'select' : 'input';
+    const el = document.createElement(tag);
+    el.setAttribute('id', id);
+    el.value = '';
+    return el;
+  };
+  OFFER_FIELD_IDS.forEach(makeField);
+  const readyBox = makeField('mobile-setup-ready_for_offers');
+  readyBox.type = 'checkbox';
+  readyBox.checked = false;
+
+  // 1. Toggle OFF must leave every offer field editable and fully visible.
+  sandbox.mobileSetupToggleReady(false);
+  const disabledOff = OFFER_FIELD_IDS.filter((id) => document.getElementById(id).disabled === true);
+  ok(
+    disabledOff.length === 0,
+    `toggle OFF leaves offer contact fields editable (disabled: ${disabledOff.join(', ') || 'none'})`
+  );
+  const dimmedOff = OFFER_FIELD_IDS.filter((id) => {
+    const o = String(document.getElementById(id).style.opacity || '');
+    return o !== '' && Number(o) < 1;
+  });
+  ok(
+    dimmedOff.length === 0,
+    `toggle OFF does not grey the offer contact fields out (dimmed: ${dimmedOff.join(', ') || 'none'})`
+  );
+
+  // 2. Toggle ON keeps them editable too (no regression on the happy path).
+  sandbox.mobileSetupToggleReady(true);
+  const disabledOn = OFFER_FIELD_IDS.filter((id) => document.getElementById(id).disabled === true);
+  ok(disabledOn.length === 0, `toggle ON leaves offer contact fields editable (disabled: ${disabledOn.join(', ') || 'none'})`);
+
+  // 3. Requiredness still belongs to the toggle: ON + empty blocks step 8.
+  const toasts = [];
+  sandbox.showToast = (msg, kind) => toasts.push({ msg: String(msg), kind: String(kind || '') });
+  const seedStep8 = () => {
+    const s = sandbox.mobileInitialVaultWizardState();
+    s.step = 8;
+    sandbox.mobileVaultWizardState = s;
+    return s;
+  };
+  OFFER_FIELD_IDS.forEach((id) => { document.getElementById(id).value = ''; });
+  seedStep8();
+  readyBox.checked = true;
+  sandbox.mobileVaultWizardNext();
+  ok(sandbox.mobileVaultWizardState.step === 8, 'toggle ON + empty contact fields still blocks step 8');
+  ok(
+    toasts.some((t) => t.kind === 'error' && /Complete phone, airports/.test(t.msg)),
+    'toggle ON + empty contact fields still explains what is missing'
+  );
+
+  // 4. Toggle OFF + empty contact fields is allowed to pass (already true).
+  toasts.length = 0;
+  seedStep8();
+  readyBox.checked = false;
+  sandbox.mobileVaultWizardNext();
+  ok(sandbox.mobileVaultWizardState.step === 9, 'toggle OFF + empty contact fields passes step 8');
+  ok(toasts.length === 0, 'toggle OFF + empty contact fields raises no error toast');
+
+  // 5. Typed-with-the-toggle-off values survive the step and the save payload.
+  seedStep8();
+  readyBox.checked = false;
+  const typed = {
+    'mobile-setup-phones': '+371 20000000',
+    'mobile-setup-preferred_messenger': 'Telegram',
+    'mobile-setup-nearest_airport': 'RIX',
+    'mobile-setup-nearest_intl_airport': 'RIX',
+    'mobile-setup-available_from': '2026-10-01',
+    'mobile-setup-min_salary': '4200',
+    'mobile-setup-currency': 'EUR',
+  };
+  Object.entries(typed).forEach(([id, value]) => { document.getElementById(id).value = value; });
+  sandbox.mobileVaultWizardNext();
+  const state = sandbox.mobileVaultWizardState;
+  ok(state.step === 9, 'toggle OFF + filled contact fields passes step 8');
+  ok(state.phones === typed['mobile-setup-phones'], `phone typed with the toggle off is kept in wizard state (got ${JSON.stringify(state.phones)})`);
+  ok(state.nearestAirport === 'RIX' && state.nearestIntlAirport === 'RIX', 'airports typed with the toggle off are kept in wizard state');
+  ok(state.availableFrom === '2026-10-01', 'availability typed with the toggle off is kept in wizard state');
+  ok(state.minSalary === '4200', 'salary typed with the toggle off is kept in wizard state');
+
+  const fields = sandbox.mobileSetupPersonalFields();
+  ok(fields.phones === typed['mobile-setup-phones'], `saved profile keeps the phone entered with the toggle off (got ${JSON.stringify(fields.phones)})`);
+  ok(fields.nearest_airport === 'RIX', `saved profile keeps nearest_airport entered with the toggle off (got ${JSON.stringify(fields.nearest_airport)})`);
+  ok(fields.nearest_intl_airport === 'RIX', `saved profile keeps nearest_intl_airport entered with the toggle off (got ${JSON.stringify(fields.nearest_intl_airport)})`);
+  ok(fields.available_from === '2026-10-01', `saved profile keeps available_from entered with the toggle off (got ${JSON.stringify(fields.available_from)})`);
+  ok(fields.min_salary === '4200', `saved profile keeps min_salary entered with the toggle off (got ${JSON.stringify(fields.min_salary)})`);
+  ok(fields.preferred_messenger === 'Telegram' && fields.currency === 'EUR', 'messenger and currency are kept as before');
+  ok(fields.ready_for_offers === 'false', 'a fresh mobile vault still saves ready_for_offers=false (backend readiness gate unchanged)');
+
+  // 6. With the toggle ON the payload is unchanged from what it always was.
+  seedStep8();
+  readyBox.checked = true;
+  sandbox.mobileVaultWizardNext();
+  const readyFields = sandbox.mobileSetupPersonalFields();
+  ok(readyFields.phones === typed['mobile-setup-phones'] && readyFields.min_salary === '4200', 'toggle ON keeps saving the contact fields as before');
+}
+
 console.log('\n' + (fail === 0 ? 'ALL GREEN' : 'FAILURES') + `: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
