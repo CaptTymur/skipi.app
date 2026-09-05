@@ -291,6 +291,9 @@ class VmDocument {
 function bootApp({ seed = {}, onLine = true, platform = 'linux' } = {}) {
   const doc = new VmDocument(HTML);
   const lstore = new Map(Object.entries(seed).map(([k, v]) => [k, String(v)]));
+  // mobile-home-assistant (owner 05.09): capture window listeners (popstate/online/offline) and
+  // record History calls so the Android Back contract can be driven and asserted from the harness.
+  const listeners = {};
   const invoke = async (cmd) => {
     if (cmd === 'get_build_info') return { version: '0.0.0-apps-harness', sha: 'apps-harness' };
     if (cmd === 'get_platform') return platform;
@@ -310,7 +313,8 @@ function bootApp({ seed = {}, onLine = true, platform = 'linux' } = {}) {
     fetch: async () => ({ ok: true, json: async () => ({}), text: async () => '' }),
     matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }),
     SkipiPluginRuntime: { create: () => ({ open() {}, close() {}, destroy() {} }) },
-    addEventListener() {}, removeEventListener() {},
+    addEventListener(t, fn) { (listeners[t] = listeners[t] || []).push(fn); }, removeEventListener() {},
+    history: { calls: [], pushState(state) { this.calls.push(['pushState', state]); }, go(n) { this.calls.push(['go', n]); }, back() { this.calls.push(['back']); } },
     setTimeout: () => 0, clearTimeout() {}, setInterval: () => 0, clearInterval() {},
     requestAnimationFrame: () => 0, cancelAnimationFrame() {},
     alert() {}, confirm: () => true, prompt: () => null,
@@ -327,7 +331,7 @@ function bootApp({ seed = {}, onLine = true, platform = 'linux' } = {}) {
     .filter(([, a]) => !/\ssrc\s*=/.test(a || ''))
     .map(([, , c]) => c);
   scripts.forEach((code, i) => vm.runInContext(code, sandbox, { filename: `dist/index.html#inline-${i + 1}` }));
-  return { sandbox, doc, lstore };
+  return { sandbox, doc, lstore, listeners };
 }
 
 const settleVm = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
@@ -802,7 +806,7 @@ function bootMobile(opts) {
 }
 
 {
-  section('mobile v2 (M9) — R2 is additive, existing rail untouched');
+  section('mobile v2 (M9) — rail ids kept; NATIVE home = assistant chat + ☰ (owner 05.09, DIRECTIVE 01.09)');
   const { sandbox, doc } = bootMobile({ seed: {} });
   await settleVm();
   for (const v of ['docs', 'assistant', 'experience', 'cv', 'dispatch', 'jobs', 'information', 'vessels', 'myvessel', 'apps']) {
@@ -810,11 +814,28 @@ function bootMobile(opts) {
   }
   ok(!!doc.getElementById('mobile-module-rail') && !!doc.getElementById('mobile-bottom-nav') && !!doc.getElementById('mobile-profile-meter'), 'mobile-module-rail / mobile-bottom-nav / profile-meter ids kept');
   ok(!!doc.getElementById('mobile-home-modules-tpl') && !!doc.getElementById('mobile-primary-rail'), 'home module template + primary rail present');
+  // On a NATIVE mobile build (android/ios) the home screen is the assistant chat with ONE ☰
+  // button under the composer (sketch 1); the module grid moved to the menu screen (sketch 2);
+  // the 5-slot rail is never shown. Two seeds (Supervisor Н1): without consent the consent card
+  // shows and ☰ is STILL there (no dead end); with consent — composer + ☰.
   sandbox.mobileShow('home');
-  const mm = String((doc.getElementById('mobile-main') || {}).innerHTML || '');
-  ok(mm.includes('data-mview="docs"') && mm.includes('data-mview="assistant"') && mm.includes('data-mview="apps"'), 'home injects the module grid from the template');
-  ok(mm.includes('id="mobile-home-packages"'), 'Packages card present (desktop-only, honest hint)');
-  ok(mm.includes('data-qa="home-hero"'), 'home hero renders');
+  const mm = mobileHtml(doc);
+  ok(mm.includes('data-qa="mobile-menu-btn"') && mm.includes("mobileShow('menu')"), "home (no consent) renders the ☰ menu button routed to mobileShow('menu')");
+  ok(!mm.includes('id="mobile-assistant-input"'), 'home (no consent) shows the consent card, not the composer');
+  ok(!mm.includes('fam-module-card') && !mm.includes('data-qa="home-hero"'), 'home no longer injects the module grid / hero');
+  ok(doc.getElementById('mobile-bottom-nav').style.display === 'none', 'bottom rail hidden on the native home');
+  const consented = bootMobile({ seed: { 'skipi-assistant-consent': '1' } });
+  await settleVm();
+  consented.sandbox.mobileShow('home');
+  const mc = mobileHtml(consented.doc);
+  ok(mc.includes('id="mobile-assistant-input"') && mc.includes('data-qa="mobile-menu-btn"'), 'home (consented) renders the chat composer AND the ☰ menu button');
+  ok(!mc.includes('left today') && !mc.includes('осталось сегодня'), 'home chat shows no remaining-requests counter (DECISIONS 251)');
+  ok(consented.doc.getElementById('mobile-bottom-nav').style.display === 'none', 'bottom rail hidden on the consented native home');
+  // Drill Н8: the explicit assistant view (renderMobileAssistant) holds the same contract.
+  consented.sandbox.mobileShow('assistant');
+  const ma = mobileHtml(consented.doc);
+  ok(ma.includes('data-qa="mobile-menu-btn"') && ma.includes('id="mobile-assistant-input"'), 'assistant view renders chat + ☰ too');
+  ok(consented.doc.getElementById('mobile-bottom-nav').style.display === 'none', 'bottom rail hidden on the native assistant view (renderMobileAssistant)');
 }
 
 {
@@ -837,14 +858,22 @@ function bootMobile(opts) {
 // ---------------------------------------------------------------------------
 
 {
-  section('family UI base — AppHeader anatomy (card 1)');
-  const { doc } = bootMobile({ seed: {} });
+  section('family UI base — AppHeader anatomy (card 1); native build shows only ⌂ and ⚙ (owner 05.09)');
+  const { sandbox, doc } = bootMobile({ seed: {} });
   await settleVm();
   for (const qa of ['app-header-icon', 'app-header-title', 'app-header-context', 'app-header-settings', 'app-header-feedback']) {
     ok(doc.querySelectorAll(`[data-qa="${qa}"]`).length === 1, `${qa} present exactly once`);
   }
   const gear = doc.querySelector('[data-qa="app-header-settings"]');
   ok(/openSettings\(\)/.test(gear.getAttribute('onclick') || ''), 'header gear opens Settings');
+  // Native build (android/ios): brand / «!» / chat are hidden by CSS under body.mobile-native
+  // (markup stays for the non-native mobile shell, hence the five hooks above remain exactly once).
+  sandbox.applyMobileMode();
+  ok(doc.body.classList.contains('mobile-mode') && doc.body.classList.contains('mobile-native'), 'native android boot marks body.mobile-mode + body.mobile-native');
+  ok(typeof sandbox.isNativeMobile === 'function' && sandbox.isNativeMobile() === true, 'isNativeMobile() is true on android');
+  const hideRule = /body\.mobile-native \.mobile-brand-wrap,\s*body\.mobile-native #mobile-feedback-btn,\s*body\.mobile-native \[data-qa="app-header-assistant"\]\s*\{[^}]*display:\s*none/;
+  ok(hideRule.test(HTML), 'CSS hides brand-wrap / «!» / chat button under body.mobile-native');
+  ok(doc.querySelectorAll('[data-qa="app-header-home"]').length === 1 && /mobileShow\('home'\)/.test(doc.querySelector('[data-qa="app-header-home"]').getAttribute('onclick') || ''), 'header ⌂ present once and routes home');
 }
 
 {
@@ -884,16 +913,175 @@ function bootMobile(opts) {
 }
 
 {
-  section('family UI base — home module grid covers all 11 modules (card 12)');
+  section('family UI base — module grid covers all 11 modules — on the MENU screen behind ☰ (owner 05.09, sketch 2)');
   const { sandbox, doc } = bootMobile({ seed: {} });
   await settleVm();
-  sandbox.mobileShow('home');
-  const mm = String((doc.getElementById('mobile-main') || {}).innerHTML || '');
+  sandbox.mobileShow('menu');
+  ok(sandbox.mobileView === 'menu', "mobileShow('menu') switches mobileView to 'menu'");
+  const mm = mobileHtml(doc);
+  ok(mm.includes('data-qa="mobile-menu-screen"'), 'menu screen wrapper renders');
   for (const v of ['docs', 'experience', 'cv', 'dispatch', 'jobs', 'information', 'vessels', 'myvessel', 'apps', 'assistant']) {
-    ok(mm.includes(`data-mview="${v}"`) && mm.includes(`mobileShow('${v}')`), `home grid routes '${v}' through mobileShow`);
+    ok(mm.includes(`data-mview="${v}"`) && mm.includes(`mobileShow('${v}')`), `menu grid routes '${v}' through mobileShow`);
   }
   ok(mm.includes('id="mobile-home-packages"') && mm.includes('mobilePackagesHint()'), 'Packages card is present with the honest desktop-only hint');
-  ok((mm.match(/fam-module-card/g) || []).length === 11, 'exactly 11 module cards');
+  ok((mm.match(/fam-module-card/g) || []).length === 13, 'exactly 13 tiles: 11 module cards + Profile + Feedback (Supervisor Н6)');
+  ok(mm.includes('data-qa="menu-tile-profile"') && mm.includes("mobileShow('profile')"), 'Profile tile routes to the profile screen (its only other entry, the rail meter, is hidden natively)');
+  ok(mm.includes('data-qa="menu-tile-feedback"') && mm.includes('openMobileFeedbackMenu()'), 'Feedback tile routes to the feedback menu (its only other entry, the header «!», is hidden natively)');
+  const idx = (v) => mm.indexOf(`data-mview="${v}"`);
+  ok(idx('docs') >= 0 && idx('docs') < idx('experience') && idx('experience') < idx('cv') && ['dispatch', 'jobs', 'information', 'vessels', 'myvessel', 'apps', 'assistant'].every((v) => idx(v) > idx('cv')), 'first three tiles are Documents · Experience · CV (sketch 2)');
+  ok(!mm.includes('data-qa="mobile-menu-btn"'), 'no ☰ on the menu screen (sketch 2: no bottom panel at all)');
+  ok(!mm.includes('data-qa="home-hero"'), 'no home hero on the menu');
+  ok(doc.getElementById('mobile-bottom-nav').style.display === 'none', 'bottom rail hidden on the menu');
+  ok(/openSettings\(\)/.test(doc.querySelector('[data-qa="app-header-settings"]').getAttribute('onclick') || '') && /mobileShow\('home'\)/.test(doc.querySelector('[data-qa="app-header-home"]').getAttribute('onclick') || ''), 'from the menu: header ⌂ → home, ⚙ → Settings');
+}
+
+{
+  section('mobile-home-assistant — Android Back: home → menu → Back; menu → module → Back; ⌂ collapses (Supervisor Н4)');
+  const { sandbox, doc, listeners } = bootMobile({ seed: { 'skipi-assistant-consent': '1' } });
+  await settleVm();
+  const hist = sandbox.history;
+  const pops = () => (listeners.popstate || []);
+  ok(pops().length >= 1, 'app registered popstate listener(s)');
+  const firePop = (state) => pops().forEach((fn) => fn({ state }));
+  sandbox.mobileShow('home');
+  hist.calls.length = 0;
+  sandbox.mobileShow('menu');
+  ok(JSON.stringify(sandbox._mobileNavStack) === JSON.stringify(['home', 'menu']), "menu is tracked on the in-app stack ['home','menu']");
+  ok(hist.calls.length === 1 && hist.calls[0][0] === 'pushState' && !!hist.calls[0][1] && hist.calls[0][1].skipiMobileNav === 'menu', "exactly one history.pushState({skipiMobileNav:'menu'}) on entering the menu");
+  // Scenario 1: home → menu → system Back. The browser lands on the entry BELOW the marker
+  // (state=null) — the handler must still unwind to home (not-ours + depth>1).
+  firePop(null);
+  ok(sandbox.mobileView === 'home' && JSON.stringify(sandbox._mobileNavStack) === JSON.stringify(['home']), 'Back from the menu returns home (popstate with state=null)');
+  ok(mobileHtml(doc).includes('id="mobile-assistant-input"') && mobileHtml(doc).includes('data-qa="mobile-menu-btn"'), 'home chat re-rendered after Back');
+  // Scenario 2: home → menu → module → system Back lands on the menu marker.
+  sandbox.mobileShow('menu');
+  sandbox.mobileShow('docs');
+  ok(JSON.stringify(sandbox._mobileNavStack) === JSON.stringify(['home', 'menu', 'docs']), "stack ['home','menu','docs'] after menu → docs");
+  firePop({ skipiMobileNav: 'menu' });
+  ok(sandbox.mobileView === 'menu' && mobileHtml(doc).includes('data-qa="mobile-menu-screen"'), 'Back from a module returns to the menu (popstate with our menu marker)');
+  // Scenario 3: ⌂ from the menu collapses the in-app stack via history.go(-1).
+  hist.calls.length = 0;
+  sandbox.mobileShow('home');
+  ok(JSON.stringify(sandbox._mobileNavStack) === JSON.stringify(['home']) && hist.calls.some((c) => c[0] === 'go' && c[1] === -1), '⌂ from the menu collapses the stack with history.go(-1)');
+  sandbox._mobileNavPopping = false; // the sandbox setTimeout is a stub, so the popping flag never self-clears here
+  // Scenario 4: Back on home with an empty in-app stack leaves navigation alone (the system backgrounds the app).
+  firePop(null);
+  ok(sandbox.mobileView === 'home', 'Back at the home root does not navigate (system handles it)');
+}
+
+{
+  section('mobile-home-assistant — demo vault: chat stays open with a demo banner + create-profile CTA (DECISIONS 249, no src-tauri change)');
+  const consent = { 'skipi-assistant-consent': '1' };
+  const { sandbox, doc } = bootMobile({ seed: consent });
+  await settleVm();
+  sandbox.mobileIsDemo = true;
+  sandbox.mobileShow('home');
+  const mm = mobileHtml(doc);
+  ok(mm.includes('data-qa="assistant-demo-banner"') && mm.includes('mobileStartVaultWizard()'), 'demo banner with «create my profile» renders on home');
+  ok(mm.includes('id="mobile-assistant-input"') && mm.includes('data-qa="mobile-menu-btn"'), 'demo keeps the composer and ☰ (no dead end)');
+  sandbox.mobileIsDemo = false;
+  sandbox.mobileShow('home');
+  ok(!mobileHtml(doc).includes('data-qa="assistant-demo-banner"'), 'no demo banner on a real vault');
+  // The demo flag may arrive AFTER the first render (loadVault async get_profile_status, dist ~:8856):
+  // the in-render self-check must flip the banner in place without changing mobileView.
+  const late = bootMobile({ seed: consent });
+  await settleVm();
+  const baseInvoke = late.sandbox.invoke;
+  late.sandbox.invoke = async (cmd, args) => (cmd === 'get_profile_status' ? { is_demo: '1' } : baseInvoke(cmd, args));
+  late.sandbox.mobileShow('home');
+  await settleVm();
+  ok(late.sandbox.mobileIsDemo === true && late.sandbox.mobileView === 'home' && mobileHtml(late.doc).includes('data-qa="assistant-demo-banner"'), 'async is_demo from get_profile_status re-renders home with the banner (mobileView stays home)');
+}
+
+{
+  section('mobile-home-assistant — offline: honest no-network state in the chat; menu keeps working');
+  const consent = { 'skipi-assistant-consent': '1' };
+  const off = bootMobile({ seed: consent, onLine: false });
+  await settleVm();
+  off.sandbox.mobileShow('home');
+  const mm = mobileHtml(off.doc);
+  ok(mm.includes('data-qa="assistant-offline"'), 'offline banner renders on home when navigator.onLine === false');
+  ok(mm.includes('data-qa="mobile-menu-btn"') && mm.includes('id="mobile-assistant-input"'), '☰ and composer still there offline');
+  off.sandbox.mobileShow('menu');
+  ok((mobileHtml(off.doc).match(/fam-module-card/g) || []).length === 13, 'menu renders all tiles offline');
+  const on = bootMobile({ seed: consent, onLine: true });
+  await settleVm();
+  on.sandbox.mobileShow('home');
+  ok(!mobileHtml(on.doc).includes('data-qa="assistant-offline"'), 'no offline banner while online');
+  ok((on.listeners.online || []).length >= 1 && (on.listeners.offline || []).length >= 1, 'app listens to window online/offline to refresh the banner in place');
+}
+
+{
+  section('mobile-home-assistant — copy: no free/paid wording, no counter (DECISIONS 251/253); home branches on isNativeMobile()');
+  const fnBody = (name) => { const i = HTML.indexOf(name); if (i < 0) return null; const j = HTML.indexOf('\n}\n', i); return j < 0 ? null : HTML.slice(i, j); };
+  const send = fnBody('async function mobileAssistantSend(');
+  const chat = fnBody('function mobileRenderAssistantChat(');
+  ok(!!send && !!chat, 'mobileAssistantSend + mobileRenderAssistantChat exist');
+  for (const [where, body] of [['mobileAssistantSend', send || ''], ['mobileRenderAssistantChat', chat || '']]) {
+    ok(body.length > 0 && !/\bfree\b|бесплат|left today|осталось сегодня|remaining_today|тариф|покуп|подписк|оплат/i.test(body), `${where}: no free/paid/counter wording`);
+  }
+  ok(/isNativeMobile\(\)/.test(fnBody('function renderMobileHome(') || ''), 'renderMobileHome branches on isNativeMobile() (native-only assistant home)');
+  ok(/function mobileAssistantRerender\(/.test(HTML) && !/renderMobileAssistant\(\);\s*}\s*function mobileAssistantClear/.test(HTML), 'consent/clear/send re-render through mobileAssistantRerender, not renderMobileAssistant (Supervisor Н2)');
+}
+
+{
+  section('mobile-home-assistant — PRESERVE: desktop static region byte-identical to BASELINE 34705f8b; desktop boot untouched (Supervisor Н5)');
+  const lines = HTML.split('\n');
+  const startComment = lines.findIndex((l) => l.startsWith('<!-- Top horizontal modules bar'));
+  const start = startComment - 2; // BASELINE :1444 = the </div> closing .mobile-shell, then a blank line
+  const end = lines.findIndex((l) => l === '<script src="skipi-assistant.js"></script>');
+  ok(startComment > 0 && lines[start] === '</div>' && lines[start + 1] === '' && end > start, 'desktop region boundaries found by markers (</div> of .mobile-shell … skipi-assistant.js script tag)');
+  const region = lines.slice(start, end + 1).join('\n') + '\n';
+  ok(sha256Text(region) === 'b28a9c36ee5891dce24510e51189c033b8f45f50b1f5e826c0156802f19fc0ce', 'desktop static markup region sha256 == BASELINE (sed -n 1444,1660p | sha256sum on 34705f8b)');
+  const cssStart = HTML.indexOf('/* mobile-home-assistant (owner 05.09)');
+  const cssEnd = HTML.indexOf('/* /mobile-home-assistant */');
+  const css = cssStart >= 0 && cssEnd > cssStart ? HTML.slice(cssStart, cssEnd) : '';
+  ok(css.length > 50, 'CSS for this card lives in ONE marked block');
+  const selectors = css.split('\n').filter((l) => /\{/.test(l)).map((l) => l.slice(0, l.indexOf('{')).trim());
+  ok(selectors.length > 0 && selectors.every((s) => s.split(',').every((x) => /^(\.mobile-|body\.mobile-)/.test(x.trim()))), 'every selector in the block starts with .mobile- or body.mobile-');
+  const { sandbox, doc } = bootApp({ platform: 'linux' });
+  await settleVm();
+  sandbox.applyMobileMode();
+  ok(!doc.body.classList.contains('mobile-mode') && !doc.body.classList.contains('mobile-native'), 'desktop boot: body carries neither mobile-mode nor mobile-native');
+  sandbox.mobileShow('home');
+  ok(String(doc.getElementById('mobile-main').innerHTML || '') === '', "desktop boot: mobileShow('home') writes nothing into #mobile-main (guard)");
+  ok(typeof sandbox.isNativeMobile === 'function' && sandbox.isNativeMobile() === false, 'isNativeMobile() false on linux');
+}
+
+{
+  section('mobile-home-assistant — NON-native mobile shell (web-Моряк ≤720px, harness linux) keeps the OLD home: grid + rail, no ☰ (Supervisor Н3/B9)');
+  const { sandbox, doc } = bootApp({ platform: 'linux' });
+  await settleVm();
+  sandbox.shouldUseMobileShell = () => true;
+  sandbox.applyMobileMode();
+  ok(doc.body.classList.contains('mobile-mode') && !doc.body.classList.contains('mobile-native'), 'mobile-mode without mobile-native on linux');
+  sandbox.mobileShow('home');
+  const mm = mobileHtml(doc);
+  ok(mm.includes('data-qa="home-hero"') && (mm.match(/fam-module-card/g) || []).length === 11, 'old home: hero + 11-card grid');
+  ok(!mm.includes('data-qa="mobile-menu-btn"'), 'no ☰ on the old shell');
+  ok(doc.getElementById('mobile-bottom-nav').style.display === 'flex', 'old shell keeps the 5-slot rail visible');
+  sandbox.mobileShow('assistant');
+  ok(doc.getElementById('mobile-bottom-nav').style.display === 'flex' && !mobileHtml(doc).includes('data-qa="mobile-menu-btn"'), 'old shell assistant view: rail visible, no ☰');
+}
+
+{
+  section('mobile-home-assistant — sending from home keeps mobileView=home and ⌂ active (Supervisor Н2/B10)');
+  const { sandbox, doc } = bootMobile({ seed: { 'skipi-assistant-consent': '1' } });
+  await settleVm();
+  sandbox.mobileShow('home');
+  ok(doc.getElementById('mobile-top-home').classList.contains('active'), '⌂ active on home before sending');
+  // The fake DOM does not materialise innerHTML; provide the composer element the send path reads.
+  const ta = doc.createElement('textarea'); ta.setAttribute('id', 'mobile-assistant-input'); ta.value = 'hello';
+  await sandbox.mobileAssistantSend();
+  ok(sandbox.mobileView === 'home', "mobileView stays 'home' after a message is sent from home");
+  ok(doc.getElementById('mobile-top-home').classList.contains('active'), '⌂ still active after sending');
+  ok(mobileHtml(doc).includes('data-qa="mobile-menu-btn"'), '☰ still rendered after sending');
+  ok(Array.isArray(sandbox.mobileAssistantMessages) && sandbox.mobileAssistantMessages.length >= 2 && sandbox.mobileAssistantMessages[0].role === 'user', 'user message + reply recorded');
+  sandbox.mobileAssistantClear();
+  ok(sandbox.mobileView === 'home' && sandbox.mobileAssistantMessages.length === 0, 'Clear keeps mobileView=home');
+  sandbox.mobileShow('assistant');
+  sandbox.mobileAssistantClear();
+  ok(sandbox.mobileView === 'assistant', "Clear on the assistant view keeps mobileView='assistant'");
 }
 
 {
