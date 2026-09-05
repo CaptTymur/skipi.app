@@ -908,6 +908,15 @@ body.mobile-mode .skipi-assistant-panel { width:100vw; height:100dvh; max-width:
 .mobile-assistant-chip { text-align:left; padding:11px 14px; border-radius:12px; border:1px solid var(--border); background:var(--bg); color:var(--text); font:inherit; font-size:13px; cursor:pointer; }
 .mobile-assistant-chip:active { background:var(--accent); color:#fff; border-color:var(--accent); }
 .mobile-assistant-composer { flex:0 0 auto; margin-top:6px; }
+/* mobile-home-assistant (owner 05.09) — DIRECTIVE 01.09: native mobile home = assistant chat, modules behind ☰ (menu) */
+body.mobile-native .mobile-brand-wrap, body.mobile-native #mobile-feedback-btn, body.mobile-native [data-qa="app-header-assistant"] { display:none; }
+.mobile-menu-btn-row { flex:0 0 auto; display:flex; justify-content:center; padding:8px 0 2px; margin-top:auto; }
+.mobile-menu-btn { width:48px; height:48px; padding:0; display:flex; align-items:center; justify-content:center; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:22px; line-height:1; cursor:pointer; }
+.mobile-menu-btn:active { transform:translateY(1px); }
+.mobile-assistant-banner { flex:0 0 auto; margin-top:8px; padding:10px 12px; border:1px solid var(--border); border-radius:10px; background:var(--surface); color:var(--text2); font-size:13px; line-height:1.4; }
+.mobile-assistant-banner .btn { margin-top:8px; width:100%; }
+.mobile-menu-extra { margin-top:10px; }
+/* /mobile-home-assistant */
 
 /* Mobile app shell */
 .mobile-shell { display:none; min-height:100dvh; background:var(--bg); color:var(--text); flex-direction:column; overflow:hidden; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); }
@@ -4008,6 +4017,9 @@ function showWelcome(){show('scr-welcome');hide('scr-setup');hide('scr-content')
 
 function mobileViewportLikely(){return window.matchMedia&&window.matchMedia('(max-width: 720px)').matches;}
 function shouldUseMobileShell(){return hostPlatform==='android'||hostPlatform==='ios'||mobileViewportLikely();}
+// Native mobile build (Android/iOS) vs. the mobile shell by viewport (web-Моряк ≤720px, harnesses):
+// the assistant-home layout (owner 05.09) is NATIVE-ONLY. hostPlatform is set in init() before any render.
+function isNativeMobile(){return hostPlatform==='android'||hostPlatform==='ios';}
 function isMobileMode(){return document.body&&document.body.classList.contains('mobile-mode');}
 var mobileModeApplied=null;
 function applyMobileMode(){
@@ -4015,6 +4027,7 @@ function applyMobileMode(){
     var changed=mobileModeApplied!==on;
     mobileModeApplied=on;
     if(document.body)document.body.classList.toggle('mobile-mode',on);
+    if(document.body)document.body.classList.toggle('mobile-native',on&&isNativeMobile());
     if(!changed){
         if(on)setTimeout(mobileUpdateModuleRailHint,60);
         return;
@@ -6341,17 +6354,23 @@ async function mobileSetJobsReady(on){
 // ===================== AI Assistant module =====================
 var mobileAssistantMessages=[];
 var mobileAssistantBusy=false;
-var mobileAssistantRemaining=null;
-// True while the demo vault is loaded — the AI assistant is gated off so demo
-// users can't spend real API budget; they're told to create their own profile.
+// True while the demo vault is loaded. Owner 05.09 (DECISIONS 249): the chat stays open in demo —
+// it answers on the demo vault's data and offers to create a real profile (banner) instead of being
+// gated off. Set in loadVault (sync from info.is_demo, async via get_profile_status).
 var mobileIsDemo=false;
 var mobileAssistantConsentKey='skipi-assistant-consent';
 var mobileAssistantConvKey='skipi-assistant-conv';
 (function(){try{var raw=localStorage.getItem(mobileAssistantConvKey);if(raw)mobileAssistantMessages=JSON.parse(raw)||[];}catch(e){mobileAssistantMessages=[];}})();
 function mobileAssistantSaveConv(){try{localStorage.setItem(mobileAssistantConvKey,JSON.stringify(mobileAssistantMessages.slice(-40)));}catch(e){}}
 function mobileAssistantConsented(){try{return localStorage.getItem(mobileAssistantConsentKey)==='1';}catch(e){return false;}}
-function mobileAssistantSetConsent(){try{localStorage.setItem(mobileAssistantConsentKey,'1');}catch(e){}renderMobileAssistant();}
-function mobileAssistantClear(){if(mobileAssistantBusy)return;mobileAssistantMessages=[];mobileAssistantSaveConv();renderMobileAssistant();}
+// Re-render the chat IN PLACE for whichever view hosts it (native home or the explicit assistant
+// view) without touching mobileView — Back stack and ⌂ active state stay consistent (Supervisor Н2).
+// On the non-native shell home is the module grid, so only the assistant view re-renders there.
+function mobileAssistantRerender(){
+    if(mobileView==='assistant'||(mobileView==='home'&&isNativeMobile()))mobileRenderAssistantChat();
+}
+function mobileAssistantSetConsent(){try{localStorage.setItem(mobileAssistantConsentKey,'1');}catch(e){}mobileAssistantRerender();}
+function mobileAssistantClear(){if(mobileAssistantBusy)return;mobileAssistantMessages=[];mobileAssistantSaveConv();mobileAssistantRerender();}
 function mobileAssistantSuggest(text){var ta=document.getElementById('mobile-assistant-input');if(ta){ta.value=text;ta.focus();mobileAssistantAutoGrow(ta);}}
 function mobileAssistantAutoGrow(ta){if(!ta)return;ta.style.height='auto';ta.style.height=Math.min(120,ta.scrollHeight)+'px';}
 function mobileAssistantFormat(text){return mobileEsc(String(text||'')).replace(/\n/g,'<br>');}
@@ -6372,45 +6391,56 @@ function mobileAssistantBubbles(){
     if(mobileAssistantBusy)h+='<div class="mobile-msg ai typing"><span class="mobile-typing"><span></span><span></span><span></span></span></div>';
     return h;
 }
-function renderMobileAssistant(){
-    if(!shouldUseMobileShell())return;
-    mobileView='assistant';
-    mobileSetSub(mobileVaultLabel());
-    mobileSetBottomNav(true);
+// ☰ — the single navigation control of the native home (DIRECTIVE 01.09, sketch 1). Rendered on EVERY
+// home state (consent card, demo banner, offline, chat) so the user is never locked in (Supervisor Н1).
+function mobileMenuButtonHtml(){
+    if(!isNativeMobile())return '';
     var ru=getUiLang()==='ru';
-    // Self-correcting demo check: re-read the flag from the vault and re-render
-    // if it changed (covers the case where it wasn't set yet at vault load).
+    return '<div class="mobile-menu-btn-row"><button class="mobile-menu-btn" type="button" data-qa="mobile-menu-btn" onclick="mobileShow(\'menu\')" title="'+escAttr(ru?'Меню':'Menu')+'" aria-label="'+escAttr(ru?'Меню':'Menu')+'">&#9776;</button></div>';
+}
+// Shared chat renderer for the native home (mobileView 'home') and the explicit assistant view
+// (mobileView 'assistant'). Never touches mobileView itself.
+function mobileRenderAssistantChat(){
+    var ru=getUiLang()==='ru';
+    // Self-correcting demo check: the flag may arrive after the first render (loadVault async path);
+    // re-render in place when it changes.
     try{invoke('get_profile_status').then(function(sp){
         var d=String((sp&&sp.is_demo)||'')==='1';
-        if(d!==mobileIsDemo){mobileIsDemo=d;if(mobileView==='assistant')renderMobileAssistant();}
+        if(d!==mobileIsDemo){mobileIsDemo=d;mobileAssistantRerender();}
     }).catch(function(){});}catch(e){}
-    if(mobileIsDemo){
-        var hd='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(ru?'AI-ассистент моряка':'Seafarer AI assistant')+'</div>'
-            +'<div class="mobile-card-sub" style="margin-top:8px;">'+mobileEsc(ru?'Это демо-профиль. Чтобы задавать вопросы AI-ассистенту, создайте свой профиль моряка — он будет отвечать по вашим документам, сертификатам и опыту.':'This is a demo profile. To ask the AI assistant, create your own seafarer profile — it answers based on your own documents, certificates and experience.')+'</div>'
-            +'<button class="btn btn-accent" style="margin-top:14px;width:100%;" onclick="mobileStartVaultWizard()">'+mobileEsc(ru?'Создать свой профиль':'Create my profile')+'</button></div>';
-        mobileMainHtml(hd);
-        return;
-    }
     if(!mobileAssistantConsented()){
-        var h='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(ru?'AI-ассистент моряка':'Seafarer AI assistant')+'</div>'
-            +'<div class="mobile-card-sub" style="margin-top:8px;">'+mobileEsc(ru?'Бесплатный AI-ассистент по карьере и документам. Использует ваш профиль и сертификаты из приложения, чтобы отвечать точнее.':'A free AI assistant for your maritime career and documents. It uses your profile and certificates from the app to answer more precisely.')+'</div>'
+        var c='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(ru?'AI-ассистент моряка':'Seafarer AI assistant')+'</div>'
+            +'<div class="mobile-card-sub" style="margin-top:8px;">'+mobileEsc(ru?'AI-ассистент по карьере и документам. Использует ваш профиль и сертификаты из приложения, чтобы отвечать точнее.':'An AI assistant for your maritime career and documents. It uses your profile and certificates from the app to answer more precisely.')+'</div>'
             +'<div class="mobile-card-sub" style="margin-top:10px;">'+mobileEsc(ru?'Чтобы улучшать ассистента, ваши переписки отправляются в Skipi. Не делитесь паролями или личными данными. Это не официальная и не юридическая консультация.':'To improve the assistant, your conversations are sent to Skipi. Do not share passwords or sensitive personal data. This is not official or legal advice.')+'</div>'
             +'<button class="btn btn-accent" style="margin-top:14px;width:100%;" onclick="mobileAssistantSetConsent()">'+mobileEsc(ru?'Понятно, начать':'Got it, start')+'</button></div>';
-        mobileMainHtml(h);
+        mobileMainHtml('<div class="mobile-assistant-wrap">'+c+mobileMenuButtonHtml()+'</div>');
         return;
     }
+    var demo=mobileIsDemo?'<div class="mobile-assistant-banner" data-qa="assistant-demo-banner">'+mobileEsc(ru?'Это демо-профиль: ассистент отвечает по демо-данным. Создайте свой профиль, чтобы он знал ваши документы, сертификаты и опыт.':'This is a demo profile: the assistant answers on demo data. Create your own profile so it knows your documents, certificates and experience.')+'<button class="btn btn-accent btn-sm" type="button" onclick="mobileStartVaultWizard()">'+mobileEsc(ru?'Создать свой профиль':'Create my profile')+'</button></div>':'';
+    var offline=false; try{offline=(navigator.onLine===false);}catch(e){}
+    var off=offline?'<div class="mobile-assistant-banner" data-qa="assistant-offline">'+mobileEsc(ru?'Нет сети — ассистент недоступен. Меню и модули работают.':'No network — the assistant is unavailable. The menu and modules keep working.')+'</div>':'';
     var head='<div class="mobile-assistant-head"><div style="min-width:0;"><div class="mobile-card-title">'+mobileEsc(ru?'Ассистент':'Assistant')+'</div>'
-        +'<div class="mobile-card-sub">'+mobileEsc(ru?'AI-помощник моряка':'Seafarer AI helper')+(mobileAssistantRemaining!=null?' · '+mobileAssistantRemaining+mobileEsc(ru?' осталось сегодня':' left today'):'')+'</div></div>'
+        +'<div class="mobile-card-sub">'+mobileEsc(ru?'AI-помощник моряка':'Seafarer AI helper')+'</div></div>'
         +'<button class="btn btn-outline btn-sm" type="button" onclick="mobileAssistantClear()">'+mobileEsc(ru?'Очистить':'Clear')+'</button></div>';
     var body='<div class="mobile-assistant-stream" id="mobile-assistant-stream">'+mobileAssistantBubbles()+'</div>';
+    // Keep an unsent draft across in-place re-renders (online/offline flips, late demo flag).
+    var prev=document.getElementById('mobile-assistant-input');
+    var draft=(prev&&!mobileAssistantBusy)?String(prev.value||''):'';
     var composer='<div class="chat-composer mobile-assistant-composer">'
-        +'<textarea id="mobile-assistant-input" rows="1" placeholder="'+escAttr(ru?'Спросите ассистента…':'Ask the assistant…')+'" '+(mobileAssistantBusy?'disabled ':'')+'oninput="mobileAssistantAutoGrow(this)"></textarea>'
+        +'<textarea id="mobile-assistant-input" rows="1" placeholder="'+escAttr(ru?'Спросите ассистента…':'Ask the assistant…')+'" '+(mobileAssistantBusy?'disabled ':'')+'oninput="mobileAssistantAutoGrow(this)">'+mobileEsc(draft)+'</textarea>'
         +'<button class="btn-send" type="button" onmousedown="event.preventDefault()" onclick="mobileAssistantSend()" '+(mobileAssistantBusy?'disabled':'')+' aria-label="Send">&#10148;</button></div>';
-    mobileMainHtml('<div class="mobile-assistant-wrap">'+head+body+composer+'</div>');
+    mobileMainHtml('<div class="mobile-assistant-wrap">'+head+demo+off+body+composer+mobileMenuButtonHtml()+'</div>');
     // The scroll container is #mobile-main, not the stream — scroll IT to the
     // bottom so the newest message / typing indicator is always in view. Repeat
     // across a few frames to survive the keyboard-close reflow.
     mobileAssistantScroll(); setTimeout(mobileAssistantScroll,60); setTimeout(mobileAssistantScroll,220);
+}
+function renderMobileAssistant(){
+    if(!shouldUseMobileShell())return;
+    mobileView='assistant';
+    mobileSetSub(mobileVaultLabel());
+    mobileSetBottomNav(!isNativeMobile());
+    mobileRenderAssistantChat();
 }
 function mobileAssistantScroll(){
     var s=document.getElementById('mobile-assistant-stream');
@@ -6420,7 +6450,6 @@ function mobileAssistantScroll(){
 }
 async function mobileAssistantSend(){
     if(mobileAssistantBusy)return;
-    if(mobileIsDemo){renderMobileAssistant();return;}
     var ta=document.getElementById('mobile-assistant-input');
     var text=ta?String(ta.value||'').trim():'';
     if(!text)return;
@@ -6428,25 +6457,25 @@ async function mobileAssistantSend(){
     mobileAssistantMessages.push({role:'user',content:text});
     mobileAssistantBusy=true;
     mobileAssistantSaveConv();
-    renderMobileAssistant();
+    mobileAssistantRerender();
     try{
         var resp=await invoke('assistant_chat',{
             messages:mobileAssistantMessages.map(function(m){return {role:m.role,content:m.content};}),
             locale:getUiLang()
         });
         mobileAssistantMessages.push({role:'assistant',content:(resp&&resp.reply)||''});
-        if(resp&&typeof resp.remaining_today!=='undefined')mobileAssistantRemaining=resp.remaining_today;
     }catch(e){
         var msg=''+e,ru=getUiLang()==='ru',friendly;
         if(msg.indexOf('503')>=0||msg.indexOf('not configured')>=0)friendly=ru?'Ассистент ещё настраивается — попробуйте позже.':'The assistant is being set up — please try again later.';
-        else if(msg.indexOf('429')>=0||msg.indexOf('daily limit')>=0)friendly=ru?'Достигнут дневной лимит бесплатных запросов. Возвращайтесь завтра.':'You have reached today\'s free limit. Please come back tomorrow.';
+        // DECISIONS 251/253: neutral wording — the app never mentions any tier; shown only on exhaustion.
+        else if(msg.indexOf('429')>=0||msg.indexOf('daily limit')>=0)friendly=ru?'Дневной лимит запросов исчерпан — обновится завтра.':'Daily request limit reached — it resets tomorrow.';
         else friendly=ru?'Не удалось связаться с ассистентом. Проверьте интернет и попробуйте снова.':'Could not reach the assistant. Check your connection and try again.';
         mobileAssistantMessages.push({role:'assistant',content:friendly,_error:true});
         logError('assistant_chat',e);
     }
     mobileAssistantBusy=false;
     mobileAssistantSaveConv();
-    renderMobileAssistant();
+    mobileAssistantRerender();
 }
 // ---- Bug #2: in-app Back for the mobile shell (Android hardware Back) ----
 // The generated WryActivity routes hardware Back to WebView history: with no
@@ -6505,6 +6534,13 @@ if(typeof window!=='undefined'&&window.addEventListener){
         _mobileNavPopping=false;
     });
 }
+// Owner 05.09: the native home chat shows an honest offline banner; refresh it in place on
+// connectivity changes (the unsent draft is preserved by mobileRenderAssistantChat).
+if(typeof window!=='undefined'&&window.addEventListener){
+    ['online','offline'].forEach(function(evt){
+        window.addEventListener(evt,function(){ try{ if(shouldUseMobileShell())mobileAssistantRerender(); }catch(e){} });
+    });
+}
 function renderMobileShell(){
     if(!shouldUseMobileShell())return;
     // Bug #2: track this view in the History stack so Android hardware Back
@@ -6513,7 +6549,8 @@ function renderMobileShell(){
     // that set mobileView= directly (doc/add/pdf/experience form).
     mobileNavTrack(mobileView);
     mobileSetSub(mobileVaultLabel());
-    mobileSetBottomNav(mobileView!=='dispatch');
+    // Owner 05.09: the native build never shows the 5-slot rail (modules live behind ☰ → menu).
+    mobileSetBottomNav(isNativeMobile()?false:mobileView!=='dispatch');
     if(mobileView==='docs')return renderMobileDocs();
     if(mobileView==='add')return renderMobileAdd();
     if(mobileView==='profile')return renderMobileProfile();
@@ -6531,6 +6568,7 @@ function renderMobileShell(){
     if(mobileView==='contribution')return renderMobileContribution();
 
     if(mobileView==='assistant')return renderMobileAssistant();
+    if(mobileView==='menu')return renderMobileMenu();
     if(mobileView==='doc')return renderMobileDoc();
     if(mobileView==='pdf')return renderMobilePdfBuilder();
     return renderMobileHome();
@@ -6539,6 +6577,10 @@ function mobileHomeActionHtml(icon,title,sub,onclick){
     return '<button class="mobile-primary-action" type="button" onclick="'+onclick+'"><span class="mobile-action-icon">'+icon+'</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(title)+'</span><span class="mobile-action-sub">'+mobileEsc(sub)+'</span></span></button>';
 }
 function renderMobileHome(){
+    // Owner 05.09 (DIRECTIVE 01.09): on the NATIVE mobile build the home screen IS the assistant chat;
+    // the module grid lives on the menu screen (renderMobileMenu). Non-native mobile shells
+    // (web-Моряк ≤720px, harnesses) keep the family home below.
+    if(isNativeMobile())return mobileRenderAssistantChat();
     // Family mobile home (card 12): hero + the 11-module grid. The grid markup
     // comes verbatim from #mobile-home-modules-tpl (single source of truth the
     // presence contract also reads); localization and honest per-module status
@@ -6555,6 +6597,21 @@ function renderMobileHome(){
       +'</div>'+heroChip+'</div></div>';
     var tpl=document.getElementById('mobile-home-modules-tpl');
     h+=(tpl&&tpl.innerHTML)?tpl.innerHTML:'';
+    mobileMainHtml(h);
+    mobileHomeLocalizeModules();
+}
+// Menu screen (DIRECTIVE 01.09, sketch 2): same header; the module grid verbatim from
+// #mobile-home-modules-tpl (Documents · Experience · CV first), plus Profile and Feedback tiles —
+// their only other entry points (rail meter, header «!») are hidden on the native build. No ☰ here.
+function renderMobileMenu(){
+    var ru=getUiLang()==='ru';
+    var tpl=document.getElementById('mobile-home-modules-tpl');
+    var h='<div class="mobile-menu" data-qa="mobile-menu-screen">'+((tpl&&tpl.innerHTML)?tpl.innerHTML:'');
+    var pct=0; try{pct=mobileCompletenessPercent();}catch(e){}
+    h+='<div class="fam-module-grid mobile-menu-extra">'
+      +'<button class="fam-module-card" type="button" data-qa="menu-tile-profile" onclick="mobileShow(\'profile\')"><span class="fam-module-top"><span class="fam-module-icon">&#9679;</span>'+famStateChip(pct>=100?'ready':'pending',pct+'%')+'</span><span><span class="fam-module-name">'+mobileEsc(ru?'Профиль':'Profile')+'</span><span class="fam-module-desc">'+mobileEsc(ru?'Заполненность профиля и документов':'Profile completeness and details')+'</span></span></button>'
+      +'<button class="fam-module-card" type="button" data-qa="menu-tile-feedback" onclick="openMobileFeedbackMenu()"><span class="fam-module-top"><span class="fam-module-icon">!</span></span><span><span class="fam-module-name">'+mobileEsc(ru?'Отзыв':'Feedback')+'</span><span class="fam-module-desc">'+mobileEsc(ru?'Оценить или сообщить о проблеме':'Rate the app or report a problem')+'</span></span></button>'
+      +'</div></div>';
     mobileMainHtml(h);
     mobileHomeLocalizeModules();
 }
