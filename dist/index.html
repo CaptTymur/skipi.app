@@ -1482,14 +1482,14 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
          icon + a short label, four per row; the description each card used to
          print lives in data-hint and shows on a long press; no «ready» /
          «desktop» chips («слишком много текста», «указатель готовности
-         спрятать», «недоступно на телефоне — плохая идея»). Packages keeps the
-         route it has today and gets its real mobile screen in its own card. -->
+         спрятать», «недоступно на телефоне — плохая идея»). Packages opens its own
+         mobile screen since 06.09 (card seafarer-mobile-packages). -->
     <template id="mobile-home-modules-tpl">
         <div class="fam-app-grid" id="mobile-module-rail">
             <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-docs" data-mview="docs" onclick="mobileShow('docs')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Certificates and personal files" title="Certificates and personal files" aria-label="Documents"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6"/><path d="M9 17h4"/></svg></span><span class="fam-app-label" id="mhn-docs">Documents</span></button>
             <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-experience" data-mview="experience" onclick="mobileShow('experience')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Sea service and contracts" title="Sea service and contracts" aria-label="Experience"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3.5 7.5h17v11h-17z"/><path d="M8.5 7.5V5.8A1.8 1.8 0 0110.3 4h3.4a1.8 1.8 0 011.8 1.8v1.7"/><path d="M3.5 12.6h17"/></svg></span><span class="fam-app-label" id="mhn-experience">Experience</span></button>
             <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-cv" data-mview="cv" onclick="mobileShow('cv')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Exportable profile package" title="Exportable profile package" aria-label="CV"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3.5h12v17H6z"/><circle cx="12" cy="9.4" r="2.3"/><path d="M8.6 16.3c.9-1.6 2-2.4 3.4-2.4s2.5.8 3.4 2.4"/></svg></span><span class="fam-app-label" id="mhn-cv">CV</span></button>
-            <button class="fam-app-tile" type="button" id="mobile-home-packages" onclick="mobilePackagesHint()" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Prepared document sets" title="Prepared document sets" aria-label="Packages"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.2l8 4.2v9.2L12 20.8 4 16.6V7.4z"/><path d="M4 7.4l8 4.2 8-4.2"/><path d="M12 11.6v9.2"/></svg></span><span class="fam-app-label" id="mhn-packages">Packages</span></button>
+            <button class="fam-app-tile mobile-nav-btn" type="button" id="mobile-home-packages" data-mview="packages" onclick="mobileShow('packages')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Prepared document sets" title="Prepared document sets" aria-label="Packages"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.2l8 4.2v9.2L12 20.8 4 16.6V7.4z"/><path d="M4 7.4l8 4.2 8-4.2"/><path d="M12 11.6v9.2"/></svg></span><span class="fam-app-label" id="mhn-packages">Packages</span></button>
             <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-dispatch" data-mview="dispatch" onclick="mobileShow('dispatch')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Sent applications and replies" title="Sent applications and replies" aria-label="Mailings"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3.5 6h17v12h-17z"/><path d="M3.5 7l8.5 6 8.5-6"/></svg></span><span class="fam-app-label" id="mhn-dispatch">Mailings</span></button>
             <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-jobs" data-mview="jobs" onclick="mobileShow('jobs')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Vacancies matched to profile" title="Vacancies matched to profile" aria-label="Jobs"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M2.6 10.4h10.6v8.4H2.6z"/><path d="M5.8 10.4V9A1.4 1.4 0 017.2 7.6h1.6A1.4 1.4 0 0110.2 9v1.4"/><circle cx="17.4" cy="6.8" r="3.8"/><path d="M20.2 9.6l1.5 1.5"/></svg></span><span class="fam-app-label" id="mhn-jobs">Jobs</span></button>
             <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-information" data-mview="information" onclick="mobileShow('information')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Reference notes and guidance" title="Reference notes and guidance" aria-label="Information"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.8"/><path d="M12 11.2v5.6"/><circle cx="12" cy="7.7" r=".95" fill="currentColor" stroke="none"/></svg></span><span class="fam-app-label" id="mhn-information">Information</span></button>
@@ -4830,6 +4830,7 @@ function mobileShow(view){
     }
     if(mobileView==='add'&&mobileAddMode!=='attach_single'&&mobileAddMode!=='attach_pdf')mobileAddMode='choose';
     if(mobileView==='dispatch')mobileDispatchStep='choose';
+    if(mobileView==='packages')mobilePackagesStep='list';
     if(mobileView==='apps'){pluginHostState.selectedId=null;pluginHostState.openId=null;pluginHostState.surface='launcher';pluginHostState.search='';}
     renderMobileShell();
     setTimeout(mobileScrollMainTop,0);
@@ -4964,6 +4965,7 @@ function mobileModuleInfo(view){
     var map={
         experience:{title:'Experience',sub:'Sea service, vessels, contracts and onboard experience.',icon:'&#9873;',primary:'Add sea service',note:'Mobile sea service editing is the next layer. For now this module is connected in the navigation so the app structure matches desktop Skipi.'},
         cv:{title:'CV',sub:'Generate and review your seafarer CV from this vault.',icon:'CV',primary:'Prepare CV',note:'CV generation is available on desktop. Mobile export/share will be connected after the document capture loop is stable.'},
+        packages:{title:'Packages',sub:'Prepared document sets you can attach to a mailing.',icon:'&#128230;',primary:'Create package',note:'A package is a ZIP of the documents you pick; attach it to a mailing in one tap.'},
         dispatch:{title:'Mailings',sub:'Send CV and document packages to crewing contacts.',icon:'&#9993;',primary:'Prepare mailing',note:'Mailings need native mobile share/email flow. The module is placed here now so the final workflow is visible.'},
         jobs:{title:'Jobs',sub:'Vacancies and offers matched to your profile.',icon:'&#128188;',primary:'View jobs',note:'The jobs feed will use profile completeness and salary references from desktop Skipi.'},
         information:{title:'Information',sub:'Salary index and market references for this profile.',icon:'i',primary:'Open salary index',note:'Skipi Seafarer compares your rank and vessel type with aggregated vacancy data from skipi.info.'},
@@ -6706,6 +6708,7 @@ function renderMobileShell(){
     if(mobileView==='profile')return renderMobileProfile();
     if(mobileView==='experience')return renderMobileExperience();
     if(mobileView==='cv')return renderMobileCv();
+    if(mobileView==='packages')return renderMobilePackages();
     if(mobileView==='dispatch')return renderMobileDispatch();
     if(mobileView==='jobs')return renderMobileJobs();
     if(mobileView==='information')return renderMobileInformation();
@@ -6885,10 +6888,188 @@ if(typeof window!=='undefined'&&window.addEventListener){
         try{ if(ev.preventDefault)ev.preventDefault(); }catch(e){}
     },true);
 }
-function mobilePackagesHint(){
+// ---- BEGIN mobile Packages (card TASKCARD-2026-09-06-seafarer-mobile-packages;
+// owner 06.09 дословно «это не правильно. пекеджес должен быть в мобильной
+// версии», DECISIONS (302)). Slice 1 = list · create · delete, on the SAME Rust
+// commands the desktop already uses — get_packages / create_package /
+// delete_package are platform-neutral (src-tauri/src/commands/packages.rs).
+// The desktop screen is NOT reused: showPackages() hangs off renderTree(),
+// #pkg-count, .pkg-table, updateTabs() and three alert()s. This is a
+// phone-shaped card list with its own selection state and uiConfirm.
+// Taking a package OFF the phone (share / save / email) is deliberately absent:
+// open_email_with_attachment and open_file_in_default return Err() for android
+// and ios today, so a button here would be a dead end. It arrives with slice 2,
+// together with the Rust side (TASKCARD-2026-09-06-seafarer-native-share).
+var mobilePackagesStep='list';      // 'list' | 'create'
+var mobilePackagesSelected=[];      // doc ids ticked in the picker
+var mobilePackagesTitle='';         // draft title, survives picker re-renders
+var mobilePackagesBusy=false;       // one create at a time (double-tap guard)
+function mobilePackagesL10n(){
     var ru=getUiLang()==='ru';
-    showToast(ru?'Пакеты доступны в desktop-версии Скипи Моряк.':'Packages lives in the Skipi Seafarer desktop app.','info');
+    var info=mobileModuleInfo('packages');
+    return {
+        ru:ru,
+        icon:info.icon,
+        title:ru?'Пакеты':info.title,
+        sub:ru?'Готовые наборы документов для отправки.':info.sub,
+        loading:ru?'Загружаем пакеты…':'Loading packages…',
+        failed:ru?'Не удалось загрузить пакеты.':'Could not load packages.',
+        empty:ru?'Пакетов пока нет':'No packages yet',
+        emptyHint:ru?'Пакет — это ZIP из выбранных документов. Его можно приложить к рассылке одним касанием.':'A package is a ZIP of the documents you pick. Attach it to a mailing in one tap.',
+        needFiles:ru?'Сначала загрузите хотя бы один файл документа — упаковывать пока нечего.':'Upload at least one document file first — there is nothing to package yet.',
+        openDocs:ru?'Открыть документы':'Open documents',
+        create:ru?'Создать пакет':'Create package',
+        created:ru?'Создан':'Created',
+        del:ru?'Удалить':'Delete',
+        confirmDel:ru?'Удалить этот пакет? Сами документы останутся в хранилище.':'Delete this package? The documents themselves stay in the vault.',
+        titleLabel:ru?'Название':'Title',
+        defaultTitle:ru?'Пакет документов':'Document package',
+        pick:ru?'Выберите документы':'Choose documents',
+        pickSub:ru?'В пакет попадут только документы с приложенным файлом.':'Only documents with an attached file can be packaged.',
+        selected:ru?'выбрано':'selected',
+        cancel:ru?'Отмена':'Cancel',
+        noTitle:ru?'Введите название пакета':'Enter a package title',
+        noneSelected:ru?'Отметьте хотя бы один документ':'Tick at least one document'
+    };
 }
+function mobilePackageDate(v){
+    var s=String(v||'').trim();
+    return s?s.slice(0,10):'—';
+}
+function mobilePackageFilesLabel(n,ru){
+    n=Number(n||0);
+    if(ru)return n+' '+(n===1?'файл':(n>=2&&n<=4?'файла':'файлов'));
+    return n+' '+(n===1?'file':'files');
+}
+function mobilePackageCardHtml(p,L){
+    var id=String((p&&p.id)||'');
+    // The card shows ONLY what the product actually keeps: the title, the
+    // creation date and the file count. `expires_on`, `download_limit` and
+    // `download_count` are written into SQLite and then read by NOTHING —
+    // no Rust command enforces them, export_package copies the ZIP without a
+    // check or a counter bump, and the 365 days are hard-wired with no field
+    // in the UI. Printing a validity date would promise a guarantee the
+    // product does not have (Supervisor audit 06.09, finding Т1).
+    var h='<div class="mobile-card" data-qa="mobile-pkg-card">';
+    h+='<div class="mobile-row"><div style="min-width:0;">';
+    h+='<div class="mobile-card-title">'+mobileEsc(p.title)+'</div>';
+    h+='<div class="mobile-card-sub">'+mobileEsc(L.created+': '+mobilePackageDate(p.created_on))+'</div>';
+    h+='</div><span class="mobile-pill ok">'+mobileEsc(mobilePackageFilesLabel(p.file_count,L.ru))+'</span></div>';
+    h+='<div class="mobile-wizard-actions"><button class="btn btn-outline btn-red" type="button" data-qa="mobile-pkg-delete-'+escAttr(id)+'" onclick="mobileDeletePackage(\''+jsString(id)+'\')">'+mobileEsc(L.del)+'</button></div>';
+    h+='</div>';
+    return h;
+}
+async function renderMobilePackages(){
+    if(mobilePackagesStep==='create')return mobileRenderPackagesPicker();
+    var L=mobilePackagesL10n();
+    var main=document.getElementById('mobile-main');
+    var hasRoot=!!(main&&main.querySelector&&main.querySelector('[data-qa="seafarer-module-packages"]'));
+    if(!hasRoot)mobileMainHtml('<div data-qa="seafarer-module-packages"><div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(L.title)+'</div><div class="mobile-card-sub">'+mobileEsc(L.loading)+'</div></div></div>');
+    var pkgs=[],failed=false;
+    try{pkgs=(await invoke('get_packages'))||[];}catch(e){failed=true;logError('mobile_get_packages',e);}
+    if(mobileView!=='packages'||mobilePackagesStep!=='list')return;
+    var docs=uploadedDocsForSharing();
+    var h='<div data-qa="seafarer-module-packages">';
+    h+='<div class="mobile-card"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title">'+mobileEsc(L.title)+'</div><div class="mobile-card-sub">'+mobileEsc(L.sub)+'</div></div><span class="mobile-action-icon" style="width:38px;height:38px;font-size:18px;">'+L.icon+'</span></div></div>';
+    if(failed){
+        h+='<div class="mobile-card" data-qa="mobile-pkg-error"><div class="mobile-card-title">'+mobileEsc(L.failed)+'</div></div>';
+    }else if(!pkgs.length){
+        h+='<div class="mobile-card" data-qa="mobile-pkg-empty"><div class="mobile-card-title">'+mobileEsc(L.empty)+'</div><div class="mobile-card-sub">'+mobileEsc(docs.length?L.emptyHint:L.needFiles)+'</div></div>';
+    }else{
+        pkgs.forEach(function(p){h+=mobilePackageCardHtml(p,L);});
+    }
+    h+='<div class="mobile-wizard-actions">';
+    h+='<button class="btn btn-outline" type="button" data-qa="mobile-pkg-docs" onclick="mobileShow(\'docs\')">'+mobileEsc(L.openDocs)+'</button>';
+    h+='<button class="btn btn-accent" type="button" data-qa="mobile-pkg-create" onclick="mobileStartPackage()">'+mobileEsc(L.create)+'</button>';
+    h+='</div></div>';
+    mobileMainHtml(h);
+}
+function mobileRenderPackagesPicker(){
+    var L=mobilePackagesL10n();
+    var docs=uploadedDocsForSharing();
+    var h='<div data-qa="mobile-pkg-picker">';
+    h+='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(L.create)+'</div><div class="mobile-card-sub">'+mobileEsc(L.pickSub)+'</div></div>';
+    h+='<div class="mobile-card"><div class="mobile-field"><label>'+mobileEsc(L.titleLabel)+'</label><input id="mobile-pkg-title" data-qa="mobile-pkg-title" type="text" value="'+escAttr(mobilePackagesTitle)+'" placeholder="'+escAttr(L.defaultTitle)+'" oninput="mobilePackagesTitle=this.value"></div></div>';
+    h+='<div class="mobile-section-title" data-qa="mobile-pkg-count">'+mobileEsc(L.pick+' · '+mobilePackagesSelected.length+' '+L.selected)+'</div>';
+    h+='<div class="mobile-review-list">';
+    docs.forEach(function(d){
+        var id=String((d&&d.id)||'');
+        var on=mobilePackagesSelected.indexOf(id)>=0;
+        h+='<label class="mobile-review-row" data-qa="mobile-pkg-doc-'+escAttr(id)+'"><input type="checkbox" '+(on?'checked ':'')+'onchange="mobileTogglePackageDoc(\''+jsString(id)+'\',this.checked)"><span style="min-width:0;"><span class="mobile-card-title" style="display:block;font-size:14px;">'+mobileEsc(d.title||d.file_name||id)+'</span><span class="mobile-review-meta">'+mobileEsc(d.file_name||'')+'</span></span></label>';
+    });
+    h+='</div>';
+    h+='<div class="mobile-wizard-actions"><button class="btn btn-outline" type="button" data-qa="mobile-pkg-cancel" onclick="mobileCancelPackage()">'+mobileEsc(L.cancel)+'</button><button class="btn btn-accent" type="button" data-qa="mobile-pkg-confirm" onclick="mobileCreatePackage()">'+mobileEsc(L.create)+'</button></div>';
+    h+='</div>';
+    mobileMainHtml(h);
+}
+// The picker re-renders on every tick, so the half-typed title has to survive a
+// re-render: oninput mirrors it into the variable, and this re-reads the live
+// field for the paths (IME, autofill) where input never fired.
+function mobileCapturePackageTitle(){
+    var el=document.getElementById('mobile-pkg-title');
+    if(el&&typeof el.value==='string')mobilePackagesTitle=el.value;
+}
+function mobileStartPackage(){
+    var L=mobilePackagesL10n();
+    if(!uploadedDocsForSharing().length){showToast(L.needFiles,'warn');return;}
+    mobilePackagesStep='create';
+    mobilePackagesSelected=[];
+    if(!String(mobilePackagesTitle||'').trim())mobilePackagesTitle=L.defaultTitle;
+    mobileRenderPackagesPicker();
+}
+function mobileCancelPackage(){
+    mobilePackagesStep='list';
+    mobilePackagesSelected=[];
+    mobilePackagesTitle='';
+    renderMobilePackages();
+}
+function mobileTogglePackageDoc(id,on){
+    id=String(id||'');
+    mobileCapturePackageTitle();
+    var i=mobilePackagesSelected.indexOf(id);
+    if(on===undefined||on===null)on=(i<0);
+    if(on&&i<0)mobilePackagesSelected.push(id);
+    else if(!on&&i>=0)mobilePackagesSelected.splice(i,1);
+    if(mobilePackagesStep==='create')mobileRenderPackagesPicker();
+}
+async function mobileCreatePackage(){
+    var L=mobilePackagesL10n();
+    mobileCapturePackageTitle();
+    var title=String(mobilePackagesTitle||'').trim();
+    if(!title){showToast(L.noTitle,'warn');return;}
+    // create_package refuses a document without a file on disk; never send one.
+    var allowed=uploadedDocsForSharing().map(function(d){return String((d&&d.id)||'');});
+    var ids=mobilePackagesSelected.filter(function(id){return allowed.indexOf(id)>=0;});
+    if(!ids.length){showToast(L.noneSelected,'warn');return;}
+    if(mobilePackagesBusy)return;
+    mobilePackagesBusy=true;
+    try{
+        await invoke('create_package',{title:title,docIds:ids,expiryDays:365,downloadLimit:999});
+        mobilePackagesStep='list';
+        mobilePackagesSelected=[];
+        mobilePackagesTitle='';
+        await renderMobilePackages();
+    }catch(e){
+        // Rust says exactly which document has no file — show that, do not
+        // paraphrase it, and keep the picker open with the selection intact.
+        showToast(''+e,'error');
+        logError('mobile_create_package',e);
+    }finally{
+        mobilePackagesBusy=false;
+    }
+}
+async function mobileDeletePackage(id){
+    var L=mobilePackagesL10n();
+    if(!await uiConfirm(L.confirmDel,{confirmLabel:L.del,cancelLabel:L.cancel,danger:true}))return;
+    try{
+        await invoke('delete_package',{packageId:String(id)});
+        await renderMobilePackages();
+    }catch(e){
+        showToast(''+e,'error');
+        logError('mobile_delete_package',e);
+    }
+}
+// ---- END mobile Packages ----
 function renderMobileDocs(){
     var missing=mobileFilteredDocs('missing').length;
     var nofile=allDocs.filter(function(d){return !d.file_name;}).length;
