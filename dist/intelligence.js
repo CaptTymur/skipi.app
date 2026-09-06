@@ -63,7 +63,7 @@ function informationFallbackSnapshot(){
         industry_signals:[
             {id:'fallback_docs',title:'Complete document packs reduce friction',impact:'A current CV and certificate package helps a crewing manager assess you faster.',severity:'info',confidence:'curated',source:'Skipi local guidance',last_updated:now},
             {id:'fallback_offer_terms',title:'Contract terms matter beyond salary',impact:'Check internet access, joining window, relief plan, and repatriation terms before accepting.',severity:'info',confidence:'curated',source:'Skipi local guidance',last_updated:now},
-            {id:'fallback_reviews',title:'Sea Service unlocks vessel intelligence',impact:'Adding contracts with IMO numbers makes vessel review signals useful inside Skipi.',severity:'info',confidence:'curated',source:'Skipi local guidance',last_updated:now},
+            {id:'fallback_reviews',title:'Vessel intelligence becomes available with Sea Service',impact:'Adding contracts with IMO numbers makes vessel review signals useful inside Skipi.',severity:'info',confidence:'curated',source:'Skipi local guidance',last_updated:now},
             {id:'fallback_samples',title:'Small samples stay hidden',impact:'Skipi does not show salary slices until enough aggregate observations exist.',severity:'warning',confidence:'curated',source:'Skipi aggregation policy',last_updated:now}
         ],
         reference_signals:[
@@ -268,9 +268,14 @@ function renderInformationReferences(snapshot){
 }
 
 // --- extracted from seafarer dist/index.html:12504-12507 (openInformationSource) ---
+// Every external door in the shipped dist goes through the ONE helper in
+// dist/index.html: it awaits the command, and when the platform cannot open a
+// browser it answers on screen with the address and copies it to the clipboard.
+// The previous body called invoke() directly and fell back to window.open(), which
+// returns null and does nothing inside a WKWebView — on iOS this link was mute
+// (RISKS №221b).
 async function openInformationSource(url){
-    try{await invoke('open_external_url',{url:url});}
-    catch(e){window.open(url,'_blank');}
+    return openExternalUrlSafe(url);
 }
 
 // --- extracted from seafarer dist/index.html:12509-12525 (renderInformationOfferCard) ---
@@ -387,7 +392,7 @@ function renderInformationPlaces(snapshot){
 // --- extracted from seafarer dist/index.html:12615-12632 (renderInformationTrends) ---
 function renderInformationTrends(snapshot,seaServiceCount){
     if(!seaServiceCount){
-        return '<div class="info-card locked"><div class="info-kicker">Vessel intelligence</div><h3>Add sea service to unlock vessel/employer intelligence.</h3><p>Contracts with IMO numbers let Skipi connect market information with vessel reviews and trends.</p><div class="info-row"><button class="btn btn-outline btn-sm" onclick="showView(\'experience\')">Sea Service</button><span class="info-pill">local vault</span></div></div>';
+        return '<div class="info-card locked"><div class="info-kicker">Vessel intelligence</div><h3>Add sea service to make vessel/employer intelligence available.</h3><p>Contracts with IMO numbers let Skipi connect market information with vessel reviews and trends.</p><div class="info-row"><button class="btn btn-outline btn-sm" onclick="showView(\'experience\')">Sea Service</button><span class="info-pill">local vault</span></div></div>';
     }
     var trends=(snapshot&&snapshot.vessel_employer_trends)||[];
     if(!trends.length)return '<div class="info-empty">No vessel/employer aggregate trends available yet.</div>';

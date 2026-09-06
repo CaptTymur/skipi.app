@@ -171,9 +171,12 @@ fn external_url_is_allowed(url: &str) -> bool {
 /// http(s)/mailto/tel links open in the system browser / handler app. This is
 /// what the login gate's "Register" button relies on.
 ///
-/// iOS: not wired — there is no native iOS helper in this project yet and the
-/// login gate ships on Android/desktop. The allowlist is still enforced so the
-/// behaviour is consistent if/when an iOS opener is added.
+/// iOS: hands the URL to `-[UIApplication openURL:options:completionHandler:]`
+/// through the Objective-C runtime (see `ios_open_url` below). It used to return
+/// `Err("… not wired for iOS yet")`, which is why the reviewer's tap on Register
+/// opened nothing — App Store rejection 2.1(b), «we had no option to log in».
+/// The SAME allowlist gates all three platforms: a `file:` / `javascript:` /
+/// arbitrary scheme is rejected before any platform call is made.
 #[cfg(target_os = "android")]
 #[tauri::command]
 pub fn open_external_url(window: tauri::WebviewWindow, url: String) -> Result<(), String> {
@@ -224,13 +227,124 @@ pub fn open_external_url(window: tauri::WebviewWindow, url: String) -> Result<()
         .map_err(|_| "Timed out while opening link".to_string())?
 }
 
+/// The Objective-C runtime calls behind the iOS branch of `open_external_url`.
+///
+/// No new crate for this: `objc_getClass` / `sel_registerName` / `objc_msgSend`
+/// are the three C entry points of the runtime, and `libobjc` is already linked
+/// into this staticlib (wry/tao call the very same symbols on iOS). Every call
+/// below goes through a POINTER typed exactly like the method being sent —
+/// `objc_msgSend` is variadic in C and on Apple ARM64 must never be called as a
+/// varargs function.
+#[cfg(target_os = "ios")]
+mod ios_open_url {
+    use std::ffi::{c_char, c_void, CString};
+
+    #[link(name = "objc", kind = "dylib")]
+    extern "C" {
+        fn objc_getClass(name: *const c_char) -> *mut c_void;
+        fn sel_registerName(name: *const c_char) -> *mut c_void;
+        fn objc_msgSend();
+    }
+
+    type Id = *mut c_void;
+    type Sel = *mut c_void;
+
+    fn msg_send_base() -> unsafe extern "C" fn() {
+        objc_msgSend
+    }
+
+    unsafe fn class_named(name: &str) -> Result<Id, String> {
+        let c = CString::new(name).map_err(|_| "Bad Objective-C class name".to_string())?;
+        let k = objc_getClass(c.as_ptr());
+        if k.is_null() {
+            return Err(format!("iOS class {} is unavailable", name));
+        }
+        Ok(k)
+    }
+
+    unsafe fn selector(name: &str) -> Result<Sel, String> {
+        let c = CString::new(name).map_err(|_| "Bad Objective-C selector".to_string())?;
+        let s = sel_registerName(c.as_ptr());
+        if s.is_null() {
+            return Err(format!("iOS selector {} is unavailable", name));
+        }
+        Ok(s)
+    }
+
+    unsafe fn send0(receiver: Id, sel: Sel) -> Id {
+        let f: unsafe extern "C" fn(Id, Sel) -> Id = std::mem::transmute(msg_send_base());
+        f(receiver, sel)
+    }
+
+    unsafe fn send1(receiver: Id, sel: Sel, a: Id) -> Id {
+        let f: unsafe extern "C" fn(Id, Sel, Id) -> Id = std::mem::transmute(msg_send_base());
+        f(receiver, sel, a)
+    }
+
+    unsafe fn send1_cstr(receiver: Id, sel: Sel, a: *const c_char) -> Id {
+        let f: unsafe extern "C" fn(Id, Sel, *const c_char) -> Id =
+            std::mem::transmute(msg_send_base());
+        f(receiver, sel, a)
+    }
+
+    unsafe fn send3_void(receiver: Id, sel: Sel, a: Id, b: Id, c: Id) {
+        let f: unsafe extern "C" fn(Id, Sel, Id, Id, Id) = std::mem::transmute(msg_send_base());
+        f(receiver, sel, a, b, c)
+    }
+
+    /// MUST be called on the main thread: UIKit is not thread-safe. The caller
+    /// uses `AppHandle::run_on_main_thread` for exactly that reason.
+    pub fn open_on_main_thread(url: &str) -> Result<(), String> {
+        unsafe {
+            let c_url = CString::new(url).map_err(|_| "The address is not a valid URL".to_string())?;
+            let ns_string = class_named("NSString")?;
+            let string = send1_cstr(ns_string, selector("stringWithUTF8String:")?, c_url.as_ptr());
+            if string.is_null() {
+                return Err("Could not build the URL string".to_string());
+            }
+            let ns_url = class_named("NSURL")?;
+            let url_object = send1(ns_url, selector("URLWithString:")?, string);
+            if url_object.is_null() {
+                return Err("The address is not a valid URL".to_string());
+            }
+            let ui_application = class_named("UIApplication")?;
+            let shared = send0(ui_application, selector("sharedApplication")?);
+            if shared.is_null() {
+                return Err("The system browser is unavailable right now".to_string());
+            }
+            // options = nil (no per-open options), completionHandler = nil. The
+            // outcome is visible to the user: Safari either comes to the front or
+            // it does not, and the frontend helper keeps the address on screen.
+            send3_void(
+                shared,
+                selector("openURL:options:completionHandler:")?,
+                url_object,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            );
+            Ok(())
+        }
+    }
+}
+
 #[cfg(target_os = "ios")]
 #[tauri::command]
-pub fn open_external_url(url: String) -> Result<(), String> {
+pub fn open_external_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
     if !external_url_is_allowed(&url) {
         return Err("Only http(s)/mailto/tel URLs are allowed".to_string());
     }
-    Err("Opening external URLs is not wired for iOS yet.".to_string())
+
+    let (tx, rx) = mpsc::channel();
+    app.run_on_main_thread(move || {
+        let _ = tx.send(ios_open_url::open_on_main_thread(&url));
+    })
+    .map_err(|e| format!("Could not reach the iOS main thread: {}", e))?;
+
+    rx.recv_timeout(Duration::from_secs(5))
+        .map_err(|_| "Timed out while opening link".to_string())?
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -1021,6 +1135,51 @@ mod tests {
         assert!(
             !src.contains(&needle),
             "the removed Android stub string must not reappear in vault.rs"
+        );
+    }
+
+    // The iOS twin of the test above. The reviewer's tap on «Register» opened
+    // nothing because this command answered Err("… not wired for iOS yet") and the
+    // frontend swallowed the rejection — App Store 2.1(b). The behavioural half
+    // (Safari actually comes to the front) needs a device; what is host-verifiable
+    // is that the stub is gone on every target, that the iOS branch really calls
+    // the system opener, and that it does so on the main thread.
+    #[test]
+    fn ios_open_external_url_stub_string_is_gone() {
+        let src = include_str!("vault.rs");
+        let needle = format!("Opening external URLs {} for iOS yet.", "is not wired");
+        assert!(
+            !src.contains(&needle),
+            "the iOS stub string must not reappear in vault.rs"
+        );
+        assert!(
+            src.contains("openURL:options:completionHandler:"),
+            "the iOS branch must ask UIApplication to open the URL"
+        );
+        assert!(
+            src.contains("app.run_on_main_thread("),
+            "and it must do that on the main thread — UIKit is not thread-safe"
+        );
+    }
+
+    // The allowlist is the security boundary, and it has to be the SAME boundary on
+    // all three platforms: one branch that forgot to call it would accept file:// or
+    // javascript: from anything that can reach the command.
+    #[test]
+    fn every_platform_branch_checks_the_allowlist() {
+        // Cut the test module off first: THIS function quotes both needles, and a
+        // test is not a platform branch.
+        let whole = include_str!("vault.rs");
+        // The marker is assembled, not written out: a second literal copy of it in
+        // this file would break the harness drill that cuts on the FIRST one.
+        let marker = format!("#[cfg{}]", "(test)");
+        let src = &whole[..whole.find(&marker).expect("test module marker")];
+        let branches = src.matches("pub fn open_external_url(").count();
+        let checks = src.matches("if !external_url_is_allowed(&url) {").count();
+        assert_eq!(branches, 3, "android + ios + desktop branches expected");
+        assert_eq!(
+            checks, branches,
+            "every open_external_url branch must gate on the allowlist first"
         );
     }
 
