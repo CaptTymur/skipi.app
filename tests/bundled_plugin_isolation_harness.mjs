@@ -1882,6 +1882,208 @@ const railIconChain = () => CHAIN_BASE.concat([
   } catch (e) { ok(false, 'IG8 crashed before it could assert: ' + e.message); }
 }
 
+// ---------------------------------------------------------------------------
+// Apps screen icon grid (AG1–AG7) — owner 06.09 with the Apps screenshot:
+// «в разделе apps это уберем вовсе. а значки плагинов (в том числе и
+// установленных) делаем в таком же стиле как и значки главного меню».
+// Two things are drilled: the duplicated module list above the launcher is gone
+// for good (AG1/AG6), and the launcher's own plugin tiles now speak the module
+// grid's icon language — rounded icon box, short label, description behind a
+// long press (AG2/AG3), with the open path and the module grid untouched
+// (AG4/AG5). AG7 drills the pure transform on icon shapes no bundled plugin
+// ships today (inline SVG, bitmap) so the styling is not emoji-only by accident.
+// ---------------------------------------------------------------------------
+
+const appsTileTag = (h, id) => {
+  const m = new RegExp('<button[^>]*data-qa="plugin-open-' + id + '"[^>]*>').exec(h);
+  return m ? m[0] : '';
+};
+
+{
+  section('apps icon grid (AG1) — the duplicated module list is gone from the Apps screen');
+  try {
+    const app = installNavHistory(bootMobile({ seed: BNWAS_INSTALLED }));
+    await settleVm();
+    const { sandbox, doc } = app;
+    sandbox.mobileShow('apps'); app.runTimers(0);
+    const h = mobileHtml(doc);
+    ok(h.includes('data-qa="seafarer-module-apps"'), 'the Apps launcher itself still renders');
+    ok(!h.includes('data-qa="apps-module-tiles"'), 'zero apps-module-tiles wrappers on the Apps screen');
+    ok((h.match(/fam-module-card/g) || []).length === 0, 'zero fam-module-card tiles on the Apps screen (got ' + (h.match(/fam-module-card/g) || []).length + ')');
+    ok(!h.includes('mobile-apps-module-grid'), 'the module-duplicate grid container is gone');
+    ok(!/mobileShow\('(docs|experience|cv|dispatch|jobs|information|vessels|myvessel|assistant)'\)/.test(h), 'the Apps screen routes to no home module any more — only plugins live here');
+  } catch (e) { ok(false, 'AG1 crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('apps icon grid (AG2) — plugin tiles speak the main-menu icon language');
+  try {
+    const app = installNavHistory(bootMobile({ seed: BNWAS_INSTALLED }));
+    await settleVm();
+    const { sandbox, doc } = app;
+    sandbox.mobileShow('apps'); app.runTimers(0);
+    const h = mobileHtml(doc);
+    ok(h.includes('data-qa="plugin-tile-bnwas-time-anchor"') && h.includes('data-qa="plugin-open-bnwas-time-anchor"'), 'both plugin hooks survive the restyle');
+    const tag = appsTileTag(h, 'bnwas-time-anchor');
+    ok(/class="fam-app-tile"/.test(tag), 'the plugin tile IS a fam-app-tile, like every module icon');
+    ok(/data-hint="[^"]{3,}"/.test(tag), 'the description moved into data-hint');
+    ok(/aria-label="[^"]+"/.test(tag), 'aria-label carries the plugin name');
+    ok(h.includes('<span class="fam-app-icon-box" aria-hidden="true">'), 'the icon sits in the same rounded fam-app-icon-box');
+    ok(/<span class="fam-app-label">BNWAS \/ Time Anchor<\/span>/.test(h), 'a single short label sits under the icon');
+    ok(!h.includes('apps-icon-tile-meta'), 'no «meta» second text line in the tile');
+    ok(!h.includes('apps-icon-tile-name') && !h.includes('apps-icon-tile-icon'), 'the old tile spans are gone from the Apps screen');
+    ok(!/class="apps-icon-tile"/.test(h), 'no old .apps-icon-tile wrapper left on the Apps screen');
+    ok(!h.includes('data-qa="state-chip-ready"') && !h.includes('fam-chip'), 'no readiness chip in the tile (same rule the module grid follows)');
+    ok(!h.includes('apps-badge'), 'no badge text inside a tile');
+    ok(/grid-template-columns\s*:\s*repeat\(4,/.test(cssRule('body.mobile-mode .apps-launcher-grid')), 'four plugin icons per row, exactly like .fam-app-grid');
+    ok(/font-size\s*:\s*26px/.test(cssRule('.fam-app-tile .fam-app-icon-box .fam-app-glyph')), 'an emoji/letter plugin icon is drawn at the shared icon size inside the box');
+    // A module icon is an <svg>; a plugin icon is usually an emoji, i.e. TEXT. A long
+    // press over text hands the gesture to the WebView's selection/callout machinery,
+    // which cancels the pointer stream the hint is built on — so the glyph is made
+    // non-interactive and the whole tile non-selectable (smoke 06.09, emulator).
+    ok(/pointer-events\s*:\s*none/.test(cssRule('.fam-app-tile .fam-app-icon-box .fam-app-glyph')), 'the emoji glyph is pointer-transparent, so the press target is the button (like the module <svg>)');
+    ok(/user-select\s*:\s*none/.test(cssRule('.fam-app-tile')) && /-webkit-touch-callout\s*:\s*none/.test(cssRule('.fam-app-tile')), 'the tile is non-selectable and has no long-press callout, so a long press stays a hint');
+  } catch (e) { ok(false, 'AG2 crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('apps icon grid (AG3) — long press on a plugin icon shows the same hint bubble');
+  try {
+    const app = installNavHistory(bootMobile({ seed: BNWAS_INSTALLED }));
+    await settleVm();
+    const { sandbox, doc } = app;
+    sandbox.mobileShow('apps'); app.runTimers(0);
+    const tag = appsTileTag(mobileHtml(doc), 'bnwas-time-anchor');
+    ok(/onpointerdown="mobileHintPress\(this\)"/.test(tag), 'the plugin icon arms the long-press on pointerdown');
+    ok(/onpointerup="mobileHintRelease\(\)"/.test(tag) && /onpointercancel="mobileHintRelease\(\)"/.test(tag), 'and releases it on pointerup/pointercancel — the module-grid contract');
+    const hintText = (/data-hint="([^"]+)"/.exec(tag) || [])[1] || '';
+    ok(hintText.length > 3, 'the plugin tile carries a non-empty hint (got "' + hintText + '")');
+    ok(hintText === (sandbox.pluginById('bnwas-time-anchor') || {}).short, 'the hint says what the plugin IS (registry .short), not just its version — the module-grid rule');
+    // The VM DOM keeps generated markup as a string, so the bubble is driven
+    // through the REAL mobileHint* path on a node carrying the REAL data-hint.
+    const hint = doc.getElementById('mobile-module-hint');
+    const node = doc.createElement('button');
+    node.setAttribute('data-hint', hintText);
+    app.timers.length = 0;
+    sandbox.mobileHintPress(node);
+    ok(hint.style.display !== 'block', 'a short press shows nothing');
+    const armed = app.timers.filter((t) => t.ms >= 400);
+    ok(armed.length === 1, 'a single ≥400 ms long-press timer is armed (got ' + armed.length + ')');
+    armed[0].fn();
+    ok(hint.style.display === 'block' && hint.textContent === hintText, 'after the delay the bubble shows the plugin hint verbatim');
+    sandbox.mobileHintRelease();
+    ok(hint.style.display === 'none', 'releasing the finger hides it again');
+  } catch (e) { ok(false, 'AG3 crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('apps icon grid (AG4) — tapping an icon opens the plugin through the existing path');
+  try {
+    const app = installNavHistory(bootMobile({ seed: BNWAS_INSTALLED }));
+    await settleVm();
+    const { sandbox, doc } = app;
+    sandbox.mobileShow('apps'); app.runTimers(0);
+    const tag = appsTileTag(mobileHtml(doc), 'bnwas-time-anchor');
+    ok(/onclick="pluginLaunch\('bnwas-time-anchor'\)"/.test(tag), 'the icon keeps the SAME onclick the launcher shipped (pluginLaunch)');
+    sandbox.pluginLaunch('bnwas-time-anchor');
+    ok(sandbox.pluginHostState.openId === 'bnwas-time-anchor', 'pluginLaunch from the icon opens the plugin');
+    ok(mobileHtml(doc).includes('id="plugin-host-container"'), 'and it mounts into the single isolated host container');
+    sandbox.pluginClose();
+    ok(sandbox.pluginHostState.surface === 'launcher' && sandbox.pluginHostState.openId === null, 'close returns to the launcher (UHOST-11 unchanged)');
+    const back = mobileHtml(doc);
+    ok(/class="fam-app-tile"/.test(back) && !/class="apps-icon-tile"/.test(back), 'the launcher comes back in the NEW icon style after closing a plugin (module pluginRerender path)');
+    sandbox.pluginOpenManage();
+    ok(mobileHtml(doc).includes('data-qa="plugin-settings-bnwas-time-anchor"'), 'the gear still opens plugin management');
+    sandbox.pluginBackToLauncher();
+    const back2 = mobileHtml(doc);
+    ok(/class="fam-app-tile"/.test(back2) && !/class="apps-icon-tile"/.test(back2), '«← Apps» returns to the launcher in the new icon style too');
+  } catch (e) { ok(false, 'AG4 crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('apps icon grid (AG5) — the main menu grid is untouched by the Apps restyle');
+  try {
+    const app = installNavHistory(bootMobile({ seed: {} }));
+    await settleVm();
+    const { sandbox, doc } = app;
+    sandbox.mobileShow('menu'); app.runTimers(0);
+    const mm = mobileHtml(doc);
+    ok((mm.match(/fam-app-tile/g) || []).length === 13, 'menu still shows 13 icons: 11 modules + Profile + Feedback (got ' + (mm.match(/fam-app-tile/g) || []).length + ')');
+    ok(tplButtons().length === 11 && !/apps-icon-tile/.test(MODULE_TPL), 'the module template itself is not touched by the Apps restyle');
+    ok(mm.includes('data-qa="menu-tile-profile"') && mm.includes('data-qa="menu-tile-feedback"'), 'Profile and Feedback tiles still there');
+  } catch (e) { ok(false, 'AG5 crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('apps icon grid (AG6) — the module-duplicate code is deleted, not just hidden');
+  ok(!/MOBILE_APPS_MODULE_TILES/.test(HTML), 'MOBILE_APPS_MODULE_TILES is gone from dist/index.html');
+  ok(!/mobileAppsModuleTilesHtml/.test(HTML), 'mobileAppsModuleTilesHtml is gone');
+  ok(!/mobileAppsEnsureModuleTiles/.test(HTML), 'mobileAppsEnsureModuleTiles is gone');
+  ok(!/apps-module-tiles/.test(HTML), 'the apps-module-tiles marker is gone from the shipped bytes');
+  ok(!/mobile-apps-module-grid/.test(HTML), 'the .mobile-apps-module-grid CSS is gone');
+  ok(/function mobileAppsIconizeHtml\(/.test(HTML), 'the restyle is one pure string transform (mobileAppsIconizeHtml)');
+  ok(/MutationObserver/.test(HTML), 'partial launcher re-renders (search / async catalog refresh) are covered by an observer');
+  ok((HOST_UI_MODULE.match(/apps-icon-tile/g) || []).length > 0, 'the vendored @skipi/plugin-host-ui bytes are NOT edited — the home restyles what the module rendered');
+}
+
+{
+  section('apps icon grid (AG7) — the transform itself: emoji, inline SVG and bitmap icons all land in the icon box');
+  try {
+    const app = bootMobile({ seed: BNWAS_INSTALLED });
+    await settleVm();
+    const t = app.sandbox.mobileAppsIconizeHtml;
+    ok(typeof t === 'function', 'mobileAppsIconizeHtml is reachable');
+    if (typeof t === 'function') {
+      const tile = (icon, extra) => '<div class="apps-icon-tile" data-qa="plugin-tile-x"><button type="button" data-qa="plugin-open-x" onclick="pluginLaunch(\'x\')" title="X &#183; v1"><span class="apps-icon-tile-icon">' + icon + '</span><span class="apps-icon-tile-name">X</span><span class="apps-icon-tile-meta">v1</span>' + (extra || '') + '</button></div>';
+      const emoji = t(tile('⏱️'));
+      ok(/<span class="fam-app-icon-box" aria-hidden="true"><span class="fam-app-glyph">⏱️<\/span><\/span>/.test(emoji), 'an emoji icon is wrapped in a sized glyph span (the box itself is font-size:0)');
+      const svg = t(tile('<svg viewBox="0 0 24 24"><path d="M1 1"/></svg>'));
+      ok(/<span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24">/.test(svg), 'an inline SVG icon goes straight into the box (the shared outline CSS styles it)');
+      const img = t(tile('<img src="plugins/x/icon.png" alt="">'));
+      ok(/<span class="fam-app-icon-box" aria-hidden="true"><img src="plugins\/x\/icon\.png"/.test(img), 'a bitmap icon goes into the box too');
+      ok(!/apps-icon-tile/.test(emoji) && !/apps-icon-tile/.test(svg) && !/apps-icon-tile/.test(img), 'nothing of the old tile markup survives the transform');
+      ok(/data-qa="plugin-tile-x"/.test(emoji) && /data-qa="plugin-open-x"/.test(emoji) && /onclick="pluginLaunch\('x'\)"/.test(emoji), 'id hooks and the open handler are carried over verbatim');
+      const upd = t(tile('⏱️', '<span class="apps-badge live" data-qa="plugin-update-available-x">Update available</span>'));
+      ok(/data-hint="v1"/.test(emoji), 'an unknown plugin id falls back to the meta line the launcher printed, never to an empty hint');
+      ok(/data-hint="v1 · Update available"/.test(upd) && !/apps-badge/.test(upd), '«Update available» moves into the hint instead of a second text line in the tile');
+      ok(t('<div>nothing to do</div>') === '<div>nothing to do</div>', 'markup without launcher tiles comes back byte-identical');
+    }
+  } catch (e) { ok(false, 'AG7 crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('apps icon grid (AG8) — the restyle never reaches the DESKTOP launcher (defect F5)');
+  try {
+    const app = installNavHistory(bootMobile({ seed: BNWAS_INSTALLED }));
+    await settleVm();
+    const { sandbox, doc } = app;
+    sandbox.mobileShow('apps'); app.runTimers(0);
+    // The vendored module emits the SAME #apps-launcher-results id on BOTH surfaces:
+    // the desktop launcher writes it into #scr-content and the mobile one into
+    // #mobile-main. #mobile-main is always in the DOM, so a GLOBAL getElementById
+    // would let the mobile observer rewrite a DESKTOP screen (matters for WEB=DESKTOP).
+    const fnBody = (name) => { const i = HTML.indexOf(name); if (i < 0) return null; const j = HTML.indexOf('\n}\n', i); return j < 0 ? null : HTML.slice(i, j); };
+    const fn = fnBody('function mobileAppsIconizeTiles(') || '';
+    ok(fn.length > 50, 'mobileAppsIconizeTiles located in the shipped bytes');
+    ok(!/document\.getElementById\(\s*'apps-launcher-results'\s*\)/.test(fn), 'no GLOBAL getElementById for the launcher-results id');
+    ok(/main\.querySelector\(\s*'#apps-launcher-results'\s*\)/.test(fn), 'the launcher-results node is looked up INSIDE #mobile-main');
+    ok((HOST_UI_MODULE.match(/id="apps-launcher-results"/g) || []).length >= 2, 'the module really emits that id on both the desktop and the mobile launcher (got ' + (HOST_UI_MODULE.match(/id="apps-launcher-results"/g) || []).length + ')');
+    // Behavioural: a node carrying that id OUTSIDE #mobile-main is left untouched.
+    const OLD = '<div class="apps-icon-tile" data-qa="plugin-tile-desk"><button type="button" data-qa="plugin-open-desk" onclick="pluginLaunch(\'desk\')" title="Desk"><span class="apps-icon-tile-icon">D</span><span class="apps-icon-tile-name">Desk</span></button></div>';
+    const outside = doc.createElement('div');
+    outside.setAttribute('id', 'apps-launcher-results');
+    outside.innerHTML = OLD;
+    const main = doc.getElementById('mobile-main');
+    // The VM DOM keeps no real tree, so element.querySelector delegates to the document.
+    // Model the browser for this drill: nothing with that id sits inside #mobile-main.
+    // If the code ever goes back to document.getElementById, the node above IS found
+    // (it is registered by id) and rewritten — which is exactly what must stay RED.
+    main.querySelector = () => null;
+    sandbox.mobileAppsIconizeTiles();
+    ok(outside.innerHTML === OLD, 'a launcher-results node OUTSIDE #mobile-main is never rewritten (the desktop launcher is safe)');
+    ok(/class="apps-icon-tile"/.test(outside.innerHTML), 'and its old .apps-icon-tile markup survives byte-for-byte');
+  } catch (e) { ok(false, 'AG8 crashed before it could assert: ' + e.message); }
+}
 
 // ---------------------------------------------------------------------------
 // Mobile IME inset (defect 308, owner 06.09: «клавиатура закрывала область
