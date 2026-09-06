@@ -6513,7 +6513,7 @@ function mobileRenderAssistantChat(){
     var prev=document.getElementById('mobile-assistant-input');
     var draft=(prev&&!mobileAssistantBusy)?String(prev.value||''):'';
     var composer='<div class="chat-composer mobile-assistant-composer">'
-        +'<textarea id="mobile-assistant-input" rows="1" placeholder="'+escAttr(ru?'Спросите ассистента…':'Ask the assistant…')+'" '+(mobileAssistantBusy?'disabled ':'')+'oninput="mobileAssistantAutoGrow(this)">'+mobileEsc(draft)+'</textarea>'
+        +'<textarea id="mobile-assistant-input" rows="1" placeholder="'+escAttr(ru?'Спросите ассистента…':'Ask the assistant…')+'" '+(mobileAssistantBusy?'disabled ':'')+'oninput="mobileAssistantAutoGrow(this)" onfocus="mobileAssistantOnInputFocus()" onblur="mobileAssistantOnInputBlur()">'+mobileEsc(draft)+'</textarea>'
         +'<button class="btn-send" type="button" onmousedown="event.preventDefault()" onclick="mobileAssistantSend()" '+(mobileAssistantBusy?'disabled':'')+' aria-label="Send">&#10148;</button></div>';
     mobileMainHtml('<div class="mobile-assistant-wrap">'+head+demo+off+body+composer+mobileMenuButtonHtml()+'</div>');
     // The scroll container is #mobile-main, not the stream — scroll IT to the
@@ -6534,12 +6534,41 @@ function mobileAssistantScroll(){
     var main=document.getElementById('mobile-main');
     if(main)main.scrollTop=main.scrollHeight;
 }
+// Keyboard inset (defect 308, owner 06.09: «клавиатура закрывала область ввода»).
+// The composer itself is lifted by the platform — the manifest adjustResize on
+// API<=34, the ime() inset listener in MainActivity on Android 15+ — because the
+// WebView never learns about the keyboard on its own (measured: with the IME up
+// innerHeight and visualViewport.height stayed equal and no resize event fired,
+// so a visualViewport layer here would be dead code). What dist still owes is the
+// FEED: when the window shrinks, the newest message must not be left behind the
+// composer. Tracked with an explicit flag rather than document.activeElement so
+// the state is honest even while the re-render swaps the textarea node.
+var mobileAssistantInputFocused=false;
+function mobileAssistantOnInputFocus(){
+    mobileAssistantInputFocused=true;
+    // The keyboard (and with it the resize) lands a frame or two after focus, so
+    // pin now and again once it has finished opening.
+    mobileAssistantScroll();
+    setTimeout(mobileAssistantScroll,120);
+    setTimeout(mobileAssistantScroll,320);
+}
+function mobileAssistantOnInputBlur(){ mobileAssistantInputFocused=false; }
+if(typeof window!=='undefined'&&window.addEventListener){
+    window.addEventListener('resize',function(){
+        // Only while the composer actually has focus: a rotation or split-screen
+        // resize must not yank a reader's scroll position to the bottom.
+        if(!mobileAssistantInputFocused)return;
+        if(!shouldUseMobileShell())return;
+        try{ mobileAssistantScroll(); }catch(e){}
+    });
+}
 async function mobileAssistantSend(){
     if(mobileAssistantBusy)return;
     var ta=document.getElementById('mobile-assistant-input');
     var text=ta?String(ta.value||'').trim():'';
     if(!text)return;
     if(ta){ta.value='';ta.blur();}
+    mobileAssistantInputFocused=false;
     mobileAssistantMessages.push({role:'user',content:text});
     mobileAssistantBusy=true;
     mobileAssistantSaveConv();
