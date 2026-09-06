@@ -2737,31 +2737,100 @@ const centredFullScreen = (html) => fullScreenDecls(html).filter(({ l }) => !fsA
 }
 
 {
-  section('NOPAY5 — the dists make no claim that anything costs nothing (decision 253)');
-  // Naively banning the word breaks legitimate copy, so the allowlist is explicit and
-  // each entry says why — exactly the way the /month rule is written.
+  section('NOPAY5 — no SHIPPED dist asset claims that anything costs nothing (decision 253)');
+  // The first version of this rule was titled «the dists» and read dist/index.html
+  // ALONE — while the two strings that actually shipped a price claim sat in
+  // dist/skipi-assistant.js. It was green for the wrong reason (Supervisor Н-A,
+  // 2026-09-06). It now reads EVERY shipped text asset under dist/, bundles and
+  // bundled plugins included.
+  const SHIPPED = [];
+  (function walk(dir) {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (/\.(html|js|css|json)$/.test(e.name)) SHIPPED.push(p);
+    }
+  })(DIST);
+  const shippedText = SHIPPED.map((p) => ({ file: path.relative(DIST, p), text: fs.readFileSync(p, 'utf8') }));
+  ok(SHIPPED.length >= 10 && shippedText.some((f) => f.file === 'skipi-assistant.js') && shippedText.some((f) => f.file === 'index.html'),
+    'the scan really covers the shipped bundles, not just index.html (' + SHIPPED.length + ' files, incl. ' + shippedText.filter((f) => /\.js$/.test(f.file)).length + ' js)');
+
+  // Allowlist = a written promise, with the reason, that this occurrence is not a
+  // claim about price. Anything not listed is red.
   const NOPAY_ALLOW = [
     { re: /free[\s-]text/gi, why: '«Free text (optional)» is the LABEL of the free-text review field and the comments around it — it describes an input, not a price' },
     { re: /free[\s-]form/gi, why: '«free-form edits» describes how a field may be filled in — again an input, not a price' },
+    { re: /framework-free/gi, why: '«Framework-free (vanilla)» in the @skipi/assistant header comment is a statement about dependencies, and it is a comment, not screen copy' },
+    // The ONLY allowlisted user-facing strings, and they are allowed on a condition
+    // that is proved below, not on trust: they are @skipi/assistant i18n DEFAULTS for
+    // one key, and this home replaces that key through host.getI18n before the module
+    // can ever render it. Fixing the vendored bundle itself belongs to the Assistant
+    // Lead track; a home may not patch a vendored module in place.
+    { re: /today’s free limit/gi, why: '@skipi/assistant built-in default for assistant.error.limit — overridden by this home (proved below), never rendered here' },
+    { re: /лимит бесплатных запросов/gi, why: 'the RU half of the same @skipi/assistant default for assistant.error.limit — same override, same proof' },
   ];
-  const freeHits = (html) => {
-    let stripped = html;
-    NOPAY_ALLOW.forEach(({ re }) => { stripped = stripped.replace(re, 'X'.repeat(9)); });
-    return stripped.match(/\bfree\b|бесплат/gi) || [];
+  const freeHits = (files) => {
+    const out = [];
+    for (const f of files) {
+      let stripped = f.text;
+      NOPAY_ALLOW.forEach(({ re }) => { stripped = stripped.replace(re, 'X'.repeat(9)); });
+      for (const m of stripped.match(/\bfree\b|бесплат/gi) || []) out.push(f.file + ': ' + m);
+    }
+    return out;
   };
-  const hits = freeHits(HTML);
-  ok(hits.length === 0, 'no free/бесплат claim anywhere in dist/index.html (hits: ' + JSON.stringify(hits) + ')');
+  const hits = freeHits(shippedText);
+  ok(hits.length === 0, 'no free/бесплат claim in ANY shipped dist asset (hits: ' + JSON.stringify(hits) + ')');
   ok(NOPAY_ALLOW.every((a) => a.why.length > 40), 'every allowlist entry states why it is legitimate');
   ok((HTML.match(/free[\s-]text|free[\s-]form/gi) || []).length >= 4,
     'the allowlist is NOT vacuous — the legitimate phrases really are in the file (' + (HTML.match(/free[\s-]text|free[\s-]form/gi) || []).length + ' of them)');
-  // negatives, one per site the audit found
-  ok(freeHits(HTML.replace('An AI assistant for your maritime career', 'A free AI assistant for your maritime career')).length === 1,
+
+  // ── the condition the last two allowlist entries stand on ──────────────────
+  // @skipi/assistant resolves every key through host.getI18n(key) FIRST
+  // (dist/skipi-assistant.js:109-114). If this home stops answering for
+  // assistant.error.limit, the module default — with its price claim — reaches the
+  // screen, and the two entries above become a hole. So it is proved, per locale.
+  const ASSISTANT_JS = fs.readFileSync(path.join(DIST, 'skipi-assistant.js'), 'utf8');
+  ok(/if \(typeof host\.getI18n === 'function'\) \{[\s\S]{0,120}?return v;/.test(ASSISTANT_JS),
+    'the module really does ask the host first (if this stops being true, the override below stops protecting anything)');
+  const gi = HTML.indexOf('getI18n: function(key){');
+  const gj = HTML.indexOf('\n            },\n', gi);
+  ok(gi > 0 && gj > gi, 'the host getI18n was located in dist/index.html');
+  const giSrc = HTML.slice(gi, gj) + '\n            }';
+  const askHost = (locale, src) => {
+    const ctx = { currentLocale: () => locale, out: null };
+    vm.createContext(ctx);
+    vm.runInContext('out = ({ ' + src + ' }).getI18n("assistant.error.limit");', ctx);
+    return ctx.out;
+  };
+  for (const loc of ['en', 'ru']) {
+    const v = askHost(loc, giSrc);
+    ok(typeof v === 'string' && v.length > 10, loc + ': the home answers for assistant.error.limit instead of falling through to the module default (got ' + JSON.stringify(v) + ')');
+    ok(typeof v === 'string' && !/\bfree\b|бесплат/i.test(v), loc + ': and its copy carries no claim about price');
+    ok(typeof v === 'string' && /limit|лимит/i.test(v), loc + ': while still telling the user what actually happened — a daily cap');
+  }
+  ok(askHost('en', giSrc) !== askHost('ru', giSrc), 'the two locales really are different strings (the RU branch is not dead code)');
+
+  // ── negatives ─────────────────────────────────────────────────────────────
+  // 1. the scan reaches the .js bundles at all — this is the one the old rule failed
+  const poisoned = shippedText.map((f) => (f.file === 'skipi-assistant.js'
+    ? { file: f.file, text: f.text.replace("'assistant.error.setup':", "'assistant.error.paywall': 'Your free questions are over.',\n      'assistant.error.setup':") }
+    : f));
+  const poisonedHits = freeHits(poisoned);
+  ok(poisonedHits.length === 1 && /skipi-assistant\.js/.test(poisonedHits[0]),
+    'NEGATIVE: a price claim added to a bundle OTHER than index.html turns this rule red — the old rule could not see it (0 hits before, ' + poisonedHits.length + ' after: ' + JSON.stringify(poisonedHits) + ')');
+  // 2. the allowlisted module defaults are allowed only while the override stands
+  const brokenSrc = giSrc.replace(/if\(key === 'assistant\.error\.limit'\)\{[\s\S]*?\n                \}/, '');
+  ok(brokenSrc !== giSrc, 'the negative mutation really removed the override');
+  ok(askHost('en', brokenSrc) == null,
+    'NEGATIVE: drop the host override and the module default — the string this rule allowlists — is what reaches the screen, so the proof above goes red');
+  // 3. the classic sites still redden
+  ok(freeHits([{ file: 'index.html', text: HTML.replace('An AI assistant for your maritime career', 'A free AI assistant for your maritime career') }]).length === 1,
     'NEGATIVE: putting «A free AI assistant» back into the consent card turns this rule red');
-  ok(freeHits(HTML.replace('AI-ассистент по карьере и документам', 'Бесплатный AI-ассистент по карьере и документам')).length === 1,
+  ok(freeHits([{ file: 'index.html', text: HTML.replace('AI-ассистент по карьере и документам', 'Бесплатный AI-ассистент по карьере и документам') }]).length === 1,
     'NEGATIVE: the Russian «Бесплатный AI-ассистент» turns it red too');
-  ok(freeHits(HTML.replace('Personal licence for the seafarer using this device.', 'Closed beta build - free for invited seafarers.')).length === 1,
+  ok(freeHits([{ file: 'index.html', text: HTML.replace('Personal licence for the seafarer using this device.', 'Closed beta build - free for invited seafarers.') }]).length === 1,
     'NEGATIVE: the old Settings licence line turns it red');
-  ok(freeHits('<div>Free text (optional)</div><div>anonymous free-form edits</div>').length === 0,
+  ok(freeHits([{ file: 'x.html', text: '<div>Free text (optional)</div><div>anonymous free-form edits</div>' }]).length === 0,
     'NEGATIVE CONTROL: the legitimate phrases stay green — a rule that reddens everything gets switched off by the first person in a hurry');
 }
 
@@ -2782,25 +2851,36 @@ const centredFullScreen = (html) => fullScreenDecls(html).filter(({ l }) => !fsA
   // invoke() returns a Promise. try{ invoke(...) }catch(e){} catches only a synchronous
   // throw, so on iOS — where open_external_url is a stub returning Err — the rejection
   // went nowhere and the door on the FIRST screen did nothing and said nothing.
+  // Supervisor Н-B (06.09): checking for `await` alone was not enough — a second call
+  // site kept its own catch, and a catch that silently falls back can go quiet again.
+  // The invariant is therefore stronger than «awaited»: there is exactly ONE call site
+  // in this file and it is the helper, so a silent catch is not expressible.
   const calls = [...HTML.matchAll(/invoke\(\s*'open_external_url'/g)];
-  ok(calls.length >= 2, 'the external-URL command is still called (' + calls.length + ' sites)');
-  const unawaited = calls.filter((m) => !/await\s*$/.test(HTML.slice(Math.max(0, m.index - 8), m.index)));
-  ok(unawaited.length === 0, 'every open_external_url call is awaited (unawaited at offsets: ' + JSON.stringify(unawaited.map((m) => m.index)) + ')');
+  ok(calls.length === 1, 'exactly one open_external_url call site in dist/index.html (found ' + calls.length + ')');
   const helper = HTML.slice(HTML.indexOf('async function openExternalUrlSafe('), HTML.indexOf('async function openRegisterPage('));
-  ok(helper.length > 100 && /await invoke\('open_external_url'/.test(helper) && /catch\s*\(e\)/.test(helper),
-    'the shared helper awaits inside a try/catch');
-  ok(/showToast\(/.test(helper) && /writeClipboardText\(/.test(helper),
-    'and the catch answers on screen with the address, copied to the clipboard — silence is the defect, not the error');
+  ok(helper.length > 100 && helper.includes("invoke('open_external_url'"), 'and that one call site is inside openExternalUrlSafe');
+  ok(/await invoke\('open_external_url'/.test(helper), 'it is awaited');
+  const tail = helper.slice(helper.indexOf('catch'));
+  ok(/catch\s*\(e\)\s*\{/.test(helper) && tail.length > 120, 'its catch is a real block, not catch(e){}');
+  ok(/showToast\(/.test(tail) && /writeClipboardText\(/.test(tail),
+    'and that block answers on screen with the address, copied to the clipboard — silence is the defect, not the error');
   ok(/async function openRegisterPage\(\)\{[\s\S]{0,300}?openExternalUrlSafe\('https:\/\/assistant\.skipi\.app\/register'\)/.test(HTML),
     'openRegisterPage routes through the helper');
+  ok(/async function openDeveloperGroupInvite\(\)\{[\s\S]{0,600}?await openExternalUrlSafe\(DEVELOPER_GROUP_INVITE_URL\);/.test(HTML),
+    'so does the developer-invite door (Supervisor Н-B: it used to keep its own catch with a window.open fallback that can be a no-op inside the webview)');
+  ok(!/window\.open\(DEVELOPER_GROUP_INVITE_URL/.test(HTML), 'and its old silent fallback is gone, not merely bypassed');
   // both call sites of the audit are still the same two, and both go through that one function
   ok(/function entryForkRegister\(\)\{ openRegisterPage\(\); \}/.test(HTML), 'SITE 1: the Register door of the entry fork calls openRegisterPage');
   ok(/id="lg-register"[^>]*onclick="openRegisterPage\(\);return false;"/.test(HTML), 'SITE 2: the Register link inside the login gate calls openRegisterPage');
-  // negative
+  ok(/onclick="openExternalUrlSafe\(/.test(HTML), 'SITE 3: the update banner’s «Download manually» link too');
+  // negatives
   const bare = HTML.replace("        await invoke('open_external_url',{url:url});", "        invoke('open_external_url',{url:url});");
-  const bareCalls = [...bare.matchAll(/invoke\(\s*'open_external_url'/g)]
-    .filter((m) => !/await\s*$/.test(bare.slice(Math.max(0, m.index - 8), m.index)));
-  ok(bareCalls.length === 1, 'NEGATIVE: dropping the await from the helper turns this rule red (0 unawaited before, ' + bareCalls.length + ' after)');
+  ok(!/await invoke\('open_external_url'/.test(bare.slice(bare.indexOf('async function openExternalUrlSafe('), bare.indexOf('async function openRegisterPage('))),
+    'NEGATIVE: dropping the await from the helper turns this rule red');
+  const second = HTML.replace('    await openExternalUrlSafe(DEVELOPER_GROUP_INVITE_URL);',
+    "    try{await invoke('open_external_url',{url:DEVELOPER_GROUP_INVITE_URL});}catch(e){}");
+  ok([...second.matchAll(/invoke\(\s*'open_external_url'/g)].length === 2,
+    'NEGATIVE: re-introducing a second call site with its own silent catch turns this rule red (1 site before, ' + [...second.matchAll(/invoke\(\s*'open_external_url'/g)].length + ' after)');
 }
 
 {

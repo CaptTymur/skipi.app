@@ -9784,8 +9784,7 @@ async function openDeveloperGroupInvite(){
         localStorage.setItem(base+':popup_seen',String(Date.now()));
     }catch(e){}
     closeDeveloperGroupInvite();
-    try{await invoke('open_external_url',{url:DEVELOPER_GROUP_INVITE_URL});}
-    catch(e){try{window.open(DEVELOPER_GROUP_INVITE_URL,'_blank');}catch(_){}}
+    await openExternalUrlSafe(DEVELOPER_GROUP_INVITE_URL);
 }
 
 async function copyDeveloperGroupInvite(){
@@ -17867,7 +17866,15 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
                     theme: currentTheme()
                 };
             },
-            getI18n: function(){ return null; }, // use module built-ins
+            getI18n: function(key){
+                // Everything not listed here falls through to the module built-ins.
+                var ru = currentLocale() === 'ru';
+                if(key === 'assistant.error.limit'){
+                    return ru ? 'Достигнут дневной лимит запросов. Возвращайтесь завтра.'
+                              : 'You have reached today’s question limit. Please come back tomorrow.';
+                }
+                return null;
+            },
             getHistory: function(){ return loadConv(); },
             persistHistory: function(messages){ saveConv(messages); },
             onClose: function(){ closeAssistant(); },
