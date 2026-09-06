@@ -714,7 +714,12 @@ body.mobile-mode .desktop-stack-label { display:none; }
 .update-banner button:hover { background:rgba(255,255,255,.15); }
 .update-banner .ub-close { cursor:pointer; opacity:.6; font-size:16px; }
 .update-banner .ub-close:hover { opacity:1; }
-.skipi-toast-container { position:fixed; top:12px; right:12px; z-index:99999; display:flex; flex-direction:column; gap:6px; pointer-events:none; }
+/* Toasts sit ABOVE every full-screen gate (drill TOAST1). At z-index:99999 they were
+   drawn UNDER .mobile-entry-fork / #login-gate-overlay (both 100000): tapping Register
+   on the very first screen produced NOTHING visible — the reviewer's «no way in».
+   100100 clears every fixed inset:0 container in this file and still stays below the
+   early-error trap (999999), which must remain readable when the app itself is broken. */
+.skipi-toast-container { position:fixed; top:12px; right:12px; z-index:100100; display:flex; flex-direction:column; gap:6px; pointer-events:none; }
 
 /* Full-screen overlay canon (owner screenshot 06.09 + audit AUDIT-2026-09-06-seafarer-ios-readiness).
    TWO rules, and both are load-bearing:
@@ -1222,6 +1227,10 @@ body.mobile-mode .apps-launcher-grid { grid-template-columns:repeat(4,minmax(0,1
 [data-theme="light"] .fam-app-tile .fam-app-icon-box { background:var(--accent-bg); color:var(--accent); }
 .fam-app-tile:active .fam-app-icon-box { background:var(--accent-bg2); }
 .fam-app-tile .fam-app-label { font-size:13px; font-weight:700; line-height:1.15; color:var(--text); overflow-wrap:break-word; }
+/* Optional second line under a menu icon: the tile shows its own state in words.
+   Used by the Language icon so the current language is readable ON the Menu screen
+   (user report B6 — the language was three taps deep and labelled in English). */
+.fam-app-tile .fam-app-sublabel { font-size:11px; font-weight:600; line-height:1.15; color:var(--text2); margin-top:-4px; overflow-wrap:break-word; }
 /* A plugin icon is not always an outline SVG: bundled plugins ship an emoji and a
    third-party one may ship a bitmap. Both take the SAME box — the box is font-size:0
    (it kills whitespace around the svg), so a glyph needs its own sized span. */
@@ -1229,7 +1238,7 @@ body.mobile-mode .apps-launcher-grid { grid-template-columns:repeat(4,minmax(0,1
 .fam-app-tile .fam-app-icon-box img { width:30px; height:30px; object-fit:contain; }
 .fam-app-cell .fam-app-tile { width:100%; }
 .fam-app-hint { position:fixed; z-index:90; max-width:76vw; padding:8px 11px; border-radius:11px; background:var(--text); color:var(--bg); font-size:12px; font-weight:600; line-height:1.3; box-shadow:0 6px 20px rgba(0,0,0,.28); pointer-events:none; }
-@media (max-width:340px){ .fam-app-grid { gap:14px 4px; } .fam-app-tile .fam-app-icon-box { width:50px; height:50px; } .fam-app-tile .fam-app-label { font-size:11px; } }
+@media (max-width:340px){ .fam-app-grid { gap:14px 4px; } .fam-app-tile .fam-app-icon-box { width:50px; height:50px; } .fam-app-tile .fam-app-label { font-size:11px; } .fam-app-tile .fam-app-sublabel { font-size:10px; } }
 /* Family settings grouped rows (card 7) */
 .fam-settings-row { min-height:64px; padding:var(--sp-3); border:1px solid var(--border); border-radius:var(--radius-lg); background:var(--surface); display:flex; justify-content:space-between; gap:var(--sp-3); align-items:center; margin-bottom:10px; }
 .fam-settings-row strong { display:block; font-size:14px; line-height:1.2; }
@@ -1411,7 +1420,6 @@ body.mobile-mode textarea { font-size:16px; }
 .mv-tile{border:1px solid var(--border);border-radius:10px;padding:12px;background:var(--bg);opacity:.6;cursor:not-allowed;min-width:0;}
 .mv-tile-top{display:flex;justify-content:space-between;align-items:center;}
 .mv-tile-ic{font-size:20px;line-height:1;}
-.mv-tile-lock{font-size:13px;opacity:.7;}
 .mv-tile-title{font-weight:800;font-size:13px;margin-top:8px;color:var(--text);}
 .mv-tile-sub{font-size:11.5px;color:var(--text2);margin-top:3px;line-height:1.35;}
 .mv-grid-note{font-size:12px;color:var(--text2);margin-top:12px;line-height:1.45;}
@@ -1839,7 +1847,7 @@ function profileCompletenessHint(pct){
     if(typeof getUiLang==='function'&&getUiLang()==='ru'){
         return 'Заполненность профиля: '+pct+'%. Нажмите, чтобы открыть Dashboard. Чем полнее профиль, тем больше возможностей Скипи Моряк открывает, включая больше адресов для массовой рассылки.';
     }
-    return 'Profile completeness: '+pct+'%. Click to open Dashboard. A more complete profile unlocks more Skipi opportunities, including more agency mailing addresses.';
+    return 'Profile completeness: '+pct+'%. Click to open Dashboard. A more complete profile opens more Skipi opportunities, including more agency mailing addresses.';
 }
 function openProfileDashboard(){
     showView('dashboard');
@@ -2217,7 +2225,7 @@ async function renderCareerCompassPanel(profile,uploadedDocs){
     h+='<div class="compass-pill accent">'+esc(compassText('private vault','приватный архив'))+'</div>';
     h+='</div>';
     h+='<div class="compass-grid">';
-    h+='<div class="compass-card action" onclick="openSettings(\'seafarer\')"><div class="compass-kicker">'+esc(compassText('Profile signal','Сигнал профиля'))+'</div><h3>'+esc(rank)+' / '+esc(vessel)+'</h3><p>'+esc(compassText('Documents, CV and application sender are connected locally. Profile quality controls how much Skipi Seafarer can unlock.','Документы, CV и рассылка связаны локально. Качество профиля определяет, сколько возможностей открывает Скипи Моряк.'))+'</p><div class="compass-row"><span>'+esc(docsCount)+' '+esc(compassText('documents','документов'))+'</span><span class="compass-pill '+(pct>=85?'ok':'warn')+'">'+pct+'%</span></div></div>';
+    h+='<div class="compass-card action" onclick="openSettings(\'seafarer\')"><div class="compass-kicker">'+esc(compassText('Profile signal','Сигнал профиля'))+'</div><h3>'+esc(rank)+' / '+esc(vessel)+'</h3><p>'+esc(compassText('Documents, CV and application sender are connected locally. Profile quality controls how much of Skipi Seafarer is available to you.','Документы, CV и рассылка связаны локально. Качество профиля определяет, сколько возможностей открывает Скипи Моряк.'))+'</p><div class="compass-row"><span>'+esc(docsCount)+' '+esc(compassText('documents','документов'))+'</span><span class="compass-pill '+(pct>=85?'ok':'warn')+'">'+pct+'%</span></div></div>';
     h+='<div class="compass-card action" onclick="showView(\'experience\')"><div class="compass-kicker">'+esc(compassText('Trust layer','Trust layer'))+'</div><h3>'+esc(verifiedLabel)+'</h3><p>'+esc(compassText('Verified identity stays internal; external intelligence is aggregated and source-protected.','Проверка личности остаётся внутри; наружу выходит только агрегированный и защищённый сигнал.'))+'</p><div class="compass-row"><span>'+esc(workCount)+' '+esc(compassText('sea service entries','записей Sea Service'))+'</span><span class="compass-pill '+verifiedClass+'">'+esc(verifiedReady?'likely':'pending')+'</span></div></div>';
     h+='<div class="compass-card action" onclick="showView(\'vessels\')"><div class="compass-kicker">'+esc(compassText('Vessel context','Контекст судна'))+'</div><h3>'+esc(compassText('Entity confidence','Уверенность по сущностям'))+'</h3><p>'+esc(compassText('Vessel is the hard IMO entity. Managers, owners and fleet clusters are shown as confirmed, likely, inferred, or unknown.','Судно является жёсткой IMO-сущностью. Менеджеры, владельцы и fleet clusters показываются как confirmed, likely, inferred или unknown.'))+'</p><div class="compass-row"><span>'+esc(vesselConfidence)+'</span><span class="compass-pill accent">IMO</span></div></div>';
     h+='</div>';
@@ -5185,7 +5193,7 @@ function mobileDispatchSignatureHtml(sp){
 }
 function mobileDispatchScenarioText(tab){
     var ru=getUiLang()==='ru';
-    if(tab==='agency_db')return ru?'Скипи Моряк возьмет адреса из базы агентств для вашей национальности. Количество адресов зависит от заполненности профиля.':'Skipi Seafarer uses agency addresses for your nationality. The unlocked count depends on profile completeness.';
+    if(tab==='agency_db')return ru?'Скипи Моряк возьмет адреса из базы агентств для вашей национальности. Количество адресов зависит от заполненности профиля.':'Skipi Seafarer uses agency addresses for your nationality. The number of available addresses depends on profile completeness.';
     if(tab==='crewing_requests')return ru?'Скипи Моряк сравнивает ваш profile signature с запросами крюингов. Если совпадений нет, опция закрыта.':'Skipi Seafarer compares your profile signature with crewing requests. If there are no matches, this option is locked.';
     return ru?'Вы сами вводите один или несколько email-адресов. Подходит для конкретного крюинга или менеджера, которому вы доверяете.':'You enter one or more email addresses yourself. Use this for a specific crewing or manager you already trust.';
 }
@@ -5409,7 +5417,7 @@ function mobileDispatchChooseHtml(sendGate){
     var agencyLoading=!lastAgencyDbResult&&agencyDbLoading;
     var requestReady=sendGate.ok&&dispatchMailingRequestsLoaded&&requestEmailCount>0;
     var requestLoading=!dispatchMailingRequestsLoaded&&dispatchMailingRequestsLoading;
-    var agencyReason=!sendGate.ok?(ru?'Сначала нужен CV или документы':'Complete a CV or upload documents first'):(!stats.allowed&&lastAgencyDbResult?(ru?'Нет открытых адресов':'No unlocked addresses'):'');
+    var agencyReason=!sendGate.ok?(ru?'Сначала нужен CV или документы':'Complete a CV or upload documents first'):(!stats.allowed&&lastAgencyDbResult?(ru?'Нет открытых адресов':'No addresses available yet'):'');
     var requestReason=!sendGate.ok?(ru?'Сначала нужен CV или документы':'Complete a CV or upload documents first'):(dispatchMailingRequestsLoaded&&!requestEmailCount?(ru?'Запросов под профиль нет':'No matching requests yet'):(requestLoading?(ru?'Проверяю запросы':'Checking requests'):''));
     var h=mobileDispatchHeader(ru?'Куда отправить CV?':'Where do we send your CV?','');
     if(!sendGate.ok){
@@ -6751,16 +6759,19 @@ function renderMobileShell(){
 function mobileHomeActionHtml(icon,title,sub,onclick){
     return '<button class="mobile-primary-action" type="button" onclick="'+onclick+'"><span class="mobile-action-icon">'+icon+'</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(title)+'</span><span class="mobile-action-sub">'+mobileEsc(sub)+'</span></span></button>';
 }
-function mobileMenuIconTile(qa,onclick,label,hint,svg){
-    // The two menu-only entries (Profile, Feedback) share the module-grid icon
-    // shape so the ☰ screen reads as ONE grid of app icons (owner 06.09).
+function mobileMenuIconTile(qa,onclick,label,hint,svg,sub){
+    // The three menu-only entries (Profile, Feedback, Language) share the module-grid
+    // icon shape so the ☰ screen reads as ONE grid of app icons (owner 06.09).
+    // `sub` is optional: a tile that carries state shows it in words under the label.
     return '<button class="fam-app-tile" type="button" data-qa="'+qa+'" onclick="'+onclick+'"'
       +' onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()"'
       +' onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()"'
       +' data-hint="'+mobileEsc(hint)+'" title="'+mobileEsc(hint)+'" aria-label="'+mobileEsc(label)+'"'
       +'>'
       +'<span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24">'+svg+'</svg></span>'
-      +'<span class="fam-app-label">'+mobileEsc(label)+'</span></button>';
+      +'<span class="fam-app-label">'+mobileEsc(label)+'</span>'
+      +(sub?'<span class="fam-app-sublabel">'+mobileEsc(sub)+'</span>':'')
+      +'</button>';
 }
 function renderMobileHome(){
     // Owner 05.09 (DIRECTIVE 01.09): on the NATIVE mobile build the home screen IS the assistant chat;
@@ -6787,8 +6798,10 @@ function renderMobileHome(){
     mobileHomeLocalizeModules();
 }
 // Menu screen (DIRECTIVE 01.09, sketch 2): same header; the module grid verbatim from
-// #mobile-home-modules-tpl (Documents · Experience · CV first), plus Profile and Feedback tiles —
-// their only other entry points (rail meter, header «!») are hidden on the native build. No ☰ here.
+// #mobile-home-modules-tpl (Documents · Experience · CV first), plus Profile, Feedback and
+// Language tiles — the first two have no other entry point on the native build (rail meter,
+// header «!» are hidden), and Language replaced the wide row owner asked to remove on 06.09
+// while staying on this screen and one tap away (bug B6). No ☰ here.
 function renderMobileMenu(){
     var ru=getUiLang()==='ru';
     var tpl=document.getElementById('mobile-home-modules-tpl');
@@ -6803,20 +6816,43 @@ function renderMobileMenu(){
       +mobileMenuIconTile('menu-tile-feedback','openMobileFeedbackMenu()',ru?'Отзыв':'Feedback',
           ru?'Оценить или сообщить о проблеме':'Rate the app or report a problem',
           '<path d="M12 3.6l2.6 5.3 5.8.9-4.2 4.1 1 5.7L12 16.9l-5.2 2.7 1-5.7-4.2-4.1 5.8-.9z"/>')
-      +'</div>'
-      +'<div class="mobile-card mobile-menu-extra" data-qa="mobile-menu-language"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title">'+mobileEsc(ru?'Язык':'Language')+'</div><div class="mobile-card-sub">'+mobileEsc(ru?'Язык интерфейса приложения.':'Interface language of the app.')+'</div></div>'+mobileLanguageSelectHtml()+'</div></div>'
+      +mobileMenuIconTile('mobile-menu-language','openMobileLanguageMenu()',ru?'Язык':'Language',
+          ru?'Язык интерфейса приложения':'Interface language of the app',
+          '<circle cx="12" cy="12" r="8.4"/><path d="M3.6 12h16.8"/><path d="M12 3.6c2.2 2.4 3.4 5.3 3.4 8.4s-1.2 6-3.4 8.4c-2.2-2.4-3.4-5.3-3.4-8.4S9.8 6 12 3.6z"/>',
+          currentUiLangLabel())
       +'</div>';
     mobileMainHtml(h);
     mobileHomeLocalizeModules();
 }
-function mobileLanguageSelectHtml(){
+// The current language written in its OWN language — the Menu icon shows it, so the
+// user recognises the state without reading English (user report B6, 06.09).
+function currentUiLangLabel(){
     var cur=getUiLang();
-    return '<select id="mobile-ui-lang" aria-label="Language" onchange="mobileSetUiLang(this.value)" style="max-width:52vw;">'
-        + UI_LANG_OPTIONS.map(function(o){return '<option value="'+escAttr(o[0])+'"'+(cur===o[0]?' selected':'')+'>'+mobileEsc(o[1])+'</option>';}).join('')
-        + '</select>';
+    for(var i=0;i<UI_LANG_OPTIONS.length;i++){ if(UI_LANG_OPTIONS[i][0]===cur)return UI_LANG_OPTIONS[i][1]; }
+    return cur;
+}
+function closeMobileLanguageMenu(){
+    var el=document.getElementById('mobile-language-menu');
+    if(el)el.remove();
+}
+function openMobileLanguageMenu(){
+    closeMobileLanguageMenu();
+    var ru=getUiLang()==='ru', cur=getUiLang();
+    var h='<div id="mobile-language-menu" class="modal-overlay open" data-qa="mobile-language-menu" onclick="if(event.target===this)closeMobileLanguageMenu()">';
+    h+='<div class="modal-panel" style="max-width:420px;">';
+    h+='<h3>'+mobileEsc(ru?'Язык':'Language')+'</h3>';
+    UI_LANG_OPTIONS.forEach(function(o){
+        h+='<button class="mobile-primary-action" type="button" data-qa="mobile-language-option-'+escAttr(o[0])+'" onclick="mobileSetUiLang(\''+escAttr(o[0])+'\')">'
+          +'<span class="mobile-action-icon">'+(cur===o[0]?'✓':'·')+'</span>'
+          +'<span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(o[1])+'</span></span></button>';
+    });
+    h+='<div class="skipi-feedback-actions"><button class="btn btn-outline btn-sm" onclick="closeMobileLanguageMenu()">'+mobileEsc(ru?'Закрыть':'Close')+'</button></div>';
+    h+='</div></div>';
+    document.body.insertAdjacentHTML('beforeend',h);
 }
 function mobileSetUiLang(lang){
     setUiLang(lang);
+    closeMobileLanguageMenu();
     try{ renderMobileShell(); }catch(e){}
 }
 var MOBILE_HOME_MODULE_L10N={
@@ -9968,17 +10004,17 @@ function myVesselGridHtml(ru){
         {ic:'📄',t:ru?'Документы судна':'Vessel documents',s:ru?'Материалы судна, доступные вам':'Vessel materials shared with you'},
         {ic:'⚠️',t:ru?'Отчёт о дефекте':'Defect report',s:ru?'Сообщить о неисправности':'Report a defect'}
     ];
-    var lockTitle=esc(ru?'Откроется после присоединения к судну':'Unlocks after joining a vessel');
+    var lockTitle=esc(ru?'Откроется после присоединения к судну':'Available after you join a vessel');
     var h='<div class="mv-grid">';
     cards.forEach(function(c){
-        h+='<div class="mv-tile" aria-disabled="true">'
-          +'<div class="mv-tile-top"><span class="mv-tile-ic">'+c.ic+'</span><span class="mv-tile-lock" title="'+lockTitle+'">🔒</span></div>'
+        h+='<div class="mv-tile" aria-disabled="true" title="'+lockTitle+'">'
+          +'<div class="mv-tile-top"><span class="mv-tile-ic">'+c.ic+'</span></div>'
           +'<div class="mv-tile-title">'+esc(c.t)+'</div>'
           +'<div class="mv-tile-sub">'+esc(c.s)+'</div>'
           +'</div>';
     });
     h+='</div>';
-    h+='<div class="mv-grid-note">'+esc(ru?'Плагины откроются после присоединения к экипажу судна. Загрузка фото и отправка на судно появятся после backend — сейчас ничего не отправляется.':'Plugins unlock after you join a vessel crew. Photo upload and sending to the vessel appear after backend — nothing is sent now.')+'</div>';
+    h+='<div class="mv-grid-note">'+esc(ru?'Плагины откроются после присоединения к экипажу судна. Загрузка фото и отправка на судно становятся доступны там же.':'Plugins become available after you join a vessel crew. Photo upload and sending to the vessel become available there too.')+'</div>';
     return h;
 }
 function myVesselInnerHtml(){
@@ -11329,7 +11365,7 @@ function renderSeaServiceLock(gate,title){
     }else if(!gate.required_count){
         h+='<p>Create or complete the seafarer framework first. Sea Service and vessel-database contributions need an active minimum document structure.</p>';
     }else{
-        h+='<p>Sea Service unlocks after every document in the active minimum structure has an attached file. This keeps the Vessel Database tied to real seafarer profiles instead of anonymous free-form edits.</p>';
+        h+='<p>Sea Service becomes available after every document in the active minimum structure has an attached file. This keeps the Vessel Database tied to real seafarer profiles instead of anonymous free-form edits.</p>';
         if(missing.length){
             h+='<div class="sea-lock-list">';
             missing.slice(0,10).forEach(function(m){h+='<span>'+esc(m.title||m.id)+'</span>';});
@@ -15193,17 +15229,17 @@ function renderAgencyDatabasePanel(data){
     var h='';
     h+='<div class="dispatch-kpi-row">';
     h+='<div class="dispatch-kpi"><div class="num">'+pct+'%</div><div class="lbl">'+esc(ru?'Профиль':'Profile')+'</div></div>';
-    h+='<div class="dispatch-kpi"><div class="num" style="color:var(--accent)">'+allowed+'</div><div class="lbl">'+esc(ru?'Доступно':'Unlocked')+'</div></div>';
+    h+='<div class="dispatch-kpi"><div class="num" style="color:var(--accent)">'+allowed+'</div><div class="lbl">'+esc(ru?'Доступно':'Available')+'</div></div>';
     h+='<div class="dispatch-kpi"><div class="num">'+total+'</div><div class="lbl">'+esc(label)+'</div></div>';
     h+='<div class="dispatch-kpi"><div class="num" style="color:var(--orange)">'+locked+'</div><div class="lbl">'+esc(ru?'Закрыто':'Locked')+'</div></div>';
     h+='</div>';
-    h+='<div style="font-size:12px;color:var(--text2);line-height:1.45;margin-bottom:10px;">'+esc(ru?'Доступно '+allowed+' из '+total+' адресов: Скипи Моряк открывает долю базы пропорционально заполненности профиля. Заполните профиль до 100%, чтобы открыть всю базу.':'Available '+allowed+' of '+total+' addresses. Skipi Seafarer unlocks the agency database proportionally to profile completeness.')+'</div>';
+    h+='<div style="font-size:12px;color:var(--text2);line-height:1.45;margin-bottom:10px;">'+esc(ru?'Доступно '+allowed+' из '+total+' адресов: Скипи Моряк открывает долю базы пропорционально заполненности профиля. Заполните профиль до 100%, чтобы открыть всю базу.':'Available '+allowed+' of '+total+' addresses. Skipi Seafarer opens the agency database proportionally to profile completeness.')+'</div>';
     if(!data.nationality_code){
         h+='<div style="border:1px dashed var(--border);border-radius:6px;padding:12px;color:var(--text2);font-size:12px;">'+esc(ru?'Укажите национальность в профиле, чтобы Скипи Моряк выбрал правильную базу агентств.':'Set nationality in the profile so Skipi Seafarer can choose the right agency database.')+'</div>';
     }else if(total===0){
         h+='<div style="border:1px dashed var(--border);border-radius:6px;padding:12px;color:var(--text2);font-size:12px;line-height:1.45;">'+esc(ru?'База для '+label+' пока пустая. Шаблон создан здесь:':'The database for '+label+' is empty. Template created here:')+'<br><span style="font-family:var(--font-mono);font-size:11px;color:var(--text);">'+esc(data.db_path||'')+'</span></div>';
     }else if(!allowed){
-        h+='<div style="border:1px dashed var(--border);border-radius:6px;padding:12px;color:var(--text2);font-size:12px;">'+esc(ru?'В базе есть адреса, но текущая заполненность профиля пока не открывает рассылку по ним.':'The database has addresses, but current profile completeness does not unlock mailing yet.')+'</div>';
+        h+='<div style="border:1px dashed var(--border);border-radius:6px;padding:12px;color:var(--text2);font-size:12px;">'+esc(ru?'В базе есть адреса, но текущая заполненность профиля пока не открывает рассылку по ним.':'The database has addresses, but current profile completeness does not make mailing available yet.')+'</div>';
     }else{
         h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;flex-wrap:wrap;">';
         h+='<div style="font-size:12px;color:var(--text2);">'+esc(ru?(allowed+' адресов готовы к рассылке'):(allowed+' email'+(allowed===1?'':'s')+' ready for mailing'))+'</div>';
@@ -15231,7 +15267,7 @@ function useAgencyDatabaseRecipients(opts){
         var key=e.toLowerCase();
         if(e&&!seen[key]){seen[key]=true;emails.push(e);}
     });
-    if(!emails.length){showToast('No unlocked agency addresses yet','warn');return;}
+    if(!emails.length){showToast('No agency addresses available yet','warn');return;}
     var ta=document.getElementById('disp-to');
     dispatchRecipientsDraft=emails.join('\n');
     if(ta)ta.value=dispatchRecipientsDraft;
@@ -15270,9 +15306,9 @@ function agencyDbPreviewHtml(limit){
         return '<div style="font-size:12px;color:var(--text2);">'+esc(ru?'Для этой национальности база пока пустая.':'The database for this nationality is empty for now.')+'</div>';
     }
     if(!stats.allowed){
-        return '<div style="font-size:12px;color:var(--text2);">'+esc(ru?'В базе есть адреса, но текущая заполненность профиля пока открывает 0 адресов.':'The database has addresses, but current profile completeness unlocks 0 addresses.')+'</div>';
+        return '<div style="font-size:12px;color:var(--text2);">'+esc(ru?'В базе есть адреса, но текущая заполненность профиля пока открывает 0 адресов.':'The database has addresses, but current profile completeness makes 0 addresses available.')+'</div>';
     }
-    var h='<div style="font-size:12px;color:var(--text2);margin-bottom:8px;">'+esc(ru?('Открыто '+stats.allowed+' из '+stats.total+' адресов.'):('Unlocked '+stats.allowed+' of '+stats.total+' addresses.'))+'</div>';
+    var h='<div style="font-size:12px;color:var(--text2);margin-bottom:8px;">'+esc(ru?('Открыто '+stats.allowed+' из '+stats.total+' адресов.'):('Available '+stats.allowed+' of '+stats.total+' addresses.'))+'</div>';
     lastAgencyDbRecipients.slice(0,limit||8).forEach(function(a){
         h+='<div style="border-top:1px solid var(--border);padding:7px 0;">';
         h+='<div style="font-size:12px;font-weight:700;">'+esc(a.name||a.email)+'</div>';
@@ -15363,7 +15399,7 @@ async function selectDispatchScenario(tab){
     if(tab==='agency_db'){
         if(!lastAgencyDbResult)await loadAgencyDatabaseRecipients();
         if(!agencyDbStats().allowed){
-            showToast(ru?'База Скипи Моряк пока не открыла адреса для этого профиля':'No Skipi Seafarer database addresses are unlocked for this profile yet','warn');
+            showToast(ru?'База Скипи Моряк пока не открыла адреса для этого профиля':'No Skipi Seafarer database addresses are available for this profile yet','warn');
             return;
         }
         dispatchTab='agency_db';
@@ -15424,13 +15460,13 @@ async function showDispatch(){
         var reqCount=lastDispatchMailingRequests.length;
         var crewingCount=uniqueMailingRequestCrewingCount();
         var requestEmailCount=uniqueMailingRequestEmailCount();
-        var agencyDisabled=!sendGate.ok?(ru?'Сначала заполните CV или загрузите документы':'Complete a CV or upload documents first'):(!stats.allowed?(ru?'Нет открытых адресов: проверьте национальность и заполненность профиля':'No unlocked addresses: check nationality and profile completeness'):'');
+        var agencyDisabled=!sendGate.ok?(ru?'Сначала заполните CV или загрузите документы':'Complete a CV or upload documents first'):(!stats.allowed?(ru?'Нет открытых адресов: проверьте национальность и заполненность профиля':'No addresses available: check nationality and profile completeness'):'');
         var requestDisabled=!sendGate.ok?(ru?'Сначала заполните CV или загрузите документы':'Complete a CV or upload documents first'):(!dispatchMailingRequestsLoaded?(ru?'Запросы ещё загружаются':'Requests are still loading'):(!requestEmailCount?(ru?'Пока нет запросов крюингов под текущий профиль':'No crewing requests match the current profile yet'):''));
         h+='<div class="dispatch-wizard">';
         h+='<div class="dispatch-wizard-head"><div><div class="dispatch-step">'+esc(ru?'Шаг 1 из 3':'Step 1 of 3')+'</div><div style="font-size:15px;font-weight:800;">'+esc(ru?'Как вы хотите разослать?':'How do you want to send?')+'</div></div></div>';
         h+='<div class="dispatch-choice-grid">';
         h+=dispatchChoiceCard('manual',ru?'Кастомный адрес':'Custom address',ru?'Вручную ввести один или несколько email.':'Enter one or more emails manually.','1',ru?'сценарий':'scenario',sendGate.ok,false,'');
-        h+=dispatchChoiceCard('agency_db',ru?'База Скипи Моряк':'Skipi Seafarer database',ru?'Адреса открываются пропорционально заполненности профиля.':'Unlocked address count depends on profile completeness.',stats.allowed,ru?'адресов':'addresses',sendGate.ok&&!!stats.allowed,!lastAgencyDbResult,agencyDisabled);
+        h+=dispatchChoiceCard('agency_db',ru?'База Скипи Моряк':'Skipi Seafarer database',ru?'Адреса открываются пропорционально заполненности профиля.':'The number of available addresses depends on profile completeness.',stats.allowed,ru?'адресов':'addresses',sendGate.ok&&!!stats.allowed,!lastAgencyDbResult,agencyDisabled);
         h+=dispatchChoiceCard('crewing_requests',ru?'Запросы крюингов':'Crewing requests',(ru?'Только крюингам, которые запросили CV под ваш профиль.':'Only crewings that requested CVs matching your profile.')+(dispatchMailingRequestsLoaded?(' '+(ru?'Крюингов: ':'Crewings: ')+crewingCount):''),requestEmailCount,ru?'адресов':'addresses',sendGate.ok&&dispatchMailingRequestsLoaded&&reqCount>0&&requestEmailCount>0,!dispatchMailingRequestsLoaded,requestDisabled);
         h+='</div>';
         if(dispatchWizardPreview){
@@ -15656,7 +15692,7 @@ async function doDispatchUnified(){
             +'Bucket: '+bucket+'\n'
             +'Recipients: '+recipients.length+'\n'
             +'Profile completeness: '+pct+'%\n'
-            +'Full database unlocked: '+(fullUnlock?'yes':'no')+(locked>0?' ('+locked+' locked)':'')+'\n\n'
+            +'Whole database available: '+(fullUnlock?'yes':'no')+(locked>0?' ('+locked+' not available yet)':'')+'\n\n'
             +'Send this mailing?';
         if(!await uiConfirm(msg,{confirmLabel:'Send'}))return;
     }

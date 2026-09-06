@@ -102,16 +102,30 @@ struct ServerDiagnostic<'a> {
     client_created_at: &'a str,
 }
 
-fn feedback_db_path() -> PathBuf {
-    let dir = dirs::data_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
+/// Where the feedback / diagnostics database lives.
+///
+/// This used to be `dirs::data_dir()`, which returns **None on Android** (there is
+/// no XDG data dir on a phone). The `unwrap_or_else(PathBuf::from("."))` then made
+/// the path RELATIVE — `./skipi/feedback.sqlite` — and SQLite could not open it
+/// from the app's working directory, so every write failed with
+/// «unable to open database file». Result: not one rating and not one diagnostic
+/// ever reached us from a phone (RISKS №220b). The rest of this tree already asks
+/// the app for its data directory (`vault.rs`, `agency_mailing.rs`, `profile.rs`);
+/// this was the last place that did not.
+fn feedback_db_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    use tauri::Manager;
+
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Resolve app data dir failed: {e}"))?
         .join("skipi");
-    let _ = std::fs::create_dir_all(&dir);
-    dir.join("feedback.sqlite")
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Create feedback dir failed: {e}"))?;
+    Ok(dir.join("feedback.sqlite"))
 }
 
-fn open_feedback_db() -> Result<Connection, String> {
-    let conn = Connection::open(feedback_db_path()).map_err(|e| e.to_string())?;
+fn open_feedback_db(app: &tauri::AppHandle) -> Result<Connection, String> {
+    let conn = Connection::open(feedback_db_path(app)?).map_err(|e| e.to_string())?;
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS app_feedback (
             id TEXT PRIMARY KEY,
@@ -275,6 +289,7 @@ fn sync_diagnostic_to_server(diagnostic: &AppDiagnostic) -> Result<(), String> {
 }
 
 fn store_diagnostic(
+    app: &tauri::AppHandle,
     conn: &Connection,
     app_version: String,
     event_type: String,
@@ -357,13 +372,16 @@ fn store_diagnostic(
         id: diagnostic.id,
         synced,
         sync_error,
-        db_path: feedback_db_path().to_string_lossy().to_string(),
+        db_path: feedback_db_path(app)?.to_string_lossy().to_string(),
     })
 }
 
 #[tauri::command]
-pub fn get_feedback_prompt_state(app_version: String) -> Result<FeedbackPromptState, String> {
-    let conn = open_feedback_db()?;
+pub fn get_feedback_prompt_state(
+    app: tauri::AppHandle,
+    app_version: String,
+) -> Result<FeedbackPromptState, String> {
+    let conn = open_feedback_db(&app)?;
     let now = Utc::now();
     let now_s = now.to_rfc3339();
 
@@ -406,11 +424,12 @@ pub fn get_feedback_prompt_state(app_version: String) -> Result<FeedbackPromptSt
 
 #[tauri::command]
 pub fn init_app_diagnostics(
+    app: tauri::AppHandle,
     app_version: String,
     locale: Option<String>,
     context: Option<String>,
 ) -> Result<(), String> {
-    let conn = open_feedback_db()?;
+    let conn = open_feedback_db(&app)?;
     let install_id = ensure_install_id(&conn)?;
     if get_state(&conn, "session_active")?.as_deref() == Some("1") {
         let previous_session = get_state(&conn, "session_id")?;
@@ -423,6 +442,7 @@ pub fn init_app_diagnostics(
         })
         .to_string();
         let _ = store_diagnostic(
+            &app,
             &conn,
             app_version.clone(),
             "unclean_shutdown".to_string(),
@@ -446,8 +466,12 @@ pub fn init_app_diagnostics(
 }
 
 #[tauri::command]
-pub fn app_heartbeat(app_version: String, last_screen: Option<String>) -> Result<(), String> {
-    let conn = open_feedback_db()?;
+pub fn app_heartbeat(
+    app: tauri::AppHandle,
+    app_version: String,
+    last_screen: Option<String>,
+) -> Result<(), String> {
+    let conn = open_feedback_db(&app)?;
     ensure_install_id(&conn)?;
     set_state(&conn, "session_active", "1")?;
     set_state(&conn, "last_app_version", &app_version)?;
@@ -459,14 +483,15 @@ pub fn app_heartbeat(app_version: String, last_screen: Option<String>) -> Result
 }
 
 #[tauri::command]
-pub fn mark_app_shutdown() -> Result<(), String> {
-    let conn = open_feedback_db()?;
+pub fn mark_app_shutdown(app: tauri::AppHandle) -> Result<(), String> {
+    let conn = open_feedback_db(&app)?;
     set_state(&conn, "session_active", "0")?;
     set_state(&conn, "last_shutdown_at", &Utc::now().to_rfc3339())
 }
 
 #[tauri::command]
 pub fn record_app_diagnostic(
+    app: tauri::AppHandle,
     app_version: String,
     event_type: String,
     severity: String,
@@ -475,9 +500,10 @@ pub fn record_app_diagnostic(
     context: Option<String>,
     details_json: Option<String>,
 ) -> Result<DiagnosticSubmitResult, String> {
-    let conn = open_feedback_db()?;
+    let conn = open_feedback_db(&app)?;
     let install_id = ensure_install_id(&conn)?;
     store_diagnostic(
+        &app,
         &conn,
         app_version,
         event_type,
@@ -492,13 +518,14 @@ pub fn record_app_diagnostic(
 }
 
 #[tauri::command]
-pub fn postpone_app_feedback() -> Result<(), String> {
-    let conn = open_feedback_db()?;
+pub fn postpone_app_feedback(app: tauri::AppHandle) -> Result<(), String> {
+    let conn = open_feedback_db(&app)?;
     set_state(&conn, "last_prompted_at", &Utc::now().to_rfc3339())
 }
 
 #[tauri::command]
 pub fn submit_app_feedback(
+    app: tauri::AppHandle,
     app_version: String,
     rating: i64,
     comment: String,
@@ -512,7 +539,7 @@ pub fn submit_app_feedback(
     if comment.len() < 2 {
         return Err("comment is required".to_string());
     }
-    let conn = open_feedback_db()?;
+    let conn = open_feedback_db(&app)?;
     let id = Uuid::new_v4().to_string();
     let created_at = Utc::now().to_rfc3339();
     let locale = locale
@@ -578,13 +605,13 @@ pub fn submit_app_feedback(
         id: feedback.id,
         synced,
         sync_error: feedback.sync_error,
-        db_path: feedback_db_path().to_string_lossy().to_string(),
+        db_path: feedback_db_path(&app)?.to_string_lossy().to_string(),
     })
 }
 
 #[tauri::command]
-pub fn list_app_feedback() -> Result<Vec<AppFeedback>, String> {
-    let conn = open_feedback_db()?;
+pub fn list_app_feedback(app: tauri::AppHandle) -> Result<Vec<AppFeedback>, String> {
+    let conn = open_feedback_db(&app)?;
     let mut stmt = conn
         .prepare(
             "SELECT id, app, app_version, rating, comment, locale, context, created_at, synced_at, sync_error
@@ -610,4 +637,77 @@ pub fn list_app_feedback() -> Result<Vec<AppFeedback>, String> {
         .map_err(|e| e.to_string())?;
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    /// RISKS №220b: the feedback / diagnostics DB path came from
+    /// `dirs::data_dir()`, which is `None` on Android — the fallback turned it
+    /// into the RELATIVE `./skipi/feedback.sqlite`, SQLite answered «unable to
+    /// open database file», and not one rating or diagnostic ever left a phone.
+    /// A behavioural test needs a live `AppHandle`, so what is host-verifiable is
+    /// asserted here: this file resolves the path through the app handle and NOT
+    /// through `dirs`. The same invariant is checked across the whole tree, and
+    /// with its own negative control, by the FEED1 drill in
+    /// tests/bundled_plugin_isolation_harness.mjs.
+    #[test]
+    fn feedback_db_path_never_comes_from_dirs() {
+        // Cut the test module off first: the stripper's own negative control below
+        // quotes the forbidden call inside a string literal, and a test opens no
+        // database at runtime. The marker is assembled, not written out, so this
+        // file keeps exactly ONE copy of it (the harness drill cuts on the first).
+        let whole = include_str!("feedback.rs");
+        let marker = format!("#[cfg{}]", "(test)");
+        let src = strip_rust_comments(&whole[..whole.find(&marker).expect("test module marker")]);
+        // Built from fragments so this test's own source is not the thing it forbids.
+        let needle = format!("dirs::{}_dir()", "data");
+        assert!(
+            !src.contains(&needle),
+            "the feedback DB path must come from the app handle, not from dirs"
+        );
+        assert!(
+            src.contains("fn feedback_db_path(app: &tauri::AppHandle)"),
+            "feedback_db_path must take the AppHandle it resolves the path from"
+        );
+        assert!(
+            src.contains(".app_data_dir()"),
+            "and it must resolve that path through app.path().app_data_dir()"
+        );
+    }
+
+    /// The assertion above is only worth anything if the stripper really removes
+    /// comments and really leaves code alone.
+    #[test]
+    fn comment_stripper_is_not_vacuous() {
+        let stripped = strip_rust_comments("let a = 1; // dirs::data_dir()\n/* dirs::data_dir() */ let b = 2;\n");
+        assert!(!stripped.contains("dirs"), "comments must be removed: {stripped:?}");
+        assert!(stripped.contains("let a = 1;") && stripped.contains("let b = 2;"), "code must survive: {stripped:?}");
+        assert!(strip_rust_comments("dirs::data_dir()").contains("dirs::data_dir()"), "bare code must survive");
+    }
+
+    /// Removes `//` line comments and `/* */` block comments. Deliberately simple:
+    /// this file has no `//` inside a string literal other than URLs in doc text,
+    /// and a URL surviving or not cannot change the assertions above.
+    fn strip_rust_comments(src: &str) -> String {
+        let bytes: Vec<char> = src.chars().collect();
+        let mut out = String::with_capacity(src.len());
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == '/' && i + 1 < bytes.len() && bytes[i + 1] == '/' {
+                while i < bytes.len() && bytes[i] != '\n' {
+                    i += 1;
+                }
+            } else if bytes[i] == '/' && i + 1 < bytes.len() && bytes[i + 1] == '*' {
+                i += 2;
+                while i + 1 < bytes.len() && !(bytes[i] == '*' && bytes[i + 1] == '/') {
+                    i += 1;
+                }
+                i = (i + 2).min(bytes.len());
+            } else {
+                out.push(bytes[i]);
+                i += 1;
+            }
+        }
+        out
+    }
 }

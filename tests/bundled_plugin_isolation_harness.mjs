@@ -924,7 +924,7 @@ function bootMobile(opts) {
     ok(mm.includes(`data-mview="${v}"`) && mm.includes(`mobileShow('${v}')`), `menu grid routes '${v}' through mobileShow`);
   }
   ok(mm.includes('id="mobile-home-packages"'), 'Packages keeps its tile id (the presence drills mount on it) and now opens the real module — see PKG1');
-  ok((mm.match(/fam-app-tile/g) || []).length === 13, 'exactly 13 icons: 11 module icons + Profile + Feedback (Supervisor Н6 count kept through the icon-grid rework)');
+  ok((mm.match(/fam-app-tile/g) || []).length === 14, 'exactly 14 icons: 11 module icons + Profile + Feedback + Language (the wide language row owner asked to remove on 06.09 became the third menu-only icon — see LANG1)');
   ok(mm.includes('data-qa="menu-tile-profile"') && mm.includes("mobileShow('profile')"), 'Profile tile routes to the profile screen (its only other entry, the rail meter, is hidden natively)');
   ok(mm.includes('data-qa="menu-tile-feedback"') && mm.includes('openMobileFeedbackMenu()'), 'Feedback tile routes to the feedback menu (its only other entry, the header «!», is hidden natively)');
   const idx = (v) => mm.indexOf(`data-mview="${v}"`);
@@ -1003,7 +1003,7 @@ function bootMobile(opts) {
   ok(mm.includes('data-qa="assistant-offline"'), 'offline banner renders on home when navigator.onLine === false');
   ok(mm.includes('data-qa="mobile-menu-btn"') && mm.includes('id="mobile-assistant-input"'), '☰ and composer still there offline');
   off.sandbox.mobileShow('menu');
-  ok((mobileHtml(off.doc).match(/fam-app-tile/g) || []).length === 13, 'menu renders all icons offline');
+  ok((mobileHtml(off.doc).match(/fam-app-tile/g) || []).length === 14, 'menu renders all icons offline');
   const on = bootMobile({ seed: consent, onLine: true });
   await settleVm();
   on.sandbox.mobileShow('home');
@@ -1552,7 +1552,7 @@ function installNavHistory(app) {
 }
 
 {
-  section('module icon grid (IG6) — real menu render: 11 module icons + Profile/Feedback; RU keeps the i18n keys');
+  section('module icon grid (IG6) — real menu render: 11 module icons + Profile/Feedback/Language; RU keeps the i18n keys');
   try {
     const app = installNavHistory(bootMobile({ seed: { 'skipi-ui-language': 'ru' } }));
     await settleVm();
@@ -1561,7 +1561,7 @@ function installNavHistory(app) {
     app.runTimers(0);
     const mm = mobileHtml(doc);
     ok(mm.includes('data-qa="mobile-menu-screen"'), 'menu screen renders');
-    ok((mm.match(/fam-app-tile/g) || []).length === 13, 'exactly 13 icons on the menu: 11 modules + Profile + Feedback (Supervisor Н6 count kept)');
+    ok((mm.match(/fam-app-tile/g) || []).length === 14, 'exactly 14 icons on the menu: 11 modules + Profile + Feedback + Language');
     ok(!mm.includes('fam-module-desc') && !mm.includes('fam-chip'), 'the rendered menu carries no descriptions and no status chips at all');
     const docsBtn = doc.getElementById('mhb-docs');
     const label = doc.getElementById('mhn-docs');
@@ -2018,7 +2018,7 @@ const appsTileTag = (h, id) => {
     const { sandbox, doc } = app;
     sandbox.mobileShow('menu'); app.runTimers(0);
     const mm = mobileHtml(doc);
-    ok((mm.match(/fam-app-tile/g) || []).length === 13, 'menu still shows 13 icons: 11 modules + Profile + Feedback (got ' + (mm.match(/fam-app-tile/g) || []).length + ')');
+    ok((mm.match(/fam-app-tile/g) || []).length === 14, 'menu still shows 14 icons: 11 modules + Profile + Feedback + Language (got ' + (mm.match(/fam-app-tile/g) || []).length + ')');
     ok(tplButtons().length === 11 && !/apps-icon-tile/.test(MODULE_TPL), 'the module template itself is not touched by the Apps restyle');
     ok(mm.includes('data-qa="menu-tile-profile"') && mm.includes('data-qa="menu-tile-feedback"'), 'Profile and Feedback tiles still there');
   } catch (e) { ok(false, 'AG5 crashed before it could assert: ' + e.message); }
@@ -2851,6 +2851,13 @@ const NOPAY_WORDS_ALLOW = [
     why: 'intelligence.js career guidance «Check internet access, joining window, relief plan, and repatriation terms before accepting» — the RELIEF plan is when a crew replacement comes aboard so the seafarer can go home, a contract term to check with an employer and not a tariff sold here' },
   { re: /offered monthly salary/gi,
     why: 'the Offer Check card in intelligence.js says «Type an offered monthly salary» — the wage an employer offered THIS seafarer, typed in locally and compared with the market band; it is income to him, not a charge from us' },
+  // The two below are the ENTIRE price the dist pays for the «unlock» rule added by
+  // the no-paywall-language slice (06.09). Both are the browser autoplay concept,
+  // in a bundled plugin, and neither is copy about access to a feature.
+  { re: /Web Audio is unlocked on the user's "Start watch" gesture/g,
+    why: 'the BNWAS provenance REPORT describing the browser AUTOPLAY policy — a Web Audio context is «unlocked» by a user gesture; it is the platform’s own term for sound being allowed to start, in a document no screen renders' },
+  { re: /\/\/ unlock audio on the user gesture/g,
+    why: 'the one line of BNWAS code that does exactly that, in a comment — the same Web Audio autoplay concept, and comments reach no screen' },
 ];
 
 // [family, label, pattern] — matched case-insensitively on WORD/PATH boundaries, not
@@ -2911,6 +2918,17 @@ const NOPAY_RULES = [
   ['word', 'buy', String.raw`\bbuys?\b`],
   ['word', 'purchase', String.raw`\bpurchas(?:e|es|ed|ing)\b`],
   ['word', 'upgrade', String.raw`\bupgrad(?:e|es|ed|ing)\b`],
+  // «unlock» arrives with the slice that removed it from shipping copy (06.09). It
+  // was deliberately NOT a rule before that: 11+ live user-facing strings said
+  // «Unlocks after joining a vessel», «Unlocked N of M addresses», «Sea Service
+  // unlocks…», and a rule then would have been red on day one. Those strings now say
+  // what actually happens — a thing becomes AVAILABLE as the profile fills or when
+  // the seafarer joins a vessel — so the word can be forbidden. Next to
+  // skipi.app/pricing («$10 per month»), a padlock and the word «unlock» are what
+  // made Apple ask whether the app sells digital content (Guideline 2.1(b)).
+  // Identifiers are NOT touched by this: \b does not fire inside
+  // getSeaServiceUnlockState or fullUnlock, which are logic and must keep their names.
+  ['word', 'unlock', String.raw`\bun-?lock(?:s|ed|ing)?\b`],
   ['word', 'get pro', String.raw`\bget\s+pro\b`],
   ['word', 'go pro', String.raw`\bgo\s+pro\b`],
   ['word', 'activate', String.raw`\bactivat(?:e|es|ed|ing|ion)\b`],
@@ -3031,6 +3049,7 @@ const nopayScan = (files, family) => NOPAY_RULES.filter(([fam]) => fam === famil
     '<p>Choose your PRO plan: 9.99 USD a month, or €99 a year — that is 8.25/mo billed monthly.</p>',
     '<button onclick="cart.add(); stripe.redirectToCheckout();">Order now — Get PRO</button>',
     '<a href="https://skipi.app/upgrade">Go PRO and activate your licence</a>',
+    '<p>Unlock every module — one payment unlocks the whole database.</p>',
   ].join('\n');
   const poisoned = SHIPPED_TEXT.map((f) => (f.file === 'skipi-assistant.js'
     ? { file: f.file, text: f.text + '\n' + NOPAY_VIOLATION }
@@ -3118,6 +3137,44 @@ const nopayScan = (files, family) => NOPAY_RULES.filter(([fam]) => fam === famil
   ok(dollarHits.length === 1 && dollarHits[0].label === 'price (currency symbol)',
     'NEGATIVE: a bare «$100» now reddens the price rule — the old list only knew «$10» (offenders: '
     + JSON.stringify(dollarHits.map((h) => h.label)) + ')');
+}
+
+{
+  section('NOPAY7 — no shipped asset gates a feature behind a padlock or the word «unlock» (Guideline 2.1(b), 06.09)');
+  // Reviewer path proved by the manager on the simulator: first screen → Demo →
+  // «Got it, start» → ☰ → My Vessel = FOUR taps, no login, no vault, no profile. That
+  // screen showed six padlocked tiles and «Plugins unlock after you join a vessel
+  // crew». Read next to skipi.app/pricing, that is a paywall — and we are answering
+  // Apple in writing that nothing in the app is paid. The answer has to match the
+  // screen, so the padlock and the word are gone from the copy.
+  const padlocks = SHIPPED_TEXT
+    .map((f) => ({ file: f.file, n: (f.text.match(/\u{1F512}/gu) || []).length, gate: (f.text.match(/(?:tile|module|plugin|card)-lock|mv-tile-lock/g) || []).length }))
+    .filter((x) => x.gate > 0);
+  ok(padlocks.length === 0, 'no shipped asset marks a module tile with a lock badge (offenders: ' + JSON.stringify(padlocks) + ')');
+  ok(!/mv-tile-lock/.test(HTML), 'the .mv-tile-lock badge and its CSS are gone from dist/index.html entirely, not merely hidden');
+  ok(/var lockTitle=esc\(ru\?'[^']*':'Available after you join a vessel'\)/.test(HTML),
+    'the My Vessel tiles say WHEN they work («Available after you join a vessel») instead of showing a padlock');
+  ok(/class="mv-tile" aria-disabled="true" title="'\+lockTitle\+'"/.test(HTML),
+    'and that explanation did not disappear with the badge — it moved onto the tile itself');
+  // the remaining 🔒 in the dist all mean ENCRYPTION, and they stay: telling a seafarer
+  // his CV went out end-to-end encrypted is the opposite of a paywall.
+  const crypto = (HTML.match(/\u{1F512}/gu) || []).length;
+  ok(crypto >= 6, 'the encryption padlocks (end-to-end, «sent — encrypted 🔒») are untouched — ' + crypto + ' of them');
+  ok(/\u{1F512} End-to-end encrypted/u.test(HTML) && /sent — encrypted \u{1F512}/u.test(HTML), 'and they still say what they mean');
+  // the identifiers the supervisor's review put out of bounds must NOT have been renamed
+  ok(/async function getSeaServiceUnlockState\(\)/.test(HTML) && (HTML.match(/getSeaServiceUnlockState\(\)/g) || []).length === 7,
+    'the gate logic was not touched: getSeaServiceUnlockState + its 6 call sites are all still there (' + (HTML.match(/getSeaServiceUnlockState\(\)/g) || []).length + '/7)');
+  ok(/var fullUnlock=\(total>0&&locked===0\);/.test(HTML) && /fullUnlock\?'yes':'no'/.test(HTML),
+    'and so is var fullUnlock and its use — this slice changed WORDS, never behaviour');
+  // negatives
+  const backCopy = HTML.replace('Plugins become available after you join a vessel crew.', 'Plugins unlock after you join a vessel crew.');
+  ok((nopayScrub(backCopy).match(/\bun-?lock(?:s|ed|ing)?\b/gi) || []).length === 1,
+    'NEGATIVE: putting «Plugins unlock after you join a vessel crew» back turns the unlock rule red');
+  const backLock = HTML.replace('<div class="mv-tile" aria-disabled="true" title="', '<div class="mv-tile-lock">🔒</div><div class="mv-tile" aria-disabled="true" title="');
+  ok(/mv-tile-lock/.test(backLock), 'NEGATIVE: putting the padlock badge back on the module tiles turns it red too');
+  ok((nopayScrub('A more complete profile unlocks more Skipi opportunities').match(/\bun-?lock(?:s|ed|ing)?\b/gi) || []).length === 1
+    && (nopayScrub('getSeaServiceUnlockState(); var fullUnlock=true;').match(/\bun-?lock(?:s|ed|ing)?\b/gi) || []).length === 0,
+    'NEGATIVE CONTROL: the rule fires on the COPY and stays silent on the identifiers — a rule that renamed functions would have been reverted the first time it broke a gate');
 }
 
 {
@@ -3225,6 +3282,25 @@ const nopayScan = (files, family) => NOPAY_RULES.filter(([fam]) => fam === famil
     'NEGATIVE: calling the app a beta version anywhere in the copy turns it red');
 }
 
+// Comment stripper shared by REG1 and LEAK1. Both rules are about what reaches a
+// SCREEN, and both fixes left a comment explaining the mistake they fixed — a rule
+// that cannot tell a warning from the thing it warns about is a rule people delete.
+//
+// It works LINE BY LINE on purpose. The obvious `/\*[\s\S]*?\*\//` + `//[^\n]*` pair
+// is WRONG on this dist and was caught being wrong here: a `/*` that lives inside a
+// string literal pairs with the next `*/` thousands of lines away and blanks real
+// code in between — the first version of LEAK1 stayed green on the very sentence it
+// exists to catch, because that sentence had been erased by the stripper. Whole-line
+// comments (`//`, `*` continuation, `/* … */`, `<!-- … -->`) are how this codebase
+// actually writes prose, so those lines are dropped; a `/* … */` that sits ON a code
+// line is removed within that line; a trailing `//` on a code line is deliberately
+// NOT stripped, because `https://` lives on code lines too.
+const stripCodeComments = (text) => text.split('\n').map((line) => {
+  const t = line.trim();
+  if (t.startsWith('//') || t.startsWith('*') || t.startsWith('/*') || t.startsWith('<!--') || t.startsWith('-->')) return '';
+  return line.replace(/\/\*[^\n]*?\*\//g, '');
+}).join('\n');
+
 {
   section('REG1 — the Register door can never be silent again (the 2.1(b) shape)');
   // invoke() returns a Promise. try{ invoke(...) }catch(e){} catches only a synchronous
@@ -3234,6 +3310,34 @@ const nopayScan = (files, family) => NOPAY_RULES.filter(([fam]) => fam === famil
   // site kept its own catch, and a catch that silently falls back can go quiet again.
   // The invariant is therefore stronger than «awaited»: there is exactly ONE call site
   // in this file and it is the helper, so a silent catch is not expressible.
+  // Supervisor Н-B was fixed inside index.html only. The SECOND silent door was one
+  // file away: dist/intelligence.js:271 had its own `try{await invoke(...)}catch{
+  // window.open(url,'_blank') }`, and inside a WKWebView window.open() returns null
+  // and does nothing — so «source» links on the Information screen were mute on iOS
+  // exactly like Register was (RISKS №221b). Reading index.html alone is the same
+  // mistake NOPAY made before Н-A. This rule reads EVERY shipped asset.
+  const callSites = SHIPPED_TEXT
+    .map((f) => ({ file: f.file, n: (f.text.match(/invoke\(\s*'open_external_url'/g) || []).length }))
+    .filter((x) => x.n > 0);
+  ok(callSites.length === 1 && callSites[0].file === 'index.html' && callSites[0].n === 1,
+    'exactly ONE open_external_url call site in the whole shipped dist, and it is in index.html (found: ' + JSON.stringify(callSites) + ')');
+  // window.open() is the silent fallback that made the second door mute. It has no
+  // business in the app shell at all; the bundled plugins are a declared exception.
+  const WINDOW_OPEN_ALLOW = [
+    { prefix: 'plugins/', why: 'the bundled navigation-calculators pack ships legacy NGA calculator markup that calls window.open() for its own popups, and the plugin SHIMS those calls into an inline panel of its own; none of it is an external Skipi door, and a home may not rewrite a bundled plugin in place' },
+  ];
+  const stripJs = stripCodeComments;
+  const windowOpens = SHIPPED_TEXT
+    .filter((f) => !WINDOW_OPEN_ALLOW.some((a) => f.file.startsWith(a.prefix)))
+    .map((f) => ({ file: f.file, n: (stripJs(f.text).match(/window\.open\(/g) || []).length }))
+    .filter((x) => x.n > 0);
+  ok(windowOpens.length === 0,
+    'no shell asset falls back to window.open() — it returns null inside a WKWebView and answers nothing (offenders: ' + JSON.stringify(windowOpens) + ')');
+  ok(WINDOW_OPEN_ALLOW.every((a) => a.why.length > 60 && SHIPPED_TEXT.some((f) => f.file.startsWith(a.prefix) && /window\.open\(/.test(f.text))),
+    'and the one exception is real, current and explained (the bundled plugins really do contain window.open)');
+  const INTEL = SHIPPED_TEXT.find((f) => f.file === 'intelligence.js').text;
+  ok(/async function openInformationSource\(url\)\{\s*\n\s*return openExternalUrlSafe\(url\);\s*\n\}/.test(INTEL),
+    'the Information «source» link goes through the same answering helper as every other door');
   const calls = [...HTML.matchAll(/invoke\(\s*'open_external_url'/g)];
   ok(calls.length === 1, 'exactly one open_external_url call site in dist/index.html (found ' + calls.length + ')');
   const helper = HTML.slice(HTML.indexOf('async function openExternalUrlSafe('), HTML.indexOf('async function openRegisterPage('));
@@ -3260,6 +3364,22 @@ const nopayScan = (files, family) => NOPAY_RULES.filter(([fam]) => fam === famil
     "    try{await invoke('open_external_url',{url:DEVELOPER_GROUP_INVITE_URL});}catch(e){}");
   ok([...second.matchAll(/invoke\(\s*'open_external_url'/g)].length === 2,
     'NEGATIVE: re-introducing a second call site with its own silent catch turns this rule red (1 site before, ' + [...second.matchAll(/invoke\(\s*'open_external_url'/g)].length + ' after)');
+  // and the same, one file away — the byte-for-byte body intelligence.js shipped until 06.09
+  const OLD_INTEL = "async function openInformationSource(url){\n    try{await invoke('open_external_url',{url:url});}\n    catch(e){window.open(url,'_blank');}\n}";
+  const poisonedDist = SHIPPED_TEXT.map((f) => (f.file === 'intelligence.js'
+    ? { file: f.file, text: f.text.replace(/async function openInformationSource\(url\)\{[\s\S]*?\n\}/, OLD_INTEL) }
+    : f));
+  const poisonedSites = poisonedDist
+    .map((f) => ({ file: f.file, n: (f.text.match(/invoke\(\s*'open_external_url'/g) || []).length }))
+    .filter((x) => x.n > 0);
+  ok(poisonedSites.length === 2,
+    'NEGATIVE: putting the old intelligence.js body back gives the dist a SECOND call site and turns this rule red (' + JSON.stringify(poisonedSites) + ')');
+  const poisonedOpens = poisonedDist
+    .filter((f) => !f.file.startsWith('plugins/'))
+    .map((f) => ({ file: f.file, n: (stripJs(f.text).match(/window\.open\(/g) || []).length }))
+    .filter((x) => x.n > 0);
+  ok(poisonedOpens.length === 1 && poisonedOpens[0].file === 'intelligence.js',
+    'NEGATIVE: and its window.open() fallback — the call that does nothing inside a WKWebView — reddens the second half too');
 }
 
 {
@@ -3351,16 +3471,304 @@ const nopayScan = (files, family) => NOPAY_RULES.filter(([fam]) => fam === famil
 }
 
 {
-  section('LANG1 — the interface language can be changed without knowing English (user report B6, 06.09)');
-  const menu = HTML.slice(HTML.indexOf('function renderMobileMenu(){'), HTML.indexOf('function mobileLanguageSelectHtml('));
-  ok(/data-qa="mobile-menu-language"/.test(menu), 'the Menu screen itself carries a language row (it used to be three taps deep inside Settings → Application, labelled in English)');
-  ok(/function mobileLanguageSelectHtml\(\)\{[\s\S]{0,400}UI_LANG_OPTIONS\.map/.test(HTML), 'the row lists every configured UI language');
-  ok(/function mobileSetUiLang\(lang\)\{[\s\S]{0,200}setUiLang\(lang\);[\s\S]{0,200}renderMobileShell\(\);/.test(HTML), 'choosing one applies it and repaints the shell immediately');
-  ok(/\['ru','Русский'\]/.test(HTML), 'Russian is one of them, written in Russian — the user has to recognise it without reading English');
+  section('TOAST1 — a toast is drawn ABOVE every full-screen gate (the mute «Register» button, 06.09)');
+  // Found by tapping, not by reading: on the iPhone 17 Pro Max simulator the manager
+  // pressed Register on the FIRST screen and the screen did not change at all. The
+  // link had gone into the clipboard and openExternalUrlSafe had raised its toast —
+  // the toast was simply painted UNDER the first screen. .skipi-toast-container was
+  // z-index:99999 while .mobile-entry-fork and #login-gate-overlay are 100000. On the
+  // entry fork that makes EVERY message invisible, not only this one, and «the
+  // reviewer taps and nothing happens» is exactly the shape we were rejected for.
+  //
+  // The rule is therefore not «99999 is wrong»: it is «the toast layer is above every
+  // full-screen container this file can raise». Those containers are found, not
+  // listed from memory — every `position:fixed` declaration blob that also carries
+  // `inset:0`, in CSS rules, inline style attributes and JS cssText alike.
+  const declarationBlobs = () => {
+    const found = [];
+    const re = /position:\s*fixed/g;
+    let m;
+    while ((m = re.exec(HTML))) {
+      const start = m.index;
+      let a = start; while (a > 0 && !'{"\''.includes(HTML[a - 1])) a--;
+      let b = start; while (b < HTML.length && !'}"\''.includes(HTML[b])) b++;
+      const blob = HTML.slice(a, b);
+      if (!/inset:\s*0/.test(blob)) continue;
+      const z = /z-index:\s*(\d+)/.exec(blob);
+      found.push({
+        z: z ? Number(z[1]) : NaN,
+        where: HTML.slice(Math.max(0, a - 90), a).replace(/\s+/g, ' ').slice(-64),
+      });
+    }
+    return found;
+  };
+  const fullScreen = declarationBlobs();
+  const toastRule = /\.skipi-toast-container \{([^}]*)\}/.exec(HTML);
+  const toastZ = toastRule ? Number((/z-index:\s*(\d+)/.exec(toastRule[1]) || [])[1]) : NaN;
+  ok(Number.isFinite(toastZ), 'the toast container has a z-index at all (got ' + toastZ + ')');
+  ok(/_toastContainer\.className='skipi-toast-container'/.test(HTML),
+    'and .skipi-toast-container really is the layer showToast() paints into — not a class nothing uses');
+  // Н-C shape: an «at least N» count would let a container disappear in silence. The
+  // audit of 06.09 counted 14 full-screen containers in this file; the drill asserts
+  // that number, so a NEW gate nobody thought about reddens here instead of shipping
+  // as another invisible-toast bug.
+  ok(fullScreen.length === 14,
+    'exactly the 14 full-screen (position:fixed + inset:0) containers of dist/index.html were found — a new one must be checked against the toast layer, not discovered on a device (got '
+    + fullScreen.length + ': ' + JSON.stringify(fullScreen.map((f) => f.where)) + ')');
+  ok(fullScreen.every((f) => Number.isFinite(f.z)),
+    'every one of them declares a z-index (an implicit one cannot be compared): ' + JSON.stringify(fullScreen.filter((f) => !Number.isFinite(f.z)).map((f) => f.where)));
+  const above = fullScreen.filter((f) => !(toastZ > f.z));
+  ok(above.length === 0,
+    'the toast layer (' + toastZ + ') is strictly above EVERY full-screen container (highest gate: '
+    + Math.max(...fullScreen.map((f) => f.z)) + ') — offenders: ' + JSON.stringify(above.map((f) => f.where + ' @ ' + f.z)));
+  // the three the card names, by name, so the count above cannot go green on the wrong 14
+  for (const [name, re] of [
+    ['.mobile-entry-fork', /\.mobile-entry-fork \{([^}]*)\}/],
+    ['#login-gate-overlay', /id="login-gate-overlay" style="([^"]*)"/],
+    ['#forced-profile-overlay', /id="forced-profile-overlay" style="([^"]*)"/],
+  ]) {
+    const m = re.exec(HTML);
+    const z = m ? Number((/z-index:\s*(\d+)/.exec(m[1]) || [])[1]) : NaN;
+    ok(Number.isFinite(z) && toastZ > z, 'a toast is above ' + name + ' (' + z + ' < ' + toastZ + ')');
+  }
+  // …and it does NOT climb over the early-error trap, which has to stay readable when
+  // the app itself is broken. «Above the gates» is the requirement; «above everything»
+  // would quietly cover the one banner that exists for the case where nothing works.
+  const earlyErr = /id='__early_err__'[\s\S]{0,400}?z-index:(\d+)/.exec(HTML) || /__early_err__[\s\S]{0,600}?z-index:(\d+)/.exec(HTML);
+  ok(!!earlyErr && toastZ < Number(earlyErr[1]),
+    'and it stays BELOW the early-error trap (' + (earlyErr ? earlyErr[1] : '?') + '), which must stay visible when the app is broken');
+  // negative — the exact byte that shipped the bug
+  {
+    const back = HTML.replace('.skipi-toast-container { position:fixed; top:12px; right:12px; z-index:' + toastZ + ';',
+      '.skipi-toast-container { position:fixed; top:12px; right:12px; z-index:99999;');
+    ok(back !== HTML, 'the negative mutation really put the old z-index back');
+    const oldZ = Number((/\.skipi-toast-container \{[^}]*z-index:\s*(\d+)/.exec(back) || [])[1]);
+    ok(oldZ === 99999 && !fullScreen.every((f) => oldZ > f.z),
+      'NEGATIVE: restoring z-index:99999 turns this drill red — that value is UNDER .mobile-entry-fork and #login-gate-overlay (100000), which is how the Register toast became invisible');
+  }
+}
+
+{
+  section('IOSURL1 — the Register door actually opens a browser on iOS (App Store 2.1(b))');
+  // The frontend half (REG1) can only guarantee that a failure is SAID out loud. This
+  // is the other half: on iOS the command used to be a stub that always returned Err,
+  // so the reviewer got a toast with an address and still no browser. The behavioural
+  // proof is on a device — the manager taps it on the simulator — so what is asserted
+  // here are the bytes that make the device behaviour possible, and the security
+  // boundary that must NOT have been widened to get there.
+  const RUSTV = fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'commands', 'vault.rs'), 'utf8');
+  const stripRust = (src) => src
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => ' '.repeat(m.length))
+    .replace(/(^|[^:])\/\/[^\n]*/g, (m, p1) => p1 + ' '.repeat(m.length - p1.length));
+  // Test code does not ship and does not open any file at runtime, and this file's
+  // own tests quote both needles below on purpose. Every .rs file in this tree has
+  // exactly ONE #[cfg(test)] and it is the trailing module, which is asserted before
+  // the cut is used — otherwise a truncation could silently hide production code.
+  ok((RUSTV.match(/#\[cfg\(test\)\]/g) || []).length === 1, 'vault.rs has exactly one #[cfg(test)] module, so cutting at it cannot hide production code');
+  const CODE = stripRust(RUSTV).split('#[cfg(test)]')[0];
+  const iosBranch = (() => {
+    const i = CODE.indexOf('#[cfg(target_os = "ios")]\n#[tauri::command]');
+    const j = CODE.indexOf('#[cfg(not(any(target_os = "android", target_os = "ios")))]', i);
+    return i >= 0 && j > i ? CODE.slice(i, j) : '';
+  })();
+  ok(iosBranch.length > 100, 'the iOS branch of open_external_url was located in vault.rs');
+  ok(!/not wired for iOS yet/.test(CODE), 'the «not wired for iOS yet» stub is gone from the code (it is only described in the comment that explains why it went)');
+  ok(/openURL:options:completionHandler:/.test(CODE), 'the iOS branch sends UIApplication the modern openURL: message');
+  ok(/sharedApplication/.test(CODE) && /objc_msgSend/.test(CODE), 'through the Objective-C runtime, with no new crate in Cargo.toml (which is not on this route)');
+  ok(/run_on_main_thread/.test(iosBranch), 'and it does that on the MAIN thread — UIKit is not thread-safe and a background call is a crash, not a link');
+  // the security boundary: same allowlist, all three platforms, checked FIRST
+  const branchCount = (CODE.match(/pub fn open_external_url\(/g) || []).length;
+  const checkCount = (CODE.match(/if !external_url_is_allowed\(&url\) \{/g) || []).length;
+  ok(branchCount === 3 && checkCount === 3, 'all three platform branches (android/ios/desktop) exist and every one gates on the allowlist (' + checkCount + '/' + branchCount + ')');
+  const beforeCheck = iosBranch.slice(0, iosBranch.indexOf('if !external_url_is_allowed'));
+  ok(iosBranch.includes('if !external_url_is_allowed') && !/objc|msg_send|open_on_main_thread/.test(beforeCheck),
+    'on iOS the allowlist is checked BEFORE anything reaches the Objective-C side');
+  ok(/EXTERNAL_URL_ALLOWED_SCHEMES: \[&str; 4\] = \["https:\/\/", "http:\/\/", "mailto:", "tel:"\]/.test(CODE),
+    'the allowlist itself is UNCHANGED — exactly the four schemes Android already allowed, not one more');
+  // the allowlist really is a boundary: run the shipped predicate over the bad schemes
+  const schemes = JSON.parse((/EXTERNAL_URL_ALLOWED_SCHEMES: \[&str; 4\] = (\[[^\]]*\])/.exec(CODE) || [])[1].replace(/"/g, '"'));
+  const allowed = (u) => schemes.some((p) => u.startsWith(p));
+  for (const bad of ['file:///etc/passwd', 'javascript:alert(1)', 'intent://evil#Intent;scheme=x;end', 'content://media/external', 'skipi://whatever', 'ftp://example.com', '']) {
+    ok(!allowed(bad), 'iOS rejects ' + JSON.stringify(bad) + ' — the same four-scheme boundary as Android');
+  }
+  for (const good of ['https://assistant.skipi.app/register', 'http://example.com', 'mailto:crew@skipi.app', 'tel:+15551234567']) {
+    ok(allowed(good), 'and still allows ' + JSON.stringify(good));
+  }
+  // negatives
+  ok(/not wired for iOS yet/.test(CODE.replace(/pub fn open_external_url\(app: tauri::AppHandle, url: String\) -> Result<\(\), String> \{[\s\S]*?\n\}/, 'pub fn open_external_url(url: String) -> Result<(), String> {\n    Err("Opening external URLs is not wired for iOS yet.".to_string())\n}')),
+    'NEGATIVE: putting the iOS stub back turns this drill red');
+  const widened = CODE.replace('EXTERNAL_URL_ALLOWED_SCHEMES: [&str; 4] = ["https://", "http://", "mailto:", "tel:"]',
+    'EXTERNAL_URL_ALLOWED_SCHEMES: [&str; 5] = ["https://", "http://", "mailto:", "tel:", "file://"]');
+  ok(!/EXTERNAL_URL_ALLOWED_SCHEMES: \[&str; 4\] = \["https:\/\/", "http:\/\/", "mailto:", "tel:"\]/.test(widened),
+    'NEGATIVE: widening the allowlist by one scheme (file://) turns it red too — wiring iOS is not a licence to open more');
+}
+
+{
+  section('FEED1 — feedback and diagnostics can actually be written on a phone (RISKS №220b)');
+  // Reproduced verbatim on the emulator before the fix:
+  //   «Feedback save failed: unable to open database file: ./skipi/feedback.sqlite»
+  // dirs::data_dir() is None on Android, the unwrap_or_else fallback made the path
+  // RELATIVE, and SQLite could not open it. Not one rating and not one diagnostic
+  // ever left a phone. Every other store in this tree already asks the app.
+  const rustAll = [];
+  (function walkRs(dir) {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walkRs(p);
+      else if (e.name.endsWith('.rs')) rustAll.push(p);
+    }
+  })(path.join(__dirname, '..', 'src-tauri', 'src'));
+  const stripRs = (src) => src
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => ' '.repeat(m.length))
+    .replace(/(^|[^:])\/\/[^\n]*/g, (m, p1) => p1 + ' '.repeat(m.length - p1.length));
+  ok(rustAll.length >= 8, 'the whole Rust tree is read, not just feedback.rs (' + rustAll.length + ' files)');
+  // Same cut as IOSURL1, same reason: the regression tests of feedback.rs quote the
+  // forbidden call on purpose, and test code opens no database at runtime.
+  const rustProd = rustAll.map((f) => {
+    const raw = fs.readFileSync(f, 'utf8');
+    return {
+      f: path.relative(path.join(__dirname, '..'), f),
+      testMods: (raw.match(/#\[cfg\(test\)\]/g) || []).length,
+      src: stripRs(raw).split('#[cfg(test)]')[0],
+    };
+  });
+  ok(rustProd.every((x) => x.testMods <= 1),
+    'every .rs file has at most one #[cfg(test)] module, so cutting at it cannot hide production code (offenders: '
+    + JSON.stringify(rustProd.filter((x) => x.testMods > 1).map((x) => x.f)) + ')');
+  const offenders = rustProd.filter((x) => /dirs::data_dir\(\)/.test(x.src)).map((x) => x.f);
+  ok(offenders.length === 0,
+    'no store in src-tauri resolves its path through dirs::data_dir() any more — the one call site that did was the feedback DB (offenders: ' + JSON.stringify(offenders) + ')');
+  const FEEDBACK = fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'feedback.rs'), 'utf8').split('#[cfg(test)]')[0];
+  ok(/fn feedback_db_path\(app: &tauri::AppHandle\) -> Result<PathBuf, String>/.test(FEEDBACK),
+    'feedback_db_path takes the AppHandle it resolves the path from, and can fail honestly instead of silently going relative');
+  ok(/\.app_data_dir\(\)/.test(FEEDBACK), 'and it asks app.path().app_data_dir() — the same call vault.rs, agency_mailing.rs and profile.rs already make');
+  ok(!/PathBuf::from\("\."\)/.test(stripRs(FEEDBACK)), 'the «.» fallback that produced ./skipi/feedback.sqlite is gone — there is no relative path left to fall back to');
+  ok((FEEDBACK.match(/open_feedback_db\(&app\)\?/g) || []).length >= 8,
+    'every #[tauri::command] in feedback.rs opens the DB through the handle (' + (FEEDBACK.match(/open_feedback_db\(&app\)\?/g) || []).length + ' call sites)');
+  ok(!/open_feedback_db\(\)/.test(FEEDBACK) && !/feedback_db_path\(\)/.test(FEEDBACK), 'and no handle-less caller is left behind');
   // negative
-  const noRow = HTML.replace(/\+'<div class="mobile-card mobile-menu-extra" data-qa="mobile-menu-language"[\s\S]*?<\/div><\/div>'\n/, '');
-  ok(!/data-qa="mobile-menu-language"/.test(noRow.slice(noRow.indexOf('function renderMobileMenu(){'), noRow.indexOf('function mobileLanguageSelectHtml('))),
-    'NEGATIVE: removing the row from the Menu screen turns this drill red');
+  const back = FEEDBACK.replace(/fn feedback_db_path\(app: &tauri::AppHandle\) -> Result<PathBuf, String> \{[\s\S]*?\n\}/,
+    'fn feedback_db_path() -> PathBuf {\n    let dir = dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")).join("skipi");\n    dir.join("feedback.sqlite")\n}');
+  ok(/dirs::data_dir\(\)/.test(stripRs(back)) && back !== FEEDBACK,
+    'NEGATIVE: restoring the dirs::data_dir() path — the exact code that made the DB unopenable on Android — turns this drill red');
+}
+
+{
+  section('LEAK1 — no shipped asset tells the user the product is unfinished (App Store Guideline 2.1, App Completeness)');
+  // Found on the iOS simulator, on the My Vessel screen four taps from the first
+  // screen: «Photo upload and sending to the vessel appear AFTER BACKEND — nothing is
+  // sent now». Two defects in one sentence: an implementation word in copy written for
+  // a seafarer, and the app telling a reviewer in its own words that a feature does
+  // not work. That is the article of two of our three rejections.
+  // Comments are stripped first: this is about what reaches a SCREEN, and a rule that
+  // reddened on every code comment would be switched off within a week.
+  const stripCode = stripCodeComments;
+  // the stripper is proved, not trusted: it must erase prose and keep code
+  ok(stripCode('// backend\nlet a=1; /* backend */ let b=2;\n') .includes('let a=1;')
+    && stripCode('// backend\nlet a=1; /* backend */ let b=2;\n').includes('let b=2;')
+    && !/backend/.test(stripCode('// backend\nlet a=1; /* backend */ let b=2;\n')),
+    'the comment stripper erases comments and keeps code (a stripper that erases code makes every rule below vacuous)');
+  ok(/backend/.test(stripCode("h+='Photo upload appears after backend';")),
+    'and it does NOT touch a string literal on a code line — which is exactly where the defect lived');
+  const LEAK_ALLOW = [
+    { re: /No backend endpoint\./g, file: 'plugins/bnwas-time-anchor/REPORT.md',
+      why: 'the BNWAS plugin’s provenance REPORT saying what the bundle does NOT do (no network, no backend endpoint) — a developer document that ships inside dist/ but is never rendered on any screen' },
+    { re: /comingSoon/g, file: 'plugin-host-ui.js',
+      why: 'the vendored @skipi/plugin-host-ui catalog flag and its badge: a truthful status about a THIRD-PARTY plugin in the catalog, not a statement that this app is unfinished; the home may not patch a vendored module in place' },
+    { re: /Coming soon/g, file: 'plugin-host-ui.js',
+      why: 'the visible half of that same catalog badge, in the same vendored module' },
+    { re: /This entity type is coming soon — only Seafarer is available right now\./g, file: 'index.html',
+      why: 'the toast of onType(), which has ZERO call sites in the shipped bytes — entity types other than Seafarer were removed from the UI in 0.4.11; the assertion below proves it is unreachable rather than trusting this note' },
+  ];
+  ok(!/onType\(/.test(HTML.replace('async function onType(v){', '')),
+    'the allowlisted «coming soon» toast really is unreachable: onType() has no call site anywhere in dist/index.html');
+  const LEAK_RULES = [
+    ['backend', String.raw`\bback[\s-]?end\b`],
+    ['not implemented', String.raw`\bnot implemented\b`],
+    ['coming soon', String.raw`\bcoming soon\b`],
+    ['TODO/FIXME in copy', String.raw`\b(?:TODO|FIXME)\b`],
+    ['does not work yet', String.raw`\b(?:doesn.t|does not) work yet\b`],
+  ];
+  const leakScan = (files) => LEAK_RULES.map(([label, pattern]) => {
+    const where = [];
+    for (const f of files) {
+      let t = stripCode(f.text);
+      LEAK_ALLOW.forEach((a) => { if (a.file === f.file) t = t.replace(a.re, (m) => 'X'.repeat(m.length)); });
+      const m = t.match(new RegExp(pattern, 'gi')) || [];
+      if (m.length) where.push(f.file + ' (x' + m.length + ')');
+    }
+    return { label, where };
+  });
+  for (const h of leakScan(SHIPPED_TEXT)) {
+    ok(h.where.length === 0, 'no shipped asset says «' + h.label + '» in screen copy' + (h.where.length ? ' — ' + JSON.stringify(h.where) : ''));
+  }
+  for (const a of LEAK_ALLOW) {
+    const f = SHIPPED_TEXT.find((x) => x.file === a.file);
+    ok(!!f && (f.text.match(a.re) || []).length > 0, 'the exception is real and still there (not a stale loophole): ' + a.file + ' ' + a.re);
+    ok(a.why.length > 60, 'and it says why that occurrence is not a confession of an unfinished app: ' + a.file);
+  }
+  ok(/Photo upload and sending to the vessel become available/.test(HTML) && !/after backend/.test(HTML),
+    'the My Vessel note now tells the seafarer WHEN it works instead of naming our architecture');
+  ok(/Загрузка фото и отправка на судно становятся доступны/.test(HTML),
+    'and the Russian half was fixed with it — it carried the same word');
+  // negatives
+  ok(leakScan([{ file: 'index.html', text: 'Photo upload and sending to the vessel appear after backend — nothing is sent now.' }])
+    .filter((h) => h.where.length).map((h) => h.label).includes('backend'),
+    'NEGATIVE: the exact sentence the reviewer could read on My Vessel turns this drill red');
+  ok(leakScan([{ file: 'index.html', text: '<p>This screen is not implemented yet, coming soon.</p>' }]).filter((h) => h.where.length).length >= 2,
+    'NEGATIVE: «not implemented» / «coming soon» written into index.html copy turns it red');
+  ok(leakScan([{ file: 'index.html', text: '// backend TODO: coming soon, not implemented' }]).filter((h) => h.where.length).length === 0,
+    'NEGATIVE CONTROL: the same words in a CODE COMMENT stay green — a rule that reddens on comments gets switched off by the first person in a hurry');
+}
+
+{
+  section('LANG1 — the interface language can be changed without knowing English (user report B6, 06.09; re-shaped by OWNER 06.09)');
+  // Owner, looking at the iPad simulator: «эту полосу с выбором языка отсюда можно убрать». The wide
+  // row is gone — but DELETING it outright would put bug B6 straight back (the language
+  // used to be three taps deep inside Settings → Application, labelled in English, and
+  // users did not find it). So the invariant this drill defends is NOT «there is a row»;
+  // it is: on the Menu screen there is a VISIBLE language control, it shows the current
+  // language in words, and one tap opens the chooser without a trip into Settings.
+  const menu = HTML.slice(HTML.indexOf('function renderMobileMenu(){'), HTML.indexOf('function currentUiLangLabel('));
+  ok(/data-qa="mobile-menu-language"/.test(menu) === false && /'mobile-menu-language'/.test(menu),
+    'the Menu screen still carries the language control (now as a tile in the same icon grid as Profile and Feedback)');
+  ok(/mobileMenuIconTile\('mobile-menu-language','openMobileLanguageMenu\(\)'/.test(menu),
+    'and tapping it opens the chooser — not Settings, not a screen change');
+  ok(/currentUiLangLabel\(\)\)?\n?\s*\+'<\/div>'/.test(menu) || /currentUiLangLabel\(\)/.test(menu),
+    'the tile shows the CURRENT language as its own sub-label (the icon carries the state, the way the owner asked)');
+  ok(/function currentUiLangLabel\(\)\{[\s\S]{0,300}UI_LANG_OPTIONS\[i\]\[1\]/.test(HTML),
+    'that sub-label is the language written in its own language, taken from UI_LANG_OPTIONS');
+  ok(/<span class="fam-app-sublabel">/.test(HTML) && /\.fam-app-tile \.fam-app-sublabel \{[^}]*font-size:11px/.test(HTML),
+    'and it is really VISIBLE — a styled second line on the tile, not a long-press hint');
+  ok(/function openMobileLanguageMenu\(\)\{[\s\S]{0,900}UI_LANG_OPTIONS\.forEach/.test(HTML), 'the chooser lists every configured UI language');
+  ok(/function mobileSetUiLang\(lang\)\{[\s\S]{0,240}setUiLang\(lang\);[\s\S]{0,240}renderMobileShell\(\);/.test(HTML), 'choosing one applies it and repaints the shell immediately');
+  ok(/\['ru','Русский'\]/.test(HTML), 'Russian is one of them, written in Russian — the user has to recognise it without reading English');
+  // and the real render agrees with the bytes: the tile is on the screen, in the grid
+  {
+    const app = installNavHistory(bootMobile({ seed: {} }));
+    await settleVm();
+    app.sandbox.mobileShow('menu'); app.runTimers(0);
+    const mm = mobileHtml(app.doc);
+    ok(mm.includes('data-qa="mobile-menu-language"'), 'LANG1 (render): the language tile really is on the Menu screen');
+    ok(/class="fam-app-sublabel">English</.test(mm), 'LANG1 (render): and it prints the current language — English on a default install');
+    // the chooser appends itself to <body>; the fake DOM has no insertAdjacentHTML,
+    // so capture what the real function emits instead of asserting on a stub screen
+    let dlg = '';
+    const prevInsert = app.doc.body.insertAdjacentHTML;
+    app.doc.body.insertAdjacentHTML = (pos, html) => { dlg += String(html); };
+    try { app.sandbox.openMobileLanguageMenu(); } finally { app.doc.body.insertAdjacentHTML = prevInsert; }
+    ok(/data-qa="mobile-language-menu"/.test(dlg), 'LANG1 (render): tapping it opens the chooser in place');
+    for (const loc of ['ru', 'en', 'tl', 'hi', 'id']) ok(dlg.includes('data-qa="mobile-language-option-' + loc + '"'), 'LANG1 (render): the chooser offers ' + loc);
+    ok(!/openSettings\(/.test(dlg), 'LANG1 (render): and it does NOT push the user into Settings to change the language');
+  }
+  // negatives
+  const noTile = HTML.replace(/\+mobileMenuIconTile\('mobile-menu-language'[\s\S]*?currentUiLangLabel\(\)\)\n/, '');
+  ok(noTile !== HTML, 'the negative mutation really removed the tile');
+  ok(!/mobile-menu-language/.test(noTile.slice(noTile.indexOf('function renderMobileMenu(){'), noTile.indexOf('function currentUiLangLabel('))),
+    'NEGATIVE: removing the language control from the Menu screen turns this drill red (that is bug B6 coming back)');
+  const noSub = HTML.replace("          currentUiLangLabel())", '          )');
+  ok(!/currentUiLangLabel\(\)/.test(noSub.slice(noSub.indexOf('function renderMobileMenu(){'), noSub.indexOf('function currentUiLangLabel('))),
+    'NEGATIVE: dropping the current-language sub-label turns it red too — an icon that does not show its state is not a fix');
 }
 
 {
