@@ -13,7 +13,7 @@
 <script>
 var APP_BUILD_METADATA={
     component: 'Seafarer',
-    component_version: '0.4.186',
+    component_version: '0.4.187',
     stack_id: 'SKIPI-2026.08-R1',
     source_identifier: 'unknown',
     manifest_url: 'https://api.skipi.app/.well-known/skipi-stack/SKIPI-2026.08-R1.json',
@@ -917,6 +917,13 @@ body.mobile-native .mobile-brand-wrap, body.mobile-native #mobile-feedback-btn, 
 .mobile-assistant-banner .btn { margin-top:8px; width:100%; }
 .mobile-menu-extra { margin-top:10px; }
 /* /mobile-home-assistant */
+/* mobile-entry-fork (owner 06.09, canon (295)) — native-only first screen: Sign in · Register · Demo. Gate-class overlay (same z-index as #login-gate-overlay), rendered by JS. */
+.mobile-entry-fork { display:none; position:fixed; inset:0; z-index:100000; background:var(--bg); align-items:center; justify-content:center; overflow:auto; padding:32px 20px; }
+.mobile-entry-fork-card { width:100%; max-width:400px; }
+.mobile-entry-fork-title { font-size:22px; font-weight:600; margin:0 0 6px; color:var(--text); }
+.mobile-entry-fork-sub { color:var(--text2); font-size:13px; margin:0 0 18px; }
+.mobile-entry-fork-back { position:absolute; top:14px; left:16px; color:var(--accent); text-decoration:none; font-size:14px; padding:8px; }
+/* /mobile-entry-fork */
 
 /* Mobile app shell */
 .mobile-shell { display:none; min-height:100dvh; background:var(--bg); color:var(--text); flex-direction:column; overflow:hidden; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); }
@@ -3648,7 +3655,16 @@ async function init() {
     var hadVaultPath=false;
     try{types=await invoke('get_vault_types');document.getElementById('err').style.display='none';
         var lv=await invoke('get_last_vault');
-        if(lv){hadVaultPath=true;try{var info=await invoke('open_vault',{path:lv});await loadVault(info);return;}catch(e){}}
+        if(lv){hadVaultPath=true;try{var info=await invoke('open_vault',{path:lv});
+            // Canon «entry fork» (OWNER 06.09, DECISIONS (295)), native only: a
+            // remembered vault WITHOUT a token → the fork with this vault parked
+            // (Sign in resumes it); a remembered DEMO is closed + forgotten first —
+            // the demo is not a session, the next cold start shows the fork again.
+            if(isNativeMobile()&&!(await _hasLoginToken())){
+                if(await _efOpenVaultIsDemo()){ try{await invoke('close_vault',{forget:true});}catch(_){} }
+                else { _loginGatePending=info; showEntryFork(); return; }
+            }else{ await loadVault(info); return; }
+        }catch(e){}}
         if(!lv&&shouldUseMobileShell()){
             var recent=[];
             try{recent=await invoke('get_recent_vaults')||[];}catch(_){}
@@ -3673,6 +3689,9 @@ async function init() {
     if(!(await _hasLoginToken())){
         _loginGatePending=null;
         _loginGateNext=function(){ initNoVaultLanding(hadVaultPath); };
+        // Canon «entry fork» (OWNER 06.09, DECISIONS (295)): natively the first
+        // screen is Sign in · Register · Demo; the gate below stays for desktop/web.
+        if(isNativeMobile()){showEntryFork();return;}
         showLoginGate();
         return;
     }
@@ -6416,7 +6435,8 @@ function mobileRenderAssistantChat(){
         mobileMainHtml('<div class="mobile-assistant-wrap">'+c+mobileMenuButtonHtml()+'</div>');
         return;
     }
-    var demo=mobileIsDemo?'<div class="mobile-assistant-banner" data-qa="assistant-demo-banner">'+mobileEsc(ru?'Это демо-профиль: ассистент отвечает по демо-данным. Создайте свой профиль, чтобы он знал ваши документы, сертификаты и опыт.':'This is a demo profile: the assistant answers on demo data. Create your own profile so it knows your documents, certificates and experience.')+'<button class="btn btn-accent btn-sm" type="button" onclick="mobileStartVaultWizard()">'+mobileEsc(ru?'Создать свой профиль':'Create my profile')+'</button></div>':'';
+    var demo=mobileIsDemo?'<div class="mobile-assistant-banner" data-qa="assistant-demo-banner">'+mobileEsc(ru?'Это демо-профиль: ассистент отвечает по демо-данным. Создайте свой профиль, чтобы он знал ваши документы, сертификаты и опыт.':'This is a demo profile: the assistant answers on demo data. Create your own profile so it knows your documents, certificates and experience.')+'<button class="btn btn-accent btn-sm" type="button" onclick="mobileStartVaultWizard()">'+mobileEsc(ru?'Создать свой профиль':'Create my profile')+'</button>'
+        +(isNativeMobile()?'<button class="btn btn-outline btn-sm" type="button" data-qa="assistant-demo-signin" onclick="entryForkLeaveDemo()">'+mobileEsc(ru?'Войти':'Sign in')+'</button>':'')+'</div>':'';
     var offline=false; try{offline=(navigator.onLine===false);}catch(e){}
     var off=offline?'<div class="mobile-assistant-banner" data-qa="assistant-offline">'+mobileEsc(ru?'Нет сети — ассистент недоступен. Меню и модули работают.':'No network — the assistant is unavailable. The menu and modules keep working.')+'</div>':'';
     var head='<div class="mobile-assistant-head"><div style="min-width:0;"><div class="mobile-card-title">'+mobileEsc(ru?'Ассистент':'Assistant')+'</div>'
@@ -8840,6 +8860,7 @@ function showLoginGate(){
 function hideLoginGate(){
     var o=document.getElementById('login-gate-overlay');
     if(o)o.style.display='none';
+    _efGateClosed();
 }
 async function doAppLogin(){
     var t=_lgTxt();
@@ -8879,6 +8900,18 @@ async function appLogoutToGate(){
     // welcome screen instead of a blank shell (№162b continuation).
     _loginGatePending=null;
     _loginGateNext=function(){ initNoVaultLanding(true); };
+    if(isNativeMobile()){
+        // Canon «entry fork» (295): no session → the fork, raised FIRST (nothing may
+        // stay on screen), then the vault is re-bound so Sign in resumes it — unless
+        // it is the demo, which is closed + forgotten (the demo is not a session and
+        // must never receive a login token).
+        showEntryFork();
+        try{
+            if(await _efOpenVaultIsDemo()){ await invoke('close_vault',{forget:true}); }
+            else { var lvn=await invoke('get_current_vault_path'); if(lvn){ _loginGatePending=await invoke('open_vault',{path:lvn}); } }
+        }catch(e){}
+        return;
+    }
     showLoginGate();
     // Happy path: re-run the startup gate so it re-binds the current vault
     // context (loadVault re-hides the shell + shows the gate too). Any failure
@@ -8893,12 +8926,134 @@ async function _hasLoginToken(){
     try{ var st=await invoke('app_login_status'); return !!(st&&st.logged_in); }catch(e){ return false; }
 }
 
+// ========== Entry fork «Sign in · Register · Demo» (canon (295), OWNER 06.09) ==========
+// NATIVE-ONLY first screen (isNativeMobile()): a gate-class opaque overlay with exactly
+// three doors, shown wherever there is no session (cold start S1/S2, Sign out). With a
+// live session it is never called. Rendered by JS — the static gate markup is a PRESERVE
+// region. Desktop/web keep the plain login gate (BACKLOG №213 (3)).
+var _efHistMark=false; // ONE History entry while the gate is open FROM the fork (Android Back → fork)
+function _efTxt(){
+    var ru=false; try{ ru=getUiLang()==='ru'; }catch(e){}
+    return ru ? {
+        title:'Skipi Seafarer', sub:'Профиль моряка, документы и ассистент.',
+        signin:'Войти', signinSub:'У меня уже есть аккаунт Skipi.',
+        register:'Регистрация', registerSub:'Создать аккаунт по e-mail.',
+        demo:'Демо', demoSub:'Посмотреть приложение на демо-данных, без регистрации.',
+        back:'\u2190 Назад'
+    } : {
+        title:'Skipi Seafarer', sub:'Your seafarer profile, documents and assistant.',
+        signin:'Sign in', signinSub:'I already have a Skipi account.',
+        register:'Register', registerSub:'Create an account with your e-mail.',
+        demo:'Demo', demoSub:'Try the app on demo data, no account needed.',
+        back:'\u2190 Back'
+    };
+}
+// Demo exception AT the gate (canon (295) п.3): the demo vault is the ONLY vault that
+// opens without a token, natively only. VaultInfo carries no is_demo (db.rs), so
+// loadDemoVault() stamps info.is_demo right after create_demo_vault_auto — the only
+// demo-creating path (Rust always writes is_demo=1 there).
+function _efDemoNoLogin(info){
+    return isNativeMobile()&&String((info&&info.is_demo)||'')==='1';
+}
+async function _efOpenVaultIsDemo(){
+    try{ var sp=await invoke('get_profile_status'); return String((sp&&sp.is_demo)||'')==='1'; }catch(e){ return false; }
+}
+function _efDoorHtml(qa,onclick,icon,title,sub){
+    return '<button class="mobile-primary-action" type="button" data-qa="'+qa+'" onclick="'+onclick+'"><span class="mobile-action-icon">'+icon+'</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(title)+'</span><span class="mobile-action-sub">'+mobileEsc(sub)+'</span></span></button>';
+}
+function showEntryFork(){
+    var t=_efTxt();
+    var o=document.getElementById('mobile-entry-fork');
+    if(!o){
+        o=document.createElement('div');
+        o.setAttribute('id','mobile-entry-fork');
+        o.setAttribute('class','mobile-entry-fork');
+        o.setAttribute('data-qa','entry-fork');
+        (document.body||document.documentElement).appendChild(o);
+    }
+    o.innerHTML='<div class="mobile-entry-fork-card">'
+        +'<div class="mobile-entry-fork-title">'+mobileEsc(t.title)+'</div>'
+        +'<div class="mobile-entry-fork-sub">'+mobileEsc(t.sub)+'</div>'
+        +_efDoorHtml('sign-in','entryForkSignIn()','&#10140;',t.signin,t.signinSub)
+        +_efDoorHtml('register','entryForkRegister()','+',t.register,t.registerSub)
+        +_efDoorHtml('demo','entryForkDemo()','&#9679;',t.demo,t.demoSub)
+        +'</div>';
+    o.style.display='flex';
+}
+function hideEntryFork(){
+    var o=document.getElementById('mobile-entry-fork');
+    if(o)o.style.display='none';
+}
+function entryForkSignIn(){
+    hideEntryFork();
+    // ONE marker entry so Android Back returns to the fork instead of leaving the app
+    // (same pattern as skipiUnifiedSettings / skipiMobileNav; every listener ignores foreign states).
+    if(!_efHistMark){
+        try{ if(window.history&&typeof window.history.pushState==='function'){ window.history.pushState({skipiEntryFork:true},''); _efHistMark=true; } }catch(e){}
+    }
+    _efEnsureBackLink(true);
+    showLoginGate();
+}
+function entryForkRegister(){ openRegisterPage(); }
+function entryForkDemo(){ hideEntryFork(); loadDemoVault(); }
+// «← Back» inside the gate: inserted by JS (the gate markup is a PRESERVE region), visible
+// only while the gate was opened from the fork.
+function _efEnsureBackLink(visible){
+    var o=document.getElementById('login-gate-overlay');
+    if(!o)return;
+    var a=document.getElementById('lg-back');
+    if(!a){
+        a=document.createElement('a');
+        a.setAttribute('id','lg-back');
+        a.setAttribute('class','mobile-entry-fork-back');
+        a.setAttribute('data-qa','login-gate-back');
+        a.setAttribute('href','#');
+        a.setAttribute('onclick','entryForkGateBack();return false;');
+        o.appendChild(a);
+    }
+    a.textContent=_efTxt().back;
+    a.style.display=visible?'':'none';
+}
+// Called from hideLoginGate(): whatever closes the gate (login, Back, a vault load) hides the
+// link and consumes our marker with ONE history.back(). A popstate that already popped the
+// marker clears the flag first, so this is a no-op there (no double back, no phantom entries).
+function _efGateClosed(){
+    var a=document.getElementById('lg-back');
+    if(a)a.style.display='none';
+    if(!_efHistMark)return;
+    _efHistMark=false;
+    try{ if(window.history&&typeof window.history.back==='function')window.history.back(); }catch(e){}
+}
+function entryForkGateBack(){
+    hideLoginGate();
+    showEntryFork();
+}
+if(typeof window!=='undefined'&&window.addEventListener){
+    window.addEventListener('popstate',function(){
+        if(!_efHistMark)return;   // not our marker — leave app navigation alone
+        _efHistMark=false;        // our entry is the one being popped: closing must not back() again
+        entryForkGateBack();
+    });
+}
+// Way back from the demo (demo-banner button): the demo is closed AND forgotten BEFORE the
+// fork, so a subsequent Sign in parks the login (no vault open) instead of writing the token
+// into the demo vault (which the next Demo tap would wipe with remove_dir_all).
+async function entryForkLeaveDemo(){
+    try{ await invoke('close_vault',{forget:true}); }catch(e){}
+    try{ hide('scr-content'); hide('left-panel'); }catch(e){}
+    _loginGatePending=null;
+    _loginGateNext=function(){ initNoVaultLanding(true); };
+    showEntryFork();
+}
+
 async function loadVault(info){
     // HARD LOGIN GATE (№117): block the entire shell until a valid token
     // exists in this vault. A cached token → offline reopen allowed. First
     // login requires network. Vault is already open here, so vault_info is
-    // readable/writable by the app_login* commands.
-    if(!(await _hasLoginToken())){
+    // readable/writable by the app_login* commands. The ONLY exception is the
+    // demo vault on native (canon (295) п.3, _efDemoNoLogin) — checked HERE,
+    // at the gate, never through a wrapper around it.
+    if(!(await _hasLoginToken())&&!_efDemoNoLogin(info)){
         _loginGatePending = info;
         // Keep the shell hidden behind the opaque gate.
         try{ hide('scr-content'); hide('left-panel'); }catch(e){}
@@ -11782,6 +11937,10 @@ async function unlinkEvidenceFolder(entryId){
 async function loadDemoVault(){
     try{
         var info=await invoke('create_demo_vault_auto');
+        // Canon (295): the demo opens without a login. VaultInfo has no is_demo field,
+        // so stamp it here — the only demo-creating path (Rust writes is_demo=1 in
+        // populate_demo_vault) — for the gate exception in loadVault() (_efDemoNoLogin).
+        info.is_demo='1';
         mobilePostCreateVaultHint=false;
         await loadVault(info);
     }catch(e){showToast('Demo error: '+e,'error');logError('Demo error',e);}

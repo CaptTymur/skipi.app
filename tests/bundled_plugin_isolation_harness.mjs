@@ -1122,7 +1122,7 @@ async function efBoot(map, opts) {
   // crash Node later as an unhandled rejection. It is not under test here — the native shell is.
   app.sandbox.showDashboard = async () => {};
   const spies = {};
-  for (const name of ['showEntryFork', 'showLoginGate', 'renderMobileShell', 'showWelcome', 'showToast', 'err']) {
+  for (const name of ['showEntryFork', 'showLoginGate', 'renderMobileShell', 'showWelcome', 'initNoVaultLanding', 'mobileStartVaultWizard', 'showToast', 'err']) {
     spies[name] = [];
     const orig = app.sandbox[name];
     if (typeof orig !== 'function') continue;
@@ -1146,7 +1146,9 @@ const efGateMarkup = () => HTML.slice(HTML.indexOf('id="login-gate-overlay"'), H
   for (const door of ['sign-in', 'register', 'demo']) ok((f.match(new RegExp(`data-qa="${door}"`, 'g')) || []).length === 1, `D1: door "${door}" rendered exactly once`);
   ok((f.match(/<button\b/g) || []).length === 3, 'D1: exactly three buttons — no fourth door, no dismiss');
   ok(!efGateShown(doc) && spies.showLoginGate.length === 0, 'D1: the login gate is NOT raised first (the fork comes first, natively)');
-  ok(spies.showWelcome.length === 0 && !mobileHtml(doc).includes('mobileStartVaultWizard()'), 'D1: no welcome / profile wizard behind the fork');
+  // applyMobileMode() paints the idle welcome into #mobile-main before the token check (as it did under
+  // the gate); what must NOT happen before a session is the landing / profile wizard being STARTED.
+  ok(spies.showWelcome.length === 0 && spies.initNoVaultLanding.length === 0 && spies.mobileStartVaultWizard.length === 0, 'D1: no startup landing / profile wizard started behind the fork');
   ok(spies.renderMobileShell.length === 0, 'D1: the shell is not rendered before a session');
   // D1b — gate-class overlay: fixed, full-inset, opaque, z-index >= the login gate (100000); no header action inside.
   const cssStart = HTML.indexOf('/* mobile-entry-fork (owner 06.09');

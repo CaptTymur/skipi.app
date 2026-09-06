@@ -194,7 +194,7 @@ if (init !== null) {
   ok(/close_vault',\s*\{\s*forget\s*:\s*true\s*\}/.test(s2) && /_efOpenVaultIsDemo\(\)/.test(s2), 'G7: S2-cold — a remembered DEMO vault is closed + forgotten (close_vault{forget:true}), never auto-opened');
   ok(/\}\s*else\s*\{\s*await\s+loadVault\(info\);\s*return;\s*\}/.test(s2), 'G7: S2-cold — with a session (or on desktop) the remembered vault still loads as today');
 }
-ok((html.match(/assistant\.skipi\.app\/register/g) || []).length === 1, 'G7: exactly one Register URL in dist (the fork reuses openRegisterPage)');
+ok((html.match(/'https:\/\/assistant\.skipi\.app\/register'/g) || []).length === 1, 'G7: exactly one Register URL literal in dist (the fork reuses openRegisterPage)');
 ok(/openRegisterPage\(\)/.test(fnBody(html, 'entryForkRegister') || ''), 'G7: the Register door calls openRegisterPage()');
 ok(/loadDemoVault\(\)/.test(fnBody(html, 'entryForkDemo') || ''), 'G7: the Demo door calls the existing loadDemoVault()');
 ok(/_efGateClosed\(\)/.test(fnBody(html, 'hideLoginGate') || ''), 'G7: hideLoginGate() hides the JS «← Back» link + consumes the fork history marker');
