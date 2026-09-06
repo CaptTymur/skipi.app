@@ -1473,7 +1473,7 @@ function installNavHistory(app) {
   ok((MODULE_TPL.match(/<svg /g) || []).length === 11, 'exactly 11 icon SVGs, one per module');
   ok(!/&#9633;|&#9873;|&#9993;|&#9872;|&#9875;|&#9638;|&#128172;/.test(MODULE_TPL), 'the old symbol placeholders (▢ ⚑ ✉ ⚓ ▨ 💬) are gone');
   ok(!/fam-module-icon/.test(MODULE_TPL), 'the old letter placeholders (CV / P / J / i) in fam-module-icon boxes are gone');
-  const icon = cssRule('.fam-app-icon-box svg');
+  const icon = cssRule('.fam-app-tile .fam-app-icon-box svg');
   ok(/fill\s*:\s*none/.test(icon) && /stroke\s*:\s*currentColor/.test(icon) && /stroke-width\s*:\s*1\.7/.test(icon), 'one shared outline style: fill:none, stroke:currentColor, stroke-width 1.7');
   ok(/stroke-linecap\s*:\s*round/.test(icon) && /stroke-linejoin\s*:\s*round/.test(icon), 'rounded caps/joins on every icon');
 }
@@ -1534,9 +1534,9 @@ function installNavHistory(app) {
   const labelOf = (b) => { const m = /class="fam-app-label"[^>]*>([^<]+)</.exec(b); return m ? m[1] : ''; };
   const ariaOf = (b) => { const m = /aria-label="([^"]+)"/.exec(b); return m ? m[1] : ''; };
   ok(btns.length === 11 && btns.every((b) => ariaOf(b) && ariaOf(b) === labelOf(b)), 'aria-label equals the visible label on every icon');
-  ok(btns.every((b) => /aria-describedby="mobile-module-hint"/.test(b)), 'every icon points a screen reader at the hint node');
+  ok(btns.every((b) => !/aria-describedby/.test(b)), 'no icon carries a permanent aria-describedby to an empty node (Supervisor Н5)');
   ok(cssNum('.fam-app-tile', 'min-height') >= 48, 'icon tap target is at least 48 px tall (got ' + cssNum('.fam-app-tile', 'min-height') + ')');
-  ok(cssNum('.fam-app-icon-box', 'width') >= 48 && cssNum('.fam-app-icon-box', 'height') >= 48, 'icon box itself is at least 48×48 px');
+  ok(cssNum('.fam-app-tile .fam-app-icon-box', 'width') >= 48 && cssNum('.fam-app-tile .fam-app-icon-box', 'height') >= 48, 'icon box itself is at least 48×48 px');
   ok(/grid-template-columns\s*:\s*repeat\(4,/.test(cssRule('.fam-app-grid')), 'four icons per row (phone standard)');
   ok(/role="status"/.test((/<div[^>]*id="mobile-module-hint"[^>]*>/.exec(HTML) || [''])[0]), 'the hint node is a live region for screen readers');
 }
@@ -1662,6 +1662,225 @@ function installNavHistory(app) {
   } catch (e) { ok(false, 'header back (BK6) crashed before it could assert: ' + e.message); }
 }
 
+
+// ---------------------------------------------------------------------------
+// Supervisor close audit 06.09 (AUDIT-2026-09-06-seafarer-module-icons-close):
+// Н1 — a declaration in the stylesheet proves NOTHING. `.mobile-nav-btn span
+// { font-size:17px }` (0,1,1) outranked `.fam-app-label { font-size:13px }`
+// (0,1,0), so the ten labels whose button carries the rail class rendered at
+// 17px while Packages/Profile/Feedback rendered at 13px, and the ≤340px media
+// rule was dead for those ten. These drills therefore RESOLVE THE CASCADE
+// (specificity + source order) for the label as it exists on the menu screen.
+// ---------------------------------------------------------------------------
+const CSS_RULES = (() => {
+  const rules = [];
+  const blocks = [...HTML.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)].map((m) => m[1]);
+  let order = 0;
+  for (const raw of blocks) {
+    const css = raw.replace(/\/\*[\s\S]*?\*\//g, '');
+    let i = 0, media = null;
+    while (i < css.length) {
+      const brace = css.indexOf('{', i);
+      if (brace < 0) break;
+      let prelude = css.slice(i, brace);
+      if (/\}/.test(prelude)) media = null;            // a media block just closed
+      prelude = prelude.replace(/\}/g, '').trim();
+      if (/^@(media|supports)/i.test(prelude)) { media = prelude; i = brace + 1; continue; }
+      if (prelude.startsWith('@')) {                   // keyframes/font-face: skip the whole block
+        let depth = 1, j = brace + 1;
+        while (j < css.length && depth > 0) { const c = css[j]; if (c === '{') depth++; else if (c === '}') depth--; j++; }
+        i = j; continue;
+      }
+      const close = css.indexOf('}', brace);
+      if (close < 0) break;
+      const body = css.slice(brace + 1, close);
+      for (const sel of prelude.split(',').map((s) => s.trim()).filter(Boolean)) rules.push({ sel, body, media, order: order++ });
+      i = close + 1;
+    }
+  }
+  return rules;
+})();
+const specificity = (sel) => {
+  let s = ' ' + sel;
+  const ids = (s.match(/#[A-Za-z0-9_-]+/g) || []).length;
+  const attrs = (s.match(/\[[^\]]*\]/g) || []).length;
+  s = s.replace(/\[[^\]]*\]/g, ' ');
+  const pEls = (s.match(/::[a-z-]+/g) || []).length;
+  s = s.replace(/::[a-z-]+/g, ' ');
+  const pCls = (s.match(/:[a-z-]+(\([^)]*\))?/g) || []).length;
+  s = s.replace(/:[a-z-]+(\([^)]*\))?/g, ' ');
+  const classes = (s.match(/\.[A-Za-z0-9_-]+/g) || []).length;
+  s = s.replace(/\.[A-Za-z0-9_-]+/g, ' ').replace(/#[A-Za-z0-9_-]+/g, ' ');
+  const tags = (s.match(/(^|[\s>+~])[a-zA-Z][A-Za-z0-9_-]*/g) || []).length;
+  return [ids, classes + attrs + pCls, tags + pEls];
+};
+const specGE = (a, b) => (a[0] !== b[0] ? a[0] > b[0] : a[1] !== b[1] ? a[1] > b[1] : a[2] > b[2]);
+const stripPseudo = (c) => c.replace(/::[a-z-]+/g, '').replace(/:[a-z-]+(\([^)]*\))?/g, '');
+function compoundMatch(comp, node) {
+  const bare = stripPseudo(comp);
+  const tag = /^[a-zA-Z][A-Za-z0-9_-]*/.exec(bare);
+  if (tag && tag[0].toLowerCase() !== node.tag) return false;
+  for (const c of bare.match(/\.[A-Za-z0-9_-]+/g) || []) if (!(node.cls || []).includes(c.slice(1))) return false;
+  for (const id of bare.match(/#[A-Za-z0-9_-]+/g) || []) if (node.id !== id.slice(1)) return false;
+  for (const a of bare.match(/\[[^\]]*\]/g) || []) {
+    const m = /^\[([^=\]]+)(?:=["']?([^"'\]]*)["']?)?\]$/.exec(a);
+    if (!m) return false;
+    const v = (node.attrs || {})[m[1]];
+    if (v === undefined || (m[2] !== undefined && v !== m[2])) return false;
+  }
+  return true;
+}
+// 'yes' — applies at rest, 'state' — only in a pseudo state (:active/:hover), 'no' — never.
+function selApplies(sel, chain) {
+  if (/[+~]/.test(sel)) return 'no';
+  const flat = sel.replace(/\s*>\s*/g, ' ').trim();
+  const parts = flat.split(/\s+/);
+  const stateful = /::[a-z-]+|(^|[^:]):[a-z-]+/.test(flat);
+  let ci = chain.length - 1;
+  if (!compoundMatch(parts[parts.length - 1], chain[ci])) return 'no';
+  ci -= 1;
+  for (let pi = parts.length - 2; pi >= 0; pi--) {
+    let found = false;
+    while (ci >= 0) { if (compoundMatch(parts[pi], chain[ci])) { found = true; ci--; break; } ci--; }
+    if (!found) return 'no';
+  }
+  return stateful ? 'state' : 'yes';
+}
+const declOf = (body, prop) => {
+  const re = new RegExp('(?:^|;)\\s*' + prop + '\\s*:\\s*([^;]+)', 'g');
+  let m, last = null;
+  while ((m = re.exec(body))) last = m[1].trim();
+  return last;
+};
+// The winning declaration for `prop` on `chain`'s last node, in the given media context.
+function cascadeWinner(prop, chain, media = null) {
+  let best = null;
+  for (const r of CSS_RULES) {
+    if (r.media !== media && r.media !== null) continue;
+    if (media !== null && r.media !== null && r.media !== media) continue;
+    if (selApplies(r.sel, chain) !== 'yes') continue;
+    const v = declOf(r.body, prop);
+    if (v === null) continue;
+    const spec = specificity(r.sel);
+    if (!best || specGE(spec, best.spec) || (!specGE(best.spec, spec) && r.order > best.order)) best = { sel: r.sel, value: v, spec, order: r.order };
+  }
+  return best;
+}
+const HTML_NODE = { tag: 'html', cls: [], attrs: { 'data-theme': 'light' } };
+const CHAIN_BASE = [
+  HTML_NODE,
+  { tag: 'body', cls: ['mobile-mode', 'mobile-native'] },
+  { tag: 'div', cls: ['mobile-shell'] },
+  { tag: 'main', cls: ['mobile-main'] },
+  { tag: 'div', cls: ['mobile-menu'] },
+  { tag: 'div', cls: ['fam-app-grid'] },
+];
+const railLabelChain = () => CHAIN_BASE.concat([
+  { tag: 'button', cls: ['fam-app-tile', 'mobile-nav-btn'], id: 'mhb-docs' },
+  { tag: 'span', cls: ['fam-app-label'], id: 'mhn-docs' },
+]);
+const plainLabelChain = () => CHAIN_BASE.concat([
+  { tag: 'button', cls: ['fam-app-tile'], id: 'mobile-home-packages' },
+  { tag: 'span', cls: ['fam-app-label'], id: 'mhn-packages' },
+]);
+const railIconChain = () => CHAIN_BASE.concat([
+  { tag: 'button', cls: ['fam-app-tile', 'mobile-nav-btn'], id: 'mhb-docs' },
+  { tag: 'span', cls: ['fam-app-icon-box'] },
+]);
+
+{
+  section('module icon grid (IG7) — CASCADE: no .mobile-nav-btn rule outranks the icon label (Supervisor Н1)');
+  ok(CSS_RULES.length > 100, 'stylesheet parsed into rules (' + CSS_RULES.length + ')');
+  const railFs = cascadeWinner('font-size', railLabelChain());
+  const plainFs = cascadeWinner('font-size', plainLabelChain());
+  ok(!!railFs && /fam-app-label/.test(railFs.sel), 'the winning font-size for a RAIL-class tile label comes from the fam-app-label rule, not from «' + (railFs ? railFs.sel : '-') + '»');
+  ok(!!plainFs && /fam-app-label/.test(plainFs.sel), 'the winning font-size for a plain tile label comes from the fam-app-label rule');
+  ok(!!railFs && !!plainFs && railFs.value === plainFs.value, 'both label kinds resolve to the SAME size (' + (railFs ? railFs.value : '?') + ' vs ' + (plainFs ? plainFs.value : '?') + ') — no two-kegel menu');
+  const railLh = cascadeWinner('line-height', railLabelChain());
+  ok(!!railLh && /fam-app-label/.test(railLh.sel), 'line-height too is decided by the label rule, not by «' + (railLh ? railLh.sel : '-') + '»');
+  const losers = CSS_RULES.filter((r) => /mobile-nav-btn/.test(r.sel) && selApplies(r.sel, railLabelChain()) === 'yes' && (declOf(r.body, 'font-size') || declOf(r.body, 'line-height')));
+  ok(losers.every((r) => railFs && specGE(specificity(railFs.sel), specificity(r.sel))), 'every .mobile-nav-btn rule that reaches the label is strictly weaker than the label rule (' + losers.length + ' checked)');
+  const iconFs = cascadeWinner('width', railIconChain());
+  ok(!!iconFs && /fam-app-icon-box/.test(iconFs.sel) && parseFloat(iconFs.value) >= 48, 'the icon box keeps its own ≥48 px size on rail-class tiles too');
+  // the small-screen rule must actually reach the same labels
+  const media340 = (CSS_RULES.find((r) => r.media && /340px/.test(r.media)) || {}).media || null;
+  const railFsSmall = media340 ? cascadeWinner('font-size', railLabelChain(), media340) : null;
+  ok(!!railFsSmall && /fam-app-label/.test(railFsSmall.sel) && railFsSmall.value !== railFs.value, 'the ≤340 px rule is alive for rail-class labels too (' + (railFsSmall ? railFsSmall.value : '-') + ')');
+}
+
+{
+  section('header back (BK7) — ‹ stands right next to ⌂ (owner: «справа от домика»), not adrift in the middle');
+  const grp = /<div class="mobile-top-nav">([\s\S]*?)<\/div>/.exec(HTML);
+  ok(!!grp, 'the header groups ⌂ and ‹ in one container (.mobile-top-nav)');
+  const inner = grp ? grp[1] : '';
+  ok(inner.includes('data-qa="app-header-home"') && inner.includes('data-qa="app-header-back"'), 'both ⌂ and ‹ live in that container');
+  ok(inner.indexOf('app-header-home') >= 0 && inner.indexOf('app-header-home') < inner.indexOf('app-header-back'), '⌂ first, ‹ immediately to its right');
+  const between = inner.slice(inner.indexOf('</button>') + 9, inner.lastIndexOf('<button'));
+  ok(!/<[a-zA-Z]/.test(between), 'nothing else renders between ⌂ and ‹');
+  ok(!inner.includes('app-header-settings'), '⚙ is NOT in the pair — it stays on the far side of the header');
+  const gap = cssNum('.mobile-top-nav', 'gap');
+  ok(/display\s*:\s*flex/.test(cssRule('.mobile-top-nav')), 'the pair is a flex row, so the two buttons keep touching');
+  ok(gap > 0 && gap <= 8, 'the pair is spaced by a small gap (' + gap + 'px) — the header space-between can no longer push ‹ to the centre');
+}
+
+{
+  section('header back (BK8) — the pushed-entry counter is honest in BOTH directions (Supervisor Н2)');
+  try {
+    const app = installNavHistory(bootMobile({ seed: { 'skipi-assistant-consent': '1' } }));
+    await settleVm();
+    const { sandbox } = app;
+    sandbox.mobileShow('home'); app.runTimers(0);
+    ok(sandbox._mobileNavPushed === 0, 'at the root nothing is pushed yet');
+    sandbox.mobileShow('menu'); app.runTimers(0);
+    sandbox.mobileShow('docs'); app.runTimers(0);
+    ok(sandbox._mobileNavPushed === 2, 'two forward steps → two marked History entries (got ' + sandbox._mobileNavPushed + ')');
+    sandbox.mobileNavBack(); app.runTimers(0);
+    ok(sandbox._mobileNavPushed === 1, 'a back step CONSUMES one entry (a never-decrementing counter dies here)');
+    sandbox.mobileNavBack(); app.runTimers(0);
+    ok(sandbox._mobileNavPushed === 0 && sandbox.mobileView === 'home', 'back to the root leaves the counter at zero');
+    sandbox.mobileShow('menu'); app.runTimers(0);
+    sandbox.mobileShow('docs'); app.runTimers(0);
+    sandbox.mobileShow('home'); app.runTimers(0);
+    ok(sandbox._mobileNavPushed === 0, '⌂ gives back every entry its history.go(-N) rewound');
+  } catch (e) { ok(false, 'BK8 crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('header back (BK9) — with no marked entry ‹ never calls history.back() (that would leave the app)');
+  try {
+    const app = installNavHistory(bootMobile({ seed: { 'skipi-assistant-consent': '1' } }));
+    await settleVm();
+    const { sandbox } = app;
+    sandbox.history.pushState = () => { throw new Error('pushState blocked'); };
+    sandbox.mobileShow('home'); app.runTimers(0);
+    sandbox.mobileShow('menu'); app.runTimers(0);
+    ok(sandbox._mobileNavPushed === 0 && JSON.stringify(sandbox._mobileNavStack) === JSON.stringify(['home', 'menu']), 'the in-app stack is tracked even when the History entry could not be pushed');
+    sandbox.history.calls.length = 0;
+    sandbox.mobileNavBack(); app.runTimers(0);
+    ok(sandbox.mobileView === 'home', '‹ still returns to the previous screen');
+    ok(!sandbox.history.calls.some((c) => c[0] === 'back'), 'and it did NOT touch history.back() — nothing of ours to consume');
+  } catch (e) { ok(false, 'BK9 crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('module icon grid (IG8) — the hint is announced only while it is on screen (Supervisor Н5)');
+  try {
+    ok(!/aria-describedby/.test(MODULE_TPL), 'no icon points at an empty hint node in the resting markup');
+    const app = installNavHistory(bootMobile({ seed: {} }));
+    await settleVm();
+    const { sandbox, doc } = app;
+    sandbox.mobileShow('menu'); app.runTimers(0);
+    const btn = doc.getElementById('mhb-docs');
+    ok(!!btn && btn.getAttribute('aria-describedby') === null, 'at rest the icon has no aria-describedby');
+    app.timers.length = 0;
+    sandbox.mobileHintPress(btn);
+    app.timers.filter((t) => t.ms >= 400).forEach((t) => t.fn());
+    ok(btn.getAttribute('aria-describedby') === 'mobile-module-hint', 'while the hint shows, the pressed icon is described by it');
+    sandbox.mobileHintRelease();
+    ok(btn.getAttribute('aria-describedby') === null, 'hiding the hint removes the description again');
+    ok(/aria-label="[^"]+"/.test(MODULE_TPL) && /title="[^"]+"/.test(MODULE_TPL), 'the always-available name (aria-label) and desktop hover (title) stay');
+  } catch (e) { ok(false, 'IG8 crashed before it could assert: ' + e.message); }
+}
 
 {
   section('remote install + offline persistence harness');
