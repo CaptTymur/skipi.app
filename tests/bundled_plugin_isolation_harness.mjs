@@ -2051,6 +2051,40 @@ const appsTileTag = (h, id) => {
   } catch (e) { ok(false, 'AG7 crashed before it could assert: ' + e.message); }
 }
 
+{
+  section('apps icon grid (AG8) — the restyle never reaches the DESKTOP launcher (defect F5)');
+  try {
+    const app = installNavHistory(bootMobile({ seed: BNWAS_INSTALLED }));
+    await settleVm();
+    const { sandbox, doc } = app;
+    sandbox.mobileShow('apps'); app.runTimers(0);
+    // The vendored module emits the SAME #apps-launcher-results id on BOTH surfaces:
+    // the desktop launcher writes it into #scr-content and the mobile one into
+    // #mobile-main. #mobile-main is always in the DOM, so a GLOBAL getElementById
+    // would let the mobile observer rewrite a DESKTOP screen (matters for WEB=DESKTOP).
+    const fnBody = (name) => { const i = HTML.indexOf(name); if (i < 0) return null; const j = HTML.indexOf('\n}\n', i); return j < 0 ? null : HTML.slice(i, j); };
+    const fn = fnBody('function mobileAppsIconizeTiles(') || '';
+    ok(fn.length > 50, 'mobileAppsIconizeTiles located in the shipped bytes');
+    ok(!/document\.getElementById\(\s*'apps-launcher-results'\s*\)/.test(fn), 'no GLOBAL getElementById for the launcher-results id');
+    ok(/main\.querySelector\(\s*'#apps-launcher-results'\s*\)/.test(fn), 'the launcher-results node is looked up INSIDE #mobile-main');
+    ok((HOST_UI_MODULE.match(/id="apps-launcher-results"/g) || []).length >= 2, 'the module really emits that id on both the desktop and the mobile launcher (got ' + (HOST_UI_MODULE.match(/id="apps-launcher-results"/g) || []).length + ')');
+    // Behavioural: a node carrying that id OUTSIDE #mobile-main is left untouched.
+    const OLD = '<div class="apps-icon-tile" data-qa="plugin-tile-desk"><button type="button" data-qa="plugin-open-desk" onclick="pluginLaunch(\'desk\')" title="Desk"><span class="apps-icon-tile-icon">D</span><span class="apps-icon-tile-name">Desk</span></button></div>';
+    const outside = doc.createElement('div');
+    outside.setAttribute('id', 'apps-launcher-results');
+    outside.innerHTML = OLD;
+    const main = doc.getElementById('mobile-main');
+    // The VM DOM keeps no real tree, so element.querySelector delegates to the document.
+    // Model the browser for this drill: nothing with that id sits inside #mobile-main.
+    // If the code ever goes back to document.getElementById, the node above IS found
+    // (it is registered by id) and rewritten — which is exactly what must stay RED.
+    main.querySelector = () => null;
+    sandbox.mobileAppsIconizeTiles();
+    ok(outside.innerHTML === OLD, 'a launcher-results node OUTSIDE #mobile-main is never rewritten (the desktop launcher is safe)');
+    ok(/class="apps-icon-tile"/.test(outside.innerHTML), 'and its old .apps-icon-tile markup survives byte-for-byte');
+  } catch (e) { ok(false, 'AG8 crashed before it could assert: ' + e.message); }
+}
+
 // ---------------------------------------------------------------------------
 // Mobile IME inset (defect 308, owner 06.09: «клавиатура закрывала область
 // ввода»). MEASURED ROOT CAUSE, not a guess: with the Android default

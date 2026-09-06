@@ -10129,8 +10129,13 @@ function mobileAppsIconizeHtml(html){
 function mobileAppsIconizeTiles(){
   // Narrowest node first: the search re-render replaces only #apps-launcher-results,
   // and rewriting the whole #mobile-main under a typing finger would drop the caret.
-  var box=document.getElementById('apps-launcher-results')||document.getElementById('mobile-main');
-  if(!box)return;
+  // The lookup is SCOPED to the mobile shell on purpose: the DESKTOP launcher emits the
+  // very same id into #scr-content (plugin-host-ui.js pluginLauncherHtml), and
+  // #mobile-main is always in the DOM, so a global getElementById would let this
+  // observer rewrite the desktop launcher on a web-desktop build (defect F5).
+  var main=document.getElementById('mobile-main');
+  if(!main)return;
+  var box=(main.querySelector?main.querySelector('#apps-launcher-results'):null)||main;
   var h=String(box.innerHTML||'');
   var n=mobileAppsIconizeHtml(h);
   if(n!==h)box.innerHTML=n; // no-op once converted, so the observer below cannot loop

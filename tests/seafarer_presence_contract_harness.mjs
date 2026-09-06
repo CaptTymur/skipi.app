@@ -1043,6 +1043,9 @@ section('mobile rail canon — 5 fixed slots, header home+gear, modules-first Ap
   // carry none of them, so scope this one to the returned template.
   const emitted = appsTileBody.slice(appsTileBody.indexOf("return '<div"));
   ok(emitted.length > 200, 'the emitted tile template was located');
+  // NOT cosmetic — do not drop this as a duplicate of the class checks above: the
+  // restyle runs under a MutationObserver, so re-emitting .apps-icon-tile would make
+  // every rewrite match again and spin the observer forever (WebView hang).
   ok(!/apps-icon-tile/.test(emitted), 'the old .apps-icon-tile markup is not re-emitted on the Apps screen');
   ok(!/apps-badge|state-chip-ready|fam-chip/.test(emitted), 'no meta line, «ready» chip or badge is re-emitted inside a plugin tile');
   // (c) order: the launcher grid is what the Apps screen renders, with nothing
