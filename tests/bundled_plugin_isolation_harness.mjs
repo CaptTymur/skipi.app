@@ -1032,7 +1032,17 @@ function bootMobile(opts) {
   const end = lines.findIndex((l) => l === '<script src="skipi-assistant.js"></script>');
   ok(startComment > 0 && lines[start] === '</div>' && lines[start + 1] === '' && end > start, 'desktop region boundaries found by markers (</div> of .mobile-shell … skipi-assistant.js script tag)');
   const region = lines.slice(start, end + 1).join('\n') + '\n';
-  ok(sha256Text(region) === 'b28a9c36ee5891dce24510e51189c033b8f45f50b1f5e826c0156802f19fc0ce', 'desktop static markup region sha256 == BASELINE (sed -n 1444,1660p | sha256sum on 34705f8b)');
+  // 2026-09-06 (iOS blockers slice): this frozen region carries #login-gate-overlay and
+  // #forced-profile-overlay, and BOTH had to take safe-area padding + flex-start scroll
+  // (audit 5cfff5b3 Н7). The pin is re-based — and the old pin is kept honest: revert
+  // exactly those two style attributes and the ORIGINAL 34705f8b sha must come back, which
+  // proves nothing else in the desktop markup was touched by this slice.
+  ok(sha256Text(region) === '584d444887da3e713d2363caa8a845c6d34c60f3e4ee3ed3ed5dcaddd0a8afbc', 'desktop static markup region sha256 == the re-based pin');
+  const preIosRegion = region
+    .replace('align-items:flex-start;justify-content:center;overflow:auto;padding:calc(32px + env(safe-area-inset-top,0px)) 20px calc(32px + env(safe-area-inset-bottom,0px));', 'align-items:center;justify-content:center;overflow:auto;padding:32px 20px;')
+    .replace('padding:calc(40px + env(safe-area-inset-top,0px)) 20px calc(40px + env(safe-area-inset-bottom,0px));', 'padding:40px 20px;');
+  ok(sha256Text(preIosRegion) === 'b28a9c36ee5891dce24510e51189c033b8f45f50b1f5e826c0156802f19fc0ce',
+    'undoing ONLY the two overlay safe-area attributes restores BASELINE 34705f8b byte for byte (sed -n 1444,1660p | sha256sum) — the rest of the desktop markup is untouched');
   const cssStart = HTML.indexOf('/* mobile-home-assistant (owner 05.09)');
   const cssEnd = HTML.indexOf('/* /mobile-home-assistant */');
   const css = cssStart >= 0 && cssEnd > cssStart ? HTML.slice(cssStart, cssEnd) : '';
@@ -2641,6 +2651,257 @@ const pkgCalls = (app, cmd) => app.calls.filter(([c]) => c === cmd);
     ok(sent.length === shown, 'the number on screen equals the number of docIds actually sent (screen ' + shown + ', sent ' + sent.length + ')');
     ok(JSON.stringify(sent.slice().sort()) === '["d1","d4"]', 'and they are exactly the documents still ticked (got ' + JSON.stringify(sent) + ')');
   } catch (e) { ok(false, 'PKG13 crashed before it could assert: ' + e.message); }
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════════════
+// App Store readiness drills (iOS) — 2026-09-06.
+// Sources: skipi-supervisor/audits/AUDIT-2026-09-06-seafarer-ios-readiness.md (5cfff5b3),
+// the owner screenshot of 06.09 (content under the status bar) and the user reports in
+// skipi-ops/handoffs/USER-FEEDBACK-2026-09-06-youtube-comments.md.
+// EVERY finding below is invisible on an Android phone: the safe area is a notch the
+// emulator does not have, the zoom-on-focus is a WKWebView behaviour, and the two dead
+// commands are #[cfg(target_os = "ios")] stubs. That is exactly why they are byte drills
+// and not «we looked at it on the phone».
+// Each rule below is followed by its negative: a synthetic mutation that MUST turn it red.
+// ════════════════════════════════════════════════════════════════════════════════════
+
+const SETTINGS_JS = fs.readFileSync(path.join(DIST, 'skipi-settings.js'), 'utf8');
+
+// A full-screen container = `position:fixed` + `inset:0`, wherever it is declared:
+// a CSS rule, a style="" attribute or a JS cssText string. One entry per source line.
+const fullScreenDecls = (html) => html.split('\n')
+  .map((l, i) => ({ n: i + 1, l }))
+  .filter(({ l }) => /position:\s*fixed/.test(l) && /inset:\s*0/.test(l));
+
+// Allowlist = a written promise that this container needs no safe area, with the reason
+// (same technique the copy rules below use for legitimate words). Anything not listed
+// here is red — a new overlay has to be looked at, not waved through.
+const FS_ALLOW = [
+  { key: '#drop-overlay', why: 'pointer-events:none decorative drag tint — it draws no text, takes no taps and hides nothing the user must read, so an inset under the notch changes nothing' },
+];
+const fsAllowed = (line) => FS_ALLOW.some((a) => line.includes(a.key));
+const safeAreaMisses = (html) => fullScreenDecls(html).filter(({ l }) => !fsAllowed(l) && !/env\(safe-area-inset-/.test(l));
+const centredFullScreen = (html) => fullScreenDecls(html).filter(({ l }) => !fsAllowed(l) && /align-items:\s*center/.test(l));
+
+{
+  section('SAFEAREA1 — the viewport meta opts into the safe area (without it every env(safe-area-inset-*) in this file is 0)');
+  const metaOf = (html) => (/<meta name="viewport"[^>]*>/.exec(html) || [''])[0];
+  const meta = metaOf(HTML);
+  ok(/viewport-fit=cover/.test(meta), 'the viewport meta carries viewport-fit=cover (' + meta + ')');
+  ok(!/user-scalable\s*=\s*no|maximum-scale/.test(meta),
+    'and it does NOT disable pinch-zoom — user-scalable=no is an accessibility finding of its own, 16px fields are the fix for zoom-on-focus (see FONT1)');
+  // negative
+  const noCover = HTML.replace('width=device-width, initial-scale=1, viewport-fit=cover', 'width=device-width, initial-scale=1');
+  ok(!/viewport-fit=cover/.test(metaOf(noCover)), 'NEGATIVE: dropping viewport-fit from the meta turns this rule red (mutated meta: ' + metaOf(noCover) + ')');
+}
+
+{
+  section('SAFEAREA2 — every full-screen container reserves the notch and the home indicator itself');
+  const all = fullScreenDecls(HTML);
+  ok(all.length >= 14, 'the scan really finds the full-screen containers of this file (found ' + all.length + ')');
+  const misses = safeAreaMisses(HTML);
+  ok(misses.length === 0, 'no full-screen container is left without env(safe-area-inset-*) or an allowlist entry (offenders: '
+    + JSON.stringify(misses.map((m) => m.n)) + ')');
+  ok(FS_ALLOW.every((a) => a.why && a.why.length > 40), 'every allowlist entry states WHY, so the list cannot grow silently');
+  ok(all.filter((d) => fsAllowed(d.l)).length === FS_ALLOW.length, 'each allowlist entry still matches exactly one live container (dead entries are not tolerated)');
+  // negative
+  const injected = HTML.replace('.modal-overlay.open { display:flex; }',
+    '.new-overlay-added-by-a-future-slice { position:fixed; inset:0; z-index:1; }\n.modal-overlay.open { display:flex; }');
+  const after = safeAreaMisses(injected);
+  ok(after.length === 1 && /new-overlay-added-by-a-future-slice/.test(after[0].l),
+    'NEGATIVE: a newly added position:fixed;inset:0 container with no inset turns this rule red (0 offenders before, ' + after.length + ' after)');
+}
+
+{
+  section('SAFEAREA3 — no full-screen container centres its card with align-items:center (that is what put the owner screenshot under the status bar)');
+  // A flex item CENTRED in a container it is taller than overflows in BOTH directions, and
+  // the part above top:0 can never be scrolled to — adding overflow:auto does not help.
+  // The canon here is: align to flex-start, scroll, and let the card centre itself with
+  // margin:auto, which collapses to 0 exactly when the card stops fitting.
+  const centred = centredFullScreen(HTML);
+  ok(centred.length === 0, 'no full-screen container uses align-items:center (offenders: ' + JSON.stringify(centred.map((c) => c.n)) + ')');
+  ok(/\.modal-overlay > \*, \.skipi-settings-overlay > \*, \.skipi-assistant-overlay > \*/.test(HTML)
+    && /margin-top:auto !important; margin-bottom:auto !important;/.test(HTML),
+    'the margin:auto canon rule that gives the centring back is present');
+  ok(/\.skipi-fs-overlay > \*/.test(HTML) && (HTML.match(/skipi-fs-overlay/g) || []).length >= 5,
+    'the JS-built overlays carry the .skipi-fs-overlay marker so the same canon reaches them (' + (HTML.match(/skipi-fs-overlay/g) || []).length + ' mentions)');
+  ok(/overflow:auto;-webkit-overflow-scrolling:touch/.test(HTML),
+    'the assistant consent card — the screen on the owner screenshot — sits in its own scroller');
+  // negative
+  const recentred = HTML.replace('.skipi-assistant-overlay { display:none; position:fixed; inset:0; z-index:121; background:rgba(0,0,0,0.5); align-items:flex-start;',
+    '.skipi-assistant-overlay { display:none; position:fixed; inset:0; z-index:121; background:rgba(0,0,0,0.5); align-items:center;');
+  const backCentred = centredFullScreen(recentred);
+  ok(backCentred.length === 1 && /skipi-assistant-overlay/.test(backCentred[0].l),
+    'NEGATIVE: putting align-items:center back on the assistant overlay turns this rule red (0 offenders before, ' + backCentred.length + ' after)');
+}
+
+{
+  section('NOPAY5 — the dists make no claim that anything costs nothing (decision 253)');
+  // Naively banning the word breaks legitimate copy, so the allowlist is explicit and
+  // each entry says why — exactly the way the /month rule is written.
+  const NOPAY_ALLOW = [
+    { re: /free[\s-]text/gi, why: '«Free text (optional)» is the LABEL of the free-text review field and the comments around it — it describes an input, not a price' },
+    { re: /free[\s-]form/gi, why: '«free-form edits» describes how a field may be filled in — again an input, not a price' },
+  ];
+  const freeHits = (html) => {
+    let stripped = html;
+    NOPAY_ALLOW.forEach(({ re }) => { stripped = stripped.replace(re, 'X'.repeat(9)); });
+    return stripped.match(/\bfree\b|бесплат/gi) || [];
+  };
+  const hits = freeHits(HTML);
+  ok(hits.length === 0, 'no free/бесплат claim anywhere in dist/index.html (hits: ' + JSON.stringify(hits) + ')');
+  ok(NOPAY_ALLOW.every((a) => a.why.length > 40), 'every allowlist entry states why it is legitimate');
+  ok((HTML.match(/free[\s-]text|free[\s-]form/gi) || []).length >= 4,
+    'the allowlist is NOT vacuous — the legitimate phrases really are in the file (' + (HTML.match(/free[\s-]text|free[\s-]form/gi) || []).length + ' of them)');
+  // negatives, one per site the audit found
+  ok(freeHits(HTML.replace('An AI assistant for your maritime career', 'A free AI assistant for your maritime career')).length === 1,
+    'NEGATIVE: putting «A free AI assistant» back into the consent card turns this rule red');
+  ok(freeHits(HTML.replace('AI-ассистент по карьере и документам', 'Бесплатный AI-ассистент по карьере и документам')).length === 1,
+    'NEGATIVE: the Russian «Бесплатный AI-ассистент» turns it red too');
+  ok(freeHits(HTML.replace('Personal licence for the seafarer using this device.', 'Closed beta build - free for invited seafarers.')).length === 1,
+    'NEGATIVE: the old Settings licence line turns it red');
+  ok(freeHits('<div>Free text (optional)</div><div>anonymous free-form edits</div>').length === 0,
+    'NEGATIVE CONTROL: the legitimate phrases stay green — a rule that reddens everything gets switched off by the first person in a hurry');
+}
+
+{
+  section('NOPAY6 — the dists do not announce a demo / pre-release build (App Store Guideline 2.2)');
+  const betaHits = (html) => html.match(/closed beta|beta build|beta version|trial version|demo version|бета-верси|бета-тест/gi) || [];
+  const hits = betaHits(HTML);
+  ok(hits.length === 0, 'no pre-release wording anywhere in dist/index.html (hits: ' + JSON.stringify(hits) + ')');
+  ok(/Personal licence for the seafarer using this device\./.test(HTML), 'the Settings licence row says what the licence IS instead');
+  ok(betaHits(HTML.replace('Personal licence for the seafarer using this device.', 'Closed beta build.')).length === 1,
+    'NEGATIVE: restoring the «Closed beta build» licence line turns this rule red');
+  ok(betaHits(HTML.replace('Rate the app and leave a short comment.', 'Rate the beta version and leave a short comment.')).length === 1,
+    'NEGATIVE: calling the app a beta version anywhere in the copy turns it red');
+}
+
+{
+  section('REG1 — the Register door can never be silent again (the 2.1(b) shape)');
+  // invoke() returns a Promise. try{ invoke(...) }catch(e){} catches only a synchronous
+  // throw, so on iOS — where open_external_url is a stub returning Err — the rejection
+  // went nowhere and the door on the FIRST screen did nothing and said nothing.
+  const calls = [...HTML.matchAll(/invoke\(\s*'open_external_url'/g)];
+  ok(calls.length >= 2, 'the external-URL command is still called (' + calls.length + ' sites)');
+  const unawaited = calls.filter((m) => !/await\s*$/.test(HTML.slice(Math.max(0, m.index - 8), m.index)));
+  ok(unawaited.length === 0, 'every open_external_url call is awaited (unawaited at offsets: ' + JSON.stringify(unawaited.map((m) => m.index)) + ')');
+  const helper = HTML.slice(HTML.indexOf('async function openExternalUrlSafe('), HTML.indexOf('async function openRegisterPage('));
+  ok(helper.length > 100 && /await invoke\('open_external_url'/.test(helper) && /catch\s*\(e\)/.test(helper),
+    'the shared helper awaits inside a try/catch');
+  ok(/showToast\(/.test(helper) && /writeClipboardText\(/.test(helper),
+    'and the catch answers on screen with the address, copied to the clipboard — silence is the defect, not the error');
+  ok(/async function openRegisterPage\(\)\{[\s\S]{0,300}?openExternalUrlSafe\('https:\/\/assistant\.skipi\.app\/register'\)/.test(HTML),
+    'openRegisterPage routes through the helper');
+  // both call sites of the audit are still the same two, and both go through that one function
+  ok(/function entryForkRegister\(\)\{ openRegisterPage\(\); \}/.test(HTML), 'SITE 1: the Register door of the entry fork calls openRegisterPage');
+  ok(/id="lg-register"[^>]*onclick="openRegisterPage\(\);return false;"/.test(HTML), 'SITE 2: the Register link inside the login gate calls openRegisterPage');
+  // negative
+  const bare = HTML.replace("        await invoke('open_external_url',{url:url});", "        invoke('open_external_url',{url:url});");
+  const bareCalls = [...bare.matchAll(/invoke\(\s*'open_external_url'/g)]
+    .filter((m) => !/await\s*$/.test(bare.slice(Math.max(0, m.index - 8), m.index)));
+  ok(bareCalls.length === 1, 'NEGATIVE: dropping the await from the helper turns this rule red (0 unawaited before, ' + bareCalls.length + ' after)');
+}
+
+{
+  section('FONT1 — mobile input fields are 16px, so iOS does not zoom the interface on the first tap');
+  const rule = /body\.mobile-mode input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\):not\(\[type="range"\]\):not\(\[type="color"\]\),\s*\nbody\.mobile-mode select,\s*\nbody\.mobile-mode textarea \{ font-size:16px; \}/;
+  ok(rule.test(HTML), 'one rule raises every text input, select and textarea in mobile mode to 16px');
+  // The gate is drawn BEFORE any vault opens, so the class must already be on the body:
+  ok(/applyMobileMode\(\);\s*\n\s*await initApiBaseOverride\(\);/.test(HTML),
+    'body.mobile-mode is applied in init() before the entry fork / login gate is raised, so the rule covers the very first field the reviewer taps');
+  ok(/\.field input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\), \.field select, \.field textarea \{[^}]*font-size:13px/.test(HTML),
+    'the 13px desktop rule is still there — this slice did not restyle the desktop, it added a mobile override (and the override comes later in the file, so it wins)');
+  ok(HTML.indexOf('body.mobile-mode textarea { font-size:16px; }') > HTML.indexOf('.field input:not([type="checkbox"]):not([type="radio"]), .field select, .field textarea {'),
+    'and the override really is declared after the 13px rule (cascade order, not wishful thinking)');
+  // negative
+  const stripped = HTML.replace(/body\.mobile-mode input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\):not\(\[type="range"\]\):not\(\[type="color"\]\),\s*\nbody\.mobile-mode select,\s*\nbody\.mobile-mode textarea \{ font-size:16px; \}/, '');
+  ok(!rule.test(stripped), 'NEGATIVE: deleting the 16px rule turns this drill red');
+}
+
+{
+  section('IOSDOC1 — no dead «open the file» button on iOS (both document commands are Android/desktop-only in Rust)');
+  const RUSTDOC = fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'commands', 'documents.rs'), 'utf8');
+  ok(/#\[cfg\(target_os = "ios"\)\][\s\S]{0,200}?Opening attached files is not\s*\n?\s*wired for iOS yet/.test(RUSTDOC.replace(/\s+/g, ' ').replace(/(.{0,0})/, '$1')) || /Opening attached files is not/.test(RUSTDOC),
+    'documents.rs still returns Err for open_document_file on iOS (this drill exists because of that, and must be revisited when it stops being true)');
+  ok(/#\[cfg\(not\(target_os = "android"\)\)\][\s\S]{0,220}Built-in PDF preview is only wired for Android/.test(RUSTDOC),
+    'and render_document_pdf_preview is implemented for ANDROID ONLY — the audit called it a ready iOS fallback, the bytes say otherwise');
+  ok(/async function mobileOpenDocumentFile\(docId\)\{\s*\n[^\n]*\n\s*if\(iosHost\(\)\)return mobileOpenDocumentInApp\(docId\);/.test(HTML),
+    'the phone «Open» button short-circuits to the in-app viewer on iOS instead of calling the dead command');
+  ok(/async function mobileOpenDocumentInApp\(docId\)\{[\s\S]{0,600}invoke\('read_file_base64'/.test(HTML),
+    'the in-app viewer reads the bytes through read_file_base64, which carries no #[cfg] and works on every platform');
+  ok(/if\(isMobileMode\(\)&&!iosHost\(\)&&\/\\\.pdf\$\/i\.test/.test(HTML),
+    'the Android-only PDF rasteriser is not asked for on iOS (it would answer Err and the screen used to print that Err next to a button that also failed)');
+  ok(/function iosHost\(\)\{return hostPlatform==='ios';\}/.test(HTML), 'iosHost() is the single platform test used by all of the above');
+  // negative
+  const noGuard = HTML.replace('    if(iosHost())return mobileOpenDocumentInApp(docId);\n', '');
+  ok(!/async function mobileOpenDocumentFile\(docId\)\{\s*\n[^\n]*\n\s*if\(iosHost\(\)\)return mobileOpenDocumentInApp\(docId\);/.test(noGuard),
+    'NEGATIVE: removing the iOS short-circuit turns this drill red');
+}
+
+{
+  section('AVATAR1 — Settings never prints raw JSON under the avatar (user report B4, 06.09)');
+  // @skipi/settings renders the mobile subtitle through valueText(summary,
+  // ['subtitle','email','description']) and, when NONE of those keys is present, falls
+  // back to JSON.stringify(summary). A seafarer with neither e-mail nor rank filled in
+  // therefore read {"displayName":"…","sectionId":"profile","avatarText":"…"} under their
+  // own avatar. This drill runs the REAL module function over the REAL host summary.
+  const isObjSrc = /function isObject\(value\) \{[\s\S]*?\n  \}\n/.exec(SETTINGS_JS);
+  const valSrc = /function valueText\(value, preferredKeys\) \{[\s\S]*?\n  \}\n/.exec(SETTINGS_JS);
+  ok(!!isObjSrc && !!valSrc, 'the real valueText/isObject were located in dist/skipi-settings.js');
+  const i = HTML.indexOf('function unifiedGetAccountSummary(){');
+  const j = HTML.indexOf('\n    }\n', i);
+  ok(i > 0 && j > i, 'the host summary builder was located in dist/index.html');
+  const summarySrc = HTML.slice(i, j + 6);
+
+  const buildSummary = async (personal, src) => {
+    const ctx = {
+      tr: () => 'Skipi Seafarer',
+      getUiLang: () => 'en',
+      invoke: () => Promise.resolve(personal),
+      out: null,
+    };
+    vm.createContext(ctx);
+    vm.runInContext(src + '\nout = unifiedGetAccountSummary();', ctx);
+    return ctx.out;
+  };
+  const renderSubtitle = (summary) => {
+    const ctx = { S: summary, out: null };
+    vm.createContext(ctx);
+    vm.runInContext(isObjSrc[0] + valSrc[0] + "\nout = valueText(S, ['subtitle', 'email', 'description']);", ctx);
+    return ctx.out;
+  };
+
+  for (const [label, personal] of [
+    ['a brand-new vault (nothing filled in at all)', {}],
+    ['a vault with only a name', { first_name: 'Ivan', surname: 'Petrov' }],
+    ['a vault with a rank but no e-mail', { first_name: 'Ivan', rank: 'Chief Officer' }],
+    ['a vault with an e-mail', { email: 'ivan@example.com' }],
+  ]) {
+    const summary = await buildSummary(personal, summarySrc);
+    const subtitle = renderSubtitle(summary);
+    ok(typeof subtitle === 'string' && subtitle.length > 0 && !/[{}"]/.test(subtitle),
+      label + ': the module renders a human subtitle, not JSON (got ' + JSON.stringify(subtitle) + ')');
+  }
+  // negative — put the pre-fix builder back and watch the JSON return
+  const brokenSrc = summarySrc.replace(/\n\s*else \{ summary\.subtitle = \(getUiLang\(\)==='ru'\) \? 'Профиль моряка' : 'Seafarer profile'; \}/, '');
+  ok(brokenSrc !== summarySrc, 'the negative mutation really removed the fallback');
+  const brokenSubtitle = renderSubtitle(await buildSummary({}, brokenSrc));
+  ok(/^\{".*\}$/.test(brokenSubtitle),
+    'NEGATIVE: without the fallback the module prints the object as JSON under the avatar — exactly what the user reported (got ' + JSON.stringify(brokenSubtitle) + ')');
+}
+
+{
+  section('LANG1 — the interface language can be changed without knowing English (user report B6, 06.09)');
+  const menu = HTML.slice(HTML.indexOf('function renderMobileMenu(){'), HTML.indexOf('function mobileLanguageSelectHtml('));
+  ok(/data-qa="mobile-menu-language"/.test(menu), 'the Menu screen itself carries a language row (it used to be three taps deep inside Settings → Application, labelled in English)');
+  ok(/function mobileLanguageSelectHtml\(\)\{[\s\S]{0,400}UI_LANG_OPTIONS\.map/.test(HTML), 'the row lists every configured UI language');
+  ok(/function mobileSetUiLang\(lang\)\{[\s\S]{0,200}setUiLang\(lang\);[\s\S]{0,200}renderMobileShell\(\);/.test(HTML), 'choosing one applies it and repaints the shell immediately');
+  ok(/\['ru','Русский'\]/.test(HTML), 'Russian is one of them, written in Russian — the user has to recognise it without reading English');
+  // negative
+  const noRow = HTML.replace(/\+'<div class="mobile-card mobile-menu-extra" data-qa="mobile-menu-language"[\s\S]*?<\/div><\/div>'\n/, '');
+  ok(!/data-qa="mobile-menu-language"/.test(noRow.slice(noRow.indexOf('function renderMobileMenu(){'), noRow.indexOf('function mobileLanguageSelectHtml('))),
+    'NEGATIVE: removing the row from the Menu screen turns this drill red');
 }
 
 {
