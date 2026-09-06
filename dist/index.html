@@ -932,6 +932,12 @@ body.mobile-native .mobile-brand-wrap, body.mobile-native #mobile-feedback-btn, 
 .mobile-top-home { width:40px; height:40px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:20px; line-height:1; }
 .mobile-top-home.active { border-color:var(--accent-bg2); background:var(--accent-bg); color:var(--accent); }
 .mobile-top-home:active { transform:translateY(1px); }
+/* Header ‹ Back (owner 06.09): same box as ⌂, and an invisible 48×48 hit area
+   so the tap target meets the touch minimum without growing the header. */
+.mobile-top-back { position:relative; width:40px; height:40px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); padding:0; }
+.mobile-top-back::after { content:''; position:absolute; left:50%; top:50%; width:48px; height:48px; transform:translate(-50%,-50%); }
+.mobile-top-back svg { width:21px; height:21px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+.mobile-top-back:active { transform:translateY(1px); }
 .mobile-feedback-btn { width:40px; height:40px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); padding:0; font-size:12px; line-height:1; font-weight:900; }
 .mobile-feedback-btn:active { transform:translateY(1px); }
 .mobile-feedback-mark { width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:var(--accent-bg); color:var(--accent); font-size:14px; font-weight:900; line-height:1; }
@@ -1175,6 +1181,26 @@ body.mobile-mode .apps-launcher-grid { grid-template-columns:repeat(3,1fr); max-
 .fam-module-icon { width:38px; height:38px; border-radius:var(--radius-md); background:var(--accent-bg); color:var(--accent); display:flex; align-items:center; justify-content:center; font-weight:900; flex:0 0 auto; }
 .fam-module-name { display:block; font-size:15px; font-weight:800; line-height:1.18; }
 .fam-module-desc { display:block; margin-top:5px; color:var(--text2); font-size:12px; line-height:1.3; }
+/* Family mobile module MENU as a phone icon grid (owner 06.09, DECISIONS (302):
+   «хочу чтобы это было больше похоже на значки обычного мобильного приложения»,
+   «подписи оставляем, но описание и указатель готовности спрятать»). Four
+   outline icons per row, a short label under each, the description behind a
+   long-press hint. The .fam-module-* rules above stay: the Apps launcher tiles
+   and the non-native surfaces still use them. */
+/* -webkit-text-size-adjust:none stops the Android WebView text autosizer from
+   boosting the labels (it fires on the 11-icon cluster and blew «Information»
+   onto two lines while the 2-icon extras grid stayed at its real size). */
+.fam-app-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px 6px; padding:2px 0 6px; -webkit-text-size-adjust:none; text-size-adjust:none; }
+.fam-app-tile { min-height:88px; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:7px; padding:4px 2px; background:none; border:0; color:var(--text); text-align:center; cursor:pointer; -webkit-tap-highlight-color:transparent; -webkit-text-size-adjust:none; text-size-adjust:none; }
+.fam-app-icon-box { width:56px; height:56px; border-radius:17px; background:rgba(255,255,255,.07); color:#bcd7e4; display:flex; align-items:center; justify-content:center; flex:0 0 auto; }
+.fam-app-icon-box svg { width:30px; height:30px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+/* Light is the default theme (canon 20.07); the dark palette keeps --accent a
+   deep navy, so the icon takes a legible tint there instead of accent-on-dark. */
+[data-theme="light"] .fam-app-icon-box { background:var(--accent-bg); color:var(--accent); }
+.fam-app-tile:active .fam-app-icon-box { background:var(--accent-bg2); }
+.fam-app-label { font-size:13px; font-weight:700; line-height:1.15; color:var(--text); overflow-wrap:break-word; }
+.fam-app-hint { position:fixed; z-index:90; max-width:76vw; padding:8px 11px; border-radius:11px; background:var(--text); color:var(--bg); font-size:12px; font-weight:600; line-height:1.3; box-shadow:0 6px 20px rgba(0,0,0,.28); pointer-events:none; }
+@media (max-width:340px){ .fam-app-grid { gap:14px 4px; } .fam-app-icon-box { width:50px; height:50px; } .fam-app-label { font-size:11px; } }
 /* Family settings grouped rows (card 7) */
 .fam-settings-row { min-height:64px; padding:var(--sp-3); border:1px solid var(--border); border-radius:var(--radius-lg); background:var(--surface); display:flex; justify-content:space-between; gap:var(--sp-3); align-items:center; margin-bottom:10px; }
 .fam-settings-row strong { display:block; font-size:14px; line-height:1.2; }
@@ -1402,6 +1428,7 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
          slots (CANON-mobile-unified-standard-v1). -->
     <div class="mobile-top">
         <button class="fam-icon-btn mobile-top-home" id="mobile-top-home" type="button" data-qa="app-header-home" onclick="mobileShow('home')" title="Home" aria-label="Home">&#8962;</button>
+        <button class="fam-icon-btn mobile-top-back" id="mobile-top-back" type="button" data-qa="app-header-back" onclick="mobileNavBack()" title="Back" aria-label="Back" style="display:none;"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
         <div class="mobile-brand-wrap">
             <span class="fam-app-icon" data-qa="app-header-icon" aria-hidden="true">S</span>
             <div class="mobile-brand">
@@ -1435,27 +1462,35 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
             <button class="mobile-rail-btn" type="button" data-qa="bottom-nav-apps" onclick="mobileShow('apps')"><span>&#9638;</span><em id="mobile-rail-label-apps">Apps</em></button>
         </div>
     </nav>
-    <!-- Family home module grid source (card 12). Single source of truth for
-         the 11-module navigation: renderMobileHome injects this template's
-         markup, so the presence contract keeps asserting REAL literal
-         data-mview buttons (and the container keeps the mobile-module-rail
-         id the contract mounts on). Packages is desktop-only by the presence
-         manifest — its card says so honestly instead of faking a route. -->
+    <!-- Family module grid source (card 12). Single source of truth for the
+         11-module navigation: renderMobileMenu / renderMobileHome inject this
+         template's markup, so the presence contract keeps asserting REAL
+         literal data-mview buttons (and the container keeps the
+         mobile-module-rail id the contract mounts on).
+         Owner 06.09 (DECISIONS (302)): phone-style icon grid — one outline
+         icon + a short label, four per row; the description each card used to
+         print lives in data-hint and shows on a long press; no «ready» /
+         «desktop» chips («слишком много текста», «указатель готовности
+         спрятать», «недоступно на телефоне — плохая идея»). Packages keeps the
+         route it has today and gets its real mobile screen in its own card. -->
     <template id="mobile-home-modules-tpl">
-        <div class="fam-module-grid" id="mobile-module-rail">
-            <button class="fam-module-card large mobile-nav-btn" type="button" data-mview="docs" onclick="mobileShow('docs')"><span class="fam-module-top"><span class="fam-module-icon">&#9633;</span><span class="fam-chip tone-ready" data-qa="state-chip-ready" id="mhs-docs">ready</span></span><span><span class="fam-module-name" id="mhn-docs">Documents</span><span class="fam-module-desc" id="mhd-docs">Certificates and personal files</span></span></button>
-            <button class="fam-module-card mobile-nav-btn" type="button" data-mview="experience" onclick="mobileShow('experience')"><span class="fam-module-top"><span class="fam-module-icon">&#9873;&#65038;</span><span class="fam-chip tone-ready" data-qa="state-chip-ready" id="mhs-experience">ready</span></span><span><span class="fam-module-name" id="mhn-experience">Experience</span><span class="fam-module-desc" id="mhd-experience">Sea service and contracts</span></span></button>
-            <button class="fam-module-card mobile-nav-btn" type="button" data-mview="cv" onclick="mobileShow('cv')"><span class="fam-module-top"><span class="fam-module-icon">CV</span><span class="fam-chip tone-ready" data-qa="state-chip-ready" id="mhs-cv">ready</span></span><span><span class="fam-module-name" id="mhn-cv">CV</span><span class="fam-module-desc" id="mhd-cv">Exportable profile package</span></span></button>
-            <button class="fam-module-card" type="button" id="mobile-home-packages" onclick="mobilePackagesHint()"><span class="fam-module-top"><span class="fam-module-icon">P</span><span class="fam-chip tone-neutral" data-qa="state-chip-desktop" id="mhs-packages">desktop</span></span><span><span class="fam-module-name" id="mhn-packages">Packages</span><span class="fam-module-desc" id="mhd-packages">Prepared document sets</span></span></button>
-            <button class="fam-module-card mobile-nav-btn" type="button" data-mview="dispatch" onclick="mobileShow('dispatch')"><span class="fam-module-top"><span class="fam-module-icon">&#9993;&#65038;</span><span class="fam-chip tone-ready" data-qa="state-chip-ready" id="mhs-dispatch">ready</span></span><span><span class="fam-module-name" id="mhn-dispatch">Mailings</span><span class="fam-module-desc" id="mhd-dispatch">Sent applications and replies</span></span></button>
-            <button class="fam-module-card mobile-nav-btn" type="button" data-mview="jobs" onclick="mobileShow('jobs')"><span class="fam-module-top"><span class="fam-module-icon">J</span><span class="fam-chip tone-ready" data-qa="state-chip-ready" id="mhs-jobs">ready</span></span><span><span class="fam-module-name" id="mhn-jobs">Jobs</span><span class="fam-module-desc" id="mhd-jobs">Vacancies matched to profile</span></span></button>
-            <button class="fam-module-card mobile-nav-btn" type="button" data-mview="information" onclick="mobileShow('information')"><span class="fam-module-top"><span class="fam-module-icon">i</span><span class="fam-chip tone-ready" data-qa="state-chip-ready" id="mhs-information">ready</span></span><span><span class="fam-module-name" id="mhn-information">Information</span><span class="fam-module-desc" id="mhd-information">Reference notes and guidance</span></span></button>
-            <button class="fam-module-card mobile-nav-btn" type="button" data-mview="vessels" onclick="mobileShow('vessels')"><span class="fam-module-top"><span class="fam-module-icon">&#9872;&#65038;</span><span class="fam-chip tone-ready" data-qa="state-chip-ready" id="mhs-vessels">ready</span></span><span><span class="fam-module-name" id="mhn-vessels">Vessel DB</span><span class="fam-module-desc" id="mhd-vessels">Known vessel records</span></span></button>
-            <button class="fam-module-card mobile-nav-btn" type="button" data-mview="myvessel" onclick="mobileShow('myvessel')"><span class="fam-module-top"><span class="fam-module-icon">&#9875;&#65038;</span><span class="fam-chip tone-ready" data-qa="state-chip-ready" id="mhs-myvessel">ready</span></span><span><span class="fam-module-name" id="mhn-myvessel">My Vessel</span><span class="fam-module-desc" id="mhd-myvessel">On Board workspace</span></span></button>
-            <button class="fam-module-card mobile-nav-btn" type="button" data-mview="apps" onclick="mobileShow('apps')"><span class="fam-module-top"><span class="fam-module-icon">&#9638;</span><span class="fam-chip tone-ready" data-qa="state-chip-ready" id="mhs-apps">ready</span></span><span><span class="fam-module-name" id="mhn-apps">Apps</span><span class="fam-module-desc" id="mhd-apps">Installed tools</span></span></button>
-            <button class="fam-module-card mobile-nav-btn" type="button" data-mview="assistant" onclick="mobileShow('assistant')"><span class="fam-module-top"><span class="fam-module-icon">&#128172;</span><span class="fam-chip tone-ready" data-qa="state-chip-ready" id="mhs-assistant">ready</span></span><span><span class="fam-module-name" id="mhn-assistant">Assistant</span><span class="fam-module-desc" id="mhd-assistant">Drafts and help</span></span></button>
+        <div class="fam-app-grid" id="mobile-module-rail">
+            <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-docs" data-mview="docs" onclick="mobileShow('docs')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Certificates and personal files" title="Certificates and personal files" aria-label="Documents" aria-describedby="mobile-module-hint"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6"/><path d="M9 17h4"/></svg></span><span class="fam-app-label" id="mhn-docs">Documents</span></button>
+            <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-experience" data-mview="experience" onclick="mobileShow('experience')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Sea service and contracts" title="Sea service and contracts" aria-label="Experience" aria-describedby="mobile-module-hint"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3.5 7.5h17v11h-17z"/><path d="M8.5 7.5V5.8A1.8 1.8 0 0110.3 4h3.4a1.8 1.8 0 011.8 1.8v1.7"/><path d="M3.5 12.6h17"/></svg></span><span class="fam-app-label" id="mhn-experience">Experience</span></button>
+            <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-cv" data-mview="cv" onclick="mobileShow('cv')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Exportable profile package" title="Exportable profile package" aria-label="CV" aria-describedby="mobile-module-hint"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3.5h12v17H6z"/><circle cx="12" cy="9.4" r="2.3"/><path d="M8.6 16.3c.9-1.6 2-2.4 3.4-2.4s2.5.8 3.4 2.4"/></svg></span><span class="fam-app-label" id="mhn-cv">CV</span></button>
+            <button class="fam-app-tile" type="button" id="mobile-home-packages" onclick="mobilePackagesHint()" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Prepared document sets" title="Prepared document sets" aria-label="Packages" aria-describedby="mobile-module-hint"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.2l8 4.2v9.2L12 20.8 4 16.6V7.4z"/><path d="M4 7.4l8 4.2 8-4.2"/><path d="M12 11.6v9.2"/></svg></span><span class="fam-app-label" id="mhn-packages">Packages</span></button>
+            <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-dispatch" data-mview="dispatch" onclick="mobileShow('dispatch')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Sent applications and replies" title="Sent applications and replies" aria-label="Mailings" aria-describedby="mobile-module-hint"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3.5 6h17v12h-17z"/><path d="M3.5 7l8.5 6 8.5-6"/></svg></span><span class="fam-app-label" id="mhn-dispatch">Mailings</span></button>
+            <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-jobs" data-mview="jobs" onclick="mobileShow('jobs')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Vacancies matched to profile" title="Vacancies matched to profile" aria-label="Jobs" aria-describedby="mobile-module-hint"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M2.6 10.4h10.6v8.4H2.6z"/><path d="M5.8 10.4V9A1.4 1.4 0 017.2 7.6h1.6A1.4 1.4 0 0110.2 9v1.4"/><circle cx="17.4" cy="6.8" r="3.8"/><path d="M20.2 9.6l1.5 1.5"/></svg></span><span class="fam-app-label" id="mhn-jobs">Jobs</span></button>
+            <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-information" data-mview="information" onclick="mobileShow('information')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Reference notes and guidance" title="Reference notes and guidance" aria-label="Information" aria-describedby="mobile-module-hint"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.8"/><path d="M12 11.2v5.6"/><circle cx="12" cy="7.7" r=".95" fill="currentColor" stroke="none"/></svg></span><span class="fam-app-label" id="mhn-information">Information</span></button>
+            <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-vessels" data-mview="vessels" onclick="mobileShow('vessels')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Known vessel records" title="Known vessel records" aria-label="Vessel DB" aria-describedby="mobile-module-hint"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 20.4c.8.6 1.5 1.1 2.6 1.1 2.3 0 2.3-2 4.6-2s2.3 2 4.6 2c1.1 0 1.8-.5 2.6-1.1"/><path d="M19.1 19.4A10.4 10.4 0 0021 13.3L12 9.7l-9 3.6c0 2.4.8 4.5 2.3 6.1"/><path d="M18.4 12.5V7.2a1.8 1.8 0 00-1.8-1.8H7.4a1.8 1.8 0 00-1.8 1.8v5.3"/><path d="M12 5.4V2.7"/></svg></span><span class="fam-app-label" id="mhn-vessels">Vessel DB</span></button>
+            <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-myvessel" data-mview="myvessel" onclick="mobileShow('myvessel')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="On Board workspace" title="On Board workspace" aria-label="My Vessel" aria-describedby="mobile-module-hint"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="4.6" r="1.8"/><path d="M12 6.4V21"/><path d="M7 10h10"/><path d="M4.5 15a7.5 7.5 0 0015 0"/></svg></span><span class="fam-app-label" id="mhn-myvessel">My Vessel</span></button>
+            <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-apps" data-mview="apps" onclick="mobileShow('apps')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Installed tools" title="Installed tools" aria-label="Apps" aria-describedby="mobile-module-hint"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg></span><span class="fam-app-label" id="mhn-apps">Apps</span></button>
+            <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-assistant" data-mview="assistant" onclick="mobileShow('assistant')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Drafts and help" title="Drafts and help" aria-label="Assistant" aria-describedby="mobile-module-hint"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 15a3 3 0 01-3 3H8l-4 3V7a3 3 0 013-3h10a3 3 0 013 3z"/><path d="M9 11h6"/><path d="M9 8h4"/></svg></span><span class="fam-app-label" id="mhn-assistant">Assistant</span></button>
         </div>
     </template>
+    <!-- ONE shared long-press hint bubble for the icon grid (owner 06.09):
+         positioned over the pressed icon by mobileHintShow, never per-tile. -->
+    <div class="fam-app-hint" id="mobile-module-hint" role="status" aria-live="polite" style="display:none;"></div>
     <input id="mobile-file-input" type="file" accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png" style="display:none;" onchange="mobileHandleFilePicked(this.files)">
 </div>
 
@@ -4149,6 +4184,17 @@ function mobileSetBottomNav(showNav){
         topHome.classList.toggle('active',mobileView==='home');
         topHome.setAttribute('aria-current',mobileView==='home'?'page':'false');
     }
+    // Header ‹ (owner 06.09): visible only while there IS a previous screen —
+    // at the root it is not shown at all (a dead control is worse than none).
+    var topBack=document.getElementById('mobile-top-back');
+    if(topBack){
+        var canBack=mobileNavCanBack();
+        var backLabel=(getUiLang()==='ru')?'Назад':'Back';
+        topBack.style.display=canBack?'flex':'none';
+        topBack.setAttribute('aria-hidden',canBack?'false':'true');
+        topBack.setAttribute('aria-label',backLabel);
+        topBack.setAttribute('title',backLabel);
+    }
     var meter=document.getElementById('mobile-profile-meter');
     if(meter)meter.classList.toggle('active',mobileView==='home'||mobileView==='profile');
     document.querySelectorAll('.mobile-nav-btn').forEach(function(btn){
@@ -6521,6 +6567,7 @@ async function mobileAssistantSend(){
 // markers, and each handler ignores states that are not its own — no collision.
 var _mobileNavStack=['home'];
 var _mobileNavPopping=false;   // set while WE drive history.back() / restore
+var _mobileNavPushed=0;        // marked History entries we actually pushed
 function mobileNavTrack(view){
     view=view||'home';
     if(_mobileNavPopping)return;                 // change caused by our own back
@@ -6536,6 +6583,7 @@ function mobileNavTrack(view){
                 if(window.history&&typeof window.history.go==='function'){
                     _mobileNavPopping=true;
                     window.history.go(-extra);   // popstate fires; guarded below
+                    _mobileNavPushed=Math.max(0,_mobileNavPushed-extra);
                     setTimeout(function(){_mobileNavPopping=false;},0);
                 }
             }catch(e){_mobileNavPopping=false;}
@@ -6546,26 +6594,49 @@ function mobileNavTrack(view){
     try{
         if(window.history&&typeof window.history.pushState==='function'){
             window.history.pushState({skipiMobileNav:view},'');
+            _mobileNavPushed++;
         }
     }catch(e){}
+}
+function mobileNavCanBack(){ return _mobileNavStack.length>1; }
+// THE in-app back step. The system Back (popstate) and the header ‹ both come
+// here, so «назад» always means the same thing: one step back to the screen the
+// user actually came from (owner 06.09: «возвращает пользователя в то меню где
+// он был до этого»).
+function mobileNavStepBack(isOurs){
+    if(!isOurs&&_mobileNavStack.length<=1)return false; // not ours, no depth -> leave app nav alone
+    if(_mobileNavPopping)return false;                  // we are driving history ourselves
+    if(_mobileNavStack.length<=1)return false;          // already at root
+    _mobileNavStack.pop();
+    if(_mobileNavPushed>0)_mobileNavPushed--;
+    var prev=_mobileNavStack[_mobileNavStack.length-1]||'home';
+    _mobileNavPopping=true;
+    try{
+        mobileView=prev;
+        if(typeof renderMobileShell==='function')renderMobileShell();
+    }catch(e){ try{ if(typeof logError==='function')logError('mobileBack',e); }catch(_e){} }
+    _mobileNavPopping=false;
+    return true;
+}
+// Header ‹ — it hands the step to History so the popstate listener below does the
+// unwind: one handler, identical result to the hardware Back. Only when we have
+// no marked entry to consume does it step the stack directly (calling
+// history.back() then would walk out of the app).
+function mobileNavBack(){
+    if(!mobileNavCanBack())return false;
+    if(_mobileNavPushed>0){
+        try{
+            if(window.history&&typeof window.history.back==='function'){ window.history.back(); return true; }
+        }catch(e){}
+    }
+    return mobileNavStepBack(true);
 }
 if(typeof window!=='undefined'&&window.addEventListener){
     window.addEventListener('popstate',function(ev){
         // Only act when OUR marker is being popped (or when we still have in-app
         // depth to unwind). Overlay markers are handled by their own listeners.
         var st=ev&&ev.state;
-        var isOurs=st&&st.skipiMobileNav;
-        if(!isOurs&&_mobileNavStack.length<=1)return; // not ours, no depth -> leave app nav alone
-        if(_mobileNavPopping)return;                  // we are driving history ourselves
-        if(_mobileNavStack.length<=1)return;          // already at root
-        _mobileNavStack.pop();
-        var prev=_mobileNavStack[_mobileNavStack.length-1]||'home';
-        _mobileNavPopping=true;
-        try{
-            mobileView=prev;
-            if(typeof renderMobileShell==='function')renderMobileShell();
-        }catch(e){ try{ if(typeof logError==='function')logError('mobileBack',e); }catch(_e){} }
-        _mobileNavPopping=false;
+        mobileNavStepBack(!!(st&&st.skipiMobileNav));
     });
 }
 // Owner 05.09: the native home chat shows an honest offline banner; refresh it in place on
@@ -6610,6 +6681,17 @@ function renderMobileShell(){
 function mobileHomeActionHtml(icon,title,sub,onclick){
     return '<button class="mobile-primary-action" type="button" onclick="'+onclick+'"><span class="mobile-action-icon">'+icon+'</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(title)+'</span><span class="mobile-action-sub">'+mobileEsc(sub)+'</span></span></button>';
 }
+function mobileMenuIconTile(qa,onclick,label,hint,svg){
+    // The two menu-only entries (Profile, Feedback) share the module-grid icon
+    // shape so the ☰ screen reads as ONE grid of app icons (owner 06.09).
+    return '<button class="fam-app-tile" type="button" data-qa="'+qa+'" onclick="'+onclick+'"'
+      +' onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()"'
+      +' onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()"'
+      +' data-hint="'+mobileEsc(hint)+'" title="'+mobileEsc(hint)+'" aria-label="'+mobileEsc(label)+'"'
+      +' aria-describedby="mobile-module-hint">'
+      +'<span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24">'+svg+'</svg></span>'
+      +'<span class="fam-app-label">'+mobileEsc(label)+'</span></button>';
+}
 function renderMobileHome(){
     // Owner 05.09 (DIRECTIVE 01.09): on the NATIVE mobile build the home screen IS the assistant chat;
     // the module grid lives on the menu screen (renderMobileMenu). Non-native mobile shells
@@ -6642,9 +6724,15 @@ function renderMobileMenu(){
     var tpl=document.getElementById('mobile-home-modules-tpl');
     var h='<div class="mobile-menu" data-qa="mobile-menu-screen">'+((tpl&&tpl.innerHTML)?tpl.innerHTML:'');
     var pct=0; try{pct=mobileCompletenessPercent();}catch(e){}
-    h+='<div class="fam-module-grid mobile-menu-extra">'
-      +'<button class="fam-module-card" type="button" data-qa="menu-tile-profile" onclick="mobileShow(\'profile\')"><span class="fam-module-top"><span class="fam-module-icon">&#9679;</span>'+famStateChip(pct>=100?'ready':'pending',pct+'%')+'</span><span><span class="fam-module-name">'+mobileEsc(ru?'Профиль':'Profile')+'</span><span class="fam-module-desc">'+mobileEsc(ru?'Заполненность профиля и документов':'Profile completeness and details')+'</span></span></button>'
-      +'<button class="fam-module-card" type="button" data-qa="menu-tile-feedback" onclick="openMobileFeedbackMenu()"><span class="fam-module-top"><span class="fam-module-icon">!</span></span><span><span class="fam-module-name">'+mobileEsc(ru?'Отзыв':'Feedback')+'</span><span class="fam-module-desc">'+mobileEsc(ru?'Оценить или сообщить о проблеме':'Rate the app or report a problem')+'</span></span></button>'
+    // Same icon language as the module grid (owner 06.09) — the completeness
+    // number moved from a chip into the Profile hint, no status chips left.
+    h+='<div class="fam-app-grid mobile-menu-extra">'
+      +mobileMenuIconTile('menu-tile-profile',"mobileShow('profile')",ru?'Профиль':'Profile',
+          (ru?'Заполненность профиля и документов':'Profile completeness and details')+' — '+pct+'%',
+          '<circle cx="12" cy="8.5" r="3.6"/><path d="M4.5 20a7.5 7.5 0 0115 0"/>')
+      +mobileMenuIconTile('menu-tile-feedback','openMobileFeedbackMenu()',ru?'Отзыв':'Feedback',
+          ru?'Оценить или сообщить о проблеме':'Rate the app or report a problem',
+          '<path d="M12 3.6l2.6 5.3 5.8.9-4.2 4.1 1 5.7L12 16.9l-5.2 2.7 1-5.7-4.2-4.1 5.8-.9z"/>')
       +'</div></div>';
     mobileMainHtml(h);
     mobileHomeLocalizeModules();
@@ -6662,30 +6750,91 @@ var MOBILE_HOME_MODULE_L10N={
     apps:['Приложения','Установленные инструменты'],
     assistant:['Ассистент','Черновики и помощь']
 };
-function mobileHomeSetChip(key,state){
-    var el=document.getElementById('mhs-'+key);
-    if(!el)return;
-    var s=FAMILY_STATES[state]||{tone:'neutral'};
-    el.className='fam-chip tone-'+(s.tone||'neutral');
-    el.setAttribute('data-qa','state-chip-'+state);
-    el.textContent=(getUiLang()==='ru'?s.ru:s.en)||state;
+function mobileModuleIconBtn(key){
+    // Packages keeps its own id (the presence drills mount on it); the rest use mhb-<key>.
+    return document.getElementById(key==='packages'?'mobile-home-packages':'mhb-'+key);
 }
 function mobileHomeLocalizeModules(){
-    var ru=getUiLang()==='ru';
-    if(ru){
-        Object.keys(MOBILE_HOME_MODULE_L10N).forEach(function(k){
-            var pair=MOBILE_HOME_MODULE_L10N[k];
-            var n=document.getElementById('mhn-'+k), d=document.getElementById('mhd-'+k);
-            if(n)n.textContent=pair[0];
-            if(d)d.textContent=pair[1];
-        });
-    }
-    // Honest chips: statuses only reflect what the app actually knows.
-    var offline=false; try{ offline=(navigator.onLine===false); }catch(e){}
-    ['experience','cv','dispatch','jobs','information','vessels','myvessel','apps'].forEach(function(k){ mobileHomeSetChip(k,'ready'); });
-    mobileHomeSetChip('docs', mobileStats().missing?'pending':'ready');
-    mobileHomeSetChip('assistant', offline?'offline':'ready');
-    mobileHomeSetChip('packages','desktop');
+    // Owner 06.09 (DECISIONS (302)): the grid shows an icon + a short label and
+    // NO readiness chip; the description that used to sit under the name is the
+    // long-press hint now, so the SAME i18n pair feeds the label and data-hint.
+    if(getUiLang()!=='ru')return;
+    Object.keys(MOBILE_HOME_MODULE_L10N).forEach(function(k){
+        var pair=MOBILE_HOME_MODULE_L10N[k];
+        var n=document.getElementById('mhn-'+k);
+        if(n)n.textContent=pair[0];
+        var b=mobileModuleIconBtn(k);
+        if(!b)return;
+        b.setAttribute('aria-label',pair[0]);
+        b.setAttribute('data-hint',pair[1]);
+        b.setAttribute('title',pair[1]);
+    });
+}
+// Long-press hint for the icon grid (owner 06.09: «нужно как-то давать подсказки
+// при наведении на значок… тут слишком много текста»). One shared bubble: a press
+// held for MOBILE_HINT_DELAY_MS pops it above the icon; release, scroll or a tap
+// elsewhere takes it away; the click that ends such a press is swallowed so that
+// reading the hint never opens the module.
+var MOBILE_HINT_DELAY_MS=400;
+var _mobileHintTimer=null;
+var _mobileHintBtn=null;
+var _mobileHintSwallowClick=false;
+function mobileHintNode(){ return document.getElementById('mobile-module-hint'); }
+function mobileHintClearTimer(){
+    if(_mobileHintTimer){ try{clearTimeout(_mobileHintTimer);}catch(e){} _mobileHintTimer=null; }
+}
+function mobileHintPress(btn){
+    mobileHintClearTimer();
+    if(!btn||typeof btn.getAttribute!=='function')return;
+    var text=btn.getAttribute('data-hint')||'';
+    if(!text)return;
+    _mobileHintTimer=setTimeout(function(){ _mobileHintTimer=null; mobileHintShow(btn,text); },MOBILE_HINT_DELAY_MS);
+}
+function mobileHintShow(btn,text){
+    var el=mobileHintNode();
+    if(!el)return;
+    el.textContent=text;
+    el.style.display='block';
+    _mobileHintBtn=btn;
+    _mobileHintSwallowClick=true;
+    try{
+        var r=(btn&&btn.getBoundingClientRect)?btn.getBoundingClientRect():null;
+        if(r){
+            var w=el.offsetWidth||Math.min(280,Math.max(120,String(text).length*7));
+            var h=el.offsetHeight||34;
+            var vw=window.innerWidth||360;
+            var left=Math.round(r.left+(r.width/2)-(w/2));
+            if(left+w>vw-8)left=vw-8-w;
+            if(left<8)left=8;
+            // Above the icon by default; if that would land on the header,
+            // flip under it (Material tooltip behaviour) instead of covering ⌂/⚙.
+            var lid=8;
+            try{ var mn=document.getElementById('mobile-main'); if(mn&&mn.getBoundingClientRect)lid=mn.getBoundingClientRect().top+4; }catch(e2){}
+            var top=Math.round(r.top-h-8);
+            if(top<lid)top=Math.round(r.top+(r.height||56)+8);
+            el.style.left=left+'px';
+            el.style.top=top+'px';
+        }
+    }catch(e){}
+}
+function mobileHintHide(){
+    mobileHintClearTimer();
+    var el=mobileHintNode();
+    if(el){ el.style.display='none'; el.textContent=''; }
+    _mobileHintBtn=null;
+}
+function mobileHintRelease(){ mobileHintHide(); }
+if(typeof window!=='undefined'&&window.addEventListener){
+    // Capture phase: runs BEFORE the icon's own onpointerdown, so a new press
+    // always starts from a clean state and a tap outside drops the bubble.
+    window.addEventListener('pointerdown',function(){ _mobileHintSwallowClick=false; mobileHintHide(); },true);
+    window.addEventListener('scroll',function(){ mobileHintHide(); },true);
+    window.addEventListener('click',function(ev){
+        if(!_mobileHintSwallowClick)return;
+        _mobileHintSwallowClick=false;
+        try{ ev.stopPropagation(); }catch(e){}
+        try{ if(ev.preventDefault)ev.preventDefault(); }catch(e){}
+    },true);
 }
 function mobilePackagesHint(){
     var ru=getUiLang()==='ru';
