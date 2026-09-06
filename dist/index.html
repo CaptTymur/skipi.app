@@ -3795,7 +3795,7 @@ function initNoVaultLanding(hadVaultPath){
     // welcome screen so the user can select/move/import a vault explicitly.
     if(!hadVaultPath && shouldUseMobileShell()){
         showWelcome();
-        setTimeout(function(){mobileStartVaultWizard();},0);
+        setTimeout(function(){mobileCreateProfile();},0);
     }else{
         showWelcome();
     }
@@ -4681,14 +4681,14 @@ function renderMobileWelcome(){
     h+='<h1>'+mobileEsc(tr('app.name'))+'</h1>';
     h+='<p>'+mobileEsc(ru?'Создайте или откройте профиль моряка, затем добавляйте сертификаты камерой телефона или из файлов.':'Create or open your seafarer vault, then add certificates from your phone camera or files.')+'</p>';
     h+='<div class="mobile-stack">';
-    h+='<button class="mobile-primary-action" type="button" onclick="mobileStartVaultWizard()"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(ru?'Создать профиль':'Create mobile vault')+'</span><span class="mobile-action-sub">'+mobileEsc(ru?'Сначала выберите департамент, тип судна и должность.':'Choose department, vessel type and rank first.')+'</span></span></button>';
+    h+='<button class="mobile-primary-action" type="button" onclick="mobileCreateProfile()"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(ru?'Создать профиль':'Create mobile vault')+'</span><span class="mobile-action-sub">'+mobileEsc(ru?'Сначала выберите департамент, тип судна и должность.':'Choose department, vessel type and rank first.')+'</span></span></button>';
     h+='<button class="btn btn-outline" onclick="mobileOpenExistingVault()">'+mobileEsc(ru?'Открыть существующий':'Open existing vault')+'</button>';
     h+='<button class="btn btn-outline" onclick="loadDemoVault()">'+mobileEsc(ru?'Открыть демо':'Open demo vault')+'</button>';
     h+='</div></div>';
     mobileMainHtml(h);
 }
 async function mobileQuickCreateVault(){
-    await mobileStartVaultWizard();
+    await mobileCreateProfile();
 }
 async function mobileFinishProfileVault(){
     var s=mobileVaultWizardState;
@@ -6543,7 +6543,7 @@ function mobileRenderAssistantChat(){
         mobileMainHtml('<div class="mobile-assistant-wrap">'+c+mobileMenuButtonHtml()+'</div>');
         return;
     }
-    var demo=mobileIsDemo?'<div class="mobile-assistant-banner" data-qa="assistant-demo-banner">'+mobileEsc(ru?'Это демо-профиль: ассистент отвечает по демо-данным. Создайте свой профиль, чтобы он знал ваши документы, сертификаты и опыт.':'This is a demo profile: the assistant answers on demo data. Create your own profile so it knows your documents, certificates and experience.')+'<button class="btn btn-accent btn-sm" type="button" onclick="mobileStartVaultWizard()">'+mobileEsc(ru?'Создать свой профиль':'Create my profile')+'</button>'
+    var demo=mobileIsDemo?'<div class="mobile-assistant-banner" data-qa="assistant-demo-banner">'+mobileEsc(ru?'Это демо-профиль: ассистент отвечает по демо-данным. Создайте свой профиль, чтобы он знал ваши документы, сертификаты и опыт.':'This is a demo profile: the assistant answers on demo data. Create your own profile so it knows your documents, certificates and experience.')+'<button class="btn btn-accent btn-sm" type="button" data-qa="assistant-demo-create-profile" onclick="mobileCreateProfile()">'+mobileEsc(ru?'Создать свой профиль':'Create my profile')+'</button>'
         +(isNativeMobile()?'<button class="btn btn-outline btn-sm" type="button" data-qa="assistant-demo-signin" onclick="entryForkLeaveDemo()">'+mobileEsc(ru?'Войти':'Sign in')+'</button>':'')+'</div>':'';
     var offline=false; try{offline=(navigator.onLine===false);}catch(e){}
     var off=offline?'<div class="mobile-assistant-banner" data-qa="assistant-offline">'+mobileEsc(ru?'Нет сети — ассистент недоступен. Меню и модули работают.':'No network — the assistant is unavailable. The menu and modules keep working.')+'</div>':'';
@@ -9756,6 +9756,103 @@ async function entryForkLeaveDemo(){
     showEntryFork();
 }
 
+// ========== Step 0 «Account first» (OWNER 06.09, DECISIONS (351)) ==========
+// The complaint this closes (B2 in the 06.09 feedback, reproduced in the code): «Create my
+// profile» went STRAIGHT into mobileStartVaultWizard() — nine steps of forms (e-mail, address,
+// phones) that ended by creating a LOCAL vault, and the very next thing the user met was the
+// HARD LOGIN GATE (№117) blocking the whole shell. Half an hour of typing, then a wall.
+// So the account comes FIRST, and step 0 has exactly TWO doors: Sign in · Register.
+// There is deliberately NO third «continue without an account» door (owner 06.09,
+// «создавать волт без регистрации на имейл не вижу смысла»): a vault without an account is
+// not a feature we would be taking away — it is the dead end above.
+// Demo is untouched and still needs no account (canon (295) п.3, _efDemoNoLogin): that is
+// what lets a reviewer see the whole app without registering (Guideline 5.1.1(v)), and it
+// is why requiring the account HERE is not «data we do not need».
+// The overlay reuses the gate-class .mobile-entry-fork styling on purpose — same opaque
+// full-screen contract as the entry fork and the login gate, no second CSS block to drift.
+var _afHistMark=false; // ONE History entry while step 0 is up (same pattern as the fork)
+function _afTxt(){
+    var ru=false; try{ ru=getUiLang()==='ru'; }catch(e){}
+    return ru ? {
+        title:'Сначала аккаунт',
+        sub:'Профиль моряка хранится в сейфе, привязанном к аккаунту Skipi. Войдите или создайте аккаунт — сразу после этого начнётся анкета профиля.',
+        signin:'Войти', signinSub:'У меня уже есть аккаунт Skipi.',
+        register:'Регистрация', registerSub:'Создать аккаунт по e-mail.',
+        foot:'Просто посмотреть? В демо-режиме приложение открывается целиком, без регистрации.',
+        back:'\u2190 Назад'
+    } : {
+        title:'Account first',
+        sub:'Your seafarer profile lives in a vault tied to your Skipi account. Sign in or create an account — the profile setup starts right after.',
+        signin:'Sign in', signinSub:'I already have a Skipi account.',
+        register:'Register', registerSub:'Create an account with your e-mail.',
+        foot:'Only looking around? Demo mode opens the whole app on demo data, no account needed.',
+        back:'\u2190 Back'
+    };
+}
+function showAccountFirst(){
+    var t=_afTxt();
+    var o=document.getElementById('mobile-account-first');
+    if(!o){
+        o=document.createElement('div');
+        o.setAttribute('id','mobile-account-first');
+        o.setAttribute('class','mobile-entry-fork');
+        o.setAttribute('data-qa','account-first');
+        (document.body||document.documentElement).appendChild(o);
+    }
+    // Exactly two doors. The way out is a link, not a third door: an overlay a user
+    // cannot leave is its own defect, and «Back» returns to the demo, never to the wizard.
+    o.innerHTML='<a href="#" class="mobile-entry-fork-back" data-qa="account-first-back" onclick="hideAccountFirst();return false;">'+mobileEsc(t.back)+'</a>'
+        +'<div class="mobile-entry-fork-card">'
+        +'<div class="mobile-entry-fork-title">'+mobileEsc(t.title)+'</div>'
+        +'<div class="mobile-entry-fork-sub">'+mobileEsc(t.sub)+'</div>'
+        +_efDoorHtml('account-first-sign-in','accountFirstSignIn()','&#10140;',t.signin,t.signinSub)
+        +_efDoorHtml('account-first-register','accountFirstRegister()','+',t.register,t.registerSub)
+        +'<div class="mobile-entry-fork-sub" data-qa="account-first-demo-note" style="margin:16px 0 0;">'+mobileEsc(t.foot)+'</div>'
+        +'</div>';
+    o.style.display='flex';
+    if(!_afHistMark){
+        try{ if(window.history&&typeof window.history.pushState==='function'){ window.history.pushState({skipiAccountFirst:true},''); _afHistMark=true; } }catch(e){}
+    }
+}
+function hideAccountFirst(){
+    var o=document.getElementById('mobile-account-first');
+    if(o)o.style.display='none';
+    if(!_afHistMark)return;
+    _afHistMark=false;
+    try{ if(window.history&&typeof window.history.back==='function')window.history.back(); }catch(e){}
+}
+if(typeof window!=='undefined'&&window.addEventListener){
+    window.addEventListener('popstate',function(){
+        if(!_afHistMark)return;  // not our marker — leave app navigation alone
+        _afHistMark=false;       // our entry is the one being popped: hiding must not back() again
+        hideAccountFirst();
+    });
+}
+// THE single door into the profile wizard (ONB1). With a live account it opens the wizard
+// exactly as before; without one it raises step 0. Every «create my profile» button in this
+// file calls THIS, never mobileStartVaultWizard() directly — a call site that skipped it
+// would be the trap coming back.
+async function mobileCreateProfile(){
+    if(await _hasLoginToken()){ hideAccountFirst(); return mobileStartVaultWizard(); }
+    showAccountFirst();
+}
+async function accountFirstSignIn(){
+    hideAccountFirst();
+    // The demo is not a session: close AND forget it first, or the login token would be
+    // written into the demo vault that the next Demo tap wipes (same reason as
+    // entryForkLeaveDemo, which is what does it here).
+    if(await _efOpenVaultIsDemo()){ await entryForkLeaveDemo(); }
+    // The user asked to CREATE A PROFILE, so a successful sign-in must finish that errand
+    // instead of parking on a landing screen. A vault parked for resume is its own
+    // continuation (doAppLogin resumes it) and is not overridden.
+    if(!_loginGatePending){ _loginGateNext=function(){ showWelcome(); setTimeout(function(){ mobileStartVaultWizard(); },0); }; }
+    if(isNativeMobile()){ entryForkSignIn(); return; }
+    showLoginGate();
+}
+// Registration is the web one, opened in the system browser through the helper that
+// always answers on screen (REG1). Step 0 stays up: the user comes back and signs in.
+function accountFirstRegister(){ openRegisterPage(); }
+
 async function loadVault(info){
     // HARD LOGIN GATE (№117): block the entire shell until a valid token
     // exists in this vault. A cached token → offline reopen allowed. First
@@ -10213,7 +10310,11 @@ function myVesselGridHtml(ru){
           +'</div>';
     });
     h+='</div>';
-    h+='<div class="mv-grid-note">'+esc(ru?'Плагины откроются после присоединения к экипажу судна. Загрузка фото и отправка на судно становятся доступны там же.':'Plugins become available after you join a vessel crew. Photo upload and sending to the vessel become available there too.')+'</div>';
+    // №236b, 06.09: the previous wording («Photo upload and sending to the vessel become
+    // available there too») traded a Guideline 2.1 risk for a 2.3 one — it PROMISED sending,
+    // which nothing in the app does yet. The honest statement is about availability after
+    // joining a crew, with no promise of sending and no date (rule (324)).
+    h+='<div class="mv-grid-note">'+esc(ru?'Рабочие модули судна откроются после присоединения к экипажу судна. До этого экран только принимает код экипажа.':'Vessel workflows become available after you join a vessel crew. Until then this screen only takes the crew code.')+'</div>';
     return h;
 }
 function myVesselInnerHtml(){
