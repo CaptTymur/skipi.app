@@ -920,10 +920,10 @@ function bootMobile(opts) {
   ok(sandbox.mobileView === 'menu', "mobileShow('menu') switches mobileView to 'menu'");
   const mm = mobileHtml(doc);
   ok(mm.includes('data-qa="mobile-menu-screen"'), 'menu screen wrapper renders');
-  for (const v of ['docs', 'experience', 'cv', 'dispatch', 'jobs', 'information', 'vessels', 'myvessel', 'apps', 'assistant']) {
+  for (const v of ['docs', 'experience', 'cv', 'packages', 'dispatch', 'jobs', 'information', 'vessels', 'myvessel', 'apps', 'assistant']) {
     ok(mm.includes(`data-mview="${v}"`) && mm.includes(`mobileShow('${v}')`), `menu grid routes '${v}' through mobileShow`);
   }
-  ok(mm.includes('id="mobile-home-packages"') && mm.includes('mobilePackagesHint()'), 'Packages card is present with the honest desktop-only hint');
+  ok(mm.includes('id="mobile-home-packages"'), 'Packages keeps its tile id (the presence drills mount on it) and now opens the real module — see PKG1');
   ok((mm.match(/fam-app-tile/g) || []).length === 13, 'exactly 13 icons: 11 module icons + Profile + Feedback (Supervisor Н6 count kept through the icon-grid rework)');
   ok(mm.includes('data-qa="menu-tile-profile"') && mm.includes("mobileShow('profile')"), 'Profile tile routes to the profile screen (its only other entry, the rail meter, is hidden natively)');
   ok(mm.includes('data-qa="menu-tile-feedback"') && mm.includes('openMobileFeedbackMenu()'), 'Feedback tile routes to the feedback menu (its only other entry, the header «!», is hidden natively)');
@@ -1447,7 +1447,7 @@ function installNavHistory(app) {
   for (const v of MODULE_KEYS.filter((k) => k !== 'packages')) {
     ok(MODULE_TPL.includes(`data-mview="${v}"`) && MODULE_TPL.includes(`mobileShow('${v}')`), `'${v}' keeps data-mview + the same mobileShow route`);
   }
-  ok(MODULE_TPL.includes('id="mobile-home-packages"') && MODULE_TPL.includes('mobilePackagesHint()'), 'Packages stays in the grid with the handler it has today (owner: «пекеджес должен быть в мобильной версии»)');
+  ok(MODULE_TPL.includes('id="mobile-home-packages"') && MODULE_TPL.includes("mobileShow('packages')"), 'Packages stays in the grid and now OPENS the module (owner 06.09: «пекеджес должен быть в мобильной версии») — see PKG1');
   const at = (k) => MODULE_TPL.indexOf(k === 'packages' ? 'id="mobile-home-packages"' : `data-mview="${k}"`);
   const order = MODULE_KEYS.map(at);
   ok(order.every((p) => p >= 0) && order.every((p, i) => i === 0 || p > order[i - 1]), 'order unchanged: Documents · Experience · CV · Packages · Mailings · Jobs · Information · Vessel DB · My Vessel · Apps · Assistant');
@@ -2243,6 +2243,404 @@ const countOf = (re) => (MANIFEST.match(re) || []).length;
   ok(!/loadData(WithBaseURL)?\s*\(/.test(MAIN_ACTIVITY), 'no loadData/loadDataWithBaseURL injection point');
   ok(!/setAllowFileAccess\s*\(\s*true\s*\)|setAllowUniversalAccessFromFileURLs\s*\(\s*true\s*\)/.test(MAIN_ACTIVITY), 'no WebView file-access relaxation');
   ok(!/Runtime\.getRuntime|ProcessBuilder/.test(MAIN_ACTIVITY), 'no process execution from the activity');
+}
+
+// ---------------------------------------------------------------------------
+// Mobile «Packages» — slice 1: list, create, delete (owner 06.09 dословно
+// «это не правильно. пекеджес должен быть в мобильной версии», DECISIONS (302);
+// card TASKCARD-2026-09-06-seafarer-mobile-packages). Drills PKG1..PKG11.
+//
+// The Rust side is already platform-neutral (get_packages / create_package /
+// delete_package in src-tauri/src/commands/packages.rs) — this slice is UI only.
+// Sending a package OUT of the phone is NOT in this slice (Rust blocks it:
+// open_email_with_attachment is Err() on android/ios), so a Share/Save/Email
+// button on the mobile screen is a FAILURE here, not a missing feature.
+// ---------------------------------------------------------------------------
+
+// The mobile Packages implementation lives between these two anchors in
+// dist/index.html; every "no invoke outside the contract" drill scopes to it so
+// the desktop packages code (which does have Email/Save) never satisfies them.
+const PKG_SRC = (() => {
+  const i = HTML.indexOf('// ---- BEGIN mobile Packages');
+  const j = HTML.indexOf('// ---- END mobile Packages');
+  return i >= 0 && j > i ? HTML.slice(i, j) : '';
+})();
+// …and the same block with its // comments stripped: a comment that NAMES a
+// command (the block explains why sharing is absent) is not a wired call, so
+// the "what does this code do" drills read PKG_CODE, not the prose.
+const PKG_CODE = PKG_SRC.split('\n').map((l) => l.replace(/^\s*\/\/.*$/, '')).join('\n');
+
+// Desktop packages region — PRESERVE: this slice must not touch it.
+const DESKTOP_PKG_SHA = '179099b3b5dd56b36714d89e88daa3bf6191a462deac9673a385d02822d0417b';
+
+const PKG_A = { id: 'pkg-a', title: 'Crewing set', created_on: '2026-09-01 10:11:12', expires_on: '2027-09-01T10:11:12', download_count: 0, download_limit: 999, password: null, file_count: 3 };
+const PKG_B = { id: 'pkg-b', title: 'Medical set', created_on: '2026-08-02 09:00:00', expires_on: '2026-08-03T09:00:00', download_count: 0, download_limit: 999, password: null, file_count: 1 };
+const PKG_DOCS = [
+  { id: 'd1', title: 'Passport', category: 'personal', file_name: 'passport.pdf' },
+  { id: 'd2', title: 'Seaman Book', category: 'personal', file_name: 'sb.pdf' },
+  { id: 'd3', title: 'GMDSS', category: 'certificates', file_name: '' },
+];
+
+// Boot the NATIVE mobile shell, then take over invoke() so the packages screen
+// runs against a controlled backend. init() has already settled by then, so the
+// recorded calls belong to the packages screen and nothing else.
+async function pkgBoot(opts) {
+  const o = opts || {};
+  const app = installNavHistory(bootMobile({ seed: o.lang ? { 'skipi-ui-language': o.lang } : {} }));
+  await settleVm();
+  const calls = [];
+  let pkgs = (o.packages || []).slice();
+  app.sandbox.invoke = async (cmd, args) => {
+    calls.push([cmd, args]);
+    if (cmd === 'get_packages') { if (o.getFails) throw new Error('No vault open'); return pkgs.slice(); }
+    if (cmd === 'create_package') {
+      if (o.createFails) throw new Error('Cannot create package — 1 document(s) have no file');
+      const id = 'pkg-new-' + (pkgs.length + 1);
+      pkgs.push({ id, title: args.title, created_on: '2026-09-06 12:00:00', expires_on: '2027-09-06T12:00:00', download_count: 0, download_limit: args.downloadLimit, password: null, file_count: (args.docIds || []).length });
+      return id;
+    }
+    if (cmd === 'delete_package') { pkgs = pkgs.filter((p) => p.id !== args.packageId); return null; }
+    if (cmd === 'get_build_info') return { version: '0.0.0-apps-harness', sha: 'apps-harness' };
+    if (cmd === 'get_platform') return 'android';
+    return {};
+  };
+  app.sandbox.allDocs = (o.docs || []).slice();
+  app.sandbox.uiConfirm = async () => (o.confirm === undefined ? true : !!o.confirm);
+  const toasts = [];
+  const origToast = app.sandbox.showToast;
+  app.sandbox.showToast = (msg, kind) => { toasts.push([String(msg), kind]); if (typeof origToast === 'function') try { origToast(msg, kind); } catch (e) {} };
+  app.calls = calls;
+  app.toasts = toasts;
+  app.pkgs = () => pkgs;
+  // The VmDocument indexes every id it sees in the RAW source, including the
+  // ones that live only inside a JS string literal — so #mobile-pkg-title
+  // exists in the fake DOM from boot, holding the template text. Typing goes
+  // through that field (as a user does) AND the mirror variable, exactly like
+  // the real oninput does, so mobileCapturePackageTitle() stays under test.
+  app.typeTitle = (v) => {
+    app.sandbox.mobilePackagesTitle = v;
+    const el = app.doc.getElementById('mobile-pkg-title');
+    if (el) el.value = v;
+  };
+  return app;
+}
+const pkgCalls = (app, cmd) => app.calls.filter(([c]) => c === cmd);
+
+{
+  section('mobile Packages (PKG1) — the grid icon opens the module, the dead-end toast is gone');
+  ok(MODULE_TPL.includes('id="mobile-home-packages"'), 'Packages keeps its tile id in the module grid');
+  ok(MODULE_TPL.includes("mobileShow('packages')"), "the Packages tile routes through mobileShow('packages')");
+  ok(!/mobilePackagesHint/.test(MODULE_TPL), 'the tile no longer calls mobilePackagesHint()');
+  ok(!/mobilePackagesHint/.test(HTML), 'mobilePackagesHint is gone from dist/index.html entirely — no dead-end toast left to call');
+  ok(!/desktop-версии|desktop app/.test(PKG_CODE), 'the mobile packages code contains no "lives on desktop" copy');
+}
+
+{
+  section('mobile Packages (PKG2) — router branch + module info key + Back history');
+  try {
+    const app = await pkgBoot({ packages: [PKG_A] });
+    const { sandbox, doc } = app;
+    ok(typeof sandbox.renderMobilePackages === 'function', 'renderMobilePackages() exists');
+    const info = sandbox.mobileModuleInfo('packages');
+    const fallback = sandbox.mobileModuleInfo('information');
+    ok(!!info && info !== fallback && info.title !== fallback.title, "mobileModuleInfo('packages') is its own entry, not the information fallback");
+    ok(/packages?/i.test(String(info.title)) || /пакет/i.test(String(info.title)), 'and its title names the module (got ' + (info && info.title) + ')');
+    sandbox.mobileShow('packages');
+    await settleVm();
+    ok(sandbox.mobileView === 'packages', "mobileShow('packages') switches mobileView");
+    ok(mobileHtml(doc).includes('data-qa="seafarer-module-packages"'), 'renderMobileShell dispatches to the packages screen (root hook rendered)');
+    // Back must come home through the SAME shared nav (mobileNavTrack in renderMobileShell).
+    const pushed = sandbox.history.calls.filter(([k, st]) => k === 'pushState' && st && st.skipiMobileNav === 'packages');
+    ok(pushed.length === 1, 'exactly one marked History entry pushed for the packages view (got ' + pushed.length + ')');
+    sandbox.history.back();
+    await settleVm();
+    ok(sandbox.mobileView === 'home', 'system Back from packages returns to the previous screen, it does not leave the app');
+  } catch (e) { ok(false, 'PKG2 crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('mobile Packages (PKG3) — list renders from get_packages as CARDS (title, created, files), no <table>');
+  try {
+    const app = await pkgBoot({ packages: [PKG_A, PKG_B], docs: PKG_DOCS });
+    const { sandbox, doc } = app;
+    sandbox.mobileShow('packages');
+    await settleVm();
+    const h = mobileHtml(doc);
+    ok(pkgCalls(app, 'get_packages').length >= 1, 'the screen actually calls get_packages');
+    ok(h.includes('Crewing set') && h.includes('Medical set'), 'both package titles are on screen');
+    ok(h.includes('2026-09-01'), 'the creation date is shown (got a screen without it)');
+    ok(/\b3\b/.test(h) && /\b1\b/.test(h), 'the per-package file counts are shown');
+    ok(!h.includes('2027-09-01') && !h.includes('2026-08-03'), 'and NO expiry date is printed — see PKG12 for why');
+    ok(!/<table/i.test(h) && !/pkg-table/.test(h), 'the mobile list is NOT the desktop <table class="pkg-table"> (phone-shaped cards only)');
+    ok((h.match(/data-qa="mobile-pkg-card"/g) || []).length === 2, 'exactly one card per package (got ' + (h.match(/data-qa="mobile-pkg-card"/g) || []).length + ')');
+    ok(h.includes('data-qa="mobile-pkg-delete-pkg-a"') && h.includes('data-qa="mobile-pkg-delete-pkg-b"'), 'each card carries its own delete control');
+    ok(h.includes('data-qa="mobile-pkg-create"'), 'the create entry point is on the list screen too');
+  } catch (e) { ok(false, 'PKG3 crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('mobile Packages (PKG4) — empty state: honest text + a create button, and NO silent auto-create');
+  try {
+    const app = await pkgBoot({ packages: [], docs: PKG_DOCS });
+    const { sandbox, doc } = app;
+    sandbox.mobileShow('packages');
+    await settleVm();
+    const h = mobileHtml(doc);
+    ok(h.includes('data-qa="mobile-pkg-empty"'), 'an explicit empty state is rendered');
+    const emptyText = h.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    ok(emptyText.length >= 40, 'the empty state carries readable prose, not a bare dash (got ' + emptyText.length + ' chars of text)');
+    ok(h.includes('data-qa="mobile-pkg-create"'), 'the empty state offers the create button');
+    ok(pkgCalls(app, 'create_package').length === 0, 'opening an empty Packages screen creates NOTHING behind the user (desktop auto-creates "All Documents"; the phone must not)');
+  } catch (e) { ok(false, 'PKG4 crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('mobile Packages (PKG4b) — nothing to package yet: create is refused honestly, with the way out');
+  try {
+    const app = await pkgBoot({ packages: [], docs: [{ id: 'd3', title: 'GMDSS', category: 'certificates', file_name: '' }] });
+    const { sandbox, doc } = app;
+    sandbox.mobileShow('packages');
+    await settleVm();
+    const h = mobileHtml(doc);
+    ok(h.includes('data-qa="mobile-pkg-empty"'), 'the empty state still renders when no document has a file');
+    ok(h.includes("mobileShow('docs')"), 'and it points at Documents — the actual way out (upload a file first)');
+    sandbox.mobileStartPackage();
+    await settleVm();
+    ok(app.toasts.length >= 1, 'starting a package with no uploaded file says so instead of opening an empty picker');
+    ok(mobileHtml(doc).indexOf('data-qa="mobile-pkg-picker"') === -1, 'and the picker screen is not opened');
+  } catch (e) { ok(false, 'PKG4b crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('mobile Packages (PKG5) — create: pick documents, create_package, list re-rendered');
+  try {
+    const app = await pkgBoot({ packages: [], docs: PKG_DOCS });
+    const { sandbox, doc } = app;
+    sandbox.mobileShow('packages');
+    await settleVm();
+    sandbox.mobileStartPackage();
+    await settleVm();
+    let h = mobileHtml(doc);
+    ok(h.includes('data-qa="mobile-pkg-picker"'), 'the create screen (document picker) renders');
+    ok(h.includes('data-qa="mobile-pkg-doc-d1"') && h.includes('data-qa="mobile-pkg-doc-d2"'), 'documents WITH an attached file are offered (uploadedDocsForSharing)');
+    ok(!h.includes('data-qa="mobile-pkg-doc-d3"'), 'a document with no attached file is NOT offered — create_package would reject it');
+    ok(h.includes('data-qa="mobile-pkg-title"'), 'a title field is offered');
+    sandbox.mobileTogglePackageDoc('d1', true);
+    sandbox.mobileTogglePackageDoc('d2', true);
+    await settleVm();
+    app.typeTitle('Crewing set');
+    await sandbox.mobileCreatePackage();
+    await settleVm();
+    const created = pkgCalls(app, 'create_package');
+    ok(created.length === 1, 'create_package called exactly once (got ' + created.length + ')');
+    const args = created.length ? created[0][1] : {};
+    ok(args.title === 'Crewing set', 'the typed title is sent (got ' + JSON.stringify(args.title) + ')');
+    ok(JSON.stringify((args.docIds || []).slice().sort()) === '["d1","d2"]', 'exactly the two ticked documents are sent (got ' + JSON.stringify(args.docIds) + ')');
+    ok(typeof args.expiryDays === 'number' && typeof args.downloadLimit === 'number', 'expiryDays/downloadLimit are sent as the Rust signature requires');
+    h = mobileHtml(doc);
+    ok(h.includes('data-qa="mobile-pkg-card"') && h.includes('Crewing set'), 'after success the LIST is re-rendered and shows the new package');
+    ok(!h.includes('data-qa="mobile-pkg-picker"'), 'and the picker is closed');
+    ok(pkgCalls(app, 'get_packages').length >= 2, 'the list was refreshed from the backend, not patched from memory');
+  } catch (e) { ok(false, 'PKG5 crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('mobile Packages (PKG6) — create negatives: no title / nothing ticked / backend error never lie');
+  try {
+    const app = await pkgBoot({ packages: [], docs: PKG_DOCS });
+    const { sandbox, doc } = app;
+    sandbox.mobileShow('packages');
+    await settleVm();
+    sandbox.mobileStartPackage();
+    await settleVm();
+    app.typeTitle('   ');
+    sandbox.mobileTogglePackageDoc('d1', true);
+    await sandbox.mobileCreatePackage();
+    await settleVm();
+    ok(pkgCalls(app, 'create_package').length === 0, 'a blank title never reaches create_package');
+    ok(app.toasts.length >= 1, 'and the user is told why');
+    app.toasts.length = 0;
+    app.typeTitle('Set');
+    sandbox.mobileTogglePackageDoc('d1', false);
+    await sandbox.mobileCreatePackage();
+    await settleVm();
+    ok(pkgCalls(app, 'create_package').length === 0, 'an empty selection never reaches create_package');
+    ok(app.toasts.length >= 1, 'and the user is told why');
+    ok(mobileHtml(doc).includes('data-qa="mobile-pkg-picker"'), 'the picker stays open so the user can fix it');
+  } catch (e) { ok(false, 'PKG6 crashed before it could assert: ' + e.message); }
+  try {
+    const app = await pkgBoot({ packages: [], docs: PKG_DOCS, createFails: true });
+    const { sandbox, doc } = app;
+    sandbox.mobileShow('packages');
+    await settleVm();
+    sandbox.mobileStartPackage();
+    await settleVm();
+    sandbox.mobileTogglePackageDoc('d1', true);
+    app.typeTitle('Set');
+    await sandbox.mobileCreatePackage();
+    await settleVm();
+    ok(app.toasts.some(([m]) => /no file|has no file|Cannot create/i.test(m)), 'a Rust-side refusal is surfaced verbatim, not swallowed (toasts: ' + JSON.stringify(app.toasts) + ')');
+    ok(mobileHtml(doc).includes('data-qa="mobile-pkg-picker"'), 'and the picker stays open with the selection intact');
+  } catch (e) { ok(false, 'PKG6 (backend error) crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('mobile Packages (PKG7) — delete goes through uiConfirm (never alert/confirm)');
+  try {
+    const app = await pkgBoot({ packages: [PKG_A], docs: PKG_DOCS, confirm: false });
+    const { sandbox } = app;
+    sandbox.mobileShow('packages');
+    await settleVm();
+    let asked = 0;
+    sandbox.uiConfirm = async () => { asked++; return false; };
+    await sandbox.mobileDeletePackage('pkg-a');
+    await settleVm();
+    ok(asked === 1, 'delete asks for confirmation exactly once');
+    ok(pkgCalls(app, 'delete_package').length === 0, 'declining the confirmation deletes NOTHING');
+  } catch (e) { ok(false, 'PKG7 (decline) crashed before it could assert: ' + e.message); }
+  try {
+    const app = await pkgBoot({ packages: [PKG_A, PKG_B], docs: PKG_DOCS });
+    const { sandbox, doc } = app;
+    sandbox.mobileShow('packages');
+    await settleVm();
+    sandbox.uiConfirm = async () => true;
+    await sandbox.mobileDeletePackage('pkg-a');
+    await settleVm();
+    const del = pkgCalls(app, 'delete_package');
+    ok(del.length === 1 && del[0][1] && del[0][1].packageId === 'pkg-a', 'accepting deletes exactly that package id (got ' + JSON.stringify(del.map((d) => d[1])) + ')');
+    const h = mobileHtml(doc);
+    ok(!h.includes('Crewing set') && h.includes('Medical set'), 'the list re-renders without the deleted package');
+  } catch (e) { ok(false, 'PKG7 (accept) crashed before it could assert: ' + e.message); }
+  ok(PKG_SRC.length > 400, 'the mobile Packages source block is delimited by its BEGIN/END anchors (got ' + PKG_SRC.length + ' chars)');
+  ok(!/\balert\s*\(/.test(PKG_CODE), 'no alert() anywhere in the mobile packages code (the desktop path still has three — that is what this slice does not copy)');
+  ok(!/\bconfirm\s*\(/.test(PKG_CODE.replace(/uiConfirm\s*\(/g, '')), 'no bare window.confirm() either');
+  ok(/uiConfirm\s*\(/.test(PKG_CODE), 'the confirmation really is uiConfirm');
+}
+
+{
+  section('mobile Packages (PKG8) — a hostile package title is escaped (the desktop list is not; do not copy that)');
+  try {
+    const nasty = { id: "pkg-'x", title: '<img src=x onerror="alert(1)"> O\'Brien & Co', created_on: '2026-09-01 10:00:00', expires_on: '2027-09-01T10:00:00', download_count: 0, download_limit: 999, password: null, file_count: 2 };
+    const app = await pkgBoot({ packages: [nasty], docs: PKG_DOCS });
+    const { sandbox, doc } = app;
+    sandbox.mobileShow('packages');
+    await settleVm();
+    const h = mobileHtml(doc);
+    ok(!/<img\s+src=x/i.test(h), 'the injected <img> tag never reaches the DOM as markup');
+    ok(h.includes('&lt;img'), 'it is rendered as escaped text instead');
+    ok(!/<img/i.test(h), 'no <img> element exists in the rendered list at all — the payload stayed text');
+    ok(h.includes('&amp;'), 'the ampersand in the title is escaped too');
+    // The id lands inside an onclick="mobileDeletePackage('…')" — an apostrophe
+    // must not close that string and start new JS.
+    const del = /onclick="mobileDeletePackage\(([^)]*)\)"/.exec(h);
+    ok(!!del, 'the delete control carries an onclick with the package id');
+    ok(!!del && !/[^\\]'[^)]*'/.test(del[1].slice(1, -1)), 'the apostrophe inside the id is escaped, it does not break out of the JS string (got ' + (del ? del[1] : '') + ')');
+    sandbox.uiConfirm = async () => true;
+    await sandbox.mobileDeletePackage("pkg-'x");
+    await settleVm();
+    const calls = pkgCalls(app, 'delete_package');
+    ok(calls.length === 1 && calls[0][1].packageId === "pkg-'x", 'and the id still round-trips to Rust unchanged');
+  } catch (e) { ok(false, 'PKG8 crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('mobile Packages (PKG9) — no invoke without a Rust command; no Share/Save/Email in THIS slice');
+  const used = Array.from(new Set((PKG_CODE.match(/invoke\(\s*'([a-zA-Z0-9_]+)'/g) || []).map((s) => /'([a-zA-Z0-9_]+)'/.exec(s)[1]))).sort();
+  ok(JSON.stringify(used) === JSON.stringify(['create_package', 'delete_package', 'get_packages']),
+    'the mobile screen invokes exactly the three existing Rust commands (got ' + JSON.stringify(used) + ')');
+  const RUST = fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'commands', 'packages.rs'), 'utf8');
+  ok(used.every((c) => new RegExp('fn\\s+' + c + '\\s*\\(').test(RUST)), 'and each of them is a real #[tauri::command] in packages.rs');
+  ok(!/export_package|open_email_with_attachment|dispatch_package|navigator\.share|saveDlg|dialog\.save/.test(PKG_CODE),
+    'slice 1 wires NO outbound path — sharing a package off the phone is slice 2 (Rust returns Err on android/ios today)');
+  ok(!/>\s*(Share|Поделиться|Save|Сохранить|Email|Отправить)\s*</.test(PKG_CODE), 'and no Share/Save/Email button is drawn on the mobile packages screen');
+}
+
+{
+  section('mobile Packages (PKG10) — PRESERVE: the desktop packages path is byte-identical to the baseline');
+  const i = HTML.indexOf('async function showPackages(){');
+  const j = HTML.indexOf('var settingsTab = ');
+  ok(i > 0 && j > i, 'the desktop packages region is locatable');
+  ok(sha256Text(HTML.slice(i, j)) === DESKTOP_PKG_SHA,
+    'showPackages/startPkg/doPkg/emailPkg/exportPkg/delPkg unchanged (sha ' + sha256Text(HTML.slice(i, j)).slice(0, 12) + ' vs baseline ' + DESKTOP_PKG_SHA.slice(0, 12) + ')');
+  ok(/<table class="pkg-table">/.test(HTML), 'the desktop list still uses its table — the phone got its own UI, the desktop was not refactored');
+}
+
+{
+  section('mobile Packages (PKG11) — RU: the module speaks the UI language');
+  try {
+    const app = await pkgBoot({ packages: [PKG_A], docs: PKG_DOCS, lang: 'ru' });
+    const { sandbox, doc } = app;
+    ok(sandbox.getUiLang() === 'ru', 'the harness boot really is in RU (so this drill is not vacuous)');
+    sandbox.mobileShow('packages');
+    await settleVm();
+    const h = mobileHtml(doc);
+    ok(/[А-Яа-я]{4,}/.test(h.replace(/<[^>]*>/g, ' ')), 'the RU packages screen renders Russian copy');
+    ok(/packages\s*:\s*\['Пакеты'/.test(HTML), 'the grid label pair for packages is still in MOBILE_HOME_MODULE_L10N');
+  } catch (e) { ok(false, 'PKG11 crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('mobile Packages (PKG12) — the screen promises NOTHING the product does not keep (Supervisor Т1, 06.09)');
+  // By bytes: expires_on / download_limit / download_count are written into
+  // SQLite and read by no Rust command; export_package copies the ZIP with no
+  // check and no counter bump; create_package always passes password=None
+  // (packages.rs:321); the 365 days are hard-wired with no field in the UI.
+  // So a validity date, an "expired" pill, a download limit or a password
+  // badge on this screen would be a promise the product cannot honour.
+  const FORBIDDEN = /expir|valid until|срок|истёк|истек|действует до|password|пароль|protected|защищ|download limit|лимит скач|скачиван/i;
+  const asked = PKG_CODE.replace(/expiryDays\s*:/g, 'RUSTARG:').replace(/downloadLimit\s*:/g, 'RUSTARG:');
+  ok(!FORBIDDEN.test(asked), 'no expiry / password / download-limit wording in the mobile packages code (the two create_package arguments the Rust signature requires are not copy on screen)');
+  try {
+    const app = await pkgBoot({ packages: [PKG_A, PKG_B], docs: PKG_DOCS });
+    const { sandbox, doc } = app;
+    sandbox.mobileShow('packages');
+    await settleVm();
+    const list = mobileHtml(doc);
+    ok(!FORBIDDEN.test(list), 'and none of it is rendered on the list screen either');
+    // PKG_B expired on 2026-08-03; the desktop mailing wizard hides such a
+    // package (validDispatchPackages) while the list used to show it. With no
+    // expiry claimed, both surfaces agree again.
+    ok(list.includes('Medical set'), 'a package past its stored expires_on is listed like any other — the screen makes no claim about it');
+    ok(!/mobile-pill (warn|bad)/.test(list), 'no warning/expired pill is drawn');
+    sandbox.mobileStartPackage();
+    await settleVm();
+    ok(!FORBIDDEN.test(mobileHtml(doc)), 'and none of it appears on the create screen');
+  } catch (e) { ok(false, 'PKG12 crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('mobile Packages (PKG13) — the counter on the picker is the number that actually leaves for Rust (Supervisor Т4)');
+  try {
+    const app = await pkgBoot({ packages: [], docs: PKG_DOCS.concat([{ id: 'd4', title: 'Yellow Fever', category: 'medical', file_name: 'yf.pdf' }]) });
+    const { sandbox, doc } = app;
+    sandbox.mobileShow('packages');
+    await settleVm();
+    sandbox.mobileStartPackage();
+    await settleVm();
+    const countOnScreen = () => {
+      const m = /data-qa="mobile-pkg-count"[^>]*>([^<]*)</.exec(mobileHtml(doc));
+      const n = m ? /(\d+)/.exec(m[1]) : null;
+      return n ? Number(n[1]) : NaN;
+    };
+    ok(countOnScreen() === 0, 'the picker opens saying 0 selected (got ' + countOnScreen() + ')');
+    sandbox.mobileTogglePackageDoc('d1', true);
+    sandbox.mobileTogglePackageDoc('d2', true);
+    sandbox.mobileTogglePackageDoc('d4', true);
+    await settleVm();
+    ok(countOnScreen() === 3, 'after ticking three documents it says 3 (got ' + countOnScreen() + ')');
+    sandbox.mobileTogglePackageDoc('d2', false);
+    await settleVm();
+    const shown = countOnScreen();
+    ok(shown === 2, 'unticking one brings it back to 2 (got ' + shown + ')');
+    app.typeTitle('Counted set');
+    await sandbox.mobileCreatePackage();
+    await settleVm();
+    const created = pkgCalls(app, 'create_package');
+    ok(created.length === 1, 'create_package called once');
+    const sent = created.length ? (created[0][1].docIds || []) : [];
+    ok(sent.length === shown, 'the number on screen equals the number of docIds actually sent (screen ' + shown + ', sent ' + sent.length + ')');
+    ok(JSON.stringify(sent.slice().sort()) === '["d1","d4"]', 'and they are exactly the documents still ticked (got ' + JSON.stringify(sent) + ')');
+  } catch (e) { ok(false, 'PKG13 crashed before it could assert: ' + e.message); }
 }
 
 {
