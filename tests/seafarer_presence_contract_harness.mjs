@@ -1023,14 +1023,42 @@ section('mobile rail canon — 5 fixed slots, header home+gear, modules-first Ap
   ok(railRules.every((r) => !/overflow(?:-x)?\s*:\s*(?:auto|scroll)/i.test(r)), 'rail CSS has no overflow-x auto/scroll');
   ok(railRules.every((r) => !/scroll-snap/i.test(r)) && !/has-more|has-before/.test(railHtml), 'rail CSS/markup has no scroll-snap paging');
 
-  // 7: mobile Apps grid renders module tiles BEFORE plugins.
-  ok(html.includes('data-qa="apps-module-tiles"'), 'mobile Apps grid module-tiles wrapper marker exists');
-  const tilesDecl = /var MOBILE_APPS_MODULE_TILES\s*=\s*\[([\s\S]*?)\];/.exec(html);
-  ok(!!tilesDecl, 'module tile list for the mobile Apps grid is declared');
-  for (const slug of ['docs', 'experience', 'cv', 'dispatch']) {
-    ok(!!tilesDecl && new RegExp(`\\['${slug}',`).test(tilesDecl[1]), `Apps grid module tiles include rail module '${slug}'`);
+  // 7: the mobile Apps screen carries ONLY plugins, in the module-grid icon language.
+  // owner 06.09, DECISIONS (312): дубль модулей на экране Apps убран.
+  // (a) the duplicated module list is gone from the shipped bytes, not just hidden.
+  ok(!html.includes('data-qa="apps-module-tiles"'), 'no duplicated module-tiles grid on the mobile Apps screen');
+  ok(!/\bMOBILE_APPS_MODULE_TILES\b/.test(html), 'the module-duplicate tile list (MOBILE_APPS_MODULE_TILES) is gone');
+  ok(!/mobileAppsModuleTilesHtml|mobileAppsEnsureModuleTiles/.test(html), 'the module-duplicate injection code is gone');
+  ok(!/\.mobile-apps-module-grid\b/.test(html), 'the module-duplicate grid CSS is gone');
+  // (b) the plugin tile speaks the module-grid icon language: rounded icon box +
+  // one short label, the description behind the shared long-press hint.
+  const appsTileFn = /function mobileAppsIconizeHtml\(([\s\S]*?)\n}/.exec(html);
+  ok(!!appsTileFn, 'the Apps screen restyles the launcher tiles through mobileAppsIconizeHtml');
+  const appsTileBody = appsTileFn ? appsTileFn[1] : '';
+  for (const cls of ['fam-app-tile', 'fam-app-icon-box', 'fam-app-label']) {
+    ok(appsTileBody.includes(cls), `plugin tiles are emitted with the module-grid class '${cls}'`);
   }
-  ok(/main\.innerHTML\s*=\s*mobileAppsModuleTilesHtml\(\)\s*\+/.test(html), 'module tiles are injected BEFORE the plugin launcher markup');
+  ok(/data-hint="/.test(appsTileBody) && /mobileHintPress\(this\)/.test(appsTileBody), 'the plugin description lives in data-hint behind the same long-press hint as the modules');
+  // The function READS the launcher's .apps-icon-tile-* spans; what it EMITS must
+  // carry none of them, so scope this one to the returned template.
+  const emitted = appsTileBody.slice(appsTileBody.indexOf("return '<div"));
+  ok(emitted.length > 200, 'the emitted tile template was located');
+  ok(!/apps-icon-tile/.test(emitted), 'the old .apps-icon-tile markup is not re-emitted on the Apps screen');
+  ok(!/apps-badge|state-chip-ready|fam-chip/.test(emitted), 'no meta line, «ready» chip or badge is re-emitted inside a plugin tile');
+  // (c) order: the launcher grid is what the Apps screen renders, with nothing
+  // prepended above it (the modules-first duplicate is what (a) removed).
+  ok(/apps-launcher-grid/.test(html), 'the plugin launcher grid is still the Apps screen content');
+  ok(!/main\.innerHTML\s*=\s*mobileApps\w*TilesHtml\(\)\s*\+/.test(html), 'nothing is prepended above the plugin launcher markup any more');
+  ok(/if\(main\)main\.innerHTML=\(typeof mobileAppsIconizeHtml==='function'\)\?mobileAppsIconizeHtml\(html\|\|''\)/.test(html), 'mobileMainHtml hands every mobile render through the Apps restyle (no wrapper chain)');
+  // (d) the open path is unchanged: the tile keeps the launcher's own handler.
+  ok(/onclick="'\+onclick\+'"/.test(appsTileBody), "the restyled tile carries over the launcher's own onclick verbatim");
+  const hostUi = fs.readFileSync(path.join(ROOT, 'dist', 'plugin-host-ui.js'), 'utf8');
+  ok(/onclick="pluginLaunch\(/.test(hostUi), 'the vendored @skipi/plugin-host-ui still emits the pluginLaunch open handler (its bytes are untouched)');
+  ok(/data-qa="plugin-open-/.test(appsTileBody) && /data-qa="plugin-tile-/.test(appsTileBody), 'plugin-tile-/plugin-open- id hooks survive the restyle');
+  // (e) the main menu grid is untouched by the Apps restyle.
+  const menuTpl = (() => { const i = html.indexOf('<template id="mobile-home-modules-tpl">'); const j = html.indexOf('</template>', i); return i >= 0 && j > i ? html.slice(i, j) : ''; })();
+  ok((menuTpl.match(/fam-app-tile/g) || []).length === 11, 'the ☰ module grid still holds exactly 11 fam-app-tile icons');
+  ok(!/apps-icon-tile|apps-module-tiles/.test(menuTpl), 'no Apps-screen markup leaked into the module grid template');
 }
 
 console.log('\n' + (fail === 0 ? 'ALL GREEN' : 'FAILURES') + `: ${pass} passed, ${fail} failed`);
