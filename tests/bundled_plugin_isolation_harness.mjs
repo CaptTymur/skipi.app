@@ -822,7 +822,7 @@ function bootMobile(opts) {
   const mm = mobileHtml(doc);
   ok(mm.includes('data-qa="mobile-menu-btn"') && mm.includes("mobileShow('menu')"), "home (no consent) renders the ☰ menu button routed to mobileShow('menu')");
   ok(!mm.includes('id="mobile-assistant-input"'), 'home (no consent) shows the consent card, not the composer');
-  ok(!mm.includes('fam-module-card') && !mm.includes('data-qa="home-hero"'), 'home no longer injects the module grid / hero');
+  ok(!mm.includes('fam-app-tile') && !mm.includes('data-qa="home-hero"'), 'home no longer injects the module grid / hero');
   ok(doc.getElementById('mobile-bottom-nav').style.display === 'none', 'bottom rail hidden on the native home');
   const consented = bootMobile({ seed: { 'skipi-assistant-consent': '1' } });
   await settleVm();
@@ -924,7 +924,7 @@ function bootMobile(opts) {
     ok(mm.includes(`data-mview="${v}"`) && mm.includes(`mobileShow('${v}')`), `menu grid routes '${v}' through mobileShow`);
   }
   ok(mm.includes('id="mobile-home-packages"') && mm.includes('mobilePackagesHint()'), 'Packages card is present with the honest desktop-only hint');
-  ok((mm.match(/fam-module-card/g) || []).length === 13, 'exactly 13 tiles: 11 module cards + Profile + Feedback (Supervisor Н6)');
+  ok((mm.match(/fam-app-tile/g) || []).length === 13, 'exactly 13 icons: 11 module icons + Profile + Feedback (Supervisor Н6 count kept through the icon-grid rework)');
   ok(mm.includes('data-qa="menu-tile-profile"') && mm.includes("mobileShow('profile')"), 'Profile tile routes to the profile screen (its only other entry, the rail meter, is hidden natively)');
   ok(mm.includes('data-qa="menu-tile-feedback"') && mm.includes('openMobileFeedbackMenu()'), 'Feedback tile routes to the feedback menu (its only other entry, the header «!», is hidden natively)');
   const idx = (v) => mm.indexOf(`data-mview="${v}"`);
@@ -1003,7 +1003,7 @@ function bootMobile(opts) {
   ok(mm.includes('data-qa="assistant-offline"'), 'offline banner renders on home when navigator.onLine === false');
   ok(mm.includes('data-qa="mobile-menu-btn"') && mm.includes('id="mobile-assistant-input"'), '☰ and composer still there offline');
   off.sandbox.mobileShow('menu');
-  ok((mobileHtml(off.doc).match(/fam-module-card/g) || []).length === 13, 'menu renders all tiles offline');
+  ok((mobileHtml(off.doc).match(/fam-app-tile/g) || []).length === 13, 'menu renders all icons offline');
   const on = bootMobile({ seed: consent, onLine: true });
   await settleVm();
   on.sandbox.mobileShow('home');
@@ -1057,7 +1057,7 @@ function bootMobile(opts) {
   ok(doc.body.classList.contains('mobile-mode') && !doc.body.classList.contains('mobile-native'), 'mobile-mode without mobile-native on linux');
   sandbox.mobileShow('home');
   const mm = mobileHtml(doc);
-  ok(mm.includes('data-qa="home-hero"') && (mm.match(/fam-module-card/g) || []).length === 11, 'old home: hero + 11-card grid');
+  ok(mm.includes('data-qa="home-hero"') && (mm.match(/fam-app-tile/g) || []).length === 11, 'old home: hero + the same 11-icon grid');
   ok(!mm.includes('data-qa="mobile-menu-btn"'), 'no ☰ on the old shell');
   ok(doc.getElementById('mobile-bottom-nav').style.display === 'flex', 'old shell keeps the 5-slot rail visible');
   sandbox.mobileShow('assistant');
@@ -1378,6 +1378,508 @@ const efGateMarkup = () => HTML.slice(HTML.indexOf('id="login-gate-overlay"'), H
   ok(spies.showEntryFork.length === 0 && !efFork(doc), 'D13c: no fork with a live session (the recent path still opens the vault)');
   ok(spies.showLoginGate.length === 0, 'D13c: no gate either');
   ok(spies.renderMobileShell.length >= 1 && mobileHtml(doc).includes('id="mobile-assistant-input"'), 'D13c: loadVault() reached renderMobileShell → native home');
+}
+
+// ---------------------------------------------------------------------------
+// Module menu = phone-style ICON GRID (OWNER 06.09, DECISIONS (302); card
+// TASKCARD-2026-09-06-seafarer-module-icon-grid): one outline icon + a short
+// label, four per row; the description moved into a long-press hint; no
+// «ready/desktop» chips; Packages stays on the phone («пекеджес должен быть в
+// мобильной версии»). Plus the header ‹ Back the owner asked for the same day:
+// «возвращает пользователя в то меню где он был до этого» — i.e. exactly one
+// step of the SAME history the system Back walks (no second handler).
+// The template is the single source of truth for both mobile surfaces, so the
+// drills read it out of dist/index.html AND drive the real render path.
+// ---------------------------------------------------------------------------
+const MODULE_TPL = (() => {
+  const i = HTML.indexOf('<template id="mobile-home-modules-tpl">');
+  const j = HTML.indexOf('</template>', i);
+  return i >= 0 && j > i ? HTML.slice(i, j) : '';
+})();
+const MODULE_KEYS = ['docs', 'experience', 'cv', 'packages', 'dispatch', 'jobs', 'information', 'vessels', 'myvessel', 'apps', 'assistant'];
+const tplButtons = () => (MODULE_TPL.match(/<button[\s\S]*?<\/button>/g) || []);
+const tplButtonOf = (k) => tplButtons().find((b) => b.includes(k === 'packages' ? 'id="mobile-home-packages"' : `data-mview="${k}"`)) || '';
+const cssRule = (sel) => {
+  const re = new RegExp('(?:^|\\n)\\s*' + sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{([^}]*)\\}');
+  const m = re.exec(HTML);
+  return m ? m[1] : '';
+};
+const cssNum = (sel, prop) => {
+  const m = new RegExp('(?:^|[;{\\s])' + prop + '\\s*:\\s*([0-9.]+)px').exec(cssRule(sel));
+  return m ? parseFloat(m[1]) : NaN;
+};
+// A faithful little History: pushState/back/go move an index over real entries
+// and back()/go() fire popstate with the state of the entry we land on — which
+// is what the WebView does and what the in-app back contract is built on.
+function installNavHistory(app) {
+  const entries = [null];
+  let idx = 0;
+  const fire = () => (app.listeners.popstate || []).slice().forEach((fn) => { try { fn({ state: entries[idx] }); } catch (e) {} });
+  app.sandbox.history = {
+    calls: [],
+    pushState(st) { this.calls.push(['pushState', st]); entries.length = idx + 1; entries.push(st); idx = entries.length - 1; },
+    replaceState() {},
+    back() { this.calls.push(['back']); if (idx > 0) { idx -= 1; fire(); } },
+    go(n) { this.calls.push(['go', n]); if (n < 0 && idx > 0) { idx = Math.max(0, idx + n); fire(); } },
+  };
+  const timers = [];
+  app.sandbox.setTimeout = (fn, ms) => { timers.push({ fn, ms: ms || 0 }); return timers.length; };
+  app.sandbox.clearTimeout = (id) => { if (id && timers[id - 1]) timers[id - 1].fn = null; };
+  app.runTimers = (maxMs) => {
+    const cap = maxMs === undefined ? 0 : maxMs;
+    const due = timers.filter((t) => typeof t.fn === 'function' && t.ms <= cap);
+    const rest = timers.filter((t) => t.ms > cap);
+    timers.length = 0; rest.forEach((t) => timers.push(t));
+    due.forEach((t) => { try { t.fn(); } catch (e) {} });
+  };
+  app.timers = timers;
+  return app;
+}
+
+{
+  section('module icon grid (IG1) — 11 icons, order and navigation unchanged (owner 06.09, DECISIONS 302)');
+  ok(MODULE_TPL.length > 200, '#mobile-home-modules-tpl extracted from dist/index.html');
+  const btns = tplButtons();
+  ok(btns.length === 11, 'template holds exactly 11 module buttons (got ' + btns.length + ')');
+  ok(/class="fam-app-grid"/.test(MODULE_TPL), 'grid container uses fam-app-grid');
+  ok((MODULE_TPL.match(/fam-app-tile/g) || []).length === 11, 'each of the 11 buttons is a fam-app-tile');
+  ok(MODULE_TPL.includes('id="mobile-module-rail"'), 'container keeps the mobile-module-rail id the presence contract mounts on');
+  for (const v of MODULE_KEYS.filter((k) => k !== 'packages')) {
+    ok(MODULE_TPL.includes(`data-mview="${v}"`) && MODULE_TPL.includes(`mobileShow('${v}')`), `'${v}' keeps data-mview + the same mobileShow route`);
+  }
+  ok(MODULE_TPL.includes('id="mobile-home-packages"') && MODULE_TPL.includes('mobilePackagesHint()'), 'Packages stays in the grid with the handler it has today (owner: «пекеджес должен быть в мобильной версии»)');
+  const at = (k) => MODULE_TPL.indexOf(k === 'packages' ? 'id="mobile-home-packages"' : `data-mview="${k}"`);
+  const order = MODULE_KEYS.map(at);
+  ok(order.every((p) => p >= 0) && order.every((p, i) => i === 0 || p > order[i - 1]), 'order unchanged: Documents · Experience · CV · Packages · Mailings · Jobs · Information · Vessel DB · My Vessel · Apps · Assistant');
+}
+
+{
+  section('module icon grid (IG2) — short label stays, description moves to data-hint, status chips gone');
+  const btns = tplButtons();
+  ok(btns.length === 11 && btns.every((b) => /data-hint="[^"]{3,}"/.test(b)), 'every icon carries a non-empty data-hint (the old description)');
+  ok(btns.length === 11 && btns.every((b) => /class="fam-app-label"[^>]*>[^<]{1,18}</.test(b)), 'every icon carries a visible short fam-app-label');
+  ok(!/fam-module-desc/.test(MODULE_TPL), 'no fam-module-desc left in the template');
+  ok(!/fam-chip/.test(MODULE_TPL), 'no fam-chip left in the template');
+  ok(!/ready/.test(MODULE_TPL), "no 'ready' readiness marker left in the template (owner: «указатель готовности спрятать»)");
+  ok(!/desktop/i.test(MODULE_TPL), "no 'desktop' dead-end marker left in the template (owner: «недоступно на телефоне — плохая идея»)");
+  const hintOf = (k) => { const m = /data-hint="([^"]+)"/.exec(tplButtonOf(k)); return m ? m[1] : ''; };
+  ok(hintOf('docs') === 'Certificates and personal files' && hintOf('packages') === 'Prepared document sets' && hintOf('assistant') === 'Drafts and help', 'the baseline descriptions survive verbatim as hints');
+}
+
+{
+  section('module icon grid (IG3) — one outline icon style, no letter/emoji placeholders');
+  const btns = tplButtons();
+  ok(btns.length === 11 && btns.every((b) => /<svg viewBox="0 0 24 24"/.test(b)), 'every icon is an inline 24×24 SVG');
+  ok((MODULE_TPL.match(/<svg /g) || []).length === 11, 'exactly 11 icon SVGs, one per module');
+  ok(!/&#9633;|&#9873;|&#9993;|&#9872;|&#9875;|&#9638;|&#128172;/.test(MODULE_TPL), 'the old symbol placeholders (▢ ⚑ ✉ ⚓ ▨ 💬) are gone');
+  ok(!/fam-module-icon/.test(MODULE_TPL), 'the old letter placeholders (CV / P / J / i) in fam-module-icon boxes are gone');
+  const icon = cssRule('.fam-app-tile .fam-app-icon-box svg');
+  ok(/fill\s*:\s*none/.test(icon) && /stroke\s*:\s*currentColor/.test(icon) && /stroke-width\s*:\s*1\.7/.test(icon), 'one shared outline style: fill:none, stroke:currentColor, stroke-width 1.7');
+  ok(/stroke-linecap\s*:\s*round/.test(icon) && /stroke-linejoin\s*:\s*round/.test(icon), 'rounded caps/joins on every icon');
+}
+
+{
+  section('module icon grid (IG4) — long-press ≥400 ms shows the hint; release / scroll / tap outside hide it');
+  try {
+    const app = installNavHistory(bootMobile({ seed: {} }));
+    await settleVm();
+    const { sandbox, doc } = app;
+    sandbox.mobileShow('menu');
+    app.runTimers(0);
+    const btn = doc.getElementById('mhb-docs');
+    const hint = doc.getElementById('mobile-module-hint');
+    ok(!!btn && !!hint, 'icon button + the single hint node exist in the shell');
+    ok((HTML.match(/id="mobile-module-hint"/g) || []).length === 1, 'exactly ONE hint node on the screen (not one per icon)');
+    ok((MODULE_TPL.match(/onpointerdown="mobileHintPress\(this\)"/g) || []).length === 11, 'every icon arms the long-press on pointerdown');
+    ok((MODULE_TPL.match(/onpointerup="mobileHintRelease\(\)"/g) || []).length === 11 && (MODULE_TPL.match(/onpointercancel="mobileHintRelease\(\)"/g) || []).length === 11, 'every icon releases the hint on pointerup/pointercancel');
+    app.timers.length = 0;
+    sandbox.mobileHintPress(btn);
+    ok(hint.style.display !== 'block', 'hint stays hidden while the press is still short');
+    const armed = app.timers.filter((t) => t.ms >= 400);
+    ok(armed.length === 1, 'a single ≥400 ms long-press timer is armed (got ' + armed.length + ')');
+    armed[0].fn();
+    ok(hint.style.display === 'block' && hint.textContent === btn.getAttribute('data-hint'), 'after the delay the hint shows exactly the data-hint text');
+    sandbox.mobileHintRelease();
+    ok(hint.style.display === 'none', 'releasing the finger hides the hint');
+    // scroll hides it
+    sandbox.mobileHintPress(btn); app.timers.filter((t) => t.ms >= 400).forEach((t) => t.fn());
+    ok(hint.style.display === 'block', 'hint shown again for the scroll drill');
+    ok((app.listeners.scroll || []).length >= 1, 'the shell listens for scroll to drop the hint');
+    (app.listeners.scroll || []).forEach((fn) => fn({}));
+    ok(hint.style.display === 'none', 'scrolling hides the hint');
+    // tap outside hides it
+    sandbox.mobileHintPress(btn); app.timers.filter((t) => t.ms >= 400).forEach((t) => t.fn());
+    ok(hint.style.display === 'block', 'hint shown again for the outside-tap drill');
+    ok((app.listeners.pointerdown || []).length >= 1, 'the shell listens for pointerdown to drop the hint');
+    (app.listeners.pointerdown || []).forEach((fn) => fn({ target: doc.body }));
+    ok(hint.style.display === 'none', 'a tap outside hides the hint');
+    // a long-press must NOT also open the module (the click that follows is swallowed)
+    sandbox.mobileHintPress(btn); app.timers.filter((t) => t.ms >= 400).forEach((t) => t.fn());
+    sandbox.mobileHintRelease();
+    let prevented = false, stopped = false;
+    const ev = { target: btn, preventDefault() { prevented = true; }, stopPropagation() { stopped = true; } };
+    ok((app.listeners.click || []).length >= 1, 'the shell has a capture-phase click guard');
+    (app.listeners.click || []).forEach((fn) => fn(ev));
+    ok(prevented && stopped, 'the click that follows a shown hint is swallowed — reading the hint does not open the module');
+    const ev2 = { target: btn, preventDefault() { prevented = 'again'; }, stopPropagation() {} };
+    prevented = false;
+    (app.listeners.click || []).forEach((fn) => fn(ev2));
+    ok(prevented === false, 'a plain tap (no hint shown) is NOT swallowed — navigation still works');
+  } catch (e) { ok(false, 'module icon grid (IG4) crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('module icon grid (IG5) — accessibility: label = aria-label, ≥48 px targets, hint reachable');
+  const btns = tplButtons();
+  const labelOf = (b) => { const m = /class="fam-app-label"[^>]*>([^<]+)</.exec(b); return m ? m[1] : ''; };
+  const ariaOf = (b) => { const m = /aria-label="([^"]+)"/.exec(b); return m ? m[1] : ''; };
+  ok(btns.length === 11 && btns.every((b) => ariaOf(b) && ariaOf(b) === labelOf(b)), 'aria-label equals the visible label on every icon');
+  ok(btns.every((b) => !/aria-describedby/.test(b)), 'no icon carries a permanent aria-describedby to an empty node (Supervisor Н5)');
+  ok(cssNum('.fam-app-tile', 'min-height') >= 48, 'icon tap target is at least 48 px tall (got ' + cssNum('.fam-app-tile', 'min-height') + ')');
+  ok(cssNum('.fam-app-tile .fam-app-icon-box', 'width') >= 48 && cssNum('.fam-app-tile .fam-app-icon-box', 'height') >= 48, 'icon box itself is at least 48×48 px');
+  ok(/grid-template-columns\s*:\s*repeat\(4,/.test(cssRule('.fam-app-grid')), 'four icons per row (phone standard)');
+  ok(/role="status"/.test((/<div[^>]*id="mobile-module-hint"[^>]*>/.exec(HTML) || [''])[0]), 'the hint node is a live region for screen readers');
+}
+
+{
+  section('module icon grid (IG6) — real menu render: 11 module icons + Profile/Feedback; RU keeps the i18n keys');
+  try {
+    const app = installNavHistory(bootMobile({ seed: { 'skipi-ui-language': 'ru' } }));
+    await settleVm();
+    const { sandbox, doc } = app;
+    sandbox.mobileShow('menu');
+    app.runTimers(0);
+    const mm = mobileHtml(doc);
+    ok(mm.includes('data-qa="mobile-menu-screen"'), 'menu screen renders');
+    ok((mm.match(/fam-app-tile/g) || []).length === 13, 'exactly 13 icons on the menu: 11 modules + Profile + Feedback (Supervisor Н6 count kept)');
+    ok(!mm.includes('fam-module-desc') && !mm.includes('fam-chip'), 'the rendered menu carries no descriptions and no status chips at all');
+    const docsBtn = doc.getElementById('mhb-docs');
+    const label = doc.getElementById('mhn-docs');
+    ok(!!docsBtn && !!label && label.textContent === 'Документы', 'RU label applied to the icon (MOBILE_HOME_MODULE_L10N key kept)');
+    ok(docsBtn.getAttribute('data-hint') === 'Сертификаты и личные файлы', 'RU description applied to the hint — same i18n pair as the old desc');
+    ok(docsBtn.getAttribute('aria-label') === 'Документы', 'aria-label follows the localized label');
+  } catch (e) { ok(false, 'module icon grid (IG6) crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('header back (BK1) — ‹ sits between ⌂ and ⚙ and calls the shared in-app back');
+  const iHome = HTML.indexOf('data-qa="app-header-home"');
+  const iBack = HTML.indexOf('data-qa="app-header-back"');
+  const iGear = HTML.indexOf('data-qa="app-header-settings"');
+  ok(iHome > 0 && iBack > iHome && iGear > iBack, 'header order in the markup: ⌂ … ‹ … ⚙');
+  const tag = (/<button[^>]*data-qa="app-header-back"[^>]*>/.exec(HTML) || [''])[0];
+  ok(/aria-label="[^"]+"/.test(tag), 'back button carries an aria-label');
+  ok(/id="mobile-top-back"/.test(tag), 'back button has a stable id the render pass toggles');
+  ok(/onclick="mobileNavBack\(\)"/.test(tag), 'back button calls mobileNavBack() — the one shared with the system Back');
+  ok(/<svg viewBox="0 0 24 24"/.test(tag) || /<svg viewBox="0 0 24 24"/.test(HTML.slice(iBack, iBack + 400)), 'back button draws the same outline arrow style');
+  ok(cssNum('.mobile-top-back::after', 'width') >= 48 && cssNum('.mobile-top-back::after', 'height') >= 48, 'back tap target is at least 48×48 px');
+}
+
+{
+  section('header back (BK2) — hidden at the root, shown as soon as there is somewhere to go back to');
+  try {
+    const app = installNavHistory(bootMobile({ seed: { 'skipi-assistant-consent': '1' } }));
+    await settleVm();
+    const { sandbox, doc } = app;
+    const back = doc.getElementById('mobile-top-back');
+    sandbox.mobileShow('home'); app.runTimers(0);
+    ok(!!back && back.style.display === 'none', 'no back button on the root assistant home (no dead-end control)');
+    sandbox.mobileShow('menu'); app.runTimers(0);
+    ok(back.style.display === 'flex', 'back button appears on the module menu');
+    sandbox.mobileShow('docs'); app.runTimers(0);
+    ok(back.style.display === 'flex', 'back button stays on a module screen');
+    sandbox.mobileShow('home'); app.runTimers(0);
+    ok(back.style.display === 'none', 'back button disappears again at the root');
+  } catch (e) { ok(false, 'header back (BK2) crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('header back (BK3) — assistant → module → ‹ returns to the assistant (owner: «в то меню где он был до этого»)');
+  try {
+    const app = installNavHistory(bootMobile({ seed: { 'skipi-assistant-consent': '1' } }));
+    await settleVm();
+    const { sandbox } = app;
+    sandbox.mobileShow('home'); app.runTimers(0);
+    sandbox.mobileShow('docs'); app.runTimers(0);
+    ok(sandbox.mobileView === 'docs', 'Documents opened straight from the assistant home');
+    sandbox.mobileNavBack(); app.runTimers(0);
+    ok(sandbox.mobileView === 'home', '‹ returns to the assistant home, not to the icon menu');
+  } catch (e) { ok(false, 'header back (BK3) crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('header back (BK4) — menu → module → ‹ returns to the icon menu, ‹ again to the assistant');
+  try {
+    const app = installNavHistory(bootMobile({ seed: { 'skipi-assistant-consent': '1' } }));
+    await settleVm();
+    const { sandbox, doc } = app;
+    sandbox.mobileShow('home'); app.runTimers(0);
+    sandbox.mobileShow('menu'); app.runTimers(0);
+    sandbox.mobileShow('docs'); app.runTimers(0);
+    sandbox.mobileNavBack(); app.runTimers(0);
+    ok(sandbox.mobileView === 'menu' && mobileHtml(doc).includes('data-qa="mobile-menu-screen"'), '‹ from a module opened via the menu returns to the menu');
+    sandbox.mobileNavBack(); app.runTimers(0);
+    ok(sandbox.mobileView === 'home', '‹ from the menu returns to the assistant home');
+  } catch (e) { ok(false, 'header back (BK4) crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('header back (BK5) — module → sub-page → ‹ returns to the module list, not out of the module');
+  try {
+    const app = installNavHistory(bootMobile({ seed: { 'skipi-assistant-consent': '1' } }));
+    await settleVm();
+    const { sandbox } = app;
+    sandbox.mobileShow('home'); app.runTimers(0);
+    sandbox.mobileShow('menu'); app.runTimers(0);
+    sandbox.mobileShow('docs'); app.runTimers(0);
+    sandbox.mobileShow('doc'); app.runTimers(0);
+    sandbox.mobileNavBack(); app.runTimers(0);
+    ok(sandbox.mobileView === 'docs', '‹ from an open document returns to the documents list');
+    sandbox.mobileNavBack(); app.runTimers(0);
+    ok(sandbox.mobileView === 'menu', 'the next ‹ returns to the icon menu');
+  } catch (e) { ok(false, 'header back (BK5) crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('header back (BK6) — ‹ and the system Back are ONE handler: same history step, same result');
+  try {
+    const seq = async (drive) => {
+      const app = installNavHistory(bootMobile({ seed: { 'skipi-assistant-consent': '1' } }));
+      await settleVm();
+      app.sandbox.mobileShow('home'); app.runTimers(0);
+      app.sandbox.mobileShow('menu'); app.runTimers(0);
+      app.sandbox.mobileShow('docs'); app.runTimers(0);
+      drive(app);
+      app.runTimers(0);
+      return app;
+    };
+    const byButton = await seq((app) => app.sandbox.mobileNavBack());
+    const bySystem = await seq((app) => app.sandbox.history.back());
+    ok(byButton.sandbox.mobileView === bySystem.sandbox.mobileView && byButton.sandbox.mobileView === 'menu', '‹ and system Back land on the same screen');
+    ok(JSON.stringify(byButton.sandbox._mobileNavStack) === JSON.stringify(bySystem.sandbox._mobileNavStack), 'both leave the in-app stack in the same state');
+    ok(byButton.sandbox.history.calls.some((c) => c[0] === 'back'), '‹ walks the real History (history.back) instead of forking its own navigation');
+    ok(/function mobileNavBack\(/.test(HTML) && (HTML.match(/_mobileNavStack\.pop\(\)/g) || []).length === 1, 'exactly ONE place pops the in-app stack (no second back implementation)');
+  } catch (e) { ok(false, 'header back (BK6) crashed before it could assert: ' + e.message); }
+}
+
+
+// ---------------------------------------------------------------------------
+// Supervisor close audit 06.09 (AUDIT-2026-09-06-seafarer-module-icons-close):
+// Н1 — a declaration in the stylesheet proves NOTHING. `.mobile-nav-btn span
+// { font-size:17px }` (0,1,1) outranked `.fam-app-label { font-size:13px }`
+// (0,1,0), so the ten labels whose button carries the rail class rendered at
+// 17px while Packages/Profile/Feedback rendered at 13px, and the ≤340px media
+// rule was dead for those ten. These drills therefore RESOLVE THE CASCADE
+// (specificity + source order) for the label as it exists on the menu screen.
+// ---------------------------------------------------------------------------
+const CSS_RULES = (() => {
+  const rules = [];
+  const blocks = [...HTML.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)].map((m) => m[1]);
+  let order = 0;
+  for (const raw of blocks) {
+    const css = raw.replace(/\/\*[\s\S]*?\*\//g, '');
+    let i = 0, media = null;
+    while (i < css.length) {
+      const brace = css.indexOf('{', i);
+      if (brace < 0) break;
+      let prelude = css.slice(i, brace);
+      if (/\}/.test(prelude)) media = null;            // a media block just closed
+      prelude = prelude.replace(/\}/g, '').trim();
+      if (/^@(media|supports)/i.test(prelude)) { media = prelude; i = brace + 1; continue; }
+      if (prelude.startsWith('@')) {                   // keyframes/font-face: skip the whole block
+        let depth = 1, j = brace + 1;
+        while (j < css.length && depth > 0) { const c = css[j]; if (c === '{') depth++; else if (c === '}') depth--; j++; }
+        i = j; continue;
+      }
+      const close = css.indexOf('}', brace);
+      if (close < 0) break;
+      const body = css.slice(brace + 1, close);
+      for (const sel of prelude.split(',').map((s) => s.trim()).filter(Boolean)) rules.push({ sel, body, media, order: order++ });
+      i = close + 1;
+    }
+  }
+  return rules;
+})();
+const specificity = (sel) => {
+  let s = ' ' + sel;
+  const ids = (s.match(/#[A-Za-z0-9_-]+/g) || []).length;
+  const attrs = (s.match(/\[[^\]]*\]/g) || []).length;
+  s = s.replace(/\[[^\]]*\]/g, ' ');
+  const pEls = (s.match(/::[a-z-]+/g) || []).length;
+  s = s.replace(/::[a-z-]+/g, ' ');
+  const pCls = (s.match(/:[a-z-]+(\([^)]*\))?/g) || []).length;
+  s = s.replace(/:[a-z-]+(\([^)]*\))?/g, ' ');
+  const classes = (s.match(/\.[A-Za-z0-9_-]+/g) || []).length;
+  s = s.replace(/\.[A-Za-z0-9_-]+/g, ' ').replace(/#[A-Za-z0-9_-]+/g, ' ');
+  const tags = (s.match(/(^|[\s>+~])[a-zA-Z][A-Za-z0-9_-]*/g) || []).length;
+  return [ids, classes + attrs + pCls, tags + pEls];
+};
+const specGE = (a, b) => (a[0] !== b[0] ? a[0] > b[0] : a[1] !== b[1] ? a[1] > b[1] : a[2] > b[2]);
+const stripPseudo = (c) => c.replace(/::[a-z-]+/g, '').replace(/:[a-z-]+(\([^)]*\))?/g, '');
+function compoundMatch(comp, node) {
+  const bare = stripPseudo(comp);
+  const tag = /^[a-zA-Z][A-Za-z0-9_-]*/.exec(bare);
+  if (tag && tag[0].toLowerCase() !== node.tag) return false;
+  for (const c of bare.match(/\.[A-Za-z0-9_-]+/g) || []) if (!(node.cls || []).includes(c.slice(1))) return false;
+  for (const id of bare.match(/#[A-Za-z0-9_-]+/g) || []) if (node.id !== id.slice(1)) return false;
+  for (const a of bare.match(/\[[^\]]*\]/g) || []) {
+    const m = /^\[([^=\]]+)(?:=["']?([^"'\]]*)["']?)?\]$/.exec(a);
+    if (!m) return false;
+    const v = (node.attrs || {})[m[1]];
+    if (v === undefined || (m[2] !== undefined && v !== m[2])) return false;
+  }
+  return true;
+}
+// 'yes' — applies at rest, 'state' — only in a pseudo state (:active/:hover), 'no' — never.
+function selApplies(sel, chain) {
+  if (/[+~]/.test(sel)) return 'no';
+  const flat = sel.replace(/\s*>\s*/g, ' ').trim();
+  const parts = flat.split(/\s+/);
+  const stateful = /::[a-z-]+|(^|[^:]):[a-z-]+/.test(flat);
+  let ci = chain.length - 1;
+  if (!compoundMatch(parts[parts.length - 1], chain[ci])) return 'no';
+  ci -= 1;
+  for (let pi = parts.length - 2; pi >= 0; pi--) {
+    let found = false;
+    while (ci >= 0) { if (compoundMatch(parts[pi], chain[ci])) { found = true; ci--; break; } ci--; }
+    if (!found) return 'no';
+  }
+  return stateful ? 'state' : 'yes';
+}
+const declOf = (body, prop) => {
+  const re = new RegExp('(?:^|;)\\s*' + prop + '\\s*:\\s*([^;]+)', 'g');
+  let m, last = null;
+  while ((m = re.exec(body))) last = m[1].trim();
+  return last;
+};
+// The winning declaration for `prop` on `chain`'s last node, in the given media context.
+function cascadeWinner(prop, chain, media = null) {
+  let best = null;
+  for (const r of CSS_RULES) {
+    if (r.media !== media && r.media !== null) continue;
+    if (media !== null && r.media !== null && r.media !== media) continue;
+    if (selApplies(r.sel, chain) !== 'yes') continue;
+    const v = declOf(r.body, prop);
+    if (v === null) continue;
+    const spec = specificity(r.sel);
+    if (!best || specGE(spec, best.spec) || (!specGE(best.spec, spec) && r.order > best.order)) best = { sel: r.sel, value: v, spec, order: r.order };
+  }
+  return best;
+}
+const HTML_NODE = { tag: 'html', cls: [], attrs: { 'data-theme': 'light' } };
+const CHAIN_BASE = [
+  HTML_NODE,
+  { tag: 'body', cls: ['mobile-mode', 'mobile-native'] },
+  { tag: 'div', cls: ['mobile-shell'] },
+  { tag: 'main', cls: ['mobile-main'] },
+  { tag: 'div', cls: ['mobile-menu'] },
+  { tag: 'div', cls: ['fam-app-grid'] },
+];
+const railLabelChain = () => CHAIN_BASE.concat([
+  { tag: 'button', cls: ['fam-app-tile', 'mobile-nav-btn'], id: 'mhb-docs' },
+  { tag: 'span', cls: ['fam-app-label'], id: 'mhn-docs' },
+]);
+const plainLabelChain = () => CHAIN_BASE.concat([
+  { tag: 'button', cls: ['fam-app-tile'], id: 'mobile-home-packages' },
+  { tag: 'span', cls: ['fam-app-label'], id: 'mhn-packages' },
+]);
+const railIconChain = () => CHAIN_BASE.concat([
+  { tag: 'button', cls: ['fam-app-tile', 'mobile-nav-btn'], id: 'mhb-docs' },
+  { tag: 'span', cls: ['fam-app-icon-box'] },
+]);
+
+{
+  section('module icon grid (IG7) — CASCADE: no .mobile-nav-btn rule outranks the icon label (Supervisor Н1)');
+  ok(CSS_RULES.length > 100, 'stylesheet parsed into rules (' + CSS_RULES.length + ')');
+  const railFs = cascadeWinner('font-size', railLabelChain());
+  const plainFs = cascadeWinner('font-size', plainLabelChain());
+  ok(!!railFs && /fam-app-label/.test(railFs.sel), 'the winning font-size for a RAIL-class tile label comes from the fam-app-label rule, not from «' + (railFs ? railFs.sel : '-') + '»');
+  ok(!!plainFs && /fam-app-label/.test(plainFs.sel), 'the winning font-size for a plain tile label comes from the fam-app-label rule');
+  ok(!!railFs && !!plainFs && railFs.value === plainFs.value, 'both label kinds resolve to the SAME size (' + (railFs ? railFs.value : '?') + ' vs ' + (plainFs ? plainFs.value : '?') + ') — no two-kegel menu');
+  const railLh = cascadeWinner('line-height', railLabelChain());
+  ok(!!railLh && /fam-app-label/.test(railLh.sel), 'line-height too is decided by the label rule, not by «' + (railLh ? railLh.sel : '-') + '»');
+  const losers = CSS_RULES.filter((r) => /mobile-nav-btn/.test(r.sel) && selApplies(r.sel, railLabelChain()) === 'yes' && (declOf(r.body, 'font-size') || declOf(r.body, 'line-height')));
+  ok(losers.every((r) => railFs && specGE(specificity(railFs.sel), specificity(r.sel))), 'every .mobile-nav-btn rule that reaches the label is strictly weaker than the label rule (' + losers.length + ' checked)');
+  const iconFs = cascadeWinner('width', railIconChain());
+  ok(!!iconFs && /fam-app-icon-box/.test(iconFs.sel) && parseFloat(iconFs.value) >= 48, 'the icon box keeps its own ≥48 px size on rail-class tiles too');
+  // the small-screen rule must actually reach the same labels
+  const media340 = (CSS_RULES.find((r) => r.media && /340px/.test(r.media)) || {}).media || null;
+  const railFsSmall = media340 ? cascadeWinner('font-size', railLabelChain(), media340) : null;
+  ok(!!railFsSmall && /fam-app-label/.test(railFsSmall.sel) && railFsSmall.value !== railFs.value, 'the ≤340 px rule is alive for rail-class labels too (' + (railFsSmall ? railFsSmall.value : '-') + ')');
+}
+
+{
+  section('header back (BK7) — ‹ stands right next to ⌂ (owner: «справа от домика»), not adrift in the middle');
+  const grp = /<div class="mobile-top-nav">([\s\S]*?)<\/div>/.exec(HTML);
+  ok(!!grp, 'the header groups ⌂ and ‹ in one container (.mobile-top-nav)');
+  const inner = grp ? grp[1] : '';
+  ok(inner.includes('data-qa="app-header-home"') && inner.includes('data-qa="app-header-back"'), 'both ⌂ and ‹ live in that container');
+  ok(inner.indexOf('app-header-home') >= 0 && inner.indexOf('app-header-home') < inner.indexOf('app-header-back'), '⌂ first, ‹ immediately to its right');
+  const between = inner.slice(inner.indexOf('</button>') + 9, inner.lastIndexOf('<button'));
+  ok(!/<[a-zA-Z]/.test(between), 'nothing else renders between ⌂ and ‹');
+  ok(!inner.includes('app-header-settings'), '⚙ is NOT in the pair — it stays on the far side of the header');
+  const gap = cssNum('.mobile-top-nav', 'gap');
+  ok(/display\s*:\s*flex/.test(cssRule('.mobile-top-nav')), 'the pair is a flex row, so the two buttons keep touching');
+  ok(gap > 0 && gap <= 8, 'the pair is spaced by a small gap (' + gap + 'px) — the header space-between can no longer push ‹ to the centre');
+}
+
+{
+  section('header back (BK8) — the pushed-entry counter is honest in BOTH directions (Supervisor Н2)');
+  try {
+    const app = installNavHistory(bootMobile({ seed: { 'skipi-assistant-consent': '1' } }));
+    await settleVm();
+    const { sandbox } = app;
+    sandbox.mobileShow('home'); app.runTimers(0);
+    ok(sandbox._mobileNavPushed === 0, 'at the root nothing is pushed yet');
+    sandbox.mobileShow('menu'); app.runTimers(0);
+    sandbox.mobileShow('docs'); app.runTimers(0);
+    ok(sandbox._mobileNavPushed === 2, 'two forward steps → two marked History entries (got ' + sandbox._mobileNavPushed + ')');
+    sandbox.mobileNavBack(); app.runTimers(0);
+    ok(sandbox._mobileNavPushed === 1, 'a back step CONSUMES one entry (a never-decrementing counter dies here)');
+    sandbox.mobileNavBack(); app.runTimers(0);
+    ok(sandbox._mobileNavPushed === 0 && sandbox.mobileView === 'home', 'back to the root leaves the counter at zero');
+    sandbox.mobileShow('menu'); app.runTimers(0);
+    sandbox.mobileShow('docs'); app.runTimers(0);
+    sandbox.mobileShow('home'); app.runTimers(0);
+    ok(sandbox._mobileNavPushed === 0, '⌂ gives back every entry its history.go(-N) rewound');
+  } catch (e) { ok(false, 'BK8 crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('header back (BK9) — with no marked entry ‹ never calls history.back() (that would leave the app)');
+  try {
+    const app = installNavHistory(bootMobile({ seed: { 'skipi-assistant-consent': '1' } }));
+    await settleVm();
+    const { sandbox } = app;
+    sandbox.history.pushState = () => { throw new Error('pushState blocked'); };
+    sandbox.mobileShow('home'); app.runTimers(0);
+    sandbox.mobileShow('menu'); app.runTimers(0);
+    ok(sandbox._mobileNavPushed === 0 && JSON.stringify(sandbox._mobileNavStack) === JSON.stringify(['home', 'menu']), 'the in-app stack is tracked even when the History entry could not be pushed');
+    sandbox.history.calls.length = 0;
+    sandbox.mobileNavBack(); app.runTimers(0);
+    ok(sandbox.mobileView === 'home', '‹ still returns to the previous screen');
+    ok(!sandbox.history.calls.some((c) => c[0] === 'back'), 'and it did NOT touch history.back() — nothing of ours to consume');
+  } catch (e) { ok(false, 'BK9 crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('module icon grid (IG8) — the hint is announced only while it is on screen (Supervisor Н5)');
+  try {
+    ok(!/aria-describedby/.test(MODULE_TPL), 'no icon points at an empty hint node in the resting markup');
+    const app = installNavHistory(bootMobile({ seed: {} }));
+    await settleVm();
+    const { sandbox, doc } = app;
+    sandbox.mobileShow('menu'); app.runTimers(0);
+    const btn = doc.getElementById('mhb-docs');
+    ok(!!btn && btn.getAttribute('aria-describedby') === null, 'at rest the icon has no aria-describedby');
+    app.timers.length = 0;
+    sandbox.mobileHintPress(btn);
+    app.timers.filter((t) => t.ms >= 400).forEach((t) => t.fn());
+    ok(btn.getAttribute('aria-describedby') === 'mobile-module-hint', 'while the hint shows, the pressed icon is described by it');
+    sandbox.mobileHintRelease();
+    ok(btn.getAttribute('aria-describedby') === null, 'hiding the hint removes the description again');
+    ok(/aria-label="[^"]+"/.test(MODULE_TPL) && /title="[^"]+"/.test(MODULE_TPL), 'the always-available name (aria-label) and desktop hover (title) stay');
+  } catch (e) { ok(false, 'IG8 crashed before it could assert: ' + e.message); }
 }
 
 {
