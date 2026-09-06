@@ -2844,36 +2844,85 @@ const NOPAY_WORDS_ALLOW = [
     why: 'the same theme pub/sub sentence in the calculators CHANGELOG («skins both the shell and the open calculator») — again the host API, again a provenance document and not copy' },
   { re: /theme\.subscribe re-skins the open calc/g,
     why: 'the calculators REPORT describing what its contract test proved about the theme pub/sub — prose about a test result, and the word is the API name' },
+  // Н-F, 06.09: the two entries below are the ENTIRE price the dist pays for the
+  // «plan» and «monthly» rules added with that finding. One each — a rule that needs
+  // a third exception is the wrong rule and gets re-worded instead.
+  { re: /relief plan/gi,
+    why: 'intelligence.js career guidance «Check internet access, joining window, relief plan, and repatriation terms before accepting» — the RELIEF plan is when a crew replacement comes aboard so the seafarer can go home, a contract term to check with an employer and not a tariff sold here' },
+  { re: /offered monthly salary/gi,
+    why: 'the Offer Check card in intelligence.js says «Type an offered monthly salary» — the wage an employer offered THIS seafarer, typed in locally and compared with the market band; it is income to him, not a charge from us' },
 ];
 
 // [family, label, pattern] — matched case-insensitively on WORD/PATH boundaries, not
-// as naked substrings, so «unsubscribes», «display.», «/payload» and «$100» must not
-// fire. NOPAY4 proves every one of these still catches purchase copy when it is there.
+// as naked substrings, so «unsubscribes», «display.» and «/payload» must not fire.
+// NOPAY4 proves every one of these still catches purchase copy when it is there.
+//
+// Н-F, 06.09 — WHY THIS LIST IS NOT A LIST OF SPECIFIC PRICES ANY MORE. The previous
+// version priced the invariant at exactly `$10`, `per month`, `/month` and `pricing`,
+// and called an upgrade exactly `buy now`, `purchase`, `upgrade to pro`. Supervisor
+// pasted an ORDINARY upsell into two live dist files — «Get Skipi PRO … 9.99 USD a
+// month», a link to skipi.app/upgrade, and a SKIPI_PRO_UPSELL object in
+// skipi-assistant.js — and the harness stayed ALL GREEN 839/0. A second one, written
+// in the very words of this rule's own title («Upgrade your account», «Skipi PRO —
+// &euro;9.99/mo»), was green too. That is not an obfuscation attack: it is the exact
+// shape a real PR adding an upsell would take, and the hardcoded $10 was already
+// stale — PRO shipped at $5 historically and the web sells three SKUs today.
+// So the price family is now a SHAPE (a currency figure, in symbols or entities or
+// codes, and any per-period suffix) rather than one number, and the upgrade family is
+// the vocabulary of upselling rather than three fixed phrases. Both mutations are
+// nailed down as permanent negative controls in NOPAY4.
+//
+// Every rule below was run over the whole of dist/ before it was added; each one that
+// hit something legitimate was either re-worded or bought with ONE declared exception
+// («relief plan», «offered monthly salary»). Deliberately NOT rules: bare «price» and
+// «trial» (the source comments that record decision (253) and Guideline 2.2 use them —
+// a rule there would allowlist a comment's wording and redden on the next re-word);
+// bare «order» (36 legitimate hits: sort order, section order, master's standing
+// orders — so only «order now» is a rule); bare «pro» (the «SF Pro» font choice);
+// bare «unlock» (11+ live user-facing strings today — that word arrives with the
+// no-paywall-language slice that removes them, not before, or this drill would go red
+// on shipping copy).
 const NOPAY_RULES = [
+  // ── the vendor ────────────────────────────────────────────────────────────
   ['word', 'paddle', String.raw`\bpaddle\b`],
+  ['word', 'stripe', String.raw`\bstripe\b`],
+  // ── the till ──────────────────────────────────────────────────────────────
   ['word', 'checkout', String.raw`\bcheck-?outs?\b`],
+  ['word', 'cart', String.raw`\bcarts?\b`],
+  ['word', 'order now', String.raw`\border\s+now\b`],
+  // ── what is being sold ────────────────────────────────────────────────────
   ['word', 'subscribe', String.raw`\bsubscrib(?:e|es|ed|ing)\b`],
   ['word', 'subscription', String.raw`\bsubscriptions?\b`],
-  ['word', 'buy now', String.raw`\bbuy\s+now\b`],
-  ['word', 'purchase', String.raw`\bpurchas(?:e|es|ed|ing)\b`],
-  ['word', 'upgrade to pro', String.raw`\bupgrade\s+to\s+pro\b`],
+  ['word', 'plan', String.raw`\bplans?\b`],
+  // ── the price tag: any figure, in any of the three ways a price is written ─
+  // symbol or HTML entity + digits («$10», «€9.99», «&euro;9.99» — the entity is
+  // the form Supervisor's own mutation C used, so the rule reads it too);
+  ['word', 'price (currency symbol)', String.raw`(?:[$€£]|&(?:dollar|euro|pound|#36|#8364|#163);)\s?\d`],
+  // digits next to an ISO code, either order («9.99 USD», «USD 9.99»);
+  ['word', 'price (currency code)', String.raw`\d\s*(?:USD|EUR|GBP)\b|\b(?:USD|EUR|GBP)\s?\d`],
+  // and the period suffix that turns a figure into a recurring charge.
+  ['word', 'price per period', String.raw`\d\s?\/\s?(?:mo|mos|month|months|yr|year)\b`],
   ['word', 'per month', String.raw`\bper\s+month\b`],
   ['word', '/month', String.raw`\/\s?month\b`],
-  ['word', '$10', String.raw`\$\s?10\b`],
+  ['word', 'a month', String.raw`\ba\s+month\b`],
+  ['word', 'monthly', String.raw`\bmonthly\b`],
   ['word', 'pricing', String.raw`\bpricing\b`],
+  // ── the call to action ────────────────────────────────────────────────────
+  ['word', 'buy', String.raw`\bbuys?\b`],
+  ['word', 'purchase', String.raw`\bpurchas(?:e|es|ed|ing)\b`],
+  ['word', 'upgrade', String.raw`\bupgrad(?:e|es|ed|ing)\b`],
+  ['word', 'get pro', String.raw`\bget\s+pro\b`],
+  ['word', 'go pro', String.raw`\bgo\s+pro\b`],
+  ['word', 'activate', String.raw`\bactivat(?:e|es|ed|ing|ion)\b`],
+  // ── the wall ──────────────────────────────────────────────────────────────
   // Н-D, 06.09: the four words below were named in this rule's own title and were
   // not in the list. «payment», «paywall», «billing» and «free trial» are purchase
-  // words with no legitimate use in a maritime app, so they are rules. Bare «plan»,
-  // «price» and «trial» deliberately are NOT: this dist legitimately says «relief
-  // plan» (intelligence.js career advice) and «claim nothing about price» / «demo /
-  // pre-release / trial builds» (the source comments that record decision (253) and
-  // Guideline 2.2). Making those three rules would mean allowlisting a comment's
-  // wording, which reddens on the next re-word and teaches people to widen the
-  // exception — so the title was corrected to the truth instead.
+  // words with no legitimate use in a maritime app, so they are rules.
   ['word', 'payment', String.raw`\bpayments?\b`],
   ['word', 'paywall', String.raw`\bpaywalls?\b`],
   ['word', 'billing', String.raw`\bbilling\b`],
   ['word', 'free trial', String.raw`\bfree\s+trials?\b`],
+  // ── the links ─────────────────────────────────────────────────────────────
   ['host', 'paddle.com', String.raw`\bpaddle\.com\b`],
   ['host', 'cdn.paddle.com', String.raw`\bcdn\.paddle\.com\b`],
   ['host', 'pay.', String.raw`\bpay\.`],
@@ -2899,13 +2948,16 @@ const nopayScan = (files, family) => NOPAY_RULES.filter(([fam]) => fam === famil
 });
 
 {
-  // The title enumerates exactly the rule families below — a vendor (paddle), a
-  // checkout, a subscription, a price tag ($10 · /month · per month · pricing), an
-  // upgrade (buy now · purchase · upgrade to pro) and a paywall (payment · paywall ·
-  // billing · free trial). It promised «a plan, a price» before and checked neither
-  // (Supervisor Н-D, 06.09); a title that overpromises is how a drill gets trusted
-  // for something it never did.
-  section('NOPAY1 — no shipped dist asset names a vendor, a checkout, a subscription, a price tag, an upgrade or a paywall');
+  // The title enumerates exactly the rule families below and nothing more — a payment
+  // vendor (paddle · stripe), a till (checkout · cart · order now), a thing being sold
+  // (subscription · subscribe · plan), a price in any currency (symbol/entity/code +
+  // digits, /mo · per month · a month · monthly · pricing), a call to action (buy ·
+  // purchase · upgrade · get pro · go pro · activate) and a paywall (payment · paywall
+  // · billing · free trial). It said «a price tag, an upgrade» while checking only
+  // «$10» and «upgrade to pro» (Supervisor Н-D and Н-F, 06.09) — a title that
+  // overpromises is how a drill gets trusted for something it never did, so the rules
+  // were widened to the title instead of the title narrowed to the rules.
+  section('NOPAY1 — no shipped dist asset names a payment vendor, a checkout, a subscription or plan, a price in any currency, an upgrade call to action, or a paywall');
   for (const h of nopayScan(SHIPPED_TEXT, 'word')) {
     ok(h.count === 0, 'nothing under dist/ says «' + h.label + '»'
       + (h.count ? ' — ' + h.count + ' hit(s): ' + JSON.stringify(h.where) : ''));
@@ -2974,6 +3026,11 @@ const nopayScan = (files, family) => NOPAY_RULES.filter(([fam]) => fam === famil
     '<a href="https://skipi.app/app/account#billing">manage subscription</a>',
     '<script>Paddle.Checkout.open(); shop.subscribe(); shop.purchase();</script>',
     '<p>Free trial for 7 days, then a payment is taken; the paywall lifts and billing starts.</p>',
+    // Н-F, 06.09 — the shapes the old list walked past: a price that is not $10, a
+    // period that is not «per month», and the upsell verbs nobody had written down.
+    '<p>Choose your PRO plan: 9.99 USD a month, or €99 a year — that is 8.25/mo billed monthly.</p>',
+    '<button onclick="cart.add(); stripe.redirectToCheckout();">Order now — Get PRO</button>',
+    '<a href="https://skipi.app/upgrade">Go PRO and activate your licence</a>',
   ].join('\n');
   const poisoned = SHIPPED_TEXT.map((f) => (f.file === 'skipi-assistant.js'
     ? { file: f.file, text: f.text + '\n' + NOPAY_VIOLATION }
@@ -2988,17 +3045,79 @@ const nopayScan = (files, family) => NOPAY_RULES.filter(([fam]) => fam === famil
   const inIndex = SHIPPED_TEXT.map((f) => (f.file === 'index.html' ? { file: f.file, text: f.text + '\n' + NOPAY_VIOLATION } : f));
   ok([...nopayScan(inIndex, 'word'), ...nopayScan(inIndex, 'host')].every((h) => h.count > 0),
     'NEGATIVE: the same purchase block placed in index.html reddens every rule as well');
+  // ── Supervisor mutation B, nailed down (Н-F, 06.09) ───────────────────────
+  // This is not a paraphrase: it is the byte-for-byte upsell Supervisor pasted into
+  // two live dist files on 460afeb5, which left the harness ALL GREEN 839/0. It is a
+  // permanent control now, so the hole is checked on every run instead of once.
+  const MUT_B_HTML = [
+    '<div class="pro-upsell" id="proUpsell">',
+    '  <h3>Get Skipi PRO</h3>',
+    '  <p>Unlimited vessel records, documents and AI answers &mdash; 9.99 USD a month.</p>',
+    '  <a class="btn btn-primary" href="https://skipi.app/upgrade" target="_blank" rel="noopener">Get PRO</a>',
+    '</div>',
+  ].join('\n');
+  const MUT_B_JS = '// PRO upsell shown when the daily limit is reached\n'
+    + "const SKIPI_PRO_UPSELL={title:'Unlock Skipi PRO',note:'9.99 USD a month, cancel anytime',cta:'Get PRO',href:'https://skipi.app/upgrade'};";
+  const mutB = SHIPPED_TEXT.map((f) => {
+    if (f.file === 'index.html') return { file: f.file, text: f.text + '\n' + MUT_B_HTML };
+    if (f.file === 'skipi-assistant.js') return { file: f.file, text: f.text + '\n' + MUT_B_JS };
+    return f;
+  });
+  const mutBHits = [...nopayScan(mutB, 'word'), ...nopayScan(mutB, 'host')].filter((h) => h.count > 0);
+  const mutBLabels = mutBHits.map((h) => h.label).sort();
+  for (const must of ['price (currency code)', 'a month', 'upgrade', 'get pro']) {
+    ok(mutBLabels.includes(must),
+      'NEGATIVE (Supervisor mutation B — an ordinary «Get Skipi PRO … 9.99 USD a month» upsell): the «' + must
+      + '» rule reddens on it (labels: ' + JSON.stringify(mutBLabels) + ')');
+  }
+  ok(mutBHits.some((h) => h.where.some((w) => w.startsWith('index.html')))
+    && mutBHits.some((h) => h.where.some((w) => w.startsWith('skipi-assistant.js'))),
+    'NEGATIVE: and it is caught in BOTH files the mutation touched — the markup in index.html and the SKIPI_PRO_UPSELL object in skipi-assistant.js');
+
+  // ── Supervisor mutation C, nailed down (Н-F, 06.09) ───────────────────────
+  // The same finding's second half: copy written in the very words of the NOPAY1
+  // title, with a euro price spelled as an HTML entity. Also ALL GREEN before.
+  const MUT_C_HTML = [
+    '<section id="proPlans">',
+    '  <h3>Upgrade your account</h3>',
+    '  <p>Skipi PRO &mdash; &euro;9.99/mo. Cancel anytime.</p>',
+    '  <a href="https://skipi.app/upgrade">Upgrade</a>',
+    '</section>',
+  ].join('\n');
+  const mutC = SHIPPED_TEXT.map((f) => (f.file === 'index.html' ? { file: f.file, text: f.text + '\n' + MUT_C_HTML } : f));
+  const mutCLabels = [...nopayScan(mutC, 'word'), ...nopayScan(mutC, 'host')].filter((h) => h.count > 0).map((h) => h.label).sort();
+  for (const must of ['upgrade', 'price (currency symbol)', 'price per period']) {
+    ok(mutCLabels.includes(must),
+      'NEGATIVE (Supervisor mutation C — «Upgrade your account · Skipi PRO &euro;9.99/mo»): the «' + must
+      + '» rule reddens on it (labels: ' + JSON.stringify(mutCLabels) + ')');
+  }
+
   // NEGATIVE CONTROL — a rule that reddens everything gets switched off by the first
-  // person in a hurry, so the legitimate look-alikes must stay green.
+  // person in a hurry, so the legitimate look-alikes must stay green. Every string
+  // below is real copy or real code from this dist.
   const lookalikes = [{
     file: 'control.js',
     text: 'Minimum salary per month; unsubscribes from host theme; display.reset(); '
-      + 'fetch("/payload"); total $100; local purchasing power index; hostApi.theme.subscribe(cb);',
+      + 'fetch("/payload"); local purchasing power index; hostApi.theme.subscribe(cb); '
+      // Н-F, 06.09: the two declared exceptions and the words deliberately left out
+      // of the rules — sort order, master’s standing orders, the SF Pro font.
+      + 'Check internet access, joining window, relief plan, and repatriation terms; '
+      + 'Type an offered monthly salary; var order=[]; { id: \'devices\', order: 200 }; '
+      + 'company SMS or master standing orders; label: \'SF Pro\', value: \'"SF Pro Text"\';',
   }];
   const controlHits = [...nopayScan(lookalikes, 'word'), ...nopayScan(lookalikes, 'host')].filter((h) => h.count > 0);
   ok(controlHits.length === 0,
-    'NEGATIVE CONTROL: «unsubscribes», «display.», «/payload», «$100», the salary label and the theme pub/sub stay green (offenders: '
+    'NEGATIVE CONTROL: «unsubscribes», «display.», «/payload», the salary label, the theme pub/sub, «relief plan», '
+    + '«offered monthly salary», sort order, standing orders and the SF Pro font all stay green (offenders: '
     + JSON.stringify(controlHits.map((h) => h.label)) + ')');
+  // …and the deliberate cost of the widened price rule, stated out loud rather than
+  // discovered later: ANY currency figure is now a price, «$100» included. The salary
+  // lens prints wage figures as «USD p25-p75», never with a symbol, so this costs the
+  // dist nothing today; the day it does, that is a declared exception, not a deletion.
+  const dollarHits = nopayScan([{ file: 'control.js', text: 'total $100 due' }], 'word').filter((h) => h.count > 0);
+  ok(dollarHits.length === 1 && dollarHits[0].label === 'price (currency symbol)',
+    'NEGATIVE: a bare «$100» now reddens the price rule — the old list only knew «$10» (offenders: '
+    + JSON.stringify(dollarHits.map((h) => h.label)) + ')');
 }
 
 {
