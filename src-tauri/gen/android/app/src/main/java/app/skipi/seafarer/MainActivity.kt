@@ -7,8 +7,11 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.pdf.PdfRenderer
+import android.os.Build
 import android.os.Bundle
 import android.os.ParcelFileDescriptor
+import android.view.View
+import android.view.WindowInsets
 import androidx.core.content.FileProvider
 import java.io.File
 import java.io.FileOutputStream
@@ -18,6 +21,54 @@ import kotlin.math.roundToInt
 class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    installImeInsetPadding()
+  }
+
+  /**
+   * Keyboard inset (defect 308, owner 06.09: "клавиатура закрывала область ввода").
+   *
+   * Measured, not assumed: with the Android default softInputMode the window runs
+   * adjust=pan, the WebView is never resized, and the page sees nothing at all —
+   * with the keyboard up the live WebView reported innerHeight=842,
+   * visualViewport.height=842.29, offsetTop=0 and fired zero resize events, and
+   * navigator.virtualKeyboard.boundingRect stayed {0,0,0,0}. So the composer
+   * cannot be lifted from dist/: the window itself has to shrink.
+   *
+   * Two disjoint paths, one per API range, so they can never double-apply:
+   *  - API <= 34: android:windowSoftInputMode="adjustResize" in the manifest
+   *    resizes the window and this listener deliberately stays out of the way.
+   *  - API >= 35 (Android 15+): edge-to-edge is enforced and adjustResize is
+   *    ignored, so the ime() inset has to be turned into padding by hand.
+   *
+   * The padding is the REAL overlap between the content view and the keyboard,
+   * not the raw inset: if the platform did resize the window after all, the
+   * overlap is already zero and nothing extra is applied.
+   */
+  private fun installImeInsetPadding() {
+    if (Build.VERSION.SDK_INT < 35) return
+    try {
+      val content = findViewById<View>(android.R.id.content) ?: return
+      content.setOnApplyWindowInsetsListener { view, insets ->
+        try {
+          val ime = insets.getInsets(WindowInsets.Type.ime()).bottom
+          var pad = 0
+          if (ime > 0) {
+            val location = IntArray(2)
+            view.getLocationOnScreen(location)
+            val screenBottom = windowManager.currentWindowMetrics.bounds.bottom
+            pad = max(0, (location[1] + view.height) - (screenBottom - ime))
+          }
+          if (view.paddingBottom != pad) {
+            view.setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, pad)
+          }
+        } catch (e: Exception) {
+          // A keyboard that cannot be measured must never take the app down.
+        }
+        insets
+      }
+    } catch (e: Exception) {
+      // Same here: the fix is a nicety, launching is not.
+    }
   }
 
   fun openSkipiFile(path: String, mime: String): String? {

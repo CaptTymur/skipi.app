@@ -1882,6 +1882,167 @@ const railIconChain = () => CHAIN_BASE.concat([
   } catch (e) { ok(false, 'IG8 crashed before it could assert: ' + e.message); }
 }
 
+
+// ---------------------------------------------------------------------------
+// Mobile IME inset (defect 308, owner 06.09: «клавиатура закрывала область
+// ввода»). MEASURED ROOT CAUSE, not a guess: with the Android default
+// softInputMode the WebView window runs adjust=pan, so with the keyboard up the
+// live WebView reported innerHeight=842, visualViewport.height=842.29,
+// offsetTop=0 and fired ZERO resize/scroll events — i.e. the whole
+// visualViewport family is blind here and a dist-only fix is impossible. The
+// fix therefore lives in the two checked-in Android sources, and the drills
+// below assert exactly that, plus the dist half (feed scroll on focus).
+//
+// The same block also carries the MANIFEST CONTRACT drills (RISKS №212b): the
+// guard route opens AndroidManifest.xml and MainActivity.kt by path, and
+// nothing else inspects what those files then say — so a permission, an
+// exported component, a deep link or a JS bridge could ride in under a green
+// gate. These snapshots are the content check the route itself cannot do.
+// ---------------------------------------------------------------------------
+const ANDROID_MAIN = path.join(__dirname, '..', 'src-tauri', 'gen', 'android', 'app', 'src', 'main');
+const MANIFEST = fs.readFileSync(path.join(ANDROID_MAIN, 'AndroidManifest.xml'), 'utf8');
+const MAIN_ACTIVITY = fs.readFileSync(path.join(ANDROID_MAIN, 'java', 'app', 'skipi', 'seafarer', 'MainActivity.kt'), 'utf8');
+const manifestActivity = (() => {
+  const m = /<activity\b[\s\S]*?(?:\/>|<\/activity>)/.exec(MANIFEST);
+  return m ? m[0] : '';
+})();
+const countOf = (re) => (MANIFEST.match(re) || []).length;
+
+{
+  section('mobile IME (IME1) — the manifest carries adjustResize for the SDK<=34 path');
+  ok(!!manifestActivity, 'the <activity> block is found in AndroidManifest.xml');
+  ok(/android:name="\.MainActivity"/.test(manifestActivity), 'the block found is MainActivity, not some other activity');
+  ok(/android:windowSoftInputMode="adjustResize"/.test(manifestActivity),
+    'MainActivity declares windowSoftInputMode="adjustResize" — without it the window stays adjust=pan and the composer sits under the keyboard');
+  ok(!/android:windowSoftInputMode="[^"]*adjustPan/.test(MANIFEST), 'nothing re-declares adjustPan anywhere in the manifest');
+}
+
+{
+  section('mobile IME (IME2) — MainActivity carries the ime() insets path for Android 15+, where adjustResize is ignored');
+  ok(/setOnApplyWindowInsetsListener/.test(MAIN_ACTIVITY),
+    'MainActivity installs an OnApplyWindowInsetsListener (the only route left once edge-to-edge makes adjustResize a no-op)');
+  ok(/WindowInsets\.Type\.ime\(\)/.test(MAIN_ACTIVITY), 'the listener reads the ime() inset type specifically');
+  ok(/setPadding\(/.test(MAIN_ACTIVITY), 'the ime inset is turned into bottom padding on the content view (that is what shrinks the WebView)');
+  ok(/android\.R\.id\.content/.test(MAIN_ACTIVITY), 'the padding lands on the activity content view, so the WebView is laid out inside it');
+  ok(/Build\.VERSION\.SDK_INT/.test(MAIN_ACTIVITY), 'the path is version-gated — minSdk is 24 and WindowInsets.Type.ime() only exists from API 30');
+  ok(/onCreate/.test(MAIN_ACTIVITY) && MAIN_ACTIVITY.indexOf('setOnApplyWindowInsetsListener') > MAIN_ACTIVITY.indexOf('onCreate'),
+    'the listener is installed from onCreate, not left as dead code');
+  const imeNeighbourhood = MAIN_ACTIVITY.slice(
+    Math.max(0, MAIN_ACTIVITY.indexOf('setOnApplyWindowInsetsListener') - 700),
+    MAIN_ACTIVITY.indexOf('setOnApplyWindowInsetsListener'));
+  ok(/try\s*\{/.test(imeNeighbourhood),
+    'the inset wiring itself sits inside a try {} — a platform surprise must not turn into a crash on launch');
+}
+
+{
+  section('mobile IME (IME3) — the feed follows the composer when the keyboard opens (dist half)');
+  try {
+    const app = installNavHistory(bootMobile({ seed: { 'skipi-assistant-consent': '1' } }));
+    await settleVm();
+    const { sandbox, doc } = app;
+    sandbox.mobileShow('assistant');
+    app.runTimers(0);
+    const composer = mobileHtml(doc);
+    ok(/id="mobile-assistant-input"/.test(composer), 'the assistant composer rendered');
+    ok(/onfocus="mobileAssistantOnInputFocus\(\)"/.test(composer), 'the composer textarea announces focus to the app');
+    ok(/onblur="mobileAssistantOnInputBlur\(\)"/.test(composer), 'and announces blur, so the resize hook cannot stay armed forever');
+
+    const main = doc.getElementById('mobile-main');
+    ok(!!main, '#mobile-main (the real scroll container) exists');
+    main.scrollHeight = 4321;
+
+    main.scrollTop = 0;
+    sandbox.mobileAssistantOnInputFocus();
+    ok(main.scrollTop === 4321, 'focusing the composer pins the feed to the newest message (got ' + main.scrollTop + ')');
+
+    // The IME resize lands a frame or two AFTER focus: the deferred passes are
+    // what actually survive the keyboard animation.
+    main.scrollTop = 0;
+    app.runTimers(400);
+    ok(main.scrollTop === 4321, 'a deferred pass re-pins the feed after the keyboard has finished opening (got ' + main.scrollTop + ')');
+
+    main.scrollTop = 0;
+    ok((app.listeners.resize || []).length > 0, 'the app listens for window resize at all');
+    (app.listeners.resize || []).forEach((fn) => fn());
+    ok(main.scrollTop === 4321, 'a resize while the composer has focus re-pins the feed (got ' + main.scrollTop + ')');
+
+    // Negative control: with the composer unfocused a resize (rotation, split
+    // screen) must NOT yank the feed to the bottom under the reader.
+    sandbox.mobileAssistantOnInputBlur();
+    main.scrollTop = 7;
+    (app.listeners.resize || []).forEach((fn) => fn());
+    ok(main.scrollTop === 7, 'with the composer unfocused a resize leaves the feed where the reader left it (got ' + main.scrollTop + ')');
+  } catch (e) { ok(false, 'IME3 crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('mobile IME (IME4) — desktop is untouched: the composer hook is inert off the mobile shell');
+  try {
+    const app = installNavHistory(bootApp({ seed: { 'skipi-assistant-consent': '1' } }));
+    await settleVm();
+    const { sandbox, doc } = app;
+    ok(sandbox.isNativeMobile() === false, 'the desktop boot really is not native mobile');
+    ok(sandbox.shouldUseMobileShell() === false, 'and the desktop boot is not on the mobile shell either');
+    ok((app.listeners.resize || []).length > 0, 'the desktop boot DOES register the same resize listener (so this negative is not vacuous)');
+    const main = doc.getElementById('mobile-main');
+    main.scrollHeight = 4321;
+    // Arm the focus flag by hand: the platform gate — not merely "nobody
+    // focused anything" — is what has to keep desktop out. Without this the
+    // drill passes even if the shouldUseMobileShell() check is deleted.
+    sandbox.mobileAssistantInputFocused = true;
+    main.scrollTop = 11;
+    (app.listeners.resize || []).forEach((fn) => fn());
+    ok(main.scrollTop === 11, 'even with the focus flag armed, a desktop resize never re-pins the assistant feed (got ' + main.scrollTop + ')');
+  } catch (e) { ok(false, 'IME4 crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('manifest contract (MAN1) — the permission set is a snapshot, not a door (RISKS №212b)');
+  const perms = (MANIFEST.match(/<uses-permission[^>]*android:name="([^"]+)"/g) || [])
+    .map((s) => /android:name="([^"]+)"/.exec(s)[1]).sort();
+  ok(JSON.stringify(perms) === JSON.stringify(['android.permission.CAMERA', 'android.permission.INTERNET']),
+    'exactly INTERNET + CAMERA are requested — any added permission fails here (got ' + JSON.stringify(perms) + ')');
+  const feats = (MANIFEST.match(/<uses-feature[^>]*android:name="([^"]+)"/g) || [])
+    .map((s) => /android:name="([^"]+)"/.exec(s)[1]).sort();
+  ok(JSON.stringify(feats) === JSON.stringify(['android.hardware.camera', 'android.software.leanback']),
+    'the uses-feature set is unchanged too (got ' + JSON.stringify(feats) + ')');
+  ok(!/android\.permission\.(RECORD_AUDIO|ACCESS_FINE_LOCATION|ACCESS_COARSE_LOCATION|READ_CONTACTS|BLUETOOTH|NEARBY_WIFI_DEVICES|READ_EXTERNAL_STORAGE|POST_NOTIFICATIONS)/.test(MANIFEST),
+    'no mic / location / contacts / bluetooth / storage / notification permission slipped in under the IME route');
+}
+
+{
+  section('manifest contract (MAN2) — no cleartext, no debuggable, no new exported surface, no deep links');
+  ok(!/android:usesCleartextTraffic="true"/.test(MANIFEST), 'usesCleartextTraffic is not hard-wired to true (it stays the build placeholder)');
+  ok(/android:usesCleartextTraffic="\$\{usesCleartextTraffic\}"/.test(MANIFEST), 'and it is still the ${usesCleartextTraffic} placeholder the build controls');
+  ok(!/android:debuggable="true"/.test(MANIFEST), 'the manifest does not force android:debuggable="true"');
+  ok(countOf(/android:exported="true"/g) === 1, 'exactly ONE exported component — the launcher activity (got ' + countOf(/android:exported="true"/g) + ')');
+  ok(/android:name="\.MainActivity"/.test(manifestActivity) && /android:exported="true"/.test(manifestActivity), 'and that one exported component is MainActivity itself');
+  ok(countOf(/<intent-filter>/g) === 1, 'exactly ONE <intent-filter> — the launcher (got ' + countOf(/<intent-filter>/g) + ')');
+  ok(!/android:scheme=/.test(MANIFEST), 'no android:scheme= anywhere — no deep link / custom URL entry point');
+  ok(!/android:host=/.test(MANIFEST) && !/BROWSABLE/.test(MANIFEST), 'no app-links host and no BROWSABLE category');
+  ok(/<provider[\s\S]*?android:exported="false"/.test(MANIFEST), 'the FileProvider stays non-exported');
+  ok(countOf(/<service\b/g) === 0 && countOf(/<receiver\b/g) === 0, 'no service and no broadcast receiver were added');
+}
+
+{
+  section('manifest contract (MAN3) — the component inventory is fixed');
+  ok(countOf(/<activity\b/g) === 1, 'exactly one <activity> (got ' + countOf(/<activity\b/g) + ')');
+  ok(countOf(/<provider\b/g) === 1, 'exactly one <provider> — the FileProvider (got ' + countOf(/<provider\b/g) + ')');
+  ok(countOf(/<application\b/g) === 1, 'one <application> block');
+  ok(/android:theme="@style\/Theme\.skipi"/.test(MANIFEST), 'the app theme is unchanged');
+  ok(/android:launchMode="singleTask"/.test(manifestActivity), 'launchMode stays singleTask — the Back contract (bug #2) depends on it');
+}
+
+{
+  section('manifest contract (MAN4) — MainActivity opens no JS bridge and loads no external URL');
+  ok(!/addJavascriptInterface/.test(MAIN_ACTIVITY), 'no addJavascriptInterface — that would hand the page a native bridge outside the plugin isolation contract');
+  ok(!/setWebContentsDebuggingEnabled\s*\(\s*true\s*\)/.test(MAIN_ACTIVITY), 'no unconditional setWebContentsDebuggingEnabled(true)');
+  ok(!/loadUrl\s*\(\s*"https?:\/\//.test(MAIN_ACTIVITY), 'no loadUrl() to an external http(s) URL');
+  ok(!/loadData(WithBaseURL)?\s*\(/.test(MAIN_ACTIVITY), 'no loadData/loadDataWithBaseURL injection point');
+  ok(!/setAllowFileAccess\s*\(\s*true\s*\)|setAllowUniversalAccessFromFileURLs\s*\(\s*true\s*\)/.test(MAIN_ACTIVITY), 'no WebView file-access relaxation');
+  ok(!/Runtime\.getRuntime|ProcessBuilder/.test(MAIN_ACTIVITY), 'no process execution from the activity');
+}
+
 {
   section('remote install + offline persistence harness');
   await runRemoteInstallOfflineHarness();
