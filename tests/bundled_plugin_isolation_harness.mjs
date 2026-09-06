@@ -2736,6 +2736,390 @@ const centredFullScreen = (html) => fullScreenDecls(html).filter(({ l }) => !fsA
     'NEGATIVE: putting align-items:center back on the assistant overlay turns this rule red (0 offenders before, ' + backCentred.length + ' after)');
 }
 
+// ════════════════════════════════════════════════════════════════════════════════════
+// NOPAY1–NOPAY4 — the shipped bundle says NOTHING about buying.
+//
+// ANCHOR — owner 06.09: «в дистах домов ни слова о покупке — оплата только в вебе»
+// (skipi-ops DECISIONS (253), (319)). Payment lives on the web only. The bundle the
+// stores ship (desktop / Android / iOS all boot this one dist/) must not name Paddle,
+// a price, a plan, a checkout or a billing page — that is the standing product
+// decision, and it is also what keeps store review calm: selling digital access
+// inside the app, or linking out to an external payment page, is exactly what
+// Apple's and Google's billing rules forbid.
+//
+// Until now that invariant was held by memory alone — nothing under tests/ checked a
+// single one of these words. These drills are that check, and they read the SAME set
+// of assets NOPAY5 below reads: EVERY file under dist/, bundled plugins, .md files
+// and version stamps included. Reading dist/index.html alone is exactly the mistake
+// Supervisor Н-A caught on 06.09 — the strings that actually shipped a price claim
+// sat in dist/skipi-assistant.js, and the rule was green for the wrong reason;
+// reading only .html/.js/.css/.json is the SAME mistake one layer down — Н-E, 06.09.
+//
+// Exceptions are DECLARED, never silently regexed away: each NOPAY_WORDS_ALLOW entry
+// is a narrow pattern plus the reason it is not about buying. A stale entry fails
+// NOPAY3, so the list gets pruned instead of growing into a loophole.
+// ════════════════════════════════════════════════════════════════════════════════════
+
+// ONE walk over the shipped dist, shared by NOPAY1–NOPAY4 and NOPAY5 below.
+//
+// «What ships» = EVERY file under dist/, with no extension filter. src-tauri/
+// tauri.conf.json sets "frontendDist": "../dist", so Tauri embeds that directory
+// WHOLE: the .md files and the *_VERSION stamps travel into the desktop, Android
+// and iOS bundles byte for byte, exactly like the .js does.
+// The previous version of this walk filtered on /\.(html|js|css|json)$/ and so read
+// 26 of the 34 files that ship. Supervisor proved the hole on 06.09 (Н-E): a full
+// Paddle checkout block pasted into dist/plugins/navigation-calculators/REPORT.md
+// left the harness ALL GREEN — all 17 word/host rules and the NOPAY5 «free» rule
+// walked straight past it, because that file was never opened.
+// So there is no extension filter any more. A file leaves the scan ONLY by being
+// named in DIST_NOT_SCANNED below, with the reason it cannot carry copy — and that
+// reason is verified in NOPAY3, not taken on trust.
+const DIST_NOT_SCANNED = [
+  { file: 'plugins/bnwas-time-anchor/assets/.gitkeep',
+    why: 'an empty-directory marker: git cannot store an empty assets/ folder, so this placeholder stands in for it. The BNWAS bundle has no binary assets at all — its alarm tones are synthesised at runtime — and the file is 0 bytes, which NOPAY3 asserts instead of believing' },
+  { file: 'plugins/navigation-calculators/assets/.gitkeep',
+    why: 'the same empty-directory marker for the calculators bundle, whose assets/ is empty because every calculator is embedded inside index.js; NOPAY3 asserts the 0 bytes, so the moment anyone writes copy into it the drill goes red' },
+];
+// The exact set the scan MUST read, BY NAME. A lower bound («at least 20 assets»)
+// would let six of them disappear in silence and stay green (Supervisor Н-C, 06.09);
+// this list reddens on a file that vanishes just as loudly as on one that appears.
+const SHIPPED_EXPECTED = [
+  'ASSISTANT_VERSION', 'SETTINGS_VERSION',
+  'index.html',
+  'intelligence.css', 'intelligence.js',
+  'plugin-host-bridge.js', 'plugin-host-config.js', 'plugin-host-ui.js',
+  'plugin-loader.js', 'plugin-remote-boot.js',
+  'skipi-assistant.css', 'skipi-assistant.js',
+  'skipi-settings.css', 'skipi-settings.js',
+  'vessel-db.css', 'vessel-db.js',
+  'plugins/bnwas-time-anchor/CHANGELOG.md', 'plugins/bnwas-time-anchor/REPORT.md',
+  'plugins/bnwas-time-anchor/checksums.json', 'plugins/bnwas-time-anchor/index.css',
+  'plugins/bnwas-time-anchor/index.js', 'plugins/bnwas-time-anchor/plugin.json',
+  'plugins/ecdis-position-reminder/checksums.json', 'plugins/ecdis-position-reminder/index.css',
+  'plugins/ecdis-position-reminder/index.js', 'plugins/ecdis-position-reminder/plugin.json',
+  'plugins/navigation-calculators/CHANGELOG.md', 'plugins/navigation-calculators/REPORT.md',
+  'plugins/navigation-calculators/checksums.json', 'plugins/navigation-calculators/index.css',
+  'plugins/navigation-calculators/index.js', 'plugins/navigation-calculators/plugin.json',
+];
+const DIST_ALL = [];
+(function walk(dir) {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) walk(p);
+    else DIST_ALL.push(path.relative(DIST, p));
+  }
+})(DIST);
+DIST_ALL.sort();
+const NOT_SCANNED = new Set(DIST_NOT_SCANNED.map((x) => x.file));
+const SHIPPED_FILES = DIST_ALL.filter((f) => !NOT_SCANNED.has(f));
+const SHIPPED_ASSETS = SHIPPED_FILES.map((f) => path.join(DIST, f));
+const SHIPPED_TEXT = SHIPPED_FILES.map((f) => ({ file: f, text: fs.readFileSync(path.join(DIST, f), 'utf8') }));
+
+const NOPAY_WORDS_ALLOW = [
+  { re: /Minimum salary per month/g,
+    why: 'the label of the seafarer’s own salary EXPECTATION field (desktop form, mobile form, summary) — the figure the user asks an employer for, not a price this app charges' },
+  { re: /\(sp\.min_salary_currency\|\|'USD'\)\+'\/month'/g,
+    why: 'that same salary expectation rendered into the application e-mail body as «<amount> USD/month» — still the seafarer’s own figure, addressed to a crewing manager' },
+  { re: /'в месяц':'\/ month'/g,
+    why: 'the «/ month» suffix printed under the market p50 figure on the salary-band card — a wage statistic about the market, not a price of anything sold here' },
+  { re: / per month\. Sample /g,
+    why: 'intelligence.js prints the market band as «Range: USD p25-p75 per month. Sample N» — the same wage statistic, with its sample size, shown to the seafarer' },
+  { re: /purchasing[-\s]power/gi,
+    why: 'Numbeo «purchasing power» is the cost-of-living index behind the salary lens — the economics term, and nothing in it is bought inside the app' },
+  { re: /hostApi\.theme\.subscribe/g,
+    why: 'the bundled plugins subscribe to the HOST THEME through the plugin API — pub/sub code in a callback registration, a word that never reaches a screen' },
+  { re: /subscribe: function \(cb\)/g,
+    why: 'the publisher side of that same theme pub/sub, defined in plugin-host-bridge.js — the API the two plugins above call, not an offer to the user' },
+  { re: /\(get \/ subscribe\)/g,
+    why: 'a header comment in the BNWAS plugin listing which host APIs it uses (theme get / subscribe) — a comment about code, stripped from nothing and rendered nowhere' },
+  { re: /theme subscription and empties the container/g,
+    why: 'a header comment in the calculators plugin describing what unmount() tears down — the theme pub/sub again, in prose about the code' },
+  { re: /subscription: '<svg/g,
+    why: 'an unused icon key in the vendored @skipi/settings icon set (zero references anywhere else in the dist) — the name of an SVG path, not screen copy' },
+  { re: /billing: '<svg/g,
+    why: 'the neighbouring unused icon key in that same vendored @skipi/settings icon set (also zero references anywhere in the dist) — an SVG path name, and this home ships no billing screen for it to open' },
+  { re: /`hostApi\.theme\.get\(\)` \/ `subscribe\(\)`/g,
+    why: 'the BNWAS CHANGELOG line «Uses `hostApi.theme.get()` / `subscribe()` for light/dark base» — developer provenance about the theme pub/sub API, in a file no screen ever renders' },
+  { re: /`hostApi\.theme\.get\(\)\/subscribe\(\)`/g,
+    why: 'the same theme pub/sub sentence in the calculators CHANGELOG («skins both the shell and the open calculator») — again the host API, again a provenance document and not copy' },
+  { re: /theme\.subscribe re-skins the open calc/g,
+    why: 'the calculators REPORT describing what its contract test proved about the theme pub/sub — prose about a test result, and the word is the API name' },
+  // Н-F, 06.09: the two entries below are the ENTIRE price the dist pays for the
+  // «plan» and «monthly» rules added with that finding. One each — a rule that needs
+  // a third exception is the wrong rule and gets re-worded instead.
+  { re: /relief plan/gi,
+    why: 'intelligence.js career guidance «Check internet access, joining window, relief plan, and repatriation terms before accepting» — the RELIEF plan is when a crew replacement comes aboard so the seafarer can go home, a contract term to check with an employer and not a tariff sold here' },
+  { re: /offered monthly salary/gi,
+    why: 'the Offer Check card in intelligence.js says «Type an offered monthly salary» — the wage an employer offered THIS seafarer, typed in locally and compared with the market band; it is income to him, not a charge from us' },
+];
+
+// [family, label, pattern] — matched case-insensitively on WORD/PATH boundaries, not
+// as naked substrings, so «unsubscribes», «display.» and «/payload» must not fire.
+// NOPAY4 proves every one of these still catches purchase copy when it is there.
+//
+// Н-F, 06.09 — WHY THIS LIST IS NOT A LIST OF SPECIFIC PRICES ANY MORE. The previous
+// version priced the invariant at exactly `$10`, `per month`, `/month` and `pricing`,
+// and called an upgrade exactly `buy now`, `purchase`, `upgrade to pro`. Supervisor
+// pasted an ORDINARY upsell into two live dist files — «Get Skipi PRO … 9.99 USD a
+// month», a link to skipi.app/upgrade, and a SKIPI_PRO_UPSELL object in
+// skipi-assistant.js — and the harness stayed ALL GREEN 839/0. A second one, written
+// in the very words of this rule's own title («Upgrade your account», «Skipi PRO —
+// &euro;9.99/mo»), was green too. That is not an obfuscation attack: it is the exact
+// shape a real PR adding an upsell would take, and the hardcoded $10 was already
+// stale — PRO shipped at $5 historically and the web sells three SKUs today.
+// So the price family is now a SHAPE (a currency figure, in symbols or entities or
+// codes, and any per-period suffix) rather than one number, and the upgrade family is
+// the vocabulary of upselling rather than three fixed phrases. Both mutations are
+// nailed down as permanent negative controls in NOPAY4.
+//
+// Every rule below was run over the whole of dist/ before it was added; each one that
+// hit something legitimate was either re-worded or bought with ONE declared exception
+// («relief plan», «offered monthly salary»). Deliberately NOT rules: bare «price» and
+// «trial» (the source comments that record decision (253) and Guideline 2.2 use them —
+// a rule there would allowlist a comment's wording and redden on the next re-word);
+// bare «order» (36 legitimate hits: sort order, section order, master's standing
+// orders — so only «order now» is a rule); bare «pro» (the «SF Pro» font choice);
+// bare «unlock» (11+ live user-facing strings today — that word arrives with the
+// no-paywall-language slice that removes them, not before, or this drill would go red
+// on shipping copy).
+const NOPAY_RULES = [
+  // ── the vendor ────────────────────────────────────────────────────────────
+  ['word', 'paddle', String.raw`\bpaddle\b`],
+  ['word', 'stripe', String.raw`\bstripe\b`],
+  // ── the till ──────────────────────────────────────────────────────────────
+  ['word', 'checkout', String.raw`\bcheck-?outs?\b`],
+  ['word', 'cart', String.raw`\bcarts?\b`],
+  ['word', 'order now', String.raw`\border\s+now\b`],
+  // ── what is being sold ────────────────────────────────────────────────────
+  ['word', 'subscribe', String.raw`\bsubscrib(?:e|es|ed|ing)\b`],
+  ['word', 'subscription', String.raw`\bsubscriptions?\b`],
+  ['word', 'plan', String.raw`\bplans?\b`],
+  // ── the price tag: any figure, in any of the three ways a price is written ─
+  // symbol or HTML entity + digits («$10», «€9.99», «&euro;9.99» — the entity is
+  // the form Supervisor's own mutation C used, so the rule reads it too);
+  ['word', 'price (currency symbol)', String.raw`(?:[$€£]|&(?:dollar|euro|pound|#36|#8364|#163);)\s?\d`],
+  // digits next to an ISO code, either order («9.99 USD», «USD 9.99»);
+  ['word', 'price (currency code)', String.raw`\d\s*(?:USD|EUR|GBP)\b|\b(?:USD|EUR|GBP)\s?\d`],
+  // and the period suffix that turns a figure into a recurring charge.
+  ['word', 'price per period', String.raw`\d\s?\/\s?(?:mo|mos|month|months|yr|year)\b`],
+  ['word', 'per month', String.raw`\bper\s+month\b`],
+  ['word', '/month', String.raw`\/\s?month\b`],
+  ['word', 'a month', String.raw`\ba\s+month\b`],
+  ['word', 'monthly', String.raw`\bmonthly\b`],
+  ['word', 'pricing', String.raw`\bpricing\b`],
+  // ── the call to action ────────────────────────────────────────────────────
+  ['word', 'buy', String.raw`\bbuys?\b`],
+  ['word', 'purchase', String.raw`\bpurchas(?:e|es|ed|ing)\b`],
+  ['word', 'upgrade', String.raw`\bupgrad(?:e|es|ed|ing)\b`],
+  ['word', 'get pro', String.raw`\bget\s+pro\b`],
+  ['word', 'go pro', String.raw`\bgo\s+pro\b`],
+  ['word', 'activate', String.raw`\bactivat(?:e|es|ed|ing|ion)\b`],
+  // ── the wall ──────────────────────────────────────────────────────────────
+  // Н-D, 06.09: the four words below were named in this rule's own title and were
+  // not in the list. «payment», «paywall», «billing» and «free trial» are purchase
+  // words with no legitimate use in a maritime app, so they are rules.
+  ['word', 'payment', String.raw`\bpayments?\b`],
+  ['word', 'paywall', String.raw`\bpaywalls?\b`],
+  ['word', 'billing', String.raw`\bbilling\b`],
+  ['word', 'free trial', String.raw`\bfree\s+trials?\b`],
+  // ── the links ─────────────────────────────────────────────────────────────
+  ['host', 'paddle.com', String.raw`\bpaddle\.com\b`],
+  ['host', 'cdn.paddle.com', String.raw`\bcdn\.paddle\.com\b`],
+  ['host', 'pay.', String.raw`\bpay\.`],
+  ['host', '/pay', String.raw`\/pay(?:ments?)?\b`],
+  ['host', '/pricing', String.raw`\/pricing\b`],
+  ['host', '/app/account#billing', String.raw`\/app\/account#billing`],
+];
+
+// remove the declared exceptions (same technique NOPAY5 uses), then count what is left
+const nopayScrub = (text) => NOPAY_WORDS_ALLOW.reduce((acc, a) => acc.replace(a.re, (m) => 'X'.repeat(m.length)), text);
+const nopayScan = (files, family) => NOPAY_RULES.filter(([fam]) => fam === family).map(([, label, pattern]) => {
+  let count = 0;
+  const where = [];
+  for (const f of files) {
+    const scrubbed = nopayScrub(f.text);
+    const m = scrubbed.match(new RegExp(pattern, 'gi')) || [];
+    if (!m.length) continue;
+    count += m.length;
+    const at = scrubbed.search(new RegExp(pattern, 'i'));
+    where.push(f.file + ' (x' + m.length + '): …' + scrubbed.slice(Math.max(0, at - 60), at + 60).replace(/\s+/g, ' ') + '…');
+  }
+  return { label, count, where };
+});
+
+{
+  // The title enumerates exactly the rule families below and nothing more — a payment
+  // vendor (paddle · stripe), a till (checkout · cart · order now), a thing being sold
+  // (subscription · subscribe · plan), a price in any currency (symbol/entity/code +
+  // digits, /mo · per month · a month · monthly · pricing), a call to action (buy ·
+  // purchase · upgrade · get pro · go pro · activate) and a paywall (payment · paywall
+  // · billing · free trial). It said «a price tag, an upgrade» while checking only
+  // «$10» and «upgrade to pro» (Supervisor Н-D and Н-F, 06.09) — a title that
+  // overpromises is how a drill gets trusted for something it never did, so the rules
+  // were widened to the title instead of the title narrowed to the rules.
+  section('NOPAY1 — no shipped dist asset names a payment vendor, a checkout, a subscription or plan, a price in any currency, an upgrade call to action, or a paywall');
+  for (const h of nopayScan(SHIPPED_TEXT, 'word')) {
+    ok(h.count === 0, 'nothing under dist/ says «' + h.label + '»'
+      + (h.count ? ' — ' + h.count + ' hit(s): ' + JSON.stringify(h.where) : ''));
+  }
+}
+
+{
+  section('NOPAY2 — and none of them links to a payment host or a billing page');
+  for (const h of nopayScan(SHIPPED_TEXT, 'host')) {
+    ok(h.count === 0, 'nothing under dist/ links to «' + h.label + '»'
+      + (h.count ? ' — ' + h.count + ' hit(s): ' + JSON.stringify(h.where) : ''));
+  }
+}
+
+{
+  section('NOPAY3 — the exception list is honest and current, and the scan is not vacuous');
+  for (const a of NOPAY_WORDS_ALLOW) {
+    const n = SHIPPED_TEXT.reduce((acc, f) => acc + ((f.text.match(a.re) || []).length), 0);
+    ok(n > 0, 'exception still matches a live occurrence, so it is a real exception and not a stale loophole: '
+      + a.re + ' (' + n + ' hit(s))');
+    ok(a.why.length > 40, 'and it states WHY that occurrence is not about buying: ' + a.re);
+  }
+  // Н-C, 06.09: «at least 20» let six assets vanish without a red. The set is exact
+  // and by name, so a file that DISAPPEARS reddens as loudly as one that appears.
+  const expected = [...SHIPPED_EXPECTED].sort();
+  const scanned = [...SHIPPED_FILES].sort();
+  ok(JSON.stringify(scanned) === JSON.stringify(expected),
+    'NOPAY1/NOPAY2 read EXACTLY the ' + expected.length + ' shipped assets they name, by path — never fewer '
+    + '(missing: ' + JSON.stringify(expected.filter((f) => !scanned.includes(f)))
+    + ', unexpected: ' + JSON.stringify(scanned.filter((f) => !expected.includes(f))) + ')');
+  // Н-E, 06.09: and NOTHING under dist/ falls outside BOTH lists. dist/ is walked
+  // whole, the scanned set is subtracted, and the remainder must be the declared
+  // exclusions — exactly, so a stale exclusion for a file that no longer exists is
+  // as red as a new file nobody declared.
+  const remainder = DIST_ALL.filter((f) => !SHIPPED_FILES.includes(f)).sort();
+  const declared = DIST_NOT_SCANNED.map((x) => x.file).sort();
+  ok(JSON.stringify(remainder) === JSON.stringify(declared),
+    'every file under dist/ is either scanned or declared unscannable, and every declared exclusion still exists '
+    + '(undeclared: ' + JSON.stringify(remainder.filter((f) => !declared.includes(f)))
+    + ', stale: ' + JSON.stringify(declared.filter((f) => !remainder.includes(f))) + ')');
+  for (const x of DIST_NOT_SCANNED) {
+    ok(x.why.length > 40, 'the exclusion states WHY that file cannot carry purchase copy: ' + x.file);
+    // -1 when the file is gone: a missing exclusion must be a red line, not an
+    // uncaught ENOENT that kills the run before the remaining sections report.
+    const abs = path.join(DIST, x.file);
+    const size = fs.existsSync(abs) ? fs.statSync(abs).size : -1;
+    ok(size === 0, 'and the reason is verified, not trusted — ' + x.file
+      + (size < 0 ? ' NO LONGER EXISTS' : ' is still empty (' + size + ' bytes)'));
+  }
+  const bytes = SHIPPED_TEXT.reduce((acc, f) => acc + f.text.length, 0);
+  ok(bytes > 500000, 'and those were real reads, not empty ones (' + bytes + ' bytes)');
+  for (const must of ['index.html', 'skipi-assistant.js', 'intelligence.js', 'skipi-settings.js', 'plugins/navigation-calculators/index.js']) {
+    ok(SHIPPED_TEXT.some((f) => f.file === must), 'the scan reaches ' + must);
+  }
+}
+
+{
+  section('NOPAY4 — negative control: every rule still catches purchase copy, in a bundle that is NOT index.html');
+  // If a rule ever stops matching anything, NOPAY1/NOPAY2 stay green while checking
+  // nothing. The violation below is injected into skipi-assistant.js — the very file
+  // the index.html-only version of this rule could not see (Supervisor Н-A, 06.09).
+  const NOPAY_VIOLATION = [
+    '<a class="cta" href="https://cdn.paddle.com/checkout">Buy now</a>',
+    '<a href="https://pay.skipi.app/pay">Upgrade to Pro — $10/month, billed per month</a>',
+    '<a href="https://paddle.com/pricing">Pricing</a>',
+    '<a href="https://skipi.app/app/account#billing">manage subscription</a>',
+    '<script>Paddle.Checkout.open(); shop.subscribe(); shop.purchase();</script>',
+    '<p>Free trial for 7 days, then a payment is taken; the paywall lifts and billing starts.</p>',
+    // Н-F, 06.09 — the shapes the old list walked past: a price that is not $10, a
+    // period that is not «per month», and the upsell verbs nobody had written down.
+    '<p>Choose your PRO plan: 9.99 USD a month, or €99 a year — that is 8.25/mo billed monthly.</p>',
+    '<button onclick="cart.add(); stripe.redirectToCheckout();">Order now — Get PRO</button>',
+    '<a href="https://skipi.app/upgrade">Go PRO and activate your licence</a>',
+  ].join('\n');
+  const poisoned = SHIPPED_TEXT.map((f) => (f.file === 'skipi-assistant.js'
+    ? { file: f.file, text: f.text + '\n' + NOPAY_VIOLATION }
+    : f));
+  const caught = [...nopayScan(poisoned, 'word'), ...nopayScan(poisoned, 'host')];
+  ok(caught.length === NOPAY_RULES.length, 'every declared rule was evaluated (' + caught.length + '/' + NOPAY_RULES.length + ')');
+  for (const h of caught) {
+    ok(h.count > 0, 'NEGATIVE: the «' + h.label + '» rule catches purchase copy when it is present (not a dead regex)');
+    ok(h.where.every((w) => w.startsWith('skipi-assistant.js')), 'NEGATIVE: and it caught it in skipi-assistant.js — the scan really does reach past index.html («' + h.label + '»)');
+  }
+  // and the same copy pasted into index.html reddens too — both doors, not one
+  const inIndex = SHIPPED_TEXT.map((f) => (f.file === 'index.html' ? { file: f.file, text: f.text + '\n' + NOPAY_VIOLATION } : f));
+  ok([...nopayScan(inIndex, 'word'), ...nopayScan(inIndex, 'host')].every((h) => h.count > 0),
+    'NEGATIVE: the same purchase block placed in index.html reddens every rule as well');
+  // ── Supervisor mutation B, nailed down (Н-F, 06.09) ───────────────────────
+  // This is not a paraphrase: it is the byte-for-byte upsell Supervisor pasted into
+  // two live dist files on 460afeb5, which left the harness ALL GREEN 839/0. It is a
+  // permanent control now, so the hole is checked on every run instead of once.
+  const MUT_B_HTML = [
+    '<div class="pro-upsell" id="proUpsell">',
+    '  <h3>Get Skipi PRO</h3>',
+    '  <p>Unlimited vessel records, documents and AI answers &mdash; 9.99 USD a month.</p>',
+    '  <a class="btn btn-primary" href="https://skipi.app/upgrade" target="_blank" rel="noopener">Get PRO</a>',
+    '</div>',
+  ].join('\n');
+  const MUT_B_JS = '// PRO upsell shown when the daily limit is reached\n'
+    + "const SKIPI_PRO_UPSELL={title:'Unlock Skipi PRO',note:'9.99 USD a month, cancel anytime',cta:'Get PRO',href:'https://skipi.app/upgrade'};";
+  const mutB = SHIPPED_TEXT.map((f) => {
+    if (f.file === 'index.html') return { file: f.file, text: f.text + '\n' + MUT_B_HTML };
+    if (f.file === 'skipi-assistant.js') return { file: f.file, text: f.text + '\n' + MUT_B_JS };
+    return f;
+  });
+  const mutBHits = [...nopayScan(mutB, 'word'), ...nopayScan(mutB, 'host')].filter((h) => h.count > 0);
+  const mutBLabels = mutBHits.map((h) => h.label).sort();
+  for (const must of ['price (currency code)', 'a month', 'upgrade', 'get pro']) {
+    ok(mutBLabels.includes(must),
+      'NEGATIVE (Supervisor mutation B — an ordinary «Get Skipi PRO … 9.99 USD a month» upsell): the «' + must
+      + '» rule reddens on it (labels: ' + JSON.stringify(mutBLabels) + ')');
+  }
+  ok(mutBHits.some((h) => h.where.some((w) => w.startsWith('index.html')))
+    && mutBHits.some((h) => h.where.some((w) => w.startsWith('skipi-assistant.js'))),
+    'NEGATIVE: and it is caught in BOTH files the mutation touched — the markup in index.html and the SKIPI_PRO_UPSELL object in skipi-assistant.js');
+
+  // ── Supervisor mutation C, nailed down (Н-F, 06.09) ───────────────────────
+  // The same finding's second half: copy written in the very words of the NOPAY1
+  // title, with a euro price spelled as an HTML entity. Also ALL GREEN before.
+  const MUT_C_HTML = [
+    '<section id="proPlans">',
+    '  <h3>Upgrade your account</h3>',
+    '  <p>Skipi PRO &mdash; &euro;9.99/mo. Cancel anytime.</p>',
+    '  <a href="https://skipi.app/upgrade">Upgrade</a>',
+    '</section>',
+  ].join('\n');
+  const mutC = SHIPPED_TEXT.map((f) => (f.file === 'index.html' ? { file: f.file, text: f.text + '\n' + MUT_C_HTML } : f));
+  const mutCLabels = [...nopayScan(mutC, 'word'), ...nopayScan(mutC, 'host')].filter((h) => h.count > 0).map((h) => h.label).sort();
+  for (const must of ['upgrade', 'price (currency symbol)', 'price per period']) {
+    ok(mutCLabels.includes(must),
+      'NEGATIVE (Supervisor mutation C — «Upgrade your account · Skipi PRO &euro;9.99/mo»): the «' + must
+      + '» rule reddens on it (labels: ' + JSON.stringify(mutCLabels) + ')');
+  }
+
+  // NEGATIVE CONTROL — a rule that reddens everything gets switched off by the first
+  // person in a hurry, so the legitimate look-alikes must stay green. Every string
+  // below is real copy or real code from this dist.
+  const lookalikes = [{
+    file: 'control.js',
+    text: 'Minimum salary per month; unsubscribes from host theme; display.reset(); '
+      + 'fetch("/payload"); local purchasing power index; hostApi.theme.subscribe(cb); '
+      // Н-F, 06.09: the two declared exceptions and the words deliberately left out
+      // of the rules — sort order, master’s standing orders, the SF Pro font.
+      + 'Check internet access, joining window, relief plan, and repatriation terms; '
+      + 'Type an offered monthly salary; var order=[]; { id: \'devices\', order: 200 }; '
+      + 'company SMS or master standing orders; label: \'SF Pro\', value: \'"SF Pro Text"\';',
+  }];
+  const controlHits = [...nopayScan(lookalikes, 'word'), ...nopayScan(lookalikes, 'host')].filter((h) => h.count > 0);
+  ok(controlHits.length === 0,
+    'NEGATIVE CONTROL: «unsubscribes», «display.», «/payload», the salary label, the theme pub/sub, «relief plan», '
+    + '«offered monthly salary», sort order, standing orders and the SF Pro font all stay green (offenders: '
+    + JSON.stringify(controlHits.map((h) => h.label)) + ')');
+  // …and the deliberate cost of the widened price rule, stated out loud rather than
+  // discovered later: ANY currency figure is now a price, «$100» included. The salary
+  // lens prints wage figures as «USD p25-p75», never with a symbol, so this costs the
+  // dist nothing today; the day it does, that is a declared exception, not a deletion.
+  const dollarHits = nopayScan([{ file: 'control.js', text: 'total $100 due' }], 'word').filter((h) => h.count > 0);
+  ok(dollarHits.length === 1 && dollarHits[0].label === 'price (currency symbol)',
+    'NEGATIVE: a bare «$100» now reddens the price rule — the old list only knew «$10» (offenders: '
+    + JSON.stringify(dollarHits.map((h) => h.label)) + ')');
+}
+
 {
   section('NOPAY5 — no SHIPPED dist asset claims that anything costs nothing (decision 253)');
   // The first version of this rule was titled «the dists» and read dist/index.html
@@ -2743,15 +3127,10 @@ const centredFullScreen = (html) => fullScreenDecls(html).filter(({ l }) => !fsA
   // dist/skipi-assistant.js. It was green for the wrong reason (Supervisor Н-A,
   // 2026-09-06). It now reads EVERY shipped text asset under dist/, bundles and
   // bundled plugins included.
-  const SHIPPED = [];
-  (function walk(dir) {
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-      const p = path.join(dir, e.name);
-      if (e.isDirectory()) walk(p);
-      else if (/\.(html|js|css|json)$/.test(e.name)) SHIPPED.push(p);
-    }
-  })(DIST);
-  const shippedText = SHIPPED.map((p) => ({ file: path.relative(DIST, p), text: fs.readFileSync(p, 'utf8') }));
+  // The SAME single walk NOPAY1–NOPAY4 above use: one definition of «what ships», so
+  // the two rule families can never drift apart on which files they read.
+  const SHIPPED = SHIPPED_ASSETS;
+  const shippedText = SHIPPED_TEXT;
   ok(SHIPPED.length >= 10 && shippedText.some((f) => f.file === 'skipi-assistant.js') && shippedText.some((f) => f.file === 'index.html'),
     'the scan really covers the shipped bundles, not just index.html (' + SHIPPED.length + ' files, incl. ' + shippedText.filter((f) => /\.js$/.test(f.file)).length + ' js)');
 
