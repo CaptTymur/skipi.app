@@ -2736,6 +2736,173 @@ const centredFullScreen = (html) => fullScreenDecls(html).filter(({ l }) => !fsA
     'NEGATIVE: putting align-items:center back on the assistant overlay turns this rule red (0 offenders before, ' + backCentred.length + ' after)');
 }
 
+// ════════════════════════════════════════════════════════════════════════════════════
+// NOPAY1–NOPAY4 — the shipped bundle says NOTHING about buying.
+//
+// ANCHOR — owner 06.09: «в дистах домов ни слова о покупке — оплата только в вебе»
+// (skipi-ops DECISIONS (253), (319)). Payment lives on the web only. The bundle the
+// stores ship (desktop / Android / iOS all boot this one dist/) must not name Paddle,
+// a price, a plan, a checkout or a billing page — that is the standing product
+// decision, and it is also what keeps store review calm: selling digital access
+// inside the app, or linking out to an external payment page, is exactly what
+// Apple's and Google's billing rules forbid.
+//
+// Until now that invariant was held by memory alone — nothing under tests/ checked a
+// single one of these words. These drills are that check, and they read the SAME set
+// of assets NOPAY5 below reads: EVERY .html/.js/.css/.json under dist/, bundled
+// plugins included. Reading dist/index.html alone is exactly the mistake Supervisor
+// Н-A caught on 06.09 — the strings that actually shipped a price claim sat in
+// dist/skipi-assistant.js, and the rule was green for the wrong reason.
+//
+// Exceptions are DECLARED, never silently regexed away: each NOPAY_WORDS_ALLOW entry
+// is a narrow pattern plus the reason it is not about buying. A stale entry fails
+// NOPAY3, so the list gets pruned instead of growing into a loophole.
+// ════════════════════════════════════════════════════════════════════════════════════
+
+// ONE walk over the shipped dist, shared by NOPAY1–NOPAY4 and NOPAY5 below.
+const SHIPPED_ASSETS = [];
+(function walk(dir) {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) walk(p);
+    else if (/\.(html|js|css|json)$/.test(e.name)) SHIPPED_ASSETS.push(p);
+  }
+})(DIST);
+const SHIPPED_TEXT = SHIPPED_ASSETS.map((p) => ({ file: path.relative(DIST, p), text: fs.readFileSync(p, 'utf8') }));
+
+const NOPAY_WORDS_ALLOW = [
+  { re: /Minimum salary per month/g,
+    why: 'the label of the seafarer’s own salary EXPECTATION field (desktop form, mobile form, summary) — the figure the user asks an employer for, not a price this app charges' },
+  { re: /\(sp\.min_salary_currency\|\|'USD'\)\+'\/month'/g,
+    why: 'that same salary expectation rendered into the application e-mail body as «<amount> USD/month» — still the seafarer’s own figure, addressed to a crewing manager' },
+  { re: /'в месяц':'\/ month'/g,
+    why: 'the «/ month» suffix printed under the market p50 figure on the salary-band card — a wage statistic about the market, not a price of anything sold here' },
+  { re: / per month\. Sample /g,
+    why: 'intelligence.js prints the market band as «Range: USD p25-p75 per month. Sample N» — the same wage statistic, with its sample size, shown to the seafarer' },
+  { re: /purchasing[-\s]power/gi,
+    why: 'Numbeo «purchasing power» is the cost-of-living index behind the salary lens — the economics term, and nothing in it is bought inside the app' },
+  { re: /hostApi\.theme\.subscribe/g,
+    why: 'the bundled plugins subscribe to the HOST THEME through the plugin API — pub/sub code in a callback registration, a word that never reaches a screen' },
+  { re: /subscribe: function \(cb\)/g,
+    why: 'the publisher side of that same theme pub/sub, defined in plugin-host-bridge.js — the API the two plugins above call, not an offer to the user' },
+  { re: /\(get \/ subscribe\)/g,
+    why: 'a header comment in the BNWAS plugin listing which host APIs it uses (theme get / subscribe) — a comment about code, stripped from nothing and rendered nowhere' },
+  { re: /theme subscription and empties the container/g,
+    why: 'a header comment in the calculators plugin describing what unmount() tears down — the theme pub/sub again, in prose about the code' },
+  { re: /subscription: '<svg/g,
+    why: 'an unused icon key in the vendored @skipi/settings icon set (zero references anywhere else in the dist) — the name of an SVG path, not screen copy' },
+];
+
+// [family, label, pattern] — matched case-insensitively on WORD/PATH boundaries, not
+// as naked substrings, so «unsubscribes», «display.», «/payload» and «$100» must not
+// fire. NOPAY4 proves every one of these still catches purchase copy when it is there.
+const NOPAY_RULES = [
+  ['word', 'paddle', String.raw`\bpaddle\b`],
+  ['word', 'checkout', String.raw`\bcheck-?outs?\b`],
+  ['word', 'subscribe', String.raw`\bsubscrib(?:e|es|ed|ing)\b`],
+  ['word', 'subscription', String.raw`\bsubscriptions?\b`],
+  ['word', 'buy now', String.raw`\bbuy\s+now\b`],
+  ['word', 'purchase', String.raw`\bpurchas(?:e|es|ed|ing)\b`],
+  ['word', 'upgrade to pro', String.raw`\bupgrade\s+to\s+pro\b`],
+  ['word', 'per month', String.raw`\bper\s+month\b`],
+  ['word', '/month', String.raw`\/\s?month\b`],
+  ['word', '$10', String.raw`\$\s?10\b`],
+  ['word', 'pricing', String.raw`\bpricing\b`],
+  ['host', 'paddle.com', String.raw`\bpaddle\.com\b`],
+  ['host', 'cdn.paddle.com', String.raw`\bcdn\.paddle\.com\b`],
+  ['host', 'pay.', String.raw`\bpay\.`],
+  ['host', '/pay', String.raw`\/pay(?:ments?)?\b`],
+  ['host', '/pricing', String.raw`\/pricing\b`],
+  ['host', '/app/account#billing', String.raw`\/app\/account#billing`],
+];
+
+// remove the declared exceptions (same technique NOPAY5 uses), then count what is left
+const nopayScrub = (text) => NOPAY_WORDS_ALLOW.reduce((acc, a) => acc.replace(a.re, (m) => 'X'.repeat(m.length)), text);
+const nopayScan = (files, family) => NOPAY_RULES.filter(([fam]) => fam === family).map(([, label, pattern]) => {
+  let count = 0;
+  const where = [];
+  for (const f of files) {
+    const scrubbed = nopayScrub(f.text);
+    const m = scrubbed.match(new RegExp(pattern, 'gi')) || [];
+    if (!m.length) continue;
+    count += m.length;
+    const at = scrubbed.search(new RegExp(pattern, 'i'));
+    where.push(f.file + ' (x' + m.length + '): …' + scrubbed.slice(Math.max(0, at - 60), at + 60).replace(/\s+/g, ' ') + '…');
+  }
+  return { label, count, where };
+});
+
+{
+  section('NOPAY1 — no shipped dist asset names a plan, a price or a checkout');
+  for (const h of nopayScan(SHIPPED_TEXT, 'word')) {
+    ok(h.count === 0, 'nothing under dist/ says «' + h.label + '»'
+      + (h.count ? ' — ' + h.count + ' hit(s): ' + JSON.stringify(h.where) : ''));
+  }
+}
+
+{
+  section('NOPAY2 — and none of them links to a payment host or a billing page');
+  for (const h of nopayScan(SHIPPED_TEXT, 'host')) {
+    ok(h.count === 0, 'nothing under dist/ links to «' + h.label + '»'
+      + (h.count ? ' — ' + h.count + ' hit(s): ' + JSON.stringify(h.where) : ''));
+  }
+}
+
+{
+  section('NOPAY3 — the exception list is honest and current, and the scan is not vacuous');
+  for (const a of NOPAY_WORDS_ALLOW) {
+    const n = SHIPPED_TEXT.reduce((acc, f) => acc + ((f.text.match(a.re) || []).length), 0);
+    ok(n > 0, 'exception still matches a live occurrence, so it is a real exception and not a stale loophole: '
+      + a.re + ' (' + n + ' hit(s))');
+    ok(a.why.length > 40, 'and it states WHY that occurrence is not about buying: ' + a.re);
+  }
+  ok(SHIPPED_ASSETS.length >= 20,
+    'NOPAY1/NOPAY2 read the whole shipped dist, not one file (' + SHIPPED_ASSETS.length + ' text assets)');
+  const bytes = SHIPPED_TEXT.reduce((acc, f) => acc + f.text.length, 0);
+  ok(bytes > 500000, 'and those were real reads, not empty ones (' + bytes + ' bytes)');
+  for (const must of ['index.html', 'skipi-assistant.js', 'intelligence.js', 'skipi-settings.js', 'plugins/navigation-calculators/index.js']) {
+    ok(SHIPPED_TEXT.some((f) => f.file === must), 'the scan reaches ' + must);
+  }
+}
+
+{
+  section('NOPAY4 — negative control: every rule still catches purchase copy, in a bundle that is NOT index.html');
+  // If a rule ever stops matching anything, NOPAY1/NOPAY2 stay green while checking
+  // nothing. The violation below is injected into skipi-assistant.js — the very file
+  // the index.html-only version of this rule could not see (Supervisor Н-A, 06.09).
+  const NOPAY_VIOLATION = [
+    '<a class="cta" href="https://cdn.paddle.com/checkout">Buy now</a>',
+    '<a href="https://pay.skipi.app/pay">Upgrade to Pro — $10/month, billed per month</a>',
+    '<a href="https://paddle.com/pricing">Pricing</a>',
+    '<a href="https://skipi.app/app/account#billing">manage subscription</a>',
+    '<script>Paddle.Checkout.open(); shop.subscribe(); shop.purchase();</script>',
+  ].join('\n');
+  const poisoned = SHIPPED_TEXT.map((f) => (f.file === 'skipi-assistant.js'
+    ? { file: f.file, text: f.text + '\n' + NOPAY_VIOLATION }
+    : f));
+  const caught = [...nopayScan(poisoned, 'word'), ...nopayScan(poisoned, 'host')];
+  ok(caught.length === NOPAY_RULES.length, 'every declared rule was evaluated (' + caught.length + '/' + NOPAY_RULES.length + ')');
+  for (const h of caught) {
+    ok(h.count > 0, 'NEGATIVE: the «' + h.label + '» rule catches purchase copy when it is present (not a dead regex)');
+    ok(h.where.every((w) => w.startsWith('skipi-assistant.js')), 'NEGATIVE: and it caught it in skipi-assistant.js — the scan really does reach past index.html («' + h.label + '»)');
+  }
+  // and the same copy pasted into index.html reddens too — both doors, not one
+  const inIndex = SHIPPED_TEXT.map((f) => (f.file === 'index.html' ? { file: f.file, text: f.text + '\n' + NOPAY_VIOLATION } : f));
+  ok([...nopayScan(inIndex, 'word'), ...nopayScan(inIndex, 'host')].every((h) => h.count > 0),
+    'NEGATIVE: the same purchase block placed in index.html reddens every rule as well');
+  // NEGATIVE CONTROL — a rule that reddens everything gets switched off by the first
+  // person in a hurry, so the legitimate look-alikes must stay green.
+  const lookalikes = [{
+    file: 'control.js',
+    text: 'Minimum salary per month; unsubscribes from host theme; display.reset(); '
+      + 'fetch("/payload"); total $100; local purchasing power index; hostApi.theme.subscribe(cb);',
+  }];
+  const controlHits = [...nopayScan(lookalikes, 'word'), ...nopayScan(lookalikes, 'host')].filter((h) => h.count > 0);
+  ok(controlHits.length === 0,
+    'NEGATIVE CONTROL: «unsubscribes», «display.», «/payload», «$100», the salary label and the theme pub/sub stay green (offenders: '
+    + JSON.stringify(controlHits.map((h) => h.label)) + ')');
+}
+
 {
   section('NOPAY5 — no SHIPPED dist asset claims that anything costs nothing (decision 253)');
   // The first version of this rule was titled «the dists» and read dist/index.html
@@ -2743,15 +2910,10 @@ const centredFullScreen = (html) => fullScreenDecls(html).filter(({ l }) => !fsA
   // dist/skipi-assistant.js. It was green for the wrong reason (Supervisor Н-A,
   // 2026-09-06). It now reads EVERY shipped text asset under dist/, bundles and
   // bundled plugins included.
-  const SHIPPED = [];
-  (function walk(dir) {
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-      const p = path.join(dir, e.name);
-      if (e.isDirectory()) walk(p);
-      else if (/\.(html|js|css|json)$/.test(e.name)) SHIPPED.push(p);
-    }
-  })(DIST);
-  const shippedText = SHIPPED.map((p) => ({ file: path.relative(DIST, p), text: fs.readFileSync(p, 'utf8') }));
+  // The SAME single walk NOPAY1–NOPAY4 above use: one definition of «what ships», so
+  // the two rule families can never drift apart on which files they read.
+  const SHIPPED = SHIPPED_ASSETS;
+  const shippedText = SHIPPED_TEXT;
   ok(SHIPPED.length >= 10 && shippedText.some((f) => f.file === 'skipi-assistant.js') && shippedText.some((f) => f.file === 'index.html'),
     'the scan really covers the shipped bundles, not just index.html (' + SHIPPED.length + ' files, incl. ' + shippedText.filter((f) => /\.js$/.test(f.file)).length + ' js)');
 
