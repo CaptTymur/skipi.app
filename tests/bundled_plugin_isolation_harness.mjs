@@ -1084,6 +1084,262 @@ function bootMobile(opts) {
   ok(sandbox.mobileView === 'assistant', "Clear on the assistant view keeps mobileView='assistant'");
 }
 
+// ---------------------------------------------------------------------------
+// Entry fork «Sign in · Register · Demo» (canon (295), OWNER 06.09; card
+// TASKCARD-2026-09-06-seafarer-mobile-entry-fork) — runtime drills D1–D12 of the
+// Supervisor prep audit ff9dc253, driven through the REAL init() on 'android'.
+// init() is kicked off synchronously by the last inline script and parks on its
+// first await (loadBuildInfo), so the invoke map + spies installed right after
+// bootMobile() are exactly what the cold-start path sees. Native-only: D12 boots
+// the same drill on linux and expects the plain gate + no fork.
+// ---------------------------------------------------------------------------
+
+const EF_REAL = { name: 'Real Vault', account_type: 'seafarer', position: 'master', vessel_category: 'tanker' };
+const EF_DEMO = { name: 'Skipi Demo', account_type: 'seafarer', position: 'master', vessel_category: 'tanker' };
+const EF_LIST_CMDS = new Set(['get_vault_types', 'get_recent_vaults', 'get_optional_categories', 'get_documents', 'get_active_template_ids', 'get_conditional_template_ids']);
+function efInvoke(map, platform = 'android') {
+  return async (cmd, args) => {
+    if (Object.prototype.hasOwnProperty.call(map, cmd)) { const v = map[cmd]; return typeof v === 'function' ? v(args) : v; }
+    if (cmd === 'get_build_info') return { version: '0.0.0-apps-harness', sha: 'apps-harness' };
+    if (cmd === 'get_platform') return platform;
+    if (EF_LIST_CMDS.has(cmd)) return [];
+    if (cmd === 'get_last_vault' || cmd === 'get_current_vault_path') return null;
+    if (cmd === 'app_login_status') return { logged_in: false };
+    return {};
+  };
+}
+const efSettle = async () => { for (let i = 0; i < 600; i++) await Promise.resolve(); };
+// Boot (android by default), install the invoke map + spies BEFORE init() resumes, let init() run to rest.
+async function efBoot(map, opts) {
+  const o = opts || {};
+  const platform = o.platform === 'linux' ? 'linux' : 'android';
+  const app = platform === 'linux' ? bootApp({ ...o, platform }) : bootMobile(o);
+  const calls = [];
+  const base = efInvoke(map || {}, platform);
+  app.sandbox.invoke = async (cmd, args) => { calls.push([cmd, args]); return base(cmd, args); };
+  // loadVault() fires the DESKTOP dashboard (showDashboard → career compass) without awaiting it; that
+  // renderer needs a module the harness does not load (informationEffectiveRank) and its rejection would
+  // crash Node later as an unhandled rejection. It is not under test here — the native shell is.
+  app.sandbox.showDashboard = async () => {};
+  const spies = {};
+  for (const name of ['showEntryFork', 'showLoginGate', 'renderMobileShell', 'showWelcome', 'showToast', 'err']) {
+    spies[name] = [];
+    const orig = app.sandbox[name];
+    if (typeof orig !== 'function') continue;
+    app.sandbox[name] = function (...a) { spies[name].push(a); return orig.apply(this, a); };
+  }
+  await efSettle();
+  return Object.assign(app, { calls, spies, base });
+}
+const efFork = (doc) => doc.getElementById('mobile-entry-fork');
+const efForkShown = (doc) => { const f = efFork(doc); return !!f && f.style.display === 'flex'; };
+const efGateShown = (doc) => doc.getElementById('login-gate-overlay').style.display === 'flex';
+const efCalled = (calls, cmd, pred) => calls.filter(([c, a]) => c === cmd && (!pred || pred(a)));
+const efGateMarkup = () => HTML.slice(HTML.indexOf('id="login-gate-overlay"'), HTML.indexOf('id="update-banner"'));
+
+{
+  section('entry fork (D1/D1b) — S1 fresh install, no session: opaque fork with exactly three doors; header unreachable');
+  const { doc, spies } = await efBoot({});
+  ok(efForkShown(doc), 'D1: the fork overlay is shown on a fresh native start with no session');
+  ok(spies.showEntryFork.length === 1, 'D1: showEntryFork() called exactly once');
+  const f = String((efFork(doc) || {}).innerHTML || '');
+  for (const door of ['sign-in', 'register', 'demo']) ok((f.match(new RegExp(`data-qa="${door}"`, 'g')) || []).length === 1, `D1: door "${door}" rendered exactly once`);
+  ok((f.match(/<button\b/g) || []).length === 3, 'D1: exactly three buttons — no fourth door, no dismiss');
+  ok(!efGateShown(doc) && spies.showLoginGate.length === 0, 'D1: the login gate is NOT raised first (the fork comes first, natively)');
+  ok(spies.showWelcome.length === 0 && !mobileHtml(doc).includes('mobileStartVaultWizard()'), 'D1: no welcome / profile wizard behind the fork');
+  ok(spies.renderMobileShell.length === 0, 'D1: the shell is not rendered before a session');
+  // D1b — gate-class overlay: fixed, full-inset, opaque, z-index >= the login gate (100000); no header action inside.
+  const cssStart = HTML.indexOf('/* mobile-entry-fork (owner 06.09');
+  const cssEnd = HTML.indexOf('/* /mobile-entry-fork */');
+  const css = cssStart >= 0 && cssEnd > cssStart ? HTML.slice(cssStart, cssEnd) : '';
+  ok(css.length > 50, 'D1b: fork CSS lives in ONE marked block');
+  const selectors = css.split('\n').filter((l) => /\{/.test(l)).map((l) => l.slice(0, l.indexOf('{')).trim());
+  ok(selectors.length > 0 && selectors.every((s) => s.split(',').every((x) => /^(\.mobile-|body\.mobile-)/.test(x.trim()))), 'D1b: every selector in the block starts with .mobile- or body.mobile-');
+  const rule = /\.mobile-entry-fork\s*\{([^}]*)\}/.exec(css);
+  const z = rule && /z-index:\s*(\d+)/.exec(rule[1]);
+  ok(!!rule && /position:\s*fixed/.test(rule[1]) && /inset:\s*0/.test(rule[1]) && /background:\s*var\(--bg\)/.test(rule[1]) && !!z && Number(z[1]) >= 100000, 'D1b: .mobile-entry-fork is position:fixed; inset:0; opaque var(--bg); z-index >= 100000 (the login gate) — the header below is unreachable');
+  ok(!!efFork(doc) && efFork(doc).classList.contains('mobile-entry-fork') && efFork(doc).getAttribute('data-qa') === 'entry-fork', 'D1b: the overlay element carries the marked class + data-qa="entry-fork"');
+  ok(!/openAssistant\(|openSettings\(|mobileShow\(|mobileStartVaultWizard\(/.test(f), 'D1b: no header / menu / wizard action inside the fork markup');
+  ok(!/id="mobile-entry-fork"/.test(HTML), 'D1b: the fork is rendered by JS — no static markup (PRESERVE sha region)');
+}
+
+{
+  section('entry fork (D2) — S2-cold: remembered vault WITHOUT a token → fork (not the gate), vault parked for Sign in');
+  const { doc, spies, sandbox } = await efBoot({ get_last_vault: '/v', open_vault: EF_REAL, app_login_status: { logged_in: false } });
+  ok(efForkShown(doc) && spies.showEntryFork.length === 1, 'D2: fork shown on cold start with a remembered token-less vault');
+  ok(spies.showLoginGate.length === 0 && !efGateShown(doc), 'D2: the old «Sign in to Skipi» gate is NOT the first screen any more');
+  ok(sandbox._loginGatePending === EF_REAL, 'D2: _loginGatePending === the opened vault info (Sign in resumes the SAME vault)');
+  ok(spies.renderMobileShell.length === 0, 'D2: the shell is not rendered behind the fork');
+}
+
+{
+  section('entry fork (D3) — S2-cold with last vault = DEMO: demo is not a session → close_vault{forget:true} → fork');
+  const { doc, spies, sandbox, calls } = await efBoot({ get_last_vault: '/demo', open_vault: EF_DEMO, get_profile_status: { is_demo: '1' } });
+  ok(efForkShown(doc), 'D3: fork shown (no auto-demo on cold start)');
+  ok(efCalled(calls, 'close_vault', (a) => a && a.forget === true).length === 1, 'D3: the remembered demo vault is closed AND forgotten (close_vault{forget:true})');
+  ok(spies.renderMobileShell.length === 0 && !mobileHtml(doc).includes('assistant-demo-banner'), 'D3: the demo home is NOT rendered');
+  ok(sandbox._loginGatePending === null, 'D3: nothing is parked for Sign in (a token must never land in the demo vault)');
+  ok(spies.showLoginGate.length === 0, 'D3: no gate');
+}
+
+{
+  section('entry fork (D4) — live session + vault: fork never called (not even a flash), native home rendered');
+  const { doc, spies } = await efBoot({ get_last_vault: '/v', open_vault: EF_REAL, app_login_status: { logged_in: true } }, { seed: { 'skipi-assistant-consent': '1' } });
+  ok(spies.showEntryFork.length === 0 && !efFork(doc), 'D4: showEntryFork() NOT called with a live session (no overlay element at all)');
+  ok(spies.showLoginGate.length === 0, 'D4: no gate either');
+  ok(spies.renderMobileShell.length >= 1 && mobileHtml(doc).includes('id="mobile-assistant-input"'), 'D4: loadVault() reached renderMobileShell → native home (assistant chat)');
+}
+
+{
+  section('entry fork (D5) — session (parked login) but no vault: no fork, welcome/wizard landing as today');
+  const { doc, spies } = await efBoot({ app_login_status: { logged_in: true, pending: true } });
+  ok(spies.showEntryFork.length === 0 && !efFork(doc), 'D5: no fork with a parked login');
+  ok(spies.showLoginGate.length === 0, 'D5: no gate');
+  ok(spies.showWelcome.length === 1 && mobileHtml(doc).includes('mobileStartVaultWizard()'), 'D5: welcome landing rendered (the wizard is scheduled from it, as today)');
+}
+
+{
+  section('entry fork (D6) — mid-session loadVault() for a token-less NON-demo vault keeps the hard gate (G4), not the fork');
+  const app = await efBoot({ get_last_vault: '/v', open_vault: EF_REAL, app_login_status: { logged_in: true } }, { seed: { 'skipi-assistant-consent': '1' } });
+  const { doc, spies, sandbox, calls, base } = app;
+  const OTHER = { ...EF_REAL, name: 'Other' };
+  sandbox.invoke = async (cmd, args) => { calls.push([cmd, args]); if (cmd === 'app_login_status') return { logged_in: false }; if (cmd === 'get_recent_vaults') return ['/other']; if (cmd === 'open_vault') return OTHER; return base(cmd, args); };
+  await sandbox.mobileOpenExistingVault();
+  await efSettle();
+  ok(spies.showLoginGate.length === 1 && efGateShown(doc), 'D6: mid-session token-less vault → login gate (hard gate preserved)');
+  ok(spies.showEntryFork.length === 0 && !efForkShown(doc), 'D6: fork NOT shown mid-session');
+  ok(sandbox._loginGatePending === OTHER, 'D6: the gate parks the vault for resume');
+}
+
+{
+  section('entry fork (D7) — Demo door OFFLINE: demo vault opens WITHOUT a token, home with demo banner, no gate, no error-state');
+  const app = await efBoot({ create_demo_vault_auto: EF_DEMO, get_profile_status: { is_demo: '1' } }, { seed: { 'skipi-assistant-consent': '1' }, onLine: false });
+  const { doc, spies, sandbox, calls } = app;
+  sandbox.fetch = async () => { throw new Error('offline'); };
+  ok(efForkShown(doc), 'D7: fork shown first');
+  ok(typeof sandbox.entryForkDemo === 'function', 'D7: the Demo door handler exists');
+  if (typeof sandbox.entryForkDemo === 'function') { await sandbox.entryForkDemo(); await efSettle(); }
+  ok(efCalled(calls, 'create_demo_vault_auto').length === 1, 'D7: Demo creates the demo vault (create_demo_vault_auto) — no network involved');
+  ok(!efForkShown(doc), 'D7: fork hidden after Demo');
+  ok(spies.showLoginGate.length === 0 && !efGateShown(doc), 'D7: NO login gate for the demo vault (canon (295) п.3 exception, keyed on is_demo only)');
+  const h = mobileHtml(doc);
+  ok(spies.renderMobileShell.length >= 1 && h.includes('data-qa="assistant-demo-banner"'), 'D7: demo home rendered with the demo banner');
+  ok(h.includes('data-qa="assistant-offline"'), 'D7: honest offline banner (navigator.onLine=false, fetch rejecting) — no error-state');
+  ok(!spies.showToast.some((a) => a[1] === 'error') && spies.err.length === 0, 'D7: no error toast / red error strip while offline');
+  ok(h.includes('data-qa="assistant-demo-signin"') && h.includes('entryForkLeaveDemo()'), 'D7: the demo banner offers the way back to the fork (Sign in)');
+  ok(sandbox.mobileIsDemo === true, 'D7: mobileIsDemo is true synchronously (info.is_demo stamped by loadDemoVault)');
+}
+
+{
+  section('entry fork (D8) — S3 Sign out → fork (one rule: no session → fork); shell hidden; vault parked for Sign in');
+  const app = await efBoot({ get_last_vault: '/v', open_vault: EF_REAL, app_login_status: { logged_in: true }, get_current_vault_path: '/v' }, { seed: { 'skipi-assistant-consent': '1' } });
+  const { doc, spies, sandbox, calls, base } = app;
+  let loggedIn = true;
+  sandbox.invoke = async (cmd, args) => { calls.push([cmd, args]); if (cmd === 'app_logout') { loggedIn = false; return {}; } if (cmd === 'app_login_status') return { logged_in: loggedIn }; return base(cmd, args); };
+  calls.length = 0;
+  await sandbox.appLogoutToGate();
+  await efSettle();
+  ok(efCalled(calls, 'app_logout').length === 1, 'D8: app_logout invoked');
+  ok(efForkShown(doc) && spies.showEntryFork.length === 1, 'D8: Sign out lands on the fork');
+  ok(spies.showLoginGate.length === 0 && !efGateShown(doc), 'D8: not the bare gate');
+  ok(doc.getElementById('scr-content').style.display === 'none', 'D8: #scr-content hidden');
+  ok(sandbox._loginGatePending === EF_REAL, 'D8: the signed-out vault is parked — Sign in resumes it');
+  ok(efCalled(calls, 'close_vault').length === 0, 'D8: a real vault is NOT closed/forgotten on Sign out (data untouched)');
+}
+
+{
+  section('entry fork (D8b) — Sign out while the DEMO is open: demo closed + forgotten, nothing parked');
+  const app = await efBoot({ create_demo_vault_auto: EF_DEMO, get_profile_status: { is_demo: '1' }, get_current_vault_path: '/demo', open_vault: EF_DEMO }, { seed: { 'skipi-assistant-consent': '1' } });
+  const { doc, sandbox, calls } = app;
+  if (typeof sandbox.entryForkDemo === 'function') { await sandbox.entryForkDemo(); await efSettle(); }
+  calls.length = 0;
+  await sandbox.appLogoutToGate();
+  await efSettle();
+  ok(efCalled(calls, 'close_vault', (a) => a && a.forget === true).length === 1 && sandbox._loginGatePending === null, 'D8b: Sign out from the demo closes + forgets it and parks nothing (no token into the demo)');
+  ok(efForkShown(doc), 'D8b: fork shown');
+}
+
+{
+  section('entry fork (D9) — Register door: exactly the existing external URL; fork stays');
+  const { doc, sandbox, calls } = await efBoot({});
+  calls.length = 0;
+  if (typeof sandbox.entryForkRegister === 'function') sandbox.entryForkRegister();
+  await efSettle();
+  const reg = efCalled(calls, 'open_external_url');
+  ok(reg.length === 1 && !!reg[0][1] && reg[0][1].url === 'https://assistant.skipi.app/register', "D9: exactly one invoke('open_external_url',{url:'https://assistant.skipi.app/register'})");
+  ok(calls.length === 1, 'D9: no other command on Register');
+  ok(efForkShown(doc), 'D9: the fork is still on screen (registration finishes in the browser; Sign in is the door back)');
+}
+
+{
+  section('entry fork (D10) — Sign in door: gate with a history marker + JS «← Back»; system Back and the link both return to the fork; login resumes the continuation');
+  const app = await efBoot({});
+  const { doc, sandbox, listeners } = app;
+  const hist = sandbox.history; hist.calls.length = 0;
+  const firePop = (state) => (listeners.popstate || []).forEach((fn) => fn({ state }));
+  ok(typeof sandbox.entryForkSignIn === 'function', 'D10: the Sign in door handler exists');
+  if (typeof sandbox.entryForkSignIn === 'function') sandbox.entryForkSignIn();
+  ok(efGateShown(doc) && !efForkShown(doc), 'D10: Sign in → gate shown, fork hidden');
+  ok(hist.calls.length === 1 && hist.calls[0][0] === 'pushState' && !!hist.calls[0][1] && hist.calls[0][1].skipiEntryFork === true, 'D10: exactly one history.pushState({skipiEntryFork:true})');
+  const back = doc.getElementById('lg-back');
+  ok(!!back && back.getAttribute('data-qa') === 'login-gate-back' && back.style.display !== 'none' && String(back.textContent || '').length > 0, 'D10: JS-inserted «← Back» link is present + visible in the gate');
+  ok(!/lg-back|entry-fork/.test(efGateMarkup()), 'D10: the link is NOT static markup (PRESERVE region untouched)');
+  // system Back: the browser pops OUR marker entry → gate closes, fork returns, no extra back()
+  firePop(null);
+  ok(!efGateShown(doc) && efForkShown(doc), 'D10: system Back (popstate) → gate hidden, fork back');
+  ok(!hist.calls.some((c) => c[0] === 'back'), 'D10: no history.back() when the browser already popped our entry (no phantom entries)');
+  ok(!!back && back.style.display === 'none', 'D10: «← Back» hidden once the gate closes');
+  // the link path: consumes the marker with ONE history.back()
+  hist.calls.length = 0;
+  if (typeof sandbox.entryForkSignIn === 'function') sandbox.entryForkSignIn();
+  if (typeof sandbox.entryForkGateBack === 'function') sandbox.entryForkGateBack();
+  ok(!efGateShown(doc) && efForkShown(doc), 'D10: «← Back» link → fork');
+  ok(hist.calls.filter((c) => c[0] === 'back').length === 1, 'D10: the link consumes the marker with exactly one history.back()');
+  // login from the fork-opened gate → continuation (S1: welcome/wizard landing); marker consumed
+  hist.calls.length = 0;
+  if (typeof sandbox.entryForkSignIn === 'function') sandbox.entryForkSignIn();
+  let nextCalled = 0; sandbox._loginGateNext = () => { nextCalled++; };
+  doc.getElementById('lg-email').value = 'qa@example.com'; doc.getElementById('lg-password').value = 'x';
+  await sandbox.doAppLogin();
+  await efSettle();
+  ok(nextCalled === 1 && !efGateShown(doc) && !efForkShown(doc), 'D10: successful app_login → _loginGateNext continuation; gate + fork both hidden');
+  ok(hist.calls.filter((c) => c[0] === 'back').length === 1, 'D10: the marker is consumed on login (a later Back never resurrects the fork over the home)');
+  firePop(null);
+  ok(!efForkShown(doc) && !efGateShown(doc), 'D10: a later popstate does not bring the fork back');
+}
+
+{
+  section('entry fork (D11) — demo → Sign in: close_vault{forget:true} FIRST, fork with NO vault open, login parks (never written into the demo)');
+  const app = await efBoot({ create_demo_vault_auto: EF_DEMO, get_profile_status: { is_demo: '1' } }, { seed: { 'skipi-assistant-consent': '1' } });
+  const { doc, sandbox, calls, spies, base } = app;
+  if (typeof sandbox.entryForkDemo === 'function') { await sandbox.entryForkDemo(); await efSettle(); }
+  ok(mobileHtml(doc).includes('data-qa="assistant-demo-signin"'), 'D11: demo home shows the Sign in way back');
+  calls.length = 0;
+  ok(typeof sandbox.entryForkLeaveDemo === 'function', 'D11: the leave-demo handler exists');
+  if (typeof sandbox.entryForkLeaveDemo === 'function') { await sandbox.entryForkLeaveDemo(); await efSettle(); }
+  ok(efCalled(calls, 'close_vault', (a) => a && a.forget === true).length === 1, 'D11: leaving the demo closes + forgets it');
+  ok(efForkShown(doc) && !efGateShown(doc), 'D11: fork shown (not the gate) after leaving the demo');
+  ok(sandbox._loginGatePending === null, 'D11: nothing parked — Sign in must NOT resume the demo vault');
+  ok(doc.getElementById('scr-content').style.display === 'none', 'D11: shell hidden behind the fork');
+  // Sign in with no vault open → app_login parks the login (pending:true) → continuation, not the demo.
+  sandbox.invoke = async (cmd, args) => { calls.push([cmd, args]); if (cmd === 'app_login') return { pending: true }; if (cmd === 'app_login_status') return { logged_in: true, pending: true }; return base(cmd, args); };
+  if (typeof sandbox.entryForkSignIn === 'function') sandbox.entryForkSignIn();
+  doc.getElementById('lg-email').value = 'qa@example.com'; doc.getElementById('lg-password').value = 'x';
+  await sandbox.doAppLogin();
+  await efSettle();
+  ok(efCalled(calls, 'app_login').length === 1 && efCalled(calls, 'create_demo_vault_auto').length === 0 && efCalled(calls, 'open_vault').length === 0, 'D11: login goes through app_login with no vault re-opened (token parked, lands in the first REAL vault)');
+  ok(spies.showWelcome.length >= 1 && !mobileHtml(doc).includes('data-qa="assistant-demo-banner"'), 'D11: continuation = welcome landing — not the demo home');
+}
+
+{
+  section('entry fork (D12) — desktop (linux): no fork, the plain gate as today; PRESERVE sha unchanged (checked above)');
+  const { doc, spies } = await efBoot({}, { platform: 'linux' });
+  ok(spies.showEntryFork.length === 0 && !efFork(doc), 'D12: no fork on desktop');
+  ok(spies.showLoginGate.length === 1 && efGateShown(doc), 'D12: desktop still raises the login gate first');
+  ok(!doc.body.classList.contains('mobile-mode') && !doc.body.classList.contains('mobile-native'), 'D12: no mobile-mode on desktop');
+  ok(!doc.getElementById('lg-back'), 'D12: no «← Back» link on the desktop gate (nothing to go back to)');
+}
+
 {
   section('remote install + offline persistence harness');
   await runRemoteInstallOfflineHarness();
