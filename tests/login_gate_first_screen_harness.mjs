@@ -193,6 +193,20 @@ if (init !== null) {
   ok(/_loginGatePending\s*=\s*info;\s*showEntryFork\(\);\s*return;/.test(s2), 'G7: S2-cold — the vault is parked (_loginGatePending=info) and the fork shown; Sign in resumes the SAME vault');
   ok(/close_vault',\s*\{\s*forget\s*:\s*true\s*\}/.test(s2) && /_efOpenVaultIsDemo\(\)/.test(s2), 'G7: S2-cold — a remembered DEMO vault is closed + forgotten (close_vault{forget:true}), never auto-opened');
   ok(/\}\s*else\s*\{\s*await\s+loadVault\(info\);\s*return;\s*\}/.test(s2), 'G7: S2-cold — with a session (or on desktop) the remembered vault still loads as today');
+  // G8 / S3 (Supervisor Н1, AUDIT-2026-09-06-seafarer-entry-fork-close): the RECENT list is a third
+  // cold-start site. close_vault{forget:true} empties the config, but the demo stays on disk and the
+  // Android get_recent_vaults scan re-finds it — so this loop MUST carry the same native no-session
+  // check as S2-cold, or a bare gate goes up over an OPEN demo vault and app_login writes the token
+  // into the demo. Structural, not cosmetic: BOTH loadVault() sites in init() are guarded, and no
+  // third one may appear.
+  const s3 = init.slice(init.indexOf("get_recent_vaults"), init.indexOf('checkForUpdate('));
+  ok(s3.length > 0 && /isNativeMobile\(\)\s*&&\s*!\s*\(\s*await\s+_hasLoginToken\(\)\s*\)/.test(s3), 'G8: S3 — the recent-vaults loop checks the token natively BEFORE handing a vault to loadVault()');
+  ok(/_loginGatePending\s*=\s*rinfo;\s*showEntryFork\(\);\s*return;/.test(s3), 'G8: S3 — a token-less recent vault is parked and the fork shown (Sign in resumes the SAME vault)');
+  ok(/_efOpenVaultIsDemo\(\)/.test(s3) && /close_vault',\s*\{\s*forget\s*:\s*true\s*\}/.test(s3), 'G8: S3 — a recent DEMO is closed + forgotten (checked against the vault on disk, get_profile_status.is_demo), never auto-opened');
+  ok(!/showLoginGate\(/.test(s3), 'G8: S3 — the recent path never raises the bare login gate (Н1: it used to, over an open demo vault)');
+  const initCode = init.replace(/^\s*\/\/.*$/gm, ''); // prose mentions loadVault() too
+  ok((initCode.match(/loadVault\(/g) || []).length === 2, 'G8: init() hands a vault to loadVault() from EXACTLY two sites (remembered + recent) — a third, unguarded one would bypass the fork');
+  ok((initCode.match(/isNativeMobile\(\)\s*&&\s*!\s*\(\s*await\s+_hasLoginToken\(\)\s*\)/g) || []).length === 2, 'G8: BOTH loadVault() sites in init() sit behind the same native no-session guard');
 }
 ok((html.match(/'https:\/\/assistant\.skipi\.app\/register'/g) || []).length === 1, 'G7: exactly one Register URL literal in dist (the fork reuses openRegisterPage)');
 ok(/openRegisterPage\(\)/.test(fnBody(html, 'entryForkRegister') || ''), 'G7: the Register door calls openRegisterPage()');

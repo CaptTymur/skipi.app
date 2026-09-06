@@ -3672,7 +3672,21 @@ async function init() {
             for(var ri=0;ri<recent.length;ri++){
                 var rp=recent[ri];
                 if(!rp)continue;
-                try{var rinfo=await invoke('open_vault',{path:rp});await loadVault(rinfo);return;}catch(_){}
+                // Canon «entry fork» (295), S3: the recent list is a cold-start site too, so it goes
+                // through the SAME native check as the remembered vault above (Supervisor Н1,
+                // AUDIT-2026-09-06-seafarer-entry-fork-close). Without it a forgotten demo — still on
+                // disk and re-found by the Android scan of app_data_dir/vaults — was handed to
+                // loadVault(): VaultInfo carries no is_demo, so the demo exception was false and a BARE
+                // login gate came up OVER an OPEN demo vault, where app_login writes the token straight
+                // into the demo (which the next Demo tap wipes with remove_dir_all). The demo is checked
+                // against the vault on disk (get_profile_status.is_demo), not against a JS stamp.
+                try{var rinfo=await invoke('open_vault',{path:rp});
+                    if(isNativeMobile()&&!(await _hasLoginToken())){
+                        if(await _efOpenVaultIsDemo()){ try{await invoke('close_vault',{forget:true});}catch(_){} continue; }
+                        _loginGatePending=rinfo;showEntryFork();return;
+                    }
+                    await loadVault(rinfo);return;
+                }catch(_){}
             }
         }
     }catch(e){err('Init:'+e);}

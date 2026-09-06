@@ -1343,6 +1343,44 @@ const efGateMarkup = () => HTML.slice(HTML.indexOf('id="login-gate-overlay"'), H
 }
 
 {
+  section('entry fork (D13) — S3 cold start via the RECENT list: same native no-session check as the remembered vault (Supervisor Н1)');
+  // Н1 (AUDIT-2026-09-06-seafarer-entry-fork-close): close_vault{forget:true} writes `{}` into the
+  // config, but the demo directory stays on disk and get_recent_vaults RE-FINDS it on Android by
+  // scanning app_data_dir/vaults. init() then fed that vault straight to loadVault() with no native
+  // check: VaultInfo carries no is_demo, so the demo exception was false and a BARE login gate went
+  // up OVER an OPEN demo vault — app_login would have written the token into the demo (the very thing
+  // the card forbids), and the next Demo tap wipes it with remove_dir_all.
+  // A FRESH object on purpose: loadDemoVault() stamps is_demo='1' onto whatever
+  // create_demo_vault_auto returned, so the shared EF_DEMO constant is already stamped by the
+  // drills above — while Rust's VaultInfo (db.rs) carries NO is_demo field at all. What
+  // open_vault() hands back for a demo found on disk is exactly this: an unstamped info.
+  const diskDemo = { name: 'Skipi Demo', account_type: 'seafarer', position: 'master', vessel_category: 'tanker' };
+  const { doc, spies, sandbox, calls } = await efBoot({ get_recent_vaults: ['/demo'], open_vault: diskDemo, get_profile_status: { is_demo: '1' } });
+  ok(efForkShown(doc) && spies.showEntryFork.length === 1, 'D13: a recent DEMO on a cold start with no session lands on the fork');
+  ok(spies.showLoginGate.length === 0 && !efGateShown(doc), 'D13: NO bare login gate on the recent path (Н1: the gate used to come up over an open demo vault)');
+  ok(efCalled(calls, 'close_vault', (a) => a && a.forget === true).length === 1, 'D13: the recent demo is closed AND forgotten (the demo is not a session)');
+  ok(sandbox._loginGatePending === null, 'D13: nothing parked — a login must never be written into the demo vault');
+  ok(spies.renderMobileShell.length === 0 && !mobileHtml(doc).includes('assistant-demo-banner'), 'D13: no auto-demo home behind the fork');
+}
+
+{
+  section('entry fork (D13b) — S3 recent REAL vault without a token: fork with the vault parked, never the bare gate');
+  const { doc, spies, sandbox } = await efBoot({ get_recent_vaults: ['/v'], open_vault: EF_REAL, app_login_status: { logged_in: false } });
+  ok(efForkShown(doc) && spies.showEntryFork.length === 1, 'D13b: a recent token-less REAL vault lands on the fork');
+  ok(spies.showLoginGate.length === 0 && !efGateShown(doc), 'D13b: not the bare gate (no session → the fork is the first screen, canon (295))');
+  ok(sandbox._loginGatePending === EF_REAL, 'D13b: the vault is parked — Sign in resumes the SAME vault');
+  ok(spies.renderMobileShell.length === 0, 'D13b: the shell is not rendered behind the fork');
+}
+
+{
+  section('entry fork (D13c) — S3 recent vault WITH a live session: unchanged, opens straight into the native home');
+  const { doc, spies } = await efBoot({ get_recent_vaults: ['/v'], open_vault: EF_REAL, app_login_status: { logged_in: true } }, { seed: { 'skipi-assistant-consent': '1' } });
+  ok(spies.showEntryFork.length === 0 && !efFork(doc), 'D13c: no fork with a live session (the recent path still opens the vault)');
+  ok(spies.showLoginGate.length === 0, 'D13c: no gate either');
+  ok(spies.renderMobileShell.length >= 1 && mobileHtml(doc).includes('id="mobile-assistant-input"'), 'D13c: loadVault() reached renderMobileShell → native home');
+}
+
+{
   section('remote install + offline persistence harness');
   await runRemoteInstallOfflineHarness();
 }
