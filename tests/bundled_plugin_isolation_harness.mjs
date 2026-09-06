@@ -2245,6 +2245,115 @@ const countOf = (re) => (MANIFEST.match(re) || []).length;
   ok(!/Runtime\.getRuntime|ProcessBuilder/.test(MAIN_ACTIVITY), 'no process execution from the activity');
 }
 
+// ---------------------------------------------------------------------------
+// NOPAY — the shipped bundle says NOTHING about buying.
+//
+// ANCHOR — owner 06.09: «в дистах домов ни слова о покупке — оплата только в
+// вебе» (DECISIONS (253), (319)). Payment lives on the web only. The bundle the
+// stores ship (desktop / Android / iOS all boot this one dist/index.html) must
+// not name Paddle, a price, a plan, a checkout or a billing page — that is the
+// standing product decision, and it is also what keeps store review calm:
+// selling digital access inside the app, or linking out to an external payment
+// page, is exactly what Apple's and Google's billing rules forbid.
+//
+// Until now the invariant was held by memory alone — nothing under tests/
+// checked a single one of these words. These drills are that check, and they
+// read the SAME dist/index.html the isolation drills above read, i.e. the
+// artifact that actually ships.
+//
+// Exceptions are DECLARED, never silently regexed away: each NOPAY_ALLOWED
+// entry is an exact snippet of the bundle that legitimately contains a listed
+// word in a non-purchase sense, with a one-line reason. Stale entries fail
+// NOPAY3, so the list gets pruned instead of growing into a loophole.
+// ---------------------------------------------------------------------------
+const NOPAY_ALLOWED = [
+  // Crewing salary EXPECTATION of the seafarer, not a price of anything: the
+  // "Minimum salary per month" field label (desktop form, mobile form, summary).
+  'Minimum salary per month',
+  // The same salary field rendered into the application e-mail body: "<amount> USD/month".
+  "(sp.min_salary_currency||'USD')+'/month'",
+  // Salary-BAND card: the "/ month" suffix printed under the market p50 figure.
+  "'в месяц':'/ month'",
+];
+
+// [family, label, pattern] — matched case-insensitively on WORD/PATH boundaries,
+// not as naked substrings ("unsubscribe", "display.", "/payload", "$100" must
+// not fire). NOPAY4 proves every one of these still matches something.
+const NOPAY_RULES = [
+  ['word', 'paddle', String.raw`\bpaddle\b`],
+  ['word', 'checkout', String.raw`\bcheck-?outs?\b`],
+  ['word', 'subscribe', String.raw`\bsubscrib(?:e|es|ed|ing)\b`],
+  ['word', 'subscription', String.raw`\bsubscriptions?\b`],
+  ['word', 'buy now', String.raw`\bbuy\s+now\b`],
+  ['word', 'purchase', String.raw`\bpurchas(?:e|es|ed|ing)\b`],
+  ['word', 'upgrade to pro', String.raw`\bupgrade\s+to\s+pro\b`],
+  ['word', 'per month', String.raw`\bper\s+month\b`],
+  ['word', '/month', String.raw`\/\s?month\b`],
+  ['word', '$10', String.raw`\$\s?10\b`],
+  ['word', 'pricing', String.raw`\bpricing\b`],
+  ['host', 'paddle.com', String.raw`\bpaddle\.com\b`],
+  ['host', 'cdn.paddle.com', String.raw`\bcdn\.paddle\.com\b`],
+  ['host', 'pay.', String.raw`\bpay\.`],
+  ['host', '/pay', String.raw`\/pay(?:ments?)?\b`],
+  ['host', '/pricing', String.raw`\/pricing\b`],
+  ['host', '/app/account#billing', String.raw`\/app\/account#billing`],
+];
+
+// remove the declared exceptions, then count what is left
+const nopayScrub = (src) => NOPAY_ALLOWED.reduce((acc, s) => acc.split(s).join(' '), src);
+const nopayHits = (src, family) => {
+  const scrubbed = nopayScrub(src);
+  return NOPAY_RULES.filter(([f]) => f === family).map(([, label, pattern]) => {
+    const m = scrubbed.match(new RegExp(pattern, 'gi')) || [];
+    const at = m.length ? scrubbed.search(new RegExp(pattern, 'i')) : -1;
+    const sample = at < 0 ? '' : scrubbed.slice(Math.max(0, at - 60), at + 60).replace(/\s+/g, ' ');
+    return { label, count: m.length, sample };
+  });
+};
+
+{
+  section('no purchase copy (NOPAY1) — the shipped dist/index.html names no plan, price or checkout');
+  for (const h of nopayHits(HTML, 'word')) {
+    ok(h.count === 0, 'dist/index.html contains no «' + h.label + '»' +
+      (h.count ? ' — ' + h.count + ' hit(s), first: …' + h.sample + '…' : ''));
+  }
+}
+
+{
+  section('no purchase copy (NOPAY2) — and no link to a payment host or billing page');
+  for (const h of nopayHits(HTML, 'host')) {
+    ok(h.count === 0, 'dist/index.html links to no «' + h.label + '»' +
+      (h.count ? ' — ' + h.count + ' hit(s), first: …' + h.sample + '…' : ''));
+  }
+}
+
+{
+  section('no purchase copy (NOPAY3) — the exception list is honest and current');
+  for (const s of NOPAY_ALLOWED) {
+    const n = HTML.split(s).length - 1;
+    ok(n > 0, 'NOPAY_ALLOWED entry still exists in the bundle, so it is a real exception and not a stale loophole: «' + s + '» (' + n + ' hit(s))');
+  }
+  ok(HTML.length > 100000, 'the drills above scanned the real shipped bundle, not an empty read (' + HTML.length + ' bytes)');
+}
+
+{
+  section('no purchase copy (NOPAY4) — negative control: every rule still catches purchase copy');
+  // If a rule ever stops matching anything, NOPAY1/NOPAY2 would go green while
+  // checking nothing. This synthetic bundle carries one violation per rule.
+  const NOPAY_SYNTHETIC = HTML + [
+    '<a class="cta" href="https://cdn.paddle.com/checkout">Buy now</a>',
+    '<a href="https://pay.skipi.app/pay">Upgrade to Pro — $10/month, billed per month</a>',
+    '<a href="https://paddle.com/pricing">Pricing</a>',
+    '<a href="https://skipi.app/app/account#billing">manage subscription</a>',
+    '<script>Paddle.Checkout.open(); shop.subscribe(); shop.purchase();</script>',
+  ].join('\n');
+  const caught = [...nopayHits(NOPAY_SYNTHETIC, 'word'), ...nopayHits(NOPAY_SYNTHETIC, 'host')];
+  ok(caught.length === NOPAY_RULES.length, 'every declared rule was evaluated (' + caught.length + '/' + NOPAY_RULES.length + ')');
+  for (const h of caught) {
+    ok(h.count > 0, 'the «' + h.label + '» rule catches purchase copy when it is present (not a dead regex)');
+  }
+}
+
 {
   section('remote install + offline persistence harness');
   await runRemoteInstallOfflineHarness();
