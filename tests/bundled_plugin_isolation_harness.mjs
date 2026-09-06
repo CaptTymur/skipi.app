@@ -977,7 +977,7 @@ function bootMobile(opts) {
   sandbox.mobileIsDemo = true;
   sandbox.mobileShow('home');
   const mm = mobileHtml(doc);
-  ok(mm.includes('data-qa="assistant-demo-banner"') && mm.includes('mobileStartVaultWizard()'), 'demo banner with «create my profile» renders on home');
+  ok(mm.includes('data-qa="assistant-demo-banner"') && mm.includes('mobileCreateProfile()'), 'demo banner with «create my profile» renders on home (through step 0 since 06.09 — see ONB1)');
   ok(mm.includes('id="mobile-assistant-input"') && mm.includes('data-qa="mobile-menu-btn"'), 'demo keeps the composer and ☰ (no dead end)');
   sandbox.mobileIsDemo = false;
   sandbox.mobileShow('home');
@@ -1207,7 +1207,7 @@ const efGateMarkup = () => HTML.slice(HTML.indexOf('id="login-gate-overlay"'), H
   const { doc, spies } = await efBoot({ app_login_status: { logged_in: true, pending: true } });
   ok(spies.showEntryFork.length === 0 && !efFork(doc), 'D5: no fork with a parked login');
   ok(spies.showLoginGate.length === 0, 'D5: no gate');
-  ok(spies.showWelcome.length === 1 && mobileHtml(doc).includes('mobileStartVaultWizard()'), 'D5: welcome landing rendered (the wizard is scheduled from it, as today)');
+  ok(spies.showWelcome.length === 1 && mobileHtml(doc).includes('mobileCreateProfile()'), 'D5: welcome landing rendered (its create-profile action goes through step 0, which passes straight through with a live session — ONB1)');
 }
 
 {
@@ -3147,10 +3147,56 @@ const nopayScan = (files, family) => NOPAY_RULES.filter(([fam]) => fam === famil
   // crew». Read next to skipi.app/pricing, that is a paywall — and we are answering
   // Apple in writing that nothing in the app is paid. The answer has to match the
   // screen, so the padlock and the word are gone from the copy.
+  //
+  // Н-2, 06.09 — WHY THIS COUNTS EVERY PADLOCK NOW. The first version of this rule only
+  // looked at padlocks in files that ALSO matched a CSS class name
+  // (`(?:tile|module|plugin|card)-lock|mv-tile-lock`), and counted the emoji afterwards.
+  // Supervisor pasted `<div class="pro-badge">🔒</div>` onto the My Vessel screen — the very
+  // screen Apple asked about — and the harness stayed ALL GREEN 987/0, because «pro-badge»
+  // is not in that class list. A rule that a different class name walks past is not a rule.
+  // So the padlock is now counted in EVERY shipped asset, and each legitimate occurrence is
+  // DECLARED, with the reason and the exact number of times it may appear — the same shape
+  // NOPAY5 uses for «free». All nine that ship today mean ENCRYPTION: telling a seafarer his
+  // CV went out end-to-end encrypted is the opposite of a paywall. A tenth padlock, whatever
+  // its class, is red until somebody writes down why it is not a lock on a feature.
+  const PADLOCK_ALLOW = [
+    { re: /· \u{1F512} '\+threadCount/gu, n: 1,
+      why: 'the unread-message badge on a vacancy row («· 🔒 3 messages»): the conversation with the crewing manager is end-to-end encrypted, and this padlock says so next to its message count' },
+    { re: /\u{1F512} Open conversation<\/button>/gu, n: 1,
+      why: 'the button that opens that same encrypted conversation — the padlock is a property of the channel, not a gate on the button' },
+    { re: /\u{1F512} End-to-end encrypted<\/span>/gu, n: 1,
+      why: 'the status line inside the conversation itself, which states the encryption the two padlocks above refer to' },
+    { re: /CV sent — encrypted end-to-end \u{1F512}/gu, n: 1,
+      why: 'the toast after a CV is sent — a receipt saying the document left encrypted, shown after the action succeeded, so it can gate nothing' },
+    { re: /Send \u{1F512}<\/button>/gu, n: 1,
+      why: 'the «Send 🔒» button of the document-sending sheet: the padlock tells the seafarer the files go out encrypted, and the button is enabled for everyone' },
+    { re: /sent — encrypted \u{1F512}/gu, n: 3,
+      why: 'the same encryption receipt in the three remaining toasts (files sent from the two document paths, and the application + redacted CV) — all after the fact, all about transport' },
+    { re: /Application sent \u{1F512}  attaching CV…/gu, n: 1,
+      why: 'the first half of that application receipt, shown while the CV is still being attached — again a statement about the channel, not a lock on a feature' },
+  ];
+  const padlockCount = (t) => (t.match(/\u{1F512}/gu) || []).length;
+  const padlockStrip = (t) => PADLOCK_ALLOW.reduce((acc, a) => acc.replace(a.re, (m) => 'X'.repeat(m.length)), t);
   const padlocks = SHIPPED_TEXT
-    .map((f) => ({ file: f.file, n: (f.text.match(/\u{1F512}/gu) || []).length, gate: (f.text.match(/(?:tile|module|plugin|card)-lock|mv-tile-lock/g) || []).length }))
+    .map((f) => ({ file: f.file, left: padlockCount(padlockStrip(f.text)), total: padlockCount(f.text) }))
+    .filter((x) => x.left > 0);
+  ok(padlocks.length === 0,
+    'no undeclared padlock in ANY shipped asset — not one that a different class name could hide behind (offenders: ' + JSON.stringify(padlocks) + ')');
+  // the allowlist is exact, current and non-vacuous: every entry really is there, exactly
+  // as many times as it says, so a removed string prunes the list instead of rotting in it
+  for (const a of PADLOCK_ALLOW) {
+    const hits = (HTML.match(a.re) || []).length;
+    ok(hits === a.n, 'the exception is real and current (' + hits + '/' + a.n + ' occurrences): ' + a.re);
+    ok(a.why.length > 60, 'and it says why that padlock is about encryption, not about access: ' + a.re);
+  }
+  const declared = PADLOCK_ALLOW.reduce((n, a) => n + a.n, 0);
+  const shippedPadlocks = SHIPPED_TEXT.reduce((n, f) => n + padlockCount(f.text), 0);
+  ok(declared === 9 && shippedPadlocks === 9,
+    'the whole shipped dist carries exactly 9 padlocks and all 9 are declared (' + shippedPadlocks + ' shipped, ' + declared + ' declared)');
+  const gateNames = SHIPPED_TEXT
+    .map((f) => ({ file: f.file, gate: (f.text.match(/(?:tile|module|plugin|card)-lock|mv-tile-lock/g) || []).length }))
     .filter((x) => x.gate > 0);
-  ok(padlocks.length === 0, 'no shipped asset marks a module tile with a lock badge (offenders: ' + JSON.stringify(padlocks) + ')');
+  ok(gateNames.length === 0, 'and no shipped asset even keeps a lock-badge CLASS around for one to be hung on (offenders: ' + JSON.stringify(gateNames) + ')');
   ok(!/mv-tile-lock/.test(HTML), 'the .mv-tile-lock badge and its CSS are gone from dist/index.html entirely, not merely hidden');
   ok(/var lockTitle=esc\(ru\?'[^']*':'Available after you join a vessel'\)/.test(HTML),
     'the My Vessel tiles say WHEN they work («Available after you join a vessel») instead of showing a padlock');
@@ -3159,7 +3205,7 @@ const nopayScan = (files, family) => NOPAY_RULES.filter(([fam]) => fam === famil
   // the remaining 🔒 in the dist all mean ENCRYPTION, and they stay: telling a seafarer
   // his CV went out end-to-end encrypted is the opposite of a paywall.
   const crypto = (HTML.match(/\u{1F512}/gu) || []).length;
-  ok(crypto >= 6, 'the encryption padlocks (end-to-end, «sent — encrypted 🔒») are untouched — ' + crypto + ' of them');
+  ok(crypto === 9, 'the encryption padlocks (end-to-end, «sent — encrypted 🔒») are untouched — exactly ' + crypto + ' of them, every one declared above');
   ok(/\u{1F512} End-to-end encrypted/u.test(HTML) && /sent — encrypted \u{1F512}/u.test(HTML), 'and they still say what they mean');
   // the identifiers the supervisor's review put out of bounds must NOT have been renamed
   ok(/async function getSeaServiceUnlockState\(\)/.test(HTML) && (HTML.match(/getSeaServiceUnlockState\(\)/g) || []).length === 7,
@@ -3167,11 +3213,24 @@ const nopayScan = (files, family) => NOPAY_RULES.filter(([fam]) => fam === famil
   ok(/var fullUnlock=\(total>0&&locked===0\);/.test(HTML) && /fullUnlock\?'yes':'no'/.test(HTML),
     'and so is var fullUnlock and its use — this slice changed WORDS, never behaviour');
   // negatives
-  const backCopy = HTML.replace('Plugins become available after you join a vessel crew.', 'Plugins unlock after you join a vessel crew.');
+  const backCopy = HTML.replace('Vessel workflows become available after you join a vessel crew.', 'Vessel workflows unlock after you join a vessel crew.');
   ok((nopayScrub(backCopy).match(/\bun-?lock(?:s|ed|ing)?\b/gi) || []).length === 1,
-    'NEGATIVE: putting «Plugins unlock after you join a vessel crew» back turns the unlock rule red');
+    'NEGATIVE: putting «unlock» back into the My Vessel note turns the unlock rule red');
   const backLock = HTML.replace('<div class="mv-tile" aria-disabled="true" title="', '<div class="mv-tile-lock">🔒</div><div class="mv-tile" aria-disabled="true" title="');
-  ok(/mv-tile-lock/.test(backLock), 'NEGATIVE: putting the padlock badge back on the module tiles turns it red too');
+  ok(/mv-tile-lock/.test(backLock) && padlockCount(padlockStrip(backLock)) === 1,
+    'NEGATIVE: putting the padlock badge back on the module tiles turns it red twice over — by its class name AND by the undeclared padlock');
+  // NEGATIVE — Supervisor Н-2's own mutation, verbatim: a padlock on the My Vessel screen
+  // under a class this rule never heard of. Under the previous rule this stayed green.
+  const H2 = HTML.replace('<div class="mv-tile" aria-disabled="true" title="', '<div class="pro-badge">🔒</div><div class="mv-tile" aria-disabled="true" title="');
+  ok(H2 !== HTML, 'the Н-2 mutation really was applied to the source under test');
+  ok((H2.match(/(?:tile|module|plugin|card)-lock|mv-tile-lock/g) || []).length === 0,
+    'and it is invisible to the OLD class-name filter — which is exactly why it was green');
+  ok(padlockCount(padlockStrip(H2)) === 1,
+    'NEGATIVE (Н-2): «<div class="pro-badge">🔒</div>» on the My Vessel screen turns this drill red — a padlock is counted wherever it is written and whatever it is called');
+  // NEGATIVE — the list cannot rot: delete a legitimate occurrence and its entry goes stale
+  const pruned = HTML.replace('🔒 Open conversation</button>', 'Open conversation</button>');
+  ok(pruned !== HTML && (pruned.match(/\u{1F512} Open conversation<\/button>/gu) || []).length === 0,
+    'NEGATIVE: removing a declared padlock from the copy makes its allowlist entry stale and red — the list gets pruned, it does not grow into a loophole');
   ok((nopayScrub('A more complete profile unlocks more Skipi opportunities').match(/\bun-?lock(?:s|ed|ing)?\b/gi) || []).length === 1
     && (nopayScrub('getSeaServiceUnlockState(); var fullUnlock=true;').match(/\bun-?lock(?:s|ed|ing)?\b/gi) || []).length === 0,
     'NEGATIVE CONTROL: the rule fires on the COPY and stays silent on the identifiers — a rule that renamed functions would have been reverted the first time it broke a gate');
@@ -3576,12 +3635,35 @@ const stripCodeComments = (text) => text.split('\n').map((line) => {
   ok(/openURL:options:completionHandler:/.test(CODE), 'the iOS branch sends UIApplication the modern openURL: message');
   ok(/sharedApplication/.test(CODE) && /objc_msgSend/.test(CODE), 'through the Objective-C runtime, with no new crate in Cargo.toml (which is not on this route)');
   ok(/run_on_main_thread/.test(iosBranch), 'and it does that on the MAIN thread — UIKit is not thread-safe and a background call is a crash, not a link');
-  // the security boundary: same allowlist, all three platforms, checked FIRST
-  const branchCount = (CODE.match(/pub fn open_external_url\(/g) || []).length;
-  const checkCount = (CODE.match(/if !external_url_is_allowed\(&url\) \{/g) || []).length;
-  ok(branchCount === 3 && checkCount === 3, 'all three platform branches (android/ios/desktop) exist and every one gates on the allowlist (' + checkCount + '/' + branchCount + ')');
-  const beforeCheck = iosBranch.slice(0, iosBranch.indexOf('if !external_url_is_allowed'));
-  ok(iosBranch.includes('if !external_url_is_allowed') && !/objc|msg_send|open_on_main_thread/.test(beforeCheck),
+  // the security boundary: same allowlist, all three platforms, checked FIRST.
+  //
+  // Н-1, 06.09 — WHY THIS IS NOT A COUNT OF THE GUARD'S FIRST LINE ANY MORE. The previous
+  // version counted `pub fn open_external_url(` (3) and the opening line of the old
+  // `if !external_url_is_allowed(...)` guard (3). Supervisor kept that opening line in the
+  // iOS branch and replaced the error return inside it with a no-op: both counts stayed 3,
+  // this harness stayed ALL GREEN 987/0, and iOS was handing arbitrary schemes to
+  // UIApplication. A rule that a guard's first half can satisfy is not a rule.
+  // The boundary is now ONE statement whose `?` IS the rejection, and what is asserted is
+  // that WHOLE statement, as the FIRST line of every branch body. There is no subset of
+  // those bytes that keeps the shape and drops the effect — and the effect itself is
+  // exercised for real in `cargo test --lib` (guard_external_url_returns_the_rejection_itself
+  // + desktop_open_external_url_rejects_a_disallowed_scheme call the code instead of reading it).
+  const GUARD_STMT = 'guard_external_url(&url)' + '?;';
+  const branchBodies = (src) => [...src.matchAll(/pub fn open_external_url\(/g)].map((m) => {
+    const body = src.slice(m.index);
+    const open = body.indexOf(' {\n') + 3;
+    const first = body.slice(open).split('\n').map((l) => l.trim()).find((l) => l.length > 0);
+    return { first, body };
+  });
+  const bodies = branchBodies(CODE);
+  const gated = bodies.filter((b) => b.first === GUARD_STMT);
+  ok(bodies.length === 3 && gated.length === 3,
+    'all three platform branches (android/ios/desktop) exist and every one OPENS with «' + GUARD_STMT + '» — the whole statement, question mark included ('
+    + gated.length + '/' + bodies.length + '; first lines: ' + JSON.stringify(bodies.map((b) => b.first)) + ')');
+  ok(/fn guard_external_url\(url: &str\) -> Result<\(\), String> \{[\s\S]{0,200}?Err\("Only http\(s\)\/mailto\/tel URLs are allowed"/.test(CODE),
+    'and the guard it calls really returns the rejection (it is not a bool with a friendly name)');
+  const beforeCheck = iosBranch.slice(0, iosBranch.indexOf(GUARD_STMT));
+  ok(iosBranch.includes(GUARD_STMT) && !/objc|msg_send|open_on_main_thread/.test(beforeCheck),
     'on iOS the allowlist is checked BEFORE anything reaches the Objective-C side');
   ok(/EXTERNAL_URL_ALLOWED_SCHEMES: \[&str; 4\] = \["https:\/\/", "http:\/\/", "mailto:", "tel:"\]/.test(CODE),
     'the allowlist itself is UNCHANGED — exactly the four schemes Android already allowed, not one more');
@@ -3601,6 +3683,20 @@ const stripCodeComments = (text) => text.split('\n').map((line) => {
     'EXTERNAL_URL_ALLOWED_SCHEMES: [&str; 5] = ["https://", "http://", "mailto:", "tel:", "file://"]');
   ok(!/EXTERNAL_URL_ALLOWED_SCHEMES: \[&str; 4\] = \["https:\/\/", "http:\/\/", "mailto:", "tel:"\]/.test(widened),
     'NEGATIVE: widening the allowlist by one scheme (file://) turns it red too — wiring iOS is not a licence to open more');
+  // NEGATIVE — Supervisor Н-1's own mutation, applied verbatim to the iOS branch: put the
+  // old guard SHAPE back and neuter its body. Under the previous rule this stayed green.
+  const H1 = CODE.replace(GUARD_STMT, 'if !external_url_is_allowed(&url) {\n        let _ = &url;\n    }');
+  ok(H1 !== CODE, 'the Н-1 mutation really was applied to the source under test');
+  ok(branchBodies(H1).filter((b) => b.first === GUARD_STMT).length === 2,
+    'NEGATIVE (Н-1): keeping the guard\u2019s shape and deleting the rejection turns this drill red — the branch no longer opens with the whole statement');
+  // NEGATIVE — the same trick expressed in the NEW shape: keep the call, drop the `?`.
+  const swallowed = CODE.replace(GUARD_STMT, 'let _ = guard_external_url(&url);');
+  ok(branchBodies(swallowed).filter((b) => b.first === GUARD_STMT).length === 2,
+    'NEGATIVE: swallowing the guard\u2019s Result (let _ = …) turns it red too — the call alone is not the boundary, the `?` is');
+  // NEGATIVE — position: every byte present, guard moved below the platform call.
+  const moved = CODE.replace(GUARD_STMT + '\n\n    use std::sync::mpsc;', 'use std::sync::mpsc;');
+  ok(moved !== CODE && branchBodies(moved).filter((b) => b.first === GUARD_STMT).length === 2,
+    'NEGATIVE: moving the guard out of first position turns it red — «checked first» is asserted, not assumed');
 }
 
 {
@@ -3707,10 +3803,24 @@ const stripCodeComments = (text) => text.split('\n').map((line) => {
     ok(!!f && (f.text.match(a.re) || []).length > 0, 'the exception is real and still there (not a stale loophole): ' + a.file + ' ' + a.re);
     ok(a.why.length > 60, 'and it says why that occurrence is not a confession of an unfinished app: ' + a.file);
   }
-  ok(/Photo upload and sending to the vessel become available/.test(HTML) && !/after backend/.test(HTML),
-    'the My Vessel note now tells the seafarer WHEN it works instead of naming our architecture');
-  ok(/Загрузка фото и отправка на судно становятся доступны/.test(HTML),
-    'and the Russian half was fixed with it — it carried the same word');
+  // №236b, 06.09 — BOTH halves of the trade, asserted together. The first fix took
+  // «appear after backend — nothing is sent now» out of the copy (Guideline 2.1: do not
+  // ship a screen that confesses an unfinished app). It replaced it with «Photo upload
+  // and sending to the vessel become available there too» — which PROMISES sending that
+  // no part of this app performs, i.e. it bought 2.1 with 2.3 (accuracy of description).
+  // The note may say WHEN the screen starts working; it may not promise a capability.
+  ok(/Vessel workflows become available after you join a vessel crew\./.test(HTML) && !/after backend/.test(HTML),
+    'the My Vessel note tells the seafarer WHEN the screen works, without naming our architecture');
+  ok(/До этого экран только принимает код экипажа\./.test(HTML) && /Until then this screen only takes the crew code\./.test(HTML),
+    'and both halves say what the screen does until then — the Russian one was fixed with the English');
+  const mvNote = (/mv-grid-note">'\+esc\(ru\?'([^']*)':'([^']*)'\)/.exec(HTML) || []).slice(1, 3);
+  ok(mvNote.length === 2, 'the My Vessel note was located in the dist (' + JSON.stringify(mvNote) + ')');
+  ok(mvNote.every((t) => !/\bsend(?:s|ing)?\b|отправ/i.test(t)),
+    'NEGATIVE-BY-CONSTRUCTION: neither half promises that anything is SENT — that promise is what №236b was (' + JSON.stringify(mvNote) + ')');
+  ok(mvNote.every((t) => !/\bsoon\b|\bshortly\b|скоро|в ближайш/i.test(t)),
+    'and neither half promises a date (rule (324))');
+  ok(/\bsend/i.test('Photo upload and sending to the vessel become available there too.'),
+    'NEGATIVE: the sentence this replaced — «Photo upload and sending to the vessel become available there too» — is exactly what that rule catches');
   // negatives
   ok(leakScan([{ file: 'index.html', text: 'Photo upload and sending to the vessel appear after backend — nothing is sent now.' }])
     .filter((h) => h.where.length).map((h) => h.label).includes('backend'),
@@ -3719,6 +3829,172 @@ const stripCodeComments = (text) => text.split('\n').map((line) => {
     'NEGATIVE: «not implemented» / «coming soon» written into index.html copy turns it red');
   ok(leakScan([{ file: 'index.html', text: '// backend TODO: coming soon, not implemented' }]).filter((h) => h.where.length).length === 0,
     'NEGATIVE CONTROL: the same words in a CODE COMMENT stay green — a rule that reddens on comments gets switched off by the first person in a hurry');
+}
+
+{
+  section('ONB1 — «Create my profile» no longer walks into the nine-step wizard: step 0 «Account first» stands between (OWNER 06.09, DECISIONS (351))');
+  // The complaint, proved in the code before it was fixed: the demo banner's «Create my
+  // profile» called mobileStartVaultWizard() directly, the wizard is MOBILE_SETUP_TOTAL_STEPS
+  // = 9 screens of forms, its last step creates a LOCAL vault — and loadVault() then raises
+  // the HARD LOGIN GATE (№117) over the whole shell. Nine steps of typing, then a wall.
+  // That is user report B2 («полчаса анкеты теряются, вход требуют в конце») word for word.
+  const afOverlay = (doc) => doc.getElementById('mobile-account-first');
+  const afShown = (doc) => { const o = afOverlay(doc); return !!o && o.style.display === 'flex'; };
+  const afHtml = (doc) => String((afOverlay(doc) || {}).innerHTML || '');
+  const CODE_HTML = stripCodeComments(HTML);
+  // bytes: there is exactly ONE door into the wizard, and no control opens it directly
+  const wizardRefs = (CODE_HTML.match(/mobileStartVaultWizard\(/g) || []).length;
+  ok(wizardRefs === 3,
+    'the wizard is referenced 3 times in the shipped code — its own declaration and the two sites inside step 0 — and nowhere else (found ' + wizardRefs + ')');
+  const directOpeners = CODE_HTML.match(/onclick="[^"]*mobileStartVaultWizard/g) || [];
+  ok(directOpeners.length === 0,
+    'no control in the shipped dist opens the wizard directly — every «create my profile» goes through mobileCreateProfile() (offenders: ' + JSON.stringify(directOpeners) + ')');
+  ok(/data-qa="assistant-demo-create-profile" onclick="mobileCreateProfile\(\)"/.test(HTML),
+    'and the button from the complaint — «Create my profile» in the demo banner — is one of them');
+  ok(/async function mobileCreateProfile\(\)\{\s*\n\s*if\(await _hasLoginToken\(\)\)\{ hideAccountFirst\(\); return mobileStartVaultWizard\(\); \}\s*\n\s*showAccountFirst\(\);/.test(HTML),
+    'mobileCreateProfile() is the gate itself: a live account passes straight through to the wizard, no account raises step 0');
+  ok(/MOBILE_SETUP_TOTAL_STEPS\s*=\s*9\b/.test(HTML), 'the wizard behind it is untouched — still the same 9 steps (PRESERVE)');
+  // live: demo home → tap «Create my profile» → step 0, and the wizard is NOT started
+  const app = await efBoot({ create_demo_vault_auto: EF_DEMO, get_profile_status: { is_demo: '1' } }, { seed: { 'skipi-assistant-consent': '1' } });
+  const { doc, sandbox, spies, calls } = app;
+  await sandbox.entryForkDemo();
+  await efSettle();
+  ok(mobileHtml(doc).includes('data-qa="assistant-demo-create-profile"'), 'ONB1 (render): the demo home really carries the button the complaint is about');
+  ok(!afShown(doc), 'ONB1 (render): step 0 is not on screen before it is asked for');
+  spies.mobileStartVaultWizard.length = 0;
+  await sandbox.mobileCreateProfile();
+  await efSettle();
+  ok(afShown(doc), 'ONB1 (render): tapping it raises step 0 «Account first»');
+  ok(spies.mobileStartVaultWizard.length === 0, 'ONB1 (render): and the nine-step wizard is NOT started — that is the whole fix');
+  ok(afHtml(doc).includes('Account first'), 'ONB1 (render): the screen says what it wants and why');
+  // negative: put the old direct call back
+  const backDirect = HTML.replace('data-qa="assistant-demo-create-profile" onclick="mobileCreateProfile()"', 'onclick="mobileStartVaultWizard()"');
+  ok(backDirect !== HTML && (stripCodeComments(backDirect).match(/onclick="[^"]*mobileStartVaultWizard/g) || []).length === 1,
+    'NEGATIVE: restoring the direct «Create my profile» → wizard call turns this drill red (that is B2 coming back)');
+  // and with a live account step 0 must NOT appear — otherwise the fix is a wall of its own
+  {
+    const signedIn = await efBoot({ app_login_status: { logged_in: true, pending: true } });
+    signedIn.spies.mobileStartVaultWizard.length = 0;
+    await signedIn.sandbox.mobileCreateProfile();
+    await efSettle();
+    ok(!afShown(signedIn.doc) && signedIn.spies.mobileStartVaultWizard.length === 1,
+      'ONB1: with an account already signed in, step 0 does not appear at all — the wizard opens exactly as before');
+  }
+
+  section('ONB2 — step 0 has EXACTLY two doors, Sign in and Register, and no way round them into the wizard');
+  // Owner 06.09 removed the third door the first draft of the card proposed: «создавать волт
+  // без регистрации на имейл не вижу смысла». A vault without an account is not a feature we
+  // are taking away — it is the dead end above, which loadVault() blocks the moment it exists.
+  const af = afHtml(doc);
+  ok((af.match(/<button\b/g) || []).length === 2, 'exactly two buttons — no third «continue without an account» door (' + (af.match(/<button\b/g) || []).length + ')');
+  for (const qa of ['account-first-sign-in', 'account-first-register']) {
+    ok((af.match(new RegExp('data-qa="' + qa + '"', 'g')) || []).length === 1, 'door "' + qa + '" rendered exactly once');
+  }
+  ok(!/mobileStartVaultWizard\(|mobileCreateProfile\(/.test(af), 'no control inside step 0 leads into the wizard — the only ways on are the two doors');
+  ok(/data-qa="account-first-back"/.test(af) && !/<button[^>]*account-first-back/.test(af),
+    'the way OUT is a link, not a third door: an overlay a user cannot leave would be a new dead end, and Back returns to the demo, never to the wizard');
+  ok(/data-qa="account-first-demo-note"/.test(af) && /no account needed/.test(af),
+    'and the honest footer is there: the app can still be seen in demo without an account');
+  // the doors actually work — Register opens exactly the existing external URL, Sign in reaches the gate
+  {
+    const reg = await efBoot({ create_demo_vault_auto: EF_DEMO, get_profile_status: { is_demo: '1' } }, { seed: { 'skipi-assistant-consent': '1' } });
+    await reg.sandbox.entryForkDemo(); await efSettle();
+    await reg.sandbox.mobileCreateProfile(); await efSettle();
+    reg.calls.length = 0;
+    reg.sandbox.accountFirstRegister();
+    await efSettle();
+    const hits = efCalled(reg.calls, 'open_external_url');
+    ok(hits.length === 1 && hits[0][1] && hits[0][1].url === 'https://assistant.skipi.app/register',
+      "ONB2 (render): Register opens exactly the existing registration URL — one invoke('open_external_url'), no new door");
+    ok(afShown(reg.doc), 'ONB2 (render): step 0 stays up behind it (registration finishes in the browser; Sign in is the way back)');
+  }
+  {
+    const si = await efBoot({ create_demo_vault_auto: EF_DEMO, get_profile_status: { is_demo: '1' }, app_login_status: { logged_in: false } }, { seed: { 'skipi-assistant-consent': '1' } });
+    await si.sandbox.entryForkDemo(); await efSettle();
+    await si.sandbox.mobileCreateProfile(); await efSettle();
+    si.calls.length = 0; si.spies.mobileStartVaultWizard.length = 0;
+    await si.sandbox.accountFirstSignIn();
+    await efSettle();
+    ok(!afShown(si.doc) && efGateShown(si.doc), 'ONB2 (render): Sign in leads to the login gate — the account really is asked for FIRST');
+    ok(efCalled(si.calls, 'close_vault', (a) => a && a.forget === true).length === 1,
+      'ONB2 (render): and the demo vault is closed AND forgotten on the way — a login token must never land in the vault the next Demo tap wipes');
+    ok(si.spies.mobileStartVaultWizard.length === 0, 'ONB2 (render): still no wizard before the account exists');
+    // the errand is finished after login, not abandoned on a landing screen
+    const timers = [];
+    si.sandbox.setTimeout = (fn) => { timers.push(fn); return 0; };
+    ok(typeof si.sandbox._loginGateNext === 'function', 'ONB2 (render): a continuation is parked for a successful sign-in');
+    await si.sandbox._loginGateNext();
+    timers.forEach((fn) => fn());
+    await efSettle();
+    ok(si.spies.mobileStartVaultWizard.length === 1, 'ONB2 (render): and THAT continuation is the profile setup the user asked for — it starts once, after the account');
+  }
+  // negatives
+  const thirdDoor = af.replace('<div class="mobile-entry-fork-sub" data-qa="account-first-demo-note"',
+    '<button data-qa="account-first-skip" onclick="mobileStartVaultWizard()">Continue without an account</button><div class="mobile-entry-fork-sub" data-qa="account-first-demo-note"');
+  ok(thirdDoor !== af && (thirdDoor.match(/<button\b/g) || []).length === 3 && /mobileStartVaultWizard\(/.test(thirdDoor),
+    'NEGATIVE: a third door «Continue without an account» that opens the wizard turns both rules of this drill red');
+  const noRegister = af.replace(/<button[^>]*data-qa="account-first-register"[\s\S]*?<\/button>/, '');
+  ok((noRegister.match(/<button\b/g) || []).length === 1,
+    'NEGATIVE: dropping Register (leaving only Sign in) turns it red too — a user with no account would have nowhere to go');
+
+  section('ONB2b — the demo still opens with NO account and NO login: the answer to Guideline 5.1.1(v) must survive step 0');
+  // This is the drill that keeps the fix from becoming a wall. Apple may not be asked to
+  // register to see the app; the demo is what makes requiring an account for a PERSONAL
+  // vault legitimate rather than «data you do not need».
+  {
+    const d = await efBoot({ create_demo_vault_auto: EF_DEMO, get_profile_status: { is_demo: '1' } }, { seed: { 'skipi-assistant-consent': '1' } });
+    ok(efForkShown(d.doc) && String((efFork(d.doc) || {}).innerHTML || '').includes('data-qa="demo"'),
+      'ONB2b: the Demo door is still on the first screen');
+    await d.sandbox.entryForkDemo();
+    await efSettle();
+    ok(!efGateShown(d.doc) && d.spies.showLoginGate.length === 0, 'ONB2b: Demo opens the app with NO login gate at all');
+    ok(!afShown(d.doc), 'ONB2b: and step 0 does not appear for the demo — the account is only asked for a REAL profile');
+    ok(mobileHtml(d.doc).includes('data-qa="assistant-demo-banner"') && d.spies.renderMobileShell.length >= 1, 'ONB2b: the shell really renders on demo data');
+    // the exception is keyed on is_demo alone, and it is load-bearing: prove BOTH branches live
+    ok(d.sandbox._efDemoNoLogin({ is_demo: '1' }) === true && d.sandbox._efDemoNoLogin({ is_demo: '0' }) === false && d.sandbox._efDemoNoLogin({}) === false,
+      'ONB2b: the exception answers to is_demo and to nothing else');
+    d.spies.showLoginGate.length = 0;
+    await d.sandbox.loadVault({ ...EF_REAL, is_demo: '0' });
+    await efSettle();
+    ok(d.spies.showLoginGate.length === 1 && efGateShown(d.doc),
+      'ONB2b (behaviour): a token-less NON-demo vault is still stopped by the gate — the demo exception is an exception, not a hole');
+  }
+
+  section('ONB3 — HARD LOGIN GATE №117 is not weakened by any of this (byte-for-byte)');
+  const GATE_LINE = 'if(!(await _hasLoginToken())&&!_efDemoNoLogin(info)){';
+  ok((HTML.match(new RegExp(GATE_LINE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length === 1,
+    'the gate condition is exactly «' + GATE_LINE + '», once, in loadVault()');
+  const loadVaultBody = HTML.slice(HTML.indexOf('async function loadVault(info){'), HTML.indexOf('async function loadVault(info){') + 900);
+  ok(loadVaultBody.includes(GATE_LINE) && loadVaultBody.indexOf(GATE_LINE) < loadVaultBody.indexOf('show(\'scr-content\')'),
+    'and it is the FIRST thing loadVault does — the shell is never shown before it');
+  ok(!/showAccountFirst|mobileCreateProfile|accountFirstSignIn/.test(loadVaultBody),
+    'step 0 did not wire itself into the gate: the gate is untouched by this slice');
+  // negatives
+  for (const [label, weakened] of [
+    ['dropping the token check', HTML.replace(GATE_LINE, 'if(!_efDemoNoLogin(info)){')],
+    ['widening the exception to any vault', HTML.replace(GATE_LINE, 'if(!(await _hasLoginToken())&&!isNativeMobile()){')],
+    ['turning the gate off', HTML.replace(GATE_LINE, 'if(false){')],
+  ]) {
+    ok(!weakened.includes(GATE_LINE), 'NEGATIVE: ' + label + ' turns this drill red');
+  }
+
+  section('ONB4 — no text on step 0 names a price or promises a date (the NOPAY vocabulary, reused)');
+  const AF_COPY = HTML.slice(HTML.indexOf('function _afTxt(){'), HTML.indexOf('function showAccountFirst(){'));
+  ok(AF_COPY.length > 400 && /Account first/.test(AF_COPY) && /Сначала аккаунт/.test(AF_COPY),
+    'the step 0 dictionary was located, both languages in it (' + AF_COPY.length + ' bytes)');
+  const afWordHits = nopayScan([{ file: 'step0', text: nopayScrub(AF_COPY) }], 'word').filter((h) => h.count > 0);
+  ok(afWordHits.length === 0, 'not one purchase word in step 0 copy (offenders: ' + JSON.stringify(afWordHits.map((h) => h.label)) + ')');
+  const afHostHits = nopayScan([{ file: 'step0', text: AF_COPY }], 'host').filter((h) => h.count > 0);
+  ok(afHostHits.length === 0, 'and no payment host either (offenders: ' + JSON.stringify(afHostHits.map((h) => h.label)) + ')');
+  ok(!/\bfree\b|бесплат/i.test(AF_COPY), 'nor a «free» claim (decision 253) — the demo line says «no account needed», not a price');
+  const DATE_WORDS = /\bsoon\b|\bshortly\b|\blater this\b|coming\s+(?:soon|weeks?|months?)|скоро|в ближайш|позже/i;
+  ok(!DATE_WORDS.test(AF_COPY), 'and no promise of a date (rule (324))');
+  // negatives — the same scan over the same copy with the two things it forbids added
+  const priced = AF_COPY.replace('Account first', 'Account first — upgrade to PRO for $10 a month');
+  ok(nopayScan([{ file: 'step0', text: nopayScrub(priced) }], 'word').filter((h) => h.count > 0).length >= 3,
+    'NEGATIVE: an upsell written into step 0 («upgrade to PRO for $10 a month») turns this drill red on several rules at once');
+  ok(DATE_WORDS.test(AF_COPY.replace('Register', 'Register (in-app registration coming soon)')),
+    'NEGATIVE: promising a date on step 0 turns it red too');
 }
 
 {

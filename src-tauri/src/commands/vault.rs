@@ -164,6 +164,25 @@ fn external_url_is_allowed(url: &str) -> bool {
         .any(|p| url.starts_with(p))
 }
 
+/// The security boundary itself, as ONE fallible statement instead of a shape a
+/// reader has to re-check on every platform branch.
+///
+/// Supervisor Н-1 (2026-09-06) proved why this exists. The drill below used to
+/// count how many times the OLD guard's opening line appeared in this file — so
+/// leaving that line in place and deleting only the error return inside it
+/// switched the boundary off on iOS while the whole harness stayed green
+/// (987/0). A guard whose test can be satisfied by its first half is not a
+/// guard. This one has no first half: each branch gates on a single call whose
+/// question-mark IS the rejection, so removing the effect removes the bytes the
+/// drill asserts and, in the same edit, stops compiling as the branch's return.
+fn guard_external_url(url: &str) -> Result<(), String> {
+    if external_url_is_allowed(url) {
+        Ok(())
+    } else {
+        Err("Only http(s)/mailto/tel URLs are allowed".to_string())
+    }
+}
+
 /// Opens a URL in the user's default browser.
 ///
 /// Android: fires an `ACTION_VIEW` intent through the `openSkipiUrl` helper on
@@ -180,13 +199,13 @@ fn external_url_is_allowed(url: &str) -> bool {
 #[cfg(target_os = "android")]
 #[tauri::command]
 pub fn open_external_url(window: tauri::WebviewWindow, url: String) -> Result<(), String> {
+    // FIRST statement of the body on every platform, imports included: «checked
+    // before anything else» is then visible rather than argued (Supervisor Н-1).
+    guard_external_url(&url)?;
+
     use jni::objects::{JObject, JString, JValue};
     use std::sync::mpsc;
     use std::time::Duration;
-
-    if !external_url_is_allowed(&url) {
-        return Err("Only http(s)/mailto/tel URLs are allowed".to_string());
-    }
 
     let url = url.clone();
     let (tx, rx) = mpsc::channel();
@@ -330,12 +349,10 @@ mod ios_open_url {
 #[cfg(target_os = "ios")]
 #[tauri::command]
 pub fn open_external_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    guard_external_url(&url)?;
+
     use std::sync::mpsc;
     use std::time::Duration;
-
-    if !external_url_is_allowed(&url) {
-        return Err("Only http(s)/mailto/tel URLs are allowed".to_string());
-    }
 
     let (tx, rx) = mpsc::channel();
     app.run_on_main_thread(move || {
@@ -353,9 +370,7 @@ pub fn open_external_url(url: String) -> Result<(), String> {
     // Limit to scheme://-style URLs so this command can't be abused to run
     // arbitrary programs. We allow http(s)/mailto/tel which are the schemes
     // Skipi routes through default applications.
-    if !external_url_is_allowed(&url) {
-        return Err("Only http(s)/mailto/tel URLs are allowed".to_string());
-    }
+    guard_external_url(&url)?;
     #[cfg(target_os = "macos")]
     let cmd = std::process::Command::new("open").arg(&url).spawn();
     #[cfg(target_os = "windows")]
@@ -1162,24 +1177,95 @@ mod tests {
         );
     }
 
+    // The boundary EXERCISED, not read: this is the half a source scan can never
+    // give, and it is why the scan below is allowed to be a scan at all.
+    #[test]
+    fn guard_external_url_returns_the_rejection_itself() {
+        for bad in [
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "intent://evil#Intent;scheme=x;end",
+            "content://media/external",
+            "skipi://whatever",
+            "ftp://example.com",
+            "  https://leading-space-bypass.example",
+            "",
+        ] {
+            let e = guard_external_url(bad)
+                .expect_err(&format!("expected {bad:?} to be rejected by the guard"));
+            assert!(e.contains("http(s)/mailto/tel"), "unexpected message: {e}");
+        }
+        for good in [
+            "https://assistant.skipi.app/register",
+            "http://example.com",
+            "mailto:crew@skipi.app",
+            "tel:+15551234567",
+        ] {
+            assert!(guard_external_url(good).is_ok(), "{good:?} must be allowed");
+        }
+    }
+
+    // The desktop branch is the one that actually compiles on this host, so its
+    // rejection is proved by CALLING the command, not by looking at it. The accepted
+    // path is deliberately not exercised: it would spawn a browser on the test machine.
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[test]
+    fn desktop_open_external_url_rejects_a_disallowed_scheme() {
+        for bad in ["file:///etc/passwd", "javascript:alert(1)", "ftp://example.com"] {
+            let e = open_external_url(bad.to_string())
+                .expect_err(&format!("expected {bad:?} to be rejected"));
+            assert!(e.contains("http(s)/mailto/tel"), "unexpected message: {e}");
+        }
+    }
+
     // The allowlist is the security boundary, and it has to be the SAME boundary on
     // all three platforms: one branch that forgot to call it would accept file:// or
-    // javascript: from anything that can reach the command.
+    // javascript: from anything that can reach the command. Only the desktop branch
+    // compiles here, so the other two are held by their bytes — which is exactly the
+    // thing Supervisor Н-1 (06.09) broke.
+    //
+    // WHAT Н-1 DID, AND WHY IT WORKED. The previous version of this test counted two
+    // strings: the branch signature (3) and the opening line of the old guard (3). He
+    // kept that opening line in the iOS branch and replaced the error return inside it
+    // with a no-op. Both counts stayed 3, the suite stayed ALL GREEN 987/0, and iOS was
+    // handing arbitrary schemes to UIApplication.
+    //
+    // WHAT CHANGED. The boundary is now one statement whose `?` IS the rejection, and
+    // this test asserts that WHOLE statement — there is no first half of it to keep.
+    // It also asserts POSITION: the statement must be the first line of the body, so a
+    // guard shifted below the platform call is red even with every byte present.
     #[test]
-    fn every_platform_branch_checks_the_allowlist() {
-        // Cut the test module off first: THIS function quotes both needles, and a
-        // test is not a platform branch.
+    fn every_platform_branch_gates_on_the_guard_first() {
+        // Cut the test module off first: THIS function quotes the needle, and a test
+        // is not a platform branch.
         let whole = include_str!("vault.rs");
         // The marker is assembled, not written out: a second literal copy of it in
         // this file would break the harness drill that cuts on the FIRST one.
         let marker = format!("#[cfg{}]", "(test)");
         let src = &whole[..whole.find(&marker).expect("test module marker")];
-        let branches = src.matches("pub fn open_external_url(").count();
-        let checks = src.matches("if !external_url_is_allowed(&url) {").count();
+        // Assembled for the same reason — the needle must be counted in the code
+        // above, never in this function.
+        let needle = format!("guard_external_url(&url){}", "?;");
+        let mut branches = 0usize;
+        let mut gated = 0usize;
+        for (i, _) in src.match_indices("pub fn open_external_url(") {
+            branches += 1;
+            let body = &src[i..];
+            let open = body.find(" {\n").expect("branch body opens") + 3;
+            let first = body[open..]
+                .lines()
+                .map(str::trim)
+                .find(|l| !l.is_empty() && !l.starts_with("//"))
+                .unwrap_or("");
+            if first == needle {
+                gated += 1;
+            }
+        }
         assert_eq!(branches, 3, "android + ios + desktop branches expected");
         assert_eq!(
-            checks, branches,
-            "every open_external_url branch must gate on the allowlist first"
+            gated, branches,
+            "every open_external_url branch must open with the guard statement, `?` included \
+             — a branch that keeps the call and drops the rejection is the Н-1 mutation"
         );
     }
 
