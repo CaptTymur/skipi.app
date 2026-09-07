@@ -9437,6 +9437,205 @@ async function _hasLoginToken(){
     try{ var st=await invoke('app_login_status'); return !!(st&&st.logged_in); }catch(e){ return false; }
 }
 
+// ========== Delete Skipi account — App Store Guideline 5.1.1(v) (OWNER 06.09) ==========
+// An app that lets a user CREATE an account must let the same user DELETE it from inside
+// the app. Skipi Seafarer shows a Register door on its first screen, so the rule applies
+// to the shipping build. Every step below stays in the app: no openExternalUrlSafe, no
+// link, no browser hop — a path that ends on a web page is precisely what the reviewer
+// rejects («the account cannot be deleted in the app»). Drill DEL4 keeps it that way.
+// Rust half: src-tauri/src/commands/account_delete.rs → invoke('delete_account').
+//
+// The wording below is a promise about an IRREVERSIBLE act, so it says only what this
+// button actually does. The seafarer reads the list of what our delete endpoint removes
+// on the server; then, in a block of the SAME weight and never as small print, what
+// STAYS — the anonymised record of what he paid, and the assistant service's own working
+// logs, which carry the text of his questions and answers together with his name and
+// which this button does not reach (RISKS №232b: they live in a separate service, on a
+// track we do not own; removal is a support request, and the address is the one the app
+// already uses for feedback). Then, in its own bold block, that the documents and the
+// safe on this device are NOT touched.
+//
+// TWO STANDING BANS on this copy, both checked by drill DEL3:
+//   · no deadline the server did not itself name in `completes_at` (rule (324));
+//   · no OVER-PROMISE — no «every copy», «all systems», «completely erased», «one thing
+//     remains» and their Russian twins. Supervisor's 07.09 mutation ADDED «Every copy of
+//     your data is erased from all Skipi systems…» to this text and the whole suite
+//     stayed green: DEL3 caught a truth going missing but not a lie being added. It does
+//     now, and that mutation is nailed down as a permanent negative control.
+function _adRu(){ try{ return getUiLang()==='ru'; }catch(e){ return false; } }
+function _adDeviceWord(){
+    var ru=_adRu(); var phone=false;
+    try{ phone=isNativeMobile(); }catch(e){}
+    return phone ? (ru?'этом телефоне':'this phone') : (ru?'этом устройстве':'this device');
+}
+function accountDeleteTexts(){
+    var ru=_adRu(); var dev=_adDeviceWord();
+    if(ru) return {
+        section:'Аккаунт Skipi',
+        sectionDesc:'Вход в это приложение и аккаунт на assistant.skipi.app — одно и то же. Здесь аккаунт можно удалить, не выходя из приложения.',
+        who:'Проверяем, под каким аккаунтом вы вошли…',
+        whoAs:'Вы вошли как ',
+        whoUnknown:'Вы вошли в аккаунт Skipi.',
+        whoNone:'Вы сейчас не вошли. Чтобы удалить аккаунт Skipi, сначала войдите в него.',
+        deleteRow:'Удалить аккаунт Skipi',
+        deleteRowDesc:'Аккаунт и связанные с ним данные на сервере Skipi удаляются. Что уходит, а что остаётся, перечислено на экране подтверждения. Действие необратимо.',
+        deleteBtn:'Удалить аккаунт…',
+        title:'Удалить аккаунт Skipi',
+        consequences:'Удаление необратимо: после подтверждения восстановить аккаунт не сможем ни мы, ни вы. На сервере Skipi удаляется: ваш email и Telegram (адрес освобождается, зарегистрироваться по нему можно снова, но это будет новый аккаунт); профиль и анкета моряка, фотография; документы в сейфе и сами файлы на диске, пакеты документов и история их отправок; документы, полученные от кандидатов, и распакованные вложения; стаж и приложенные к нему файлы, отзывы о судах; история диалогов с ассистентом в вашем аккаунте, включая вопросы, ещё стоящие в очереди на ответ; заявки на вакансии и рассылки в агентства, в том числе письма, ещё стоящие в очереди на отправку; привязки к Брокеру и Крюингу, все устройства, сессии и токены доступа.',
+        remainsTitle:'Что остаётся',
+        remains:'История платежей — сумма, дата и номер транзакции. Она обезличивается: за ней не остаётся ни имени, ни адреса, ни пароля, и связать её с вами нельзя. Так сделано по устройству базы данных: запись о платеже жёстко привязана к внутреннему идентификатору аккаунта, поэтому удаляется не она, а всё, что делало этот идентификатор вашим. Служебные журналы сервиса ассистента — отдельные технические записи, куда попадает текст ваших вопросов и ответов вместе с именем, под которым вы обращались. Кнопка выше до этих журналов не дотягивается: они лежат не в аккаунте. Их удаление можно запросить письмом на broker@capt-tymur.com.',
+        local:'Документы и сейф на '+dev+' остаются. Удаление аккаунта не стирает на '+dev+' ни одного файла — эти данные вы удаляете сами, когда захотите.',
+        passLabel:'Текущий пароль от аккаунта Skipi',
+        passHint:'Пароль нужен, чтобы аккаунт не смог удалить никто, кроме вас, с уже открытого приложения.',
+        cancel:'Отмена',
+        confirm:'Удалить навсегда',
+        working:'Удаляем…',
+        needPass:'Введите пароль, чтобы подтвердить удаление.',
+        done:'Аккаунт Skipi удалён.',
+        doneWhen:'Аккаунт Skipi удаляется. Сервер назвал момент завершения: '
+    };
+    return {
+        section:'Skipi account',
+        sectionDesc:'Signing in to this app and your account on assistant.skipi.app are the same thing. You can delete that account here, without leaving the app.',
+        who:'Checking which account you are signed in to…',
+        whoAs:'Signed in as ',
+        whoUnknown:'You are signed in to a Skipi account.',
+        whoNone:'You are not signed in. Sign in to your Skipi account first, then delete it.',
+        deleteRow:'Delete Skipi account',
+        deleteRowDesc:'The account and the data tied to it on the Skipi server are deleted. The confirmation screen lists what goes and what stays. This cannot be undone.',
+        deleteBtn:'Delete account…',
+        title:'Delete Skipi account',
+        consequences:'Deletion is permanent. Once you confirm it, neither you nor we can bring the account back. The following is deleted on the Skipi server: your email and Telegram (the address is released — you can register with it again, but that will be a new account); your profile and seafarer questionnaire, your photograph; the documents in your safe and the files themselves on disk, document packages and the history of sending them; documents received from candidates and unpacked attachments; your sea service and the files attached to it, your vessel reviews; the history of your conversations with the assistant inside your account, including questions still queued for an answer; job applications and mailings to agencies, including letters still queued for sending; your links to Broker and Crewing, all devices, sessions and access tokens.',
+        remainsTitle:'What stays',
+        remains:'The history of what you paid — amount, date and transaction number. It is anonymised: no name, no address and no password stays with it, and it cannot be linked back to you. That follows from how the database is built: each such record is hard-linked to an internal account identifier, so what is deleted is not the record but everything that made that identifier yours. The assistant service also keeps its own working logs — separate technical records that carry the text of your questions and the answers together with the name you asked under. The button above does not reach those logs: they do not live inside the account. You can ask for them to be removed by writing to broker@capt-tymur.com.',
+        local:'The documents and the safe on '+dev+' stay. Deleting the account erases no file on '+dev+' — you delete that data yourself, whenever you choose.',
+        passLabel:'Your current Skipi account password',
+        passHint:'The password is asked for so that nobody but you can delete the account from an app that is already open.',
+        cancel:'Cancel',
+        confirm:'Delete permanently',
+        working:'Deleting…',
+        needPass:'Enter your password to confirm the deletion.',
+        done:'Your Skipi account has been deleted.',
+        doneWhen:'Your Skipi account is being deleted. The server named this completion moment: '
+    };
+}
+// ONE builder for the «Skipi account» block, used by BOTH settings shells: the unified
+// @skipi/settings section (the gear, desktop and mobile) and the legacy About tab (the
+// fail-closed fallback). Two copies of this markup would mean the deletion path can be
+// present in one shell and missing in the other — which is how a 5.1.1(v) rejection
+// comes back.
+function accountDeleteSectionHtml(){
+    var t=accountDeleteTexts();
+    var h='<div class="settings-section" data-qa="settings-account">';
+    h+='<h3>'+esc(t.section)+'</h3>';
+    h+='<div class="section-desc">'+esc(t.sectionDesc)+'</div>';
+    h+='<div class="setting-row"><div class="setting-info"><div class="setting-label">'+esc(t.deleteRow)+'</div>';
+    h+='<div class="setting-desc" data-qa="account-delete-who" id="account-delete-who">'+esc(t.who)+'</div>';
+    h+='<div class="setting-desc">'+esc(t.deleteRowDesc)+'</div></div>';
+    h+='<div class="setting-control"><button class="btn btn-outline btn-sm btn-red" type="button" data-qa="account-delete-open" onclick="openAccountDelete()">'+esc(t.deleteBtn)+'</button></div>';
+    h+='</div></div>';
+    accountDeleteScheduleWho();
+    return h;
+}
+// The markup is a string until the shell commits it, and neither shell offers a
+// post-render hook, so the «signed in as» line is filled by a bounded wait-for-DOM
+// loop (same shape as scheduleSeafarerFormLoad). It is cosmetic: if it never resolves
+// the row still reads honestly and the button still works.
+var _adWhoTimer=null;
+function accountDeleteScheduleWho(){
+    try{ if(_adWhoTimer!==null){ clearTimeout(_adWhoTimer); } }catch(e){}
+    _adWhoTimer=null;
+    var attempts=0;
+    function tick(){
+        _adWhoTimer=null;
+        var el=document.getElementById('account-delete-who');
+        if(!el){ attempts+=1; if(attempts>40) return; _adWhoTimer=setTimeout(tick,50); return; }
+        var t=accountDeleteTexts();
+        Promise.resolve().then(function(){ return invoke('app_login_status'); }).then(function(st){
+            var e2=document.getElementById('account-delete-who');
+            if(!e2) return;
+            if(st&&st.email){ e2.textContent=t.whoAs+String(st.email); }
+            else if(st&&st.logged_in){ e2.textContent=t.whoUnknown; }
+            else { e2.textContent=t.whoNone; }
+        }).catch(function(){
+            var e2=document.getElementById('account-delete-who');
+            if(e2) e2.textContent=t.whoNone;
+        });
+    }
+    _adWhoTimer=setTimeout(tick,0);
+}
+// The confirmation screen. Built as a string so a drill can read exactly what the
+// seafarer will read, without a browser.
+function accountDeleteConfirmHtml(){
+    var t=accountDeleteTexts();
+    var h='<div id="account-delete-overlay" class="modal-overlay open" data-qa="account-delete-screen" style="z-index:130;" onclick="if(event.target===this)closeAccountDelete();">';
+    h+='<div class="modal-panel" style="width:min(640px,94vw);max-height:88vh;overflow:auto;">';
+    h+='<h3 style="margin-top:0;margin-bottom:10px;">'+esc(t.title)+'</h3>';
+    h+='<div data-qa="account-delete-consequences" style="font-size:13px;line-height:1.5;color:var(--text);margin-bottom:12px;">'+esc(t.consequences)+'</div>';
+    // What STAYS. Same font size, same colour, same screen, directly under the list of
+    // what goes — the user learns about the assistant service's logs BEFORE he confirms,
+    // not from a footnote and not after.
+    h+='<div data-qa="account-delete-remains" style="font-size:13px;line-height:1.5;color:var(--text);margin-bottom:12px;"><b>'+esc(t.remainsTitle)+'.</b> '+esc(t.remains)+'</div>';
+    h+='<div data-qa="account-delete-local-note" style="font-size:13px;line-height:1.5;font-weight:700;color:var(--text);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:6px;padding:10px 12px;margin:0 0 14px;">'+esc(t.local)+'</div>';
+    h+='<div class="field"><label for="account-delete-password">'+esc(t.passLabel)+'</label>';
+    h+='<input type="password" id="account-delete-password" data-qa="account-delete-password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" style="width:100%;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:13px;box-sizing:border-box;">';
+    h+='<div style="font-size:11px;color:var(--text2);margin-top:6px;">'+esc(t.passHint)+'</div></div>';
+    h+='<div id="account-delete-error" data-qa="account-delete-error" style="display:none;white-space:pre-line;font-size:12px;color:var(--red);margin:10px 0 0;"></div>';
+    h+='<div style="margin-top:18px;display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;">';
+    h+='<button class="btn btn-outline btn-sm" type="button" data-qa="account-delete-cancel" onclick="closeAccountDelete()">'+esc(t.cancel)+'</button>';
+    h+='<button class="btn btn-outline btn-sm btn-red" type="button" id="account-delete-confirm" data-qa="account-delete-confirm" onclick="confirmAccountDelete()">'+esc(t.confirm)+'</button>';
+    h+='</div></div></div>';
+    return h;
+}
+function closeAccountDelete(){
+    var el=document.getElementById('account-delete-overlay');
+    if(el && el.remove) el.remove();
+}
+function openAccountDelete(){
+    closeAccountDelete();
+    document.body.insertAdjacentHTML('beforeend',accountDeleteConfirmHtml());
+    try{
+        var phone=false; try{ phone=isNativeMobile(); }catch(e){}
+        if(!phone){
+            var el=document.getElementById('account-delete-password');
+            if(el) setTimeout(function(){ try{ el.focus(); }catch(e){} },50);
+        }
+    }catch(e){}
+}
+async function confirmAccountDelete(){
+    var t=accountDeleteTexts();
+    var errEl=document.getElementById('account-delete-error');
+    function fail(msg){
+        var e2=document.getElementById('account-delete-error');
+        if(e2){ e2.textContent=msg||''; e2.style.display=msg?'block':'none'; }
+    }
+    var pwEl=document.getElementById('account-delete-password');
+    var pw=(pwEl&&pwEl.value)||'';
+    if(!String(pw).trim()){ fail(t.needPass); return; }
+    var btn=document.getElementById('account-delete-confirm');
+    if(btn){ btn.disabled=true; btn.textContent=t.working; }
+    fail('');
+    try{
+        var res=await invoke('delete_account',{password:pw});
+        if(pwEl) pwEl.value='';
+        closeAccountDelete();
+        // No deadline of ours: only a moment the SERVER named is shown (rule (324)).
+        var when=(res&&res.completes_at)?String(res.completes_at):'';
+        try{ showToast(when?(t.doneWhen+when):t.done,'info'); }catch(e){}
+        try{ if(typeof closeUnifiedSettings==='function') closeUnifiedSettings(); }catch(e){}
+        try{ if(typeof closeSettings==='function') closeSettings(); }catch(e){}
+        // The account is gone and the local session was already cleared by the Rust
+        // command — end where a signed-out app ends, inside the app.
+        await appLogoutToGate();
+    }catch(e){
+        fail(String((e&&e.message)?e.message:e));
+        try{ logError('delete_account',e); }catch(_e){}
+    }finally{
+        var b=document.getElementById('account-delete-confirm');
+        if(b){ b.disabled=false; b.textContent=t.confirm; }
+    }
+}
+
 // ========== Entry fork «Sign in · Register · Demo» (canon (295), OWNER 06.09) ==========
 // NATIVE-ONLY first screen (isNativeMobile()): a gate-class opaque overlay with exactly
 // three doors, shown wherever there is no session (cold start S1/S2, Sign out). With a
@@ -16323,6 +16522,10 @@ function renderSettingsBody(){
         h += '<div class="setting-control"><button class="btn btn-outline btn-sm" id="btn-app-logout" onclick="appLogoutToGate()">'+(getUiLang()==='ru'?'Выйти':'Sign out')+'</button></div></div>';
         h += '<div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-accent btn-sm" onclick="openFeedbackDialog(\'about\')">'+tr('feedback.manual_button')+'</button><button class="btn btn-outline btn-sm" onclick="reportIssue()">Сообщить о проблеме</button></div>';
         h += '</div>';
+        // «Skipi account» — the in-app account deletion required by App Store
+        // Guideline 5.1.1(v). SAME builder the unified shell uses, so the path
+        // exists in whichever settings screen the user (or the reviewer) lands on.
+        h += accountDeleteSectionHtml();
     }
 
     document.getElementById('settings-body').innerHTML = h;
@@ -17681,6 +17884,23 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
         };
     }
 
+    // ---- App-specific section: «Skipi account» — in-app account deletion ----
+    // App Store Guideline 5.1.1(v). The gear opens THIS shell on desktop and on
+    // mobile, so the deletion path has to be a section here — the legacy About tab
+    // is only the fail-closed fallback. renderHtml delegates to the ONE builder in
+    // the main inline block (accountDeleteSectionHtml), so both shells show the same
+    // block; only the label is computed locally, because buildHost() runs before
+    // anything renders and must not reach outside this script.
+    function accountSection(){
+        return {
+            id: 'skipi-account',
+            order: 900,
+            label: (getUiLang()==='ru' ? 'Аккаунт Skipi' : 'Skipi account'),
+            icon: '⛓', // chains — the account link this screen can break
+            renderHtml: function(){ return accountDeleteSectionHtml(); }
+        };
+    }
+
     // ---- Host adapter ----
     function buildHost(){
         var host = {
@@ -17714,8 +17934,11 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
             exportVaultBackup: unifiedExportVaultBackup,
             importVaultBackup: unifiedImportVaultBackup,
 
-            // App-specific home section (block III). NO host.team for Seafarer.
-            appSpecificSections: [ seafarerSection() ],
+            // App-specific home sections (block III). NO host.team for Seafarer.
+            // «Skipi account» carries the in-app account deletion (App Store
+            // 5.1.1(v)); the gear opens THIS shell on desktop and mobile alike,
+            // so the deletion path has to live here, not only on the legacy tab.
+            appSpecificSections: [ seafarerSection(), accountSection() ],
 
             onError: function(err, context){ try{ console.warn('[unified-settings]', context, err); }catch(e){} }
         };
