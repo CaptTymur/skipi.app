@@ -34,6 +34,12 @@ const REMOTE_LOADER = fs.readFileSync(path.join(DIST, 'plugin-loader.js'), 'utf8
 // @skipi/plugin-host-ui — the Apps/plugin UI module the app loads via <script src> before
 // its inline script (adopted 2026-07-14, retiring the inline Apps-UI fork).
 const HOST_UI_MODULE = fs.readFileSync(path.join(DIST, 'plugin-host-ui.js'), 'utf8');
+// @skipi/settings — the unified settings shell the gear really opens (desktop AND mobile).
+// Loaded on demand by bootApp({ withSettings: true }) so the account/deletion drills can
+// exercise the shell the user actually sees instead of the legacy fallback screen.
+const SETTINGS_MODULE = fs.readFileSync(path.join(DIST, 'skipi-settings.js'), 'utf8');
+const ACCOUNT_DELETE_RS = fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'commands', 'account_delete.rs'), 'utf8');
+const LIB_RS = fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'lib.rs'), 'utf8');
 const HOST_RUNTIME_BRIDGE_SHA256 = 'edd0ba5f8b21f05fcf55485b13b1dafc963173b2d2aa79e261611297283c307a';
 
 const PDIR = path.join(DIST, 'plugins', 'bnwas-time-anchor');
@@ -288,13 +294,19 @@ class VmDocument {
   }
 }
 
-function bootApp({ seed = {}, onLine = true, platform = 'linux' } = {}) {
+function bootApp({ seed = {}, onLine = true, platform = 'linux', withSettings = false, invokeOverride = null } = {}) {
   const doc = new VmDocument(HTML);
   const lstore = new Map(Object.entries(seed).map(([k, v]) => [k, String(v)]));
   // mobile-home-assistant (owner 05.09): capture window listeners (popstate/online/offline) and
   // record History calls so the Android Back contract can be driven and asserted from the harness.
   const listeners = {};
-  const invoke = async (cmd) => {
+  const invokeCalls = [];
+  const invoke = async (cmd, args) => {
+    invokeCalls.push([cmd, args]);
+    if (invokeOverride) {
+      const hit = await invokeOverride(cmd, args);
+      if (hit !== undefined) return hit;
+    }
     if (cmd === 'get_build_info') return { version: '0.0.0-apps-harness', sha: 'apps-harness' };
     if (cmd === 'get_platform') return platform;
     if (cmd === 'get_vault_types' || cmd === 'get_recent_vaults' || cmd === 'get_optional_categories') return [];
@@ -327,11 +339,14 @@ function bootApp({ seed = {}, onLine = true, platform = 'linux' } = {}) {
   // that here so the module's create()/attachGlobals (called from the inline) can expose the
   // plugin* UI globals (showApps, pluginSelect, …) that moved out of the inline during adoption.
   vm.runInContext(HOST_UI_MODULE, sandbox, { filename: 'dist/plugin-host-ui.js' });
+  // Same for @skipi/settings when a drill needs the REAL unified shell: without it the
+  // adapter takes its fail-closed branch and the legacy screen answers instead.
+  if (withSettings) vm.runInContext(SETTINGS_MODULE, sandbox, { filename: 'dist/skipi-settings.js' });
   const scripts = Array.from(HTML.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi))
     .filter(([, a]) => !/\ssrc\s*=/.test(a || ''))
     .map(([, , c]) => c);
   scripts.forEach((code, i) => vm.runInContext(code, sandbox, { filename: `dist/index.html#inline-${i + 1}` }));
-  return { sandbox, doc, lstore, listeners };
+  return { sandbox, doc, lstore, listeners, invokeCalls };
 }
 
 const settleVm = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
@@ -3769,6 +3784,302 @@ const stripCodeComments = (text) => text.split('\n').map((line) => {
   const noSub = HTML.replace("          currentUiLangLabel())", '          )');
   ok(!/currentUiLangLabel\(\)/.test(noSub.slice(noSub.indexOf('function renderMobileMenu(){'), noSub.indexOf('function currentUiLangLabel('))),
     'NEGATIVE: dropping the current-language sub-label turns it red too — an icon that does not show its state is not a fix');
+}
+
+
+// ===========================================================================
+// DEL1–DEL5 — «Delete my Skipi account», the App Store 5.1.1(v) requirement.
+//
+// Guideline 5.1.1(v): an app that lets a user CREATE an account must let the
+// same user DELETE it, and the whole path must be completable INSIDE the app.
+// Skipi Seafarer shows a Register door on its first screen, so the rule binds
+// the shipping build. Before this slice `delete account` had ZERO occurrences
+// in dist/** and src-tauri/src/**.
+//
+// What the five drills defend, and why each one is here rather than in a
+// reviewer's rejection letter:
+//   DEL1 the path EXISTS and is reachable in the settings shell the gear
+//        really opens — desktop AND mobile — not only on the legacy tab;
+//   DEL2 deleting the ACCOUNT never deletes local files or the vault (they
+//        are different acts, and the user is told so);
+//   DEL3 the confirmation screen says all four true things and promises no
+//        deadline the server did not name (rule (324));
+//   DEL4 no step of the path leaves the app for a browser;
+//   DEL5 the command behaves against the agreed server contract — the three
+//        failure codes leave the account alone and SAY so, and the app never
+//        invents a completion date.
+// ===========================================================================
+const AD_SETTLE = async () => {
+  for (let i = 0; i < 60; i += 1) await Promise.resolve();
+  await new Promise((r) => setImmediate(r));
+  for (let i = 0; i < 60; i += 1) await Promise.resolve();
+};
+// The delete path's own source, sliced out of index.html by its two comment
+// fences, so DEL4 reads exactly the code that runs and nothing around it.
+const AD_START = '// ========== Delete Skipi account';
+const AD_END = '// ========== Entry fork';
+const AD_SRC = HTML.slice(HTML.indexOf(AD_START), HTML.indexOf(AD_END));
+// Mount the REAL @skipi/settings shell and open the account section in a chosen
+// mode. `create(host, {mode})` is the module's own entry; the host is the one the
+// app's adapter built, captured off SkipiSettings.mount during a real
+// openUnifiedSettings() — so this is the production host object, not a fixture.
+async function adUnifiedHost(app) {
+  let captured = null;
+  const realMount = app.sandbox.SkipiSettings.mount;
+  app.sandbox.SkipiSettings.mount = function (sel, host, opts) {
+    captured = { host, opts };
+    return realMount.call(this, sel, host, opts);
+  };
+  app.sandbox.openUnifiedSettings();
+  await AD_SETTLE();
+  return captured;
+}
+async function adSectionHtml(app, host, mode) {
+  const inst = app.sandbox.SkipiSettings.create(host, { mode });
+  inst.mount('#settings-root');
+  await AD_SETTLE();
+  inst.open('skipi-account');
+  await AD_SETTLE();
+  const html = String((app.doc.getElementById('settings-root') || {}).innerHTML || '');
+  inst.unmount();
+  return html;
+}
+
+{
+  section('DEL1 — Settings really offers «delete my account», in the shell the gear opens, on desktop AND on mobile');
+  // The gear (#ri-set, #mb-gear, app-header-settings) calls openSettings(), which the
+  // adoption script reroutes to the unified @skipi/settings shell. Putting the delete
+  // entry only on the legacy About tab would ship a path nobody — including the
+  // reviewer — can reach, so the section is asserted in the REAL shell, both layouts.
+  const app = bootApp({ withSettings: true });
+  await AD_SETTLE();
+  const cap = await adUnifiedHost(app);
+  ok(!!cap, 'the gear entry mounted the unified settings shell (host captured)');
+  const ids = ((cap && cap.host && cap.host.appSpecificSections) || []).map((s) => s && s.id);
+  ok(ids.indexOf('skipi-account') >= 0, 'the adapter registers a «Skipi account» section (got ' + JSON.stringify(ids) + ')');
+  for (const mode of ['desktop', 'mobile']) {
+    const h = await adSectionHtml(app, cap.host, mode);
+    ok(h.includes('data-qa="settings-account"'), 'DEL1 (' + mode + '): the account section renders');
+    ok(h.includes('data-qa="account-delete-open"'), 'DEL1 (' + mode + '): and it carries the delete entry');
+    ok(/onclick="openAccountDelete\(\)"/.test(h), 'DEL1 (' + mode + '): which opens the in-app confirmation screen');
+  }
+  // The legacy About tab (the adapter's fail-closed fallback) carries the SAME block,
+  // so a user who lands there is not left without a way to delete the account.
+  app.sandbox.settingsTab = 'about';
+  app.sandbox.renderSettingsBody();
+  const legacy = String((app.doc.getElementById('settings-body') || {}).innerHTML || '');
+  ok(legacy.includes('data-qa="settings-account"') && legacy.includes('data-qa="account-delete-open"'),
+    'DEL1 (legacy fallback tab): the same account block is on the About tab');
+  ok(/\['vaults','seafarer','appearance','about'\]/.test(HTML),
+    'and «about» is one of the four tabs the MOBILE legacy nav offers, so the fallback is reachable on a phone too');
+  // negatives
+  const noSection = HTML.replace('appSpecificSections: [ seafarerSection(), accountSection() ],', 'appSpecificSections: [ seafarerSection() ],');
+  ok(noSection !== HTML, 'the negative mutation really unregistered the section');
+  ok(!/accountSection\(\)\s*\]/.test(noSection),
+    'NEGATIVE: dropping the account section from the unified adapter turns DEL1 red — that is 5.1.1(v) coming back');
+  const noLegacy = HTML.replace('        h += accountDeleteSectionHtml();\n', '');
+  ok(noLegacy !== HTML && !/h \+= accountDeleteSectionHtml\(\);/.test(noLegacy),
+    'NEGATIVE: dropping it from the legacy About tab turns the fallback half red as well');
+  const noButton = AD_SRC.replace('data-qa="account-delete-open"', 'data-qa="account-something-else"');
+  ok(!/data-qa="account-delete-open"/.test(noButton),
+    'NEGATIVE: renaming the delete entry hook turns the render assertions red');
+}
+
+{
+  section('DEL2 — deleting the ACCOUNT never deletes anything on this device');
+  // PRESERVE line of the task card. The account lives on assistant.skipi.app; the
+  // vault, the documents and their files live on the phone. Wiring the two together
+  // «while we are at it» would destroy a seafarer's only copy of his certificates on
+  // a mistap, so the Rust command is forbidden from touching the filesystem or the
+  // vault lifecycle — checked on the real bytes of the command's own file.
+  const FORBIDDEN = [
+    ['remove_file', /\bremove_file\b/],
+    ['remove_dir / remove_dir_all', /\bremove_dir(_all)?\b/],
+    ['close_vault', /\bclose_vault\b/],
+    ['forget', /\bforget\b/],
+    ['std::fs', /\bstd::fs::/],
+    ['fs::remove', /\bfs::remove/],
+    ['delete_document / delete_package', /\bdelete_(document|package|work_file|vault)\b/],
+  ];
+  for (const [label, re] of FORBIDDEN) {
+    ok(!re.test(ACCOUNT_DELETE_RS), 'account_delete.rs contains no «' + label + '» call');
+  }
+  ok(/fn delete_account\(/.test(ACCOUNT_DELETE_RS), 'and the file really is the delete_account command (the scan is not vacuous)');
+  ok(/set_vault_info\(conn, key, ""\)/.test(ACCOUNT_DELETE_RS),
+    'the ONLY local write is clearing the login session keys — the same three keys app_logout clears');
+  ok(/USER_TOKEN_KEY[\s\S]{0,120}USER_EMAIL_KEY[\s\S]{0,120}USER_LOGIN_AT_KEY/.test(ACCOUNT_DELETE_RS),
+    'and it is exactly those three keys, named, not a loop over the whole vault_info table');
+  ok(/account_delete::delete_account/.test(LIB_RS) && /mod account_delete;/.test(LIB_RS),
+    'the command is registered in lib.rs, so the button is wired to real code');
+  // negatives — one per forbidden call site, on real mutated bytes
+  for (const [label, re] of FORBIDDEN) {
+    const injected = ACCOUNT_DELETE_RS.replace(
+      'Ok(result)',
+      'std::fs::remove_file("x").ok(); std::fs::remove_dir_all("y").ok(); close_vault(); forget(); delete_document("d"); fs::remove_dir("z");\n    Ok(result)'
+    );
+    ok(injected !== ACCOUNT_DELETE_RS && re.test(injected),
+      'NEGATIVE: a local-deletion call added to account_delete.rs turns DEL2 red («' + label + '»)');
+  }
+  const noCommand = ACCOUNT_DELETE_RS.replace('fn delete_account(', 'fn something_else(');
+  ok(!/fn delete_account\(/.test(noCommand),
+    'NEGATIVE: and the scan is anchored to the real command — renaming it away is red, not silently green');
+}
+
+{
+  section('DEL3 — the confirmation screen tells the truth, in both languages, and promises no date the server did not give');
+  const app = bootApp({});
+  await AD_SETTLE();
+  const screens = {};
+  for (const lang of ['en', 'ru']) {
+    app.sandbox.localStorage.setItem(app.sandbox.UI_LANG_KEY, lang);
+    screens[lang] = String(app.sandbox.accountDeleteConfirmHtml());
+  }
+  // (1) irreversible, and it is the FIRST thing said
+  ok(/Deletion is permanent\. Once you confirm it, neither you nor we can bring the account back\./.test(screens.en),
+    'EN: the screen opens by saying the deletion is permanent and nobody can undo it');
+  ok(/Удаление необратимо: после подтверждения восстановить аккаунт не сможем ни мы, ни вы\./.test(screens.ru),
+    'RU: the agreed Russian sentence, verbatim');
+  // (2) sign-in stops working everywhere: devices, sessions and tokens
+  ok(/all devices, sessions and access tokens/.test(screens.en) && /все устройства, сессии и токены доступа/.test(screens.ru),
+    'both: every device, session and access token goes — the account stops working everywhere');
+  // (3) the cloud profile goes
+  ok(/profile and seafarer questionnaire/.test(screens.en) && /профиль и анкета моряка/.test(screens.ru),
+    'both: the synced profile and questionnaire are named as deleted');
+  // (4) …and the ONE thing that survives is named, with the reason
+  ok(/history of what you paid/.test(screens.en) && /история платежей/.test(screens.ru),
+    'both: the one surviving record is named rather than quietly kept');
+  ok(/anonymised/.test(screens.en) && /обезличивается/.test(screens.ru),
+    'both: and it is stated to be anonymised — no name, no address, no way back to the user');
+  // (5) THE separate, visible line: nothing on this device is touched
+  for (const lang of ['en', 'ru']) {
+    ok(/data-qa="account-delete-local-note"/.test(screens[lang]),
+      lang + ': the local-data promise is its OWN block, not a clause inside the wall of text');
+    ok(/font-weight:700/.test(screens[lang].slice(screens[lang].indexOf('account-delete-local-note'), screens[lang].indexOf('account-delete-local-note') + 260)),
+      lang + ': and it is set in bold — the card says «не мелкий шрифт», so this is checked, not assumed');
+  }
+  ok(/The documents and the safe on this device stay\./.test(screens.en),
+    'EN: the documents and the safe on this device stay — the user deletes those himself');
+  ok(/Документы и сейф на этом устройстве остаются\./.test(screens.ru),
+    'RU: the same promise, in Russian');
+  // (6) confirmation is required, and it is a password field
+  ok(/id="account-delete-password"/.test(screens.en) && /type="password"/.test(screens.en),
+    'the screen asks for the account password before anything happens');
+  ok(/data-qa="account-delete-cancel"/.test(screens.en) && /data-qa="account-delete-confirm"/.test(screens.en),
+    'and it offers both a Cancel and an explicit destructive confirm');
+  // (7) NO promised deadline anywhere on the screen
+  const TIMING = [/\bwithin\s+\d/i, /\b\d+\s*(?:days?|hours?|weeks?|months?)\b/i, /в течение\s+\d/i, /\b\d+\s*(?:дн|час|недел|месяц)/i];
+  for (const lang of ['en', 'ru']) {
+    for (const re of TIMING) {
+      ok(!re.test(screens[lang]), lang + ': the screen promises no deadline of its own (' + re + ')');
+    }
+  }
+  ok(/completes_at\?String\(res\.completes_at\):''/.test(AD_SRC.replace(/\s+/g, '')) || /res&&res\.completes_at/.test(AD_SRC),
+    'a completion moment is shown ONLY when the server itself returned completes_at (rule (324))');
+  // negatives
+  const noNote = screens.ru.replace(/<div data-qa="account-delete-local-note"[\s\S]*?<\/div>/, '');
+  ok(!/account-delete-local-note/.test(noNote),
+    'NEGATIVE: deleting the «your documents stay on this device» block turns DEL3 red');
+  const withDeadline = screens.en.replace('Deletion is permanent.', 'Deletion is permanent and completes within 30 days.');
+  ok(TIMING.some((re) => re.test(withDeadline)),
+    'NEGATIVE: writing «within 30 days» into the screen turns the no-deadline half red');
+  const shortened = screens.ru.replace(/переписка с ассистентом[^;]*;\s*/, '');
+  ok(!/переписка с ассистентом/.test(shortened),
+    'NEGATIVE: quietly dropping an item from the list of what disappears is red too — the list is the disclosure');
+}
+
+{
+  section('DEL4 — the whole path is completable inside the app: no browser, no link, no external URL');
+  // This is the entire reason the slice exists. A «delete your account» that hands the
+  // seafarer a web address is the rejection, not the fix — and the app already has
+  // openExternalUrlSafe() one screen away (Register uses it), so the mistake is a
+  // single line away at all times.
+  const EXTERNAL = [
+    ['openExternalUrlSafe', /openExternalUrlSafe\s*\(/],
+    ['open_external_url', /open_external_url/],
+    ['window.open', /window\.open\s*\(/],
+    ['location assignment', /location\.(?:href|assign|replace)\s*[=(]/],
+    ['an http(s) address', /https?:\/\//],
+    ['an anchor tag', /<a\s/i],
+  ];
+  for (const [label, re] of EXTERNAL) {
+    ok(!re.test(AD_SRC), 'the delete path source contains no ' + label);
+  }
+  ok(/invoke\('delete_account'/.test(AD_SRC), 'it goes through the native command instead (the scan is not vacuous)');
+  const app = bootApp({});
+  await AD_SETTLE();
+  const screen = String(app.sandbox.accountDeleteConfirmHtml());
+  for (const [label, re] of EXTERNAL) {
+    ok(!re.test(screen), 'and the rendered confirmation screen contains no ' + label);
+  }
+  ok(/openExternalUrlSafe/.test(HTML), 'index.html DOES have the external-URL helper elsewhere — this path just refuses to use it');
+  // negatives
+  const viaBrowser = AD_SRC.replace("invoke('delete_account',{password:pw})", "openExternalUrlSafe('https://assistant.skipi.app/app/account/delete')");
+  ok(viaBrowser !== AD_SRC && /openExternalUrlSafe\s*\(/.test(viaBrowser) && /https?:\/\//.test(viaBrowser),
+    'NEGATIVE: replacing the native call with a trip to the browser turns DEL4 red');
+  const withLink = screen.replace('</h3>', '</h3><a href="https://assistant.skipi.app/account">Delete on the website</a>');
+  ok(EXTERNAL.some(([, re]) => re.test(withLink)),
+    'NEGATIVE: and so does slipping a «do it on the website» link onto the screen');
+}
+
+{
+  section('DEL5 — the flow against the agreed server contract: three failures leave the account alone and say so, one success ends signed out');
+  const runFlow = async ({ reply, password }) => {
+    const app = bootApp({ invokeOverride: async (cmd) => (cmd === 'delete_account' ? reply() : undefined) });
+    await AD_SETTLE();
+    // Materialise the ids the flow talks to (the fake DOM has no HTML parser).
+    const made = {};
+    for (const id of ['account-delete-overlay', 'account-delete-password', 'account-delete-error', 'account-delete-confirm']) {
+      const el = app.doc.createElement('div');
+      el.setAttribute('id', id);
+      made[id] = el;
+    }
+    let inserted = '';
+    app.doc.body.insertAdjacentHTML = (pos, h) => { inserted += String(h); };
+    const toasts = [];
+    app.sandbox.showToast = (m, t) => toasts.push(String(m) + ' [' + String(t) + ']');
+    app.sandbox.openAccountDelete();
+    made['account-delete-password'].value = password;
+    await app.sandbox.confirmAccountDelete();
+    await AD_SETTLE();
+    return { app, made, inserted, toasts, calls: app.invokeCalls };
+  };
+  const errText = (r) => String(made0(r).textContent || '');
+  const made0 = (r) => r.made['account-delete-error'];
+
+  // the screen really is built by openAccountDelete(), not conjured by the drill
+  const empty = await runFlow({ reply: () => ({ deleted: true, completes_at: null }), password: '' });
+  ok(empty.inserted.includes('data-qa="account-delete-screen"'), 'openAccountDelete() inserts the confirmation screen into the app itself');
+  ok(/Enter your password/i.test(errText(empty)), 'an empty password is refused on the screen, without a round-trip');
+  ok(!empty.calls.some(([c]) => c === 'delete_account'), 'and nothing is sent to the server');
+
+  for (const [code, marker] of [[403, /Wrong password/], [429, /Too many attempts/], [401, /expired|revoked/i]]) {
+    const failed = await runFlow({
+      reply: () => { throw new Error(({
+        403: 'Wrong password — the account was NOT deleted. Check the password you use to sign in to Skipi.',
+        429: 'Too many attempts — the account was NOT deleted. Wait 15 minutes and try again.',
+        401: 'Your sign-in has expired or was revoked. Sign in again, then repeat the deletion.',
+      })[code]); },
+      password: 'whatever',
+    });
+    ok(marker.test(errText(failed)), 'HTTP ' + code + ': the reason is shown on the screen (' + marker + ')');
+    ok(!failed.calls.some(([c]) => c === 'app_logout'), 'HTTP ' + code + ': and the user is NOT signed out — nothing was deleted');
+    ok(failed.toasts.length === 0, 'HTTP ' + code + ': no success toast is shown for a failure');
+  }
+
+  const okNull = await runFlow({ reply: () => ({ deleted: true, completes_at: null }), password: 'correct-horse' });
+  ok(okNull.calls.some(([c, a]) => c === 'delete_account' && a && a.password === 'correct-horse'), 'the typed password is what reaches the command');
+  ok(okNull.toasts.some((t) => /has been deleted/.test(t)), 'success says the account is deleted');
+  ok(!okNull.toasts.some((t) => /\d{4}-\d{2}-\d{2}|within|\bdays?\b/i.test(t)),
+    'and with completes_at:null it names NO moment at all (rule (324))');
+  ok(okNull.calls.some(([c]) => c === 'app_logout'), 'success ends the session — the app returns to its own login gate, in the app');
+
+  const okDated = await runFlow({ reply: () => ({ deleted: true, completes_at: '2026-10-07T00:00:00Z' }), password: 'correct-horse' });
+  ok(okDated.toasts.some((t) => t.includes('2026-10-07T00:00:00Z')),
+    'and when the SERVER names a completion moment, that moment — the server\'s, not ours — is shown');
+  // negative
+  const alwaysGreen = AD_SRC.replace("var when=(res&&res.completes_at)?String(res.completes_at):'';", "var when='in 30 days';");
+  ok(alwaysGreen !== AD_SRC && /in 30 days/.test(alwaysGreen),
+    'NEGATIVE: inventing a deadline in the success toast is a real, catchable mutation of these bytes');
 }
 
 {

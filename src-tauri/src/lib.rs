@@ -1,5 +1,11 @@
 mod api;
 mod commands;
+// Account deletion (App Store Guideline 5.1.1(v)). The file lives beside the
+// other command modules, but is declared HERE rather than in commands/mod.rs:
+// the guard route authorised for 0.4.189 (`mobile-189-native`) covers lib.rs
+// and the new file, not commands/mod.rs. Path is `crate::account_delete`.
+#[path = "commands/account_delete.rs"]
+mod account_delete;
 mod cv;
 mod db;
 mod demo;
@@ -234,6 +240,8 @@ pub fn run() {
             app_login::app_login,
             app_login::app_logout,
             app_login::app_login_status,
+            // In-app account deletion (App Store 5.1.1(v))
+            account_delete::delete_account,
             // CV
             cv_commands::get_cv_data,
             cv_commands::export_cv_docx,
