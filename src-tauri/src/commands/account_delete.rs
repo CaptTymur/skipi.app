@@ -147,6 +147,29 @@ pub(crate) fn parse_delete_ok(body: &str) -> Result<Value, String> {
     Ok(json!({ "deleted": true, "completes_at": completes_at }))
 }
 
+/// Clear the local session ONLY when the server actually deleted the account.
+///
+/// This exists as a function, not as two statements in the right order, because
+/// the order IS the invariant and line order is what an edit silently inverts.
+/// Supervisor's mutation (г) of 2026-09-07 moved the clearing block above the
+/// `?` on the request result: a `403 invalid_password` then signed the seafarer
+/// out of an account that is still there — he cannot get back in without the
+/// password he just got wrong, and the app told him nothing was deleted while
+/// behaving as if it had been. Every test in the repo stayed green, because the
+/// «a failure does not sign you out» invariant was only ever asserted on the JS
+/// half (DEL5, through a stubbed `invoke`); the Rust half had no coverage at all.
+/// It does now: `a_failed_deletion_never_clears_the_local_session` below drives
+/// this function with an `Err` and fails the build if `clear` is ever reached.
+fn finish_deletion<F>(outcome: Result<Value, String>, clear: F) -> Result<Value, String>
+where
+    F: FnOnce() -> Result<(), String>,
+{
+    // `?` first, and nothing before it: a failed deletion leaves the session alone.
+    let deleted = outcome?;
+    clear()?;
+    Ok(deleted)
+}
+
 // ── Tauri command ────────────────────────────────────────────────────────
 
 /// Delete the signed-in Skipi account on the server, confirming with the
@@ -181,16 +204,21 @@ pub async fn delete_account(state: State<'_, AppState>, password: String) -> Res
         Some(t) => t,
         None => return Err(delete_error_message(401, "")),
     };
-    let result = tauri::async_runtime::spawn_blocking(move || -> Result<Value, String> {
-        let client = http_client()?;
-        post_account_delete(&assistant_api_base(), &client, &token, &password)
-    })
+    let outcome: Result<Value, String> = tauri::async_runtime::spawn_blocking(
+        move || -> Result<Value, String> {
+            let client = http_client()?;
+            post_account_delete(&assistant_api_base(), &client, &token, &password)
+        },
+    )
     .await
-    .map_err(|e| format!("account delete task failed: {e}"))??;
+    .map_err(|e| format!("account delete task failed: {e}"))?;
 
-    // The account is gone; the token it belonged to is dead. Clear the session
-    // so the app cannot keep pretending to be signed in. Vault DATA untouched.
-    {
+    // The account is gone; the token it belonged to is dead. Clear the session so
+    // the app cannot keep pretending to be signed in. Vault DATA untouched. This
+    // is handed to finish_deletion rather than written after the `?` so that «only
+    // on success» is a tested property of a function and not an accident of where
+    // the lines happen to sit — see the doc comment on finish_deletion.
+    finish_deletion(outcome, || {
         let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(conn) = lock.as_ref() {
             for key in SESSION_KEYS {
@@ -198,8 +226,8 @@ pub async fn delete_account(state: State<'_, AppState>, password: String) -> Res
             }
         }
         *state.login_pending.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    }
-    Ok(result)
+        Ok(())
+    })
 }
 
 #[cfg(test)]
@@ -260,6 +288,48 @@ mod tests {
 
         let absent = parse_delete_ok("{\"deleted\": true}").unwrap();
         assert!(absent["completes_at"].is_null(), "absent field is null, not an error");
+    }
+
+    /// Supervisor's mutation (г), 2026-09-07: clearing the session before the
+    /// server's answer is unwrapped. Green everywhere at the time — the Rust half
+    /// of «a failure does not sign you out» had no test. This is that test.
+    #[test]
+    fn a_failed_deletion_never_clears_the_local_session() {
+        for failure in [
+            delete_error_message(403, ""),
+            delete_error_message(429, ""),
+            delete_error_message(401, ""),
+            "assistant.skipi.app network: connection reset".to_string(),
+        ] {
+            let cleared = std::cell::Cell::new(false);
+            let err = finish_deletion(Err(failure.clone()), || {
+                cleared.set(true);
+                Ok(())
+            })
+            .unwrap_err();
+            assert_eq!(err, failure, "the reason must reach the user unchanged");
+            assert!(
+                !cleared.get(),
+                "the account still exists after «{failure}» — signing the user out of it \
+                 would strand him: wrong password now, and no session to retry from"
+            );
+        }
+    }
+
+    #[test]
+    fn a_successful_deletion_clears_the_local_session_exactly_once() {
+        let clears = std::cell::Cell::new(0u32);
+        let out = finish_deletion(
+            parse_delete_ok("{\"deleted\": true, \"completes_at\": null}"),
+            || {
+                clears.set(clears.get() + 1);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(out["deleted"], true);
+        assert!(out["completes_at"].is_null());
+        assert_eq!(clears.get(), 1, "cleared once, on success, and only then");
     }
 
     #[test]

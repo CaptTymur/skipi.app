@@ -9445,11 +9445,23 @@ async function _hasLoginToken(){
 // rejects («the account cannot be deleted in the app»). Drill DEL4 keeps it that way.
 // Rust half: src-tauri/src/commands/account_delete.rs → invoke('delete_account').
 //
-// The wording below is the agreed copy, not a summary of it: the seafarer reads the FULL
-// list of what disappears, the one thing that survives (one anonymised, unlinkable record)
-// and WHY, and — as its own visible block, never small print — that the documents and the
-// safe on this device are NOT touched. Timing is never promised unless the server itself
-// named a moment in `completes_at` (rule (324)).
+// The wording below is a promise about an IRREVERSIBLE act, so it says only what this
+// button actually does. The seafarer reads the list of what our delete endpoint removes
+// on the server; then, in a block of the SAME weight and never as small print, what
+// STAYS — the anonymised record of what he paid, and the assistant service's own working
+// logs, which carry the text of his questions and answers together with his name and
+// which this button does not reach (RISKS №232b: they live in a separate service, on a
+// track we do not own; removal is a support request, and the address is the one the app
+// already uses for feedback). Then, in its own bold block, that the documents and the
+// safe on this device are NOT touched.
+//
+// TWO STANDING BANS on this copy, both checked by drill DEL3:
+//   · no deadline the server did not itself name in `completes_at` (rule (324));
+//   · no OVER-PROMISE — no «every copy», «all systems», «completely erased», «one thing
+//     remains» and their Russian twins. Supervisor's 07.09 mutation ADDED «Every copy of
+//     your data is erased from all Skipi systems…» to this text and the whole suite
+//     stayed green: DEL3 caught a truth going missing but not a lie being added. It does
+//     now, and that mutation is nailed down as a permanent negative control.
 function _adRu(){ try{ return getUiLang()==='ru'; }catch(e){ return false; } }
 function _adDeviceWord(){
     var ru=_adRu(); var phone=false;
@@ -9466,10 +9478,12 @@ function accountDeleteTexts(){
         whoUnknown:'Вы вошли в аккаунт Skipi.',
         whoNone:'Вы сейчас не вошли. Чтобы удалить аккаунт Skipi, сначала войдите в него.',
         deleteRow:'Удалить аккаунт Skipi',
-        deleteRowDesc:'Аккаунт и все связанные с ним данные на сервере удаляются полностью и сразу. Действие необратимо.',
+        deleteRowDesc:'Аккаунт и связанные с ним данные на сервере Skipi удаляются. Что уходит, а что остаётся, перечислено на экране подтверждения. Действие необратимо.',
         deleteBtn:'Удалить аккаунт…',
         title:'Удалить аккаунт Skipi',
-        consequences:'Удаление необратимо: после подтверждения восстановить аккаунт не сможем ни мы, ни вы. Удаляется полностью и сразу: ваш email и Telegram (адрес освобождается, зарегистрироваться по нему можно снова, но это будет новый аккаунт); профиль и анкета моряка, фотография; документы в сейфе и сами файлы на диске, пакеты документов и история их отправок; документы, полученные от кандидатов, и распакованные вложения; стаж и приложенные к нему файлы, отзывы о судах; переписка с ассистентом, включая незавершённые вопросы; заявки на вакансии и рассылки в агентства, в том числе письма, ещё стоящие в очереди на отправку; привязки к Брокеру и Крюингу, все устройства, сессии и токены доступа. Остаётся одно — история платежей: сумма, дата и номер транзакции. Она обезличивается: за ней не остаётся ни имени, ни адреса, ни пароля, и связать её с вами нельзя. Так сделано по устройству базы данных: запись о платеже жёстко привязана к внутреннему идентификатору аккаунта, поэтому удаляется не она, а всё, что делало этот идентификатор вашим.',
+        consequences:'Удаление необратимо: после подтверждения восстановить аккаунт не сможем ни мы, ни вы. На сервере Skipi удаляется: ваш email и Telegram (адрес освобождается, зарегистрироваться по нему можно снова, но это будет новый аккаунт); профиль и анкета моряка, фотография; документы в сейфе и сами файлы на диске, пакеты документов и история их отправок; документы, полученные от кандидатов, и распакованные вложения; стаж и приложенные к нему файлы, отзывы о судах; история диалогов с ассистентом в вашем аккаунте, включая вопросы, ещё стоящие в очереди на ответ; заявки на вакансии и рассылки в агентства, в том числе письма, ещё стоящие в очереди на отправку; привязки к Брокеру и Крюингу, все устройства, сессии и токены доступа.',
+        remainsTitle:'Что остаётся',
+        remains:'История платежей — сумма, дата и номер транзакции. Она обезличивается: за ней не остаётся ни имени, ни адреса, ни пароля, и связать её с вами нельзя. Так сделано по устройству базы данных: запись о платеже жёстко привязана к внутреннему идентификатору аккаунта, поэтому удаляется не она, а всё, что делало этот идентификатор вашим. Служебные журналы сервиса ассистента — отдельные технические записи, куда попадает текст ваших вопросов и ответов вместе с именем, под которым вы обращались. Кнопка выше до этих журналов не дотягивается: они лежат не в аккаунте. Их удаление можно запросить письмом на broker@capt-tymur.com.',
         local:'Документы и сейф на '+dev+' остаются. Удаление аккаунта не стирает на '+dev+' ни одного файла — эти данные вы удаляете сами, когда захотите.',
         passLabel:'Текущий пароль от аккаунта Skipi',
         passHint:'Пароль нужен, чтобы аккаунт не смог удалить никто, кроме вас, с уже открытого приложения.',
@@ -9488,10 +9502,12 @@ function accountDeleteTexts(){
         whoUnknown:'You are signed in to a Skipi account.',
         whoNone:'You are not signed in. Sign in to your Skipi account first, then delete it.',
         deleteRow:'Delete Skipi account',
-        deleteRowDesc:'The account and everything tied to it on the server are deleted completely and immediately. This cannot be undone.',
+        deleteRowDesc:'The account and the data tied to it on the Skipi server are deleted. The confirmation screen lists what goes and what stays. This cannot be undone.',
         deleteBtn:'Delete account…',
         title:'Delete Skipi account',
-        consequences:'Deletion is permanent. Once you confirm it, neither you nor we can bring the account back. The following is deleted completely and immediately: your email and Telegram (the address is released — you can register with it again, but that will be a new account); your profile and seafarer questionnaire, your photograph; the documents in your safe and the files themselves on disk, document packages and the history of sending them; documents received from candidates and unpacked attachments; your sea service and the files attached to it, your vessel reviews; your correspondence with the assistant, including unfinished questions; job applications and mailings to agencies, including letters still queued for sending; your links to Broker and Crewing, all devices, sessions and access tokens. One thing remains — the history of what you paid: amount, date and transaction number. It is anonymised: no name, no address and no password stays with it, and it cannot be linked back to you. That follows from how the database is built: each such record is hard-linked to an internal account identifier, so what is deleted is not the record but everything that made that identifier yours.',
+        consequences:'Deletion is permanent. Once you confirm it, neither you nor we can bring the account back. The following is deleted on the Skipi server: your email and Telegram (the address is released — you can register with it again, but that will be a new account); your profile and seafarer questionnaire, your photograph; the documents in your safe and the files themselves on disk, document packages and the history of sending them; documents received from candidates and unpacked attachments; your sea service and the files attached to it, your vessel reviews; the history of your conversations with the assistant inside your account, including questions still queued for an answer; job applications and mailings to agencies, including letters still queued for sending; your links to Broker and Crewing, all devices, sessions and access tokens.',
+        remainsTitle:'What stays',
+        remains:'The history of what you paid — amount, date and transaction number. It is anonymised: no name, no address and no password stays with it, and it cannot be linked back to you. That follows from how the database is built: each such record is hard-linked to an internal account identifier, so what is deleted is not the record but everything that made that identifier yours. The assistant service also keeps its own working logs — separate technical records that carry the text of your questions and the answers together with the name you asked under. The button above does not reach those logs: they do not live inside the account. You can ask for them to be removed by writing to broker@capt-tymur.com.',
         local:'The documents and the safe on '+dev+' stay. Deleting the account erases no file on '+dev+' — you delete that data yourself, whenever you choose.',
         passLabel:'Your current Skipi account password',
         passHint:'The password is asked for so that nobody but you can delete the account from an app that is already open.',
@@ -9556,6 +9572,10 @@ function accountDeleteConfirmHtml(){
     h+='<div class="modal-panel" style="width:min(640px,94vw);max-height:88vh;overflow:auto;">';
     h+='<h3 style="margin-top:0;margin-bottom:10px;">'+esc(t.title)+'</h3>';
     h+='<div data-qa="account-delete-consequences" style="font-size:13px;line-height:1.5;color:var(--text);margin-bottom:12px;">'+esc(t.consequences)+'</div>';
+    // What STAYS. Same font size, same colour, same screen, directly under the list of
+    // what goes — the user learns about the assistant service's logs BEFORE he confirms,
+    // not from a footnote and not after.
+    h+='<div data-qa="account-delete-remains" style="font-size:13px;line-height:1.5;color:var(--text);margin-bottom:12px;"><b>'+esc(t.remainsTitle)+'.</b> '+esc(t.remains)+'</div>';
     h+='<div data-qa="account-delete-local-note" style="font-size:13px;line-height:1.5;font-weight:700;color:var(--text);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:6px;padding:10px 12px;margin:0 0 14px;">'+esc(t.local)+'</div>';
     h+='<div class="field"><label for="account-delete-password">'+esc(t.passLabel)+'</label>';
     h+='<input type="password" id="account-delete-password" data-qa="account-delete-password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" style="width:100%;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:13px;box-sizing:border-box;">';

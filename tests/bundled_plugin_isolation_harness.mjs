@@ -3911,11 +3911,24 @@ async function adSectionHtml(app, host, mode) {
     'and it is exactly those three keys, named, not a loop over the whole vault_info table');
   ok(/account_delete::delete_account/.test(LIB_RS) && /mod account_delete;/.test(LIB_RS),
     'the command is registered in lib.rs, so the button is wired to real code');
+  // …and that single local write happens only AFTER the server confirmed the deletion.
+  // Supervisor's mutation (г) of 07.09 moved the clearing block above the `?` on the
+  // request result — a 403 «wrong password» then signed the seafarer out of an account
+  // that is still there — and nothing went red, because the ordering lived in line
+  // order and the Rust half was untested. The ordering is now a function with its own
+  // #[cfg(test)] coverage (`a_failed_deletion_never_clears_the_local_session`), and the
+  // two byte checks below keep the command from growing a second, earlier write.
+  const setInfoCalls = (ACCOUNT_DELETE_RS.match(/set_vault_info\(/g) || []).length;
+  ok(setInfoCalls === 1, 'the session keys are written from exactly ONE place in account_delete.rs (found ' + setInfoCalls + ')');
+  ok(/fn finish_deletion</.test(ACCOUNT_DELETE_RS) && /finish_deletion\(outcome,/.test(ACCOUNT_DELETE_RS),
+    'and that place is the closure finish_deletion() runs only after the outcome unwrapped as a success');
+  ok(!/\)\?\?;/.test(ACCOUNT_DELETE_RS),
+    'the command no longer double-unwraps the join result inline — the failure branch is handed to the tested function instead');
   // negatives — one per forbidden call site, on real mutated bytes
   for (const [label, re] of FORBIDDEN) {
     const injected = ACCOUNT_DELETE_RS.replace(
-      'Ok(result)',
-      'std::fs::remove_file("x").ok(); std::fs::remove_dir_all("y").ok(); close_vault(); forget(); delete_document("d"); fs::remove_dir("z");\n    Ok(result)'
+      'Ok(deleted)',
+      'std::fs::remove_file("x").ok(); std::fs::remove_dir_all("y").ok(); close_vault(); forget(); delete_document("d"); fs::remove_dir("z");\n    Ok(deleted)'
     );
     ok(injected !== ACCOUNT_DELETE_RS && re.test(injected),
       'NEGATIVE: a local-deletion call added to account_delete.rs turns DEL2 red («' + label + '»)');
@@ -3926,13 +3939,22 @@ async function adSectionHtml(app, host, mode) {
 }
 
 {
-  section('DEL3 — the confirmation screen tells the truth, in both languages, and promises no date the server did not give');
+  section('DEL3 — the confirmation screen tells the truth, in both languages: everything it names as deleted really is, everything that stays is named, and it neither promises a date nor over-promises');
   const app = bootApp({});
   await AD_SETTLE();
+  // The whole of the copy the seafarer can read on this path, per language: every string
+  // accountDeleteTexts() returns (toasts and the settings row included) plus both rendered
+  // surfaces. Scanning only the confirmation screen would leave the row description — which
+  // is where «deleted completely and immediately» also stood — outside every check.
   const screens = {};
+  const blobs = {};
   for (const lang of ['en', 'ru']) {
     app.sandbox.localStorage.setItem(app.sandbox.UI_LANG_KEY, lang);
+    const t = app.sandbox.accountDeleteTexts();
     screens[lang] = String(app.sandbox.accountDeleteConfirmHtml());
+    blobs[lang] = Object.keys(t).map((k) => String(t[k])).join('\n')
+      + '\n' + screens[lang]
+      + '\n' + String(app.sandbox.accountDeleteSectionHtml());
   }
   // (1) irreversible, and it is the FIRST thing said
   ok(/Deletion is permanent\. Once you confirm it, neither you nor we can bring the account back\./.test(screens.en),
@@ -3945,11 +3967,42 @@ async function adSectionHtml(app, host, mode) {
   // (3) the cloud profile goes
   ok(/profile and seafarer questionnaire/.test(screens.en) && /профиль и анкета моряка/.test(screens.ru),
     'both: the synced profile and questionnaire are named as deleted');
-  // (4) …and the ONE thing that survives is named, with the reason
-  ok(/history of what you paid/.test(screens.en) && /история платежей/.test(screens.ru),
-    'both: the one surviving record is named rather than quietly kept');
+  // (3b) …and what is claimed deleted is scoped to what our endpoint actually deletes.
+  // The 06.09 copy listed «your correspondence with the assistant, including unfinished
+  // questions» under «deleted completely and immediately». It is not: RISKS №232b — the
+  // assistant service appends the full text of every question and answer, together with the
+  // display name, to its own logs, on a track we do not own, and /api/app/account/delete
+  // cannot reach them. The endpoint deletes the dialogue rows that live IN the account.
+  ok(!/correspondence with the assistant/i.test(blobs.en) && !/переписка с ассистентом/i.test(blobs.ru),
+    'both: the sentence that promised the assistant correspondence is deleted is GONE from the copy (RISKS №232b)');
+  ok(/conversations with the assistant inside your account/.test(screens.en)
+    && /диалогов с ассистентом в вашем аккаунте/.test(screens.ru),
+    'both: what IS claimed is scoped to the account — the dialogue history the endpoint really removes');
+  // (4) WHAT STAYS — all of it, in a block of the same weight, with a way to ask for more.
+  // Not «one thing remains»: the survivors are the anonymised record of what was paid AND
+  // the assistant service's working logs, and a consent screen for an irreversible act may
+  // not close that list while a second one is known to exist.
+  for (const lang of ['en', 'ru']) {
+    ok(/data-qa="account-delete-remains"/.test(screens[lang]),
+      lang + ': «what stays» is its own block on the screen, before the confirm button');
+    const stays = Number((screens[lang].match(/data-qa="account-delete-remains" style="font-size:(\d+)px/) || [])[1] || 0);
+    const goes = Number((screens[lang].match(/data-qa="account-delete-consequences" style="font-size:(\d+)px/) || [])[1] || 0);
+    ok(stays > 0 && goes > 0 && stays >= goes,
+      lang + ': and it is set no smaller than the list of what is deleted (' + stays + 'px vs ' + goes + 'px) — the card says «не сноской мелким шрифтом»');
+  }
+  ok(/history of what you paid/.test(screens.en) && /[Ии]стория платежей/.test(screens.ru),
+    'both: the record of what was paid is named among what stays');
   ok(/anonymised/.test(screens.en) && /обезличивается/.test(screens.ru),
     'both: and it is stated to be anonymised — no name, no address, no way back to the user');
+  ok(/assistant service also keeps its own working logs/.test(screens.en)
+    && /Служебные журналы сервиса ассистента/.test(screens.ru),
+    'both: the assistant service logs are named among what STAYS, on the same screen (RISKS №232b)');
+  ok(/the name you asked under/.test(screens.en) && /именем, под которым вы обращались/.test(screens.ru),
+    'both: including the part that costs the user something — his NAME is in those logs');
+  ok(/broker@capt-tymur\.com/.test(screens.en) && /broker@capt-tymur\.com/.test(screens.ru),
+    'both: and removal of those logs can be asked for, at an address on the screen');
+  ok(HTML.includes("recipients:['broker@capt-tymur.com']") && HTML.includes("to:['broker@capt-tymur.com']"),
+    'and it is the support address the app ALREADY ships for feedback, not a new one invented for this screen');
   // (5) THE separate, visible line: nothing on this device is touched
   for (const lang of ['en', 'ru']) {
     ok(/data-qa="account-delete-local-note"/.test(screens[lang]),
@@ -3966,15 +4019,60 @@ async function adSectionHtml(app, host, mode) {
     'the screen asks for the account password before anything happens');
   ok(/data-qa="account-delete-cancel"/.test(screens.en) && /data-qa="account-delete-confirm"/.test(screens.en),
     'and it offers both a Cancel and an explicit destructive confirm');
-  // (7) NO promised deadline anywhere on the screen
-  const TIMING = [/\bwithin\s+\d/i, /\b\d+\s*(?:days?|hours?|weeks?|months?)\b/i, /в течение\s+\d/i, /\b\d+\s*(?:дн|час|недел|месяц)/i];
+  // (7) NO promised deadline anywhere in the copy. The word-period forms are here because
+  // Supervisor's over-promise ended «…within minutes» and slid past the digit-only patterns.
+  const TIMING = [
+    /\bwithin\s+\d/i,
+    /\b\d+\s*(?:days?|hours?|weeks?|months?)\b/i,
+    /\bwithin\s+(?:a\s+few\s+|several\s+)?(?:minutes?|hours?|days?|weeks?|months?)\b/i,
+    /в течение\s+\d/i,
+    /\b\d+\s*(?:дн|час|недел|месяц)/i,
+    /в течение\s+(?:нескольких\s+)?(?:минут|часов|дней|недел|месяц)/i,
+  ];
   for (const lang of ['en', 'ru']) {
     for (const re of TIMING) {
-      ok(!re.test(screens[lang]), lang + ': the screen promises no deadline of its own (' + re + ')');
+      ok(!re.test(blobs[lang]), lang + ': the copy promises no deadline of its own (' + re + ')');
     }
   }
   ok(/completes_at\?String\(res\.completes_at\):''/.test(AD_SRC.replace(/\s+/g, '')) || /res&&res\.completes_at/.test(AD_SRC),
     'a completion moment is shown ONLY when the server itself returned completes_at (rule (324))');
+  // (8) NO OVER-PROMISE. Supervisor's mutation of 07.09 removed no truth — it ADDED a lie
+  // («Every copy of your data is erased from all Skipi systems and from every third-party
+  // service within minutes.» plus a Russian twin) and the suite stayed ALL GREEN, because
+  // every assertion above is of the form «this true sentence is present», and a lie written
+  // NEXT TO a truth breaks none of them. On a consent screen for an irreversible act that
+  // asymmetry is the expensive half: the user cannot check the claim, and RISKS №232b says
+  // it is false. So the copy is scanned for the vocabulary of totality and of a closed list.
+  // Bare «полностью»/«completely» are rules rather than phrases: in copy about deletion the
+  // word has no honest use while a second service keeps its own logs.
+  const OVERPROMISE = [
+    ['every copy', /\bevery\s+cop(?:y|ies)\b/i],
+    ['all copies', /\ball\s+(?:your\s+|the\s+)?copies\b/i],
+    ['all/every <thing> systems·services·servers·databases', /\b(?:all|every)\s+(?:[\w-]+\s+){0,3}(?:systems?|services?|servers?|databases?)\b/i],
+    ['completely / entirely / fully', /\b(?:completely|entirely|fully)\b/i],
+    ['everywhere', /\beverywhere\b/i],
+    ['no trace / every trace / all traces', /\b(?:no|every|all)\s+traces?\b/i],
+    ['one thing remains', /\bone\s+thing\s+(?:remains|stays|is\s+left)\b/i],
+    ['the only thing that remains', /\b(?:the\s+)?only\s+thing\s+(?:that\s+)?(?:remains|stays|survives|is\s+left)\b/i],
+    ['nothing remains / nothing is left', /\bnothing\s+(?:else\s+)?(?:remains|stays|is\s+left)\b/i],
+    // NB: JS \b is defined over [A-Za-z0-9_], so it never fires between two Cyrillic
+    // letters — a \b-anchored Russian rule silently matches nothing. The first draft of
+    // this list had them and let Supervisor's Russian half through green a second time.
+    ['все копии / всех копий', /вс[ех]{1,2}\s+копи[йи]/i],
+    ['во всех системах · сервисах · базах', /во\s+всех\s+(?:[А-Яа-яЁё-]+\s+){0,3}(?:систем|сервис|баз|мест)/i],
+    ['всех систем / всех сервисов', /всех\s+(?:систем|сервис)/i],
+    ['полностью', /полностью/i],
+    ['везде / отовсюду', /(?:везде|отовсюду)/i],
+    ['без следа / никаких следов / все следы', /(?:без\s+следа|никаких\s+следов|все\s+следы)/i],
+    ['остаётся одно', /оста[ёе]тся\s+одно/i],
+    ['единственное, что остаётся', /единственное,?\s+что\s+оста[ёе]тся/i],
+    ['ничего не остаётся', /ничего\s+не\s+оста[ёе]тся/i],
+  ];
+  const overpromiseHits = (text) => OVERPROMISE.filter(([, re]) => re.test(text)).map(([label]) => label);
+  for (const lang of ['en', 'ru']) {
+    const hits = overpromiseHits(blobs[lang]);
+    ok(hits.length === 0, lang + ': the copy claims no more than this button does — no over-promise (' + JSON.stringify(hits) + ')');
+  }
   // negatives
   const noNote = screens.ru.replace(/<div data-qa="account-delete-local-note"[\s\S]*?<\/div>/, '');
   ok(!/account-delete-local-note/.test(noNote),
@@ -3982,9 +4080,30 @@ async function adSectionHtml(app, host, mode) {
   const withDeadline = screens.en.replace('Deletion is permanent.', 'Deletion is permanent and completes within 30 days.');
   ok(TIMING.some((re) => re.test(withDeadline)),
     'NEGATIVE: writing «within 30 days» into the screen turns the no-deadline half red');
-  const shortened = screens.ru.replace(/переписка с ассистентом[^;]*;\s*/, '');
-  ok(!/переписка с ассистентом/.test(shortened),
+  const shortened = screens.ru.replace(/история диалогов с ассистентом[^;]*;\s*/, '');
+  ok(!/история диалогов с ассистентом/.test(shortened),
     'NEGATIVE: quietly dropping an item from the list of what disappears is red too — the list is the disclosure');
+  // NEGATIVE, permanent control: Supervisor's own mutation of 07.09, verbatim, both halves.
+  // It passed 1080/0 before this drill existed; it must not pass again.
+  const SUP_EN = 'Every copy of your data is erased from all Skipi systems and from every third-party service within minutes.';
+  const SUP_RU = 'Все копии ваших данных стираются во всех системах Skipi и во всех сторонних сервисах в течение нескольких минут.';
+  ok(overpromiseHits(blobs.en + '\n' + SUP_EN).length > 0,
+    'NEGATIVE: Supervisor’s EN over-promise, added verbatim to the copy, turns DEL3 red ('
+      + JSON.stringify(overpromiseHits(SUP_EN)) + ')');
+  ok(overpromiseHits(blobs.ru + '\n' + SUP_RU).length > 0,
+    'NEGATIVE: and its Russian half too ('
+      + JSON.stringify(overpromiseHits(SUP_RU)) + ')');
+  ok(TIMING.some((re) => re.test(SUP_EN)) && TIMING.some((re) => re.test(SUP_RU)),
+    'NEGATIVE: and the «within minutes» tail of that same mutation is now a deadline the no-date half catches as well');
+  ok(overpromiseHits(blobs.ru.replace('Что остаётся', 'Остаётся одно')).length > 0,
+    'NEGATIVE: putting the exclusive «Остаётся одно» back turns DEL3 red — the list of survivors may not be closed while RISKS №232b is open');
+  ok(overpromiseHits(blobs.en.replace('The following is deleted on the Skipi server', 'The following is deleted completely and immediately')).length > 0,
+    'NEGATIVE: and so does restoring «deleted completely and immediately»');
+  // …and the ban is not vacuous: dropping the logs half of «what stays» is caught by (4).
+  app.sandbox.localStorage.setItem(app.sandbox.UI_LANG_KEY, 'ru');
+  const noLogs = String(app.sandbox.accountDeleteTexts().remains).replace(/Служебные журналы[\s\S]*$/, '');
+  ok(!/Служебные журналы/.test(noLogs) && !/broker@capt-tymur\.com/.test(noLogs),
+    'NEGATIVE: dropping the assistant-logs half of «what stays» removes both the fact and the address — that omission is the 06.09 defect itself');
 }
 
 {
