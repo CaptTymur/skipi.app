@@ -811,5 +811,23 @@ section('lost-device recovery UI — live payload safety');
   ok(!/(ciphertext_b64.*LOST-TOKEN|raw_token|recovery_token":)/i.test(body), 'live payloads do not include token material');
 }
 
+section('lost-device recovery UI — unsupported blob alg is explicit');
+{
+  const { sandbox } = installRuntime(html);
+  let error = '';
+  try {
+    await sandbox.recoveryLostDecryptBlob('LOST-TOKEN-ABCD', {
+      alg: 'xchacha20poly1305',
+      kdf: 'argon2id-v1',
+      salt: '',
+      nonce: '',
+      ciphertext_b64: sandbox.recoveryBindToBase64(sandbox.recoveryBindUtf8Bytes('{}')),
+    });
+  } catch (e) {
+    error = String(e && e.message ? e.message : e);
+  }
+  ok(/Unsupported recovery backup format/i.test(error), 'unsupported recovery blob alg/kdf reports explicit error');
+}
+
 console.log('\n' + (fail === 0 ? 'ALL GREEN' : 'FAILURES') + `: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

@@ -3013,13 +3013,19 @@ async function recoveryLostDecryptBlob(token, blob){
     blob=blob||{};
     var cipher=recoveryBindFromBase64(blob.ciphertext_b64||'');
     var alg=String(blob.alg||'').toLowerCase();
-    if(alg.indexOf('aes-256-gcm')===0 && crypto&&crypto.subtle&&typeof TextEncoder==='function'){
+    var kdf=String(blob.kdf||'').toLowerCase();
+    var isAesPbkdf2=alg==='aes-256-gcm' && kdf.indexOf('pbkdf2-sha256-v1')===0;
+    var isFixture=alg.indexOf('fixture')>=0 || kdf==='fixture' || kdf.indexOf('fixture')>=0;
+    if(isAesPbkdf2 && crypto&&crypto.subtle&&typeof TextEncoder==='function'){
         var salt=recoveryBindFromBase64(blob.salt||'');
         var nonce=recoveryBindFromBase64(blob.nonce||'');
         var keyMaterial=await crypto.subtle.importKey('raw',recoveryBindUtf8Bytes(token),'PBKDF2',false,['deriveKey']);
         var key=await crypto.subtle.deriveKey({name:'PBKDF2',salt:salt,iterations:150000,hash:'SHA-256'},keyMaterial,{name:'AES-GCM',length:256},false,['decrypt']);
         var plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:nonce},key,cipher);
         return JSON.parse(new TextDecoder().decode(new Uint8Array(plain)));
+    }
+    if(!isFixture){
+        throw new Error('Unsupported recovery backup format: '+(blob.alg||'unknown')+' / '+(blob.kdf||'unknown'));
     }
     try{
         var fallback='';
