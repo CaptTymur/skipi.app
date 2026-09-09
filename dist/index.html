@@ -1342,6 +1342,7 @@ body.mobile-mode [data-qa^="vessel-db-demo-mobile"] { width:100%; max-width:calc
 .mobile-ocr-grid { display:grid; grid-template-columns:1fr; gap:9px; margin-top:12px; }
 .mobile-ocr-chip { display:inline-flex; align-items:center; border:1px solid rgba(var(--accent-rgb),.28); border-radius:999px; padding:3px 8px; color:var(--accent); background:var(--accent-bg); font-size:10px; font-weight:900; text-transform:uppercase; }
 .mobile-ocr-note { color:var(--text2); font-size:11px; line-height:1.35; margin-top:8px; }
+.mobile-ocr-keep { color:var(--text2); font-size:11px; line-height:1.35; margin-top:4px; }
 .mobile-pdf-preview { width:100%; background:#fff; color:#111; }
 .mobile-pdf-preview-actions { padding:10px; background:var(--surface); border-top:1px solid var(--border); text-align:center; }
 .mobile-preview-overlay { position:fixed; inset:0; z-index:130; display:flex; flex-direction:column; background:#0b0b0b; color:#fff; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); }
@@ -7444,9 +7445,10 @@ async function mobileAutoStartOcrIfConfigured(docId){
     }
 }
 function mobileOcrResultValue(field){
+    // №258: only what THIS scan recognized; an empty field means «keep current»
+    // (mobileConfirmOcr skips empty inputs) and is labelled so in mobileOcrPanel.
     var result=mobileOcrState&&mobileOcrState.result?mobileOcrState.result:{};
-    var d=allDocs.find(function(x){return x.id===selectedDocId;})||{};
-    return result[field]||d[field]||'';
+    return result[field]||'';
 }
 function mobileOcrPanel(d){
     if(!d||!d.file_name)return '';
@@ -7461,11 +7463,19 @@ function mobileOcrPanel(d){
         return '<div class="mobile-card mobile-ocr-card"><div class="mobile-card-title">Recognition unavailable</div><div class="mobile-card-sub">'+mobileEsc(st.error||'Could not recognize this document.')+'</div><div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-outline" onclick="mobileDismissOcr()">Dismiss</button><button class="btn btn-accent" onclick="mobileStartOcr(\''+jsString(d.id)+'\')">Try again</button></div></div>';
     }
     if(st.status==='result'){
-        var h='<div class="mobile-card mobile-ocr-card"><div class="mobile-row"><div><div class="mobile-card-title">Check recognized fields</div><div class="mobile-card-sub">'+(mobileOcrHasAny(st.result)?'Edit anything that looks wrong, then confirm.':'No reliable fields were found. You can still enter them manually below.')+'</div></div><span class="mobile-ocr-chip">Check</span></div>';
+        var ru=getUiLang()==='ru';
+        var result=st.result||{};
+        var h='<div class="mobile-card mobile-ocr-card"><div class="mobile-row"><div><div class="mobile-card-title">Check recognized fields</div><div class="mobile-card-sub">'+(mobileOcrHasAny(result)?'Edit anything that looks wrong, then confirm.':(ru?'Надёжных полей не найдено. Прежние значения сохранятся. Ниже их можно ввести вручную.':'No reliable fields were found. Prior values stay unchanged. You can still enter them manually below.'))+'</div></div><span class="mobile-ocr-chip">Check</span></div>';
         h+='<div class="mobile-ocr-grid">';
         mobileOcrFields().forEach(function(pair){
             var f=pair[0],label=pair[1];
-            h+='<div class="mobile-field"><label>'+mobileEsc(label)+'</label><input id="mobile-ocr-'+f+'" '+((f==='valid_from'||f==='valid_to')?'inputmode="numeric" maxlength="10" placeholder="YYYY-MM-DD" oninput="autoFormatDate(this)"':'')+' value="'+mobileEsc(mobileOcrResultValue(f))+'"></div>';
+            h+='<div class="mobile-field"><label>'+mobileEsc(label)+'</label><input id="mobile-ocr-'+f+'" '+((f==='valid_from'||f==='valid_to')?'inputmode="numeric" maxlength="10" placeholder="YYYY-MM-DD" oninput="autoFormatDate(this)"':'')+' value="'+mobileEsc(mobileOcrResultValue(f))+'">';
+            if(!result[f]){
+                // №258: not in this scan → input stays empty, the current value is kept on Confirm.
+                var cur=(f==='valid_to'&&d.is_permanent)?'Permanent':String(d[f]||'');
+                h+='<div class="mobile-ocr-keep">'+(ru?('Не распознано.'+(cur?' Оставить прежнее: '+mobileEsc(cur):'')):('Not recognized.'+(cur?' Keep current: '+mobileEsc(cur):'')))+'</div>';
+            }
+            h+='</div>';
         });
         h+='</div>';
         h+='<label style="display:flex;align-items:flex-start;gap:8px;margin-top:10px;font-size:12px;line-height:1.35;color:var(--text2);"><input type="checkbox" '+(mobileOcrLearningConsent()?'checked':'')+' onchange="mobileSetOcrLearningConsent(this.checked)" style="margin-top:2px;">Allow Skipi to learn locally from my corrections for this document type.</label>';
@@ -7518,10 +7528,13 @@ async function mobileConfirmOcr(docId){
         values[f]=(el&&el.value||'').trim();
     });
     var statuses={};try{statuses=JSON.parse(d.field_statuses||'{}');}catch(e){}
+    var saved=0,kept=0;
     try{
         for(var f in values){
             if(!Object.prototype.hasOwnProperty.call(values,f))continue;
+            if(!values[f]&&(d[f]||(f==='valid_to'&&d.is_permanent)))kept++;
             if(values[f]){
+                saved++;
                 await invoke('update_doc_field',{id:docId,field:f,value:values[f]});
                 statuses[f]='verified';
                 if(mobileOcrLearningConsent()&&result[f]!==undefined&&String(result[f]||'')!==values[f]){
@@ -7535,7 +7548,8 @@ async function mobileConfirmOcr(docId){
         await mobileReloadDocs();
         selectedDocId=docId;
         renderMobileDoc();
-        showToast('Recognized fields saved','success');
+        var ru=getUiLang()==='ru';
+        showToast(ru?('Сохранено полей: '+saved+', оставлено прежних: '+kept):('Saved '+saved+' fields, kept '+kept),'success');
     }catch(e){
         showToast('Could not save recognized fields: '+e,'error');
         logError('mobile_confirm_ocr',e);
