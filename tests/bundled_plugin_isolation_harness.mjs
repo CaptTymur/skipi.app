@@ -4489,6 +4489,345 @@ async function adSectionHtml(app, host, mode) {
 }
 
 // ===========================================================================
+// №260 — mobile CV = canonical Seafarer's Application Form (wave 0.4.191, A4).
+// Cause (main 3c251284): renderMobileCv drew a «Seafarer application preview» of its own —
+// 8 fields in a 2-column grid (no Last/First/Middle name, marital status, children, English,
+// birth date/place, home address), certificates and sea service as free-text lines without
+// the desktop columns, an extra «Experience by position» block, salary «USD» with no number,
+// and no export at all (exportCvPdf/exportCvDocx start with `if(!saveDlg) return` — the phone
+// has no save dialog). The owner saw a different document than the desktop showCv draws.
+// Fix (dist only): the phone renders the SAME form as showCv (:12780) — the same 15 labels in
+// the same order, one column; Salary expectations; certificates by sorted category and sea
+// service as cards with the desktop column labels (Title/Number/Place of issue/Issued/Valid,
+// Vessel/Flag/Type/Rank/From/Till/Company); «Export .pdf/.docx» → mobileExportCv(kind):
+// android = get_downloads_dir → export_cv_pdf|docx(outputPath in Downloads, timestamped name)
+// → toast → mobile_share_dispatch(attachments:[dest], mode:'share'); iOS = no buttons, a line
+// «Export is available on desktop and Android»; web/desktop shell = the existing exportCvPdf.
+// The VM asserts the rendered #mobile-main markup string and the invoke sequence; the
+// emulator screenshots (task card) are the acceptance of the form as seen on the phone.
+// ===========================================================================
+
+const cvSettle = async () => { for (let i = 0; i < 8; i++) await settleVm(); };
+const cvFnSource = (name) => {
+  const m = new RegExp('\\n(?:async )?function ' + name + '\\([^)]*\\)\\{([\\s\\S]*?)\\n\\}\\n').exec(HTML);
+  return m ? m[1] : '';
+};
+const CV_PERSONAL_FULL = {
+  surname: 'Seafarer', first_name: 'Test', middle_name: 'Middle', date_of_birth: '1990-05-05', place_of_birth: 'Odesa',
+  nationality: 'Ukrainian', home_address: '1 Test Street, Odesa', phones: '+380 00 000 0000', email: 'test.seafarer@example.com',
+  marital_status: 'Single', children_count: '0', english_level: 'Good', available_from: '2026-10-01', nearest_airport: 'ODS',
+  min_salary: '', currency: 'USD',
+};
+const CV_CERT = { title: 'GMDSS', category: 'STCW', doc_number: 'GM-TEST-1', issued_by: 'Maritime Training Centre', valid_from: '2023-01-01', valid_to: '2028-01-01', is_permanent: false, status: 'valid' };
+const CV_WORK = { vessel_name: 'TEST VESSEL', vessel_type: 'Bulk', imo: '9999993', flag: 'MT', company: 'Test Shipping', position: '2/O', sign_on: '2024-01-01', sign_off: '2024-06-01' };
+function cvDataFixture(patch = {}) {
+  return {
+    personal: { name: 'Test Seafarer', rank: '2nd Officer', surname: 'Seafarer', first_name: 'Test', photo_path: null, ...(patch.personal || {}) },
+    certificates: patch.certificates || [{ ...CV_CERT }],
+    work_history: patch.work_history || [{ ...CV_WORK }],
+    total_sea_days: 900,
+    experience_by_position: [['2/O', 900]],
+  };
+}
+// invokeOverride for the CV screen; `hooks` lets a drill observe/slow down single commands.
+function cvInvoke({ data = cvDataFixture(), personal = CV_PERSONAL_FULL, hooks = {} } = {}) {
+  return async (cmd, args) => {
+    if (hooks[cmd]) return hooks[cmd](args);
+    if (cmd === 'get_cv_data') return JSON.parse(JSON.stringify(data));
+    if (cmd === 'get_seafarer_personal') return { ...personal };
+    if (cmd === 'get_profile_photo_data_url') return '';
+    if (cmd === 'get_downloads_dir') return '/sdcard/Download';
+    if (cmd === 'export_cv_pdf' || cmd === 'export_cv_docx') return args.outputPath;
+    if (cmd === 'mobile_share_dispatch') return 'ok';
+    return undefined;
+  };
+}
+// Boot the shell on `platform` (android = the phone, ios, linux = web/desktop shell) and render the CV screen.
+async function bootCv({ platform = 'android', lang = 'en', ...fx } = {}) {
+  const app = platform === 'android'
+    ? bootMobile({ seed: {}, invokeOverride: cvInvoke(fx) })
+    : bootApp({ seed: {}, platform, invokeOverride: cvInvoke(fx) });
+  if (platform !== 'android') app.sandbox.shouldUseMobileShell = () => true;
+  await settleVm();
+  const toasts = [];
+  app.sandbox.showToast = (m, t) => toasts.push([String(m), String(t)]);
+  app.sandbox.getUiLang = () => lang;
+  app.sandbox.applyMobileMode();
+  app.sandbox.allDocs = [];
+  app.sandbox.mobileView = 'cv';
+  await app.sandbox.renderMobileCv();
+  await cvSettle();
+  return { ...app, toasts, html: mobileHtml(app.doc) };
+}
+const CV_LABELS = ['Position', 'Readiness', 'Experience', 'Citizenship', 'Last name', 'Marital status', 'First name', 'Children', 'Middle name', 'English level', 'Birth date', 'Birth place', 'Home address', 'Phone', 'Email'];
+const CERT_COLS = ['Title', 'Number', 'Place of issue', 'Issued', 'Valid'];
+const SEA_COLS = ['Vessel', 'Flag', 'Type', 'Rank', 'From', 'Till', 'Company'];
+const cvLabelAt = (html, label) => html.indexOf('<div class="mobile-cv-label">' + label + '</div>');
+const cvFieldValue = (html, label) => { const m = new RegExp('<div class="mobile-cv-label">' + label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '</div><div class="mobile-cv-value">([^<]*)</div>').exec(html); return m ? m[1] : null; };
+const cvCellLabel = (col) => '<span class="mobile-cv-cell-label">' + col + '</span>';
+// Values of every labelled cell `col` in document order.
+const cvCellValues = (html, col) => Array.from(html.matchAll(new RegExp(cvCellLabel(col) + '<span class="mobile-cv-cell-value"[^>]*>([^<]*)</span>', 'g'))).map((m) => m[1]);
+const cvCallIndex = (calls, cmd) => calls.findIndex(([c]) => c === cmd);
+const CV_DL = '/sdcard/Download/';
+
+{
+  section('№260 — VM drill: the phone draws the desktop form — 15 labels in showCv order (mutation (a)), one column');
+  try {
+    const { html } = await bootCv();
+    ok(html.includes('Seafarer&#39;s Application Form') || html.includes("Seafarer's Application Form"), "title «Seafarer's Application Form» (the desktop title, not «application preview»)");
+    ok(!html.includes('Seafarer application preview'), 'the old «Seafarer application preview» sub-line is gone');
+    const idx = CV_LABELS.map((l) => cvLabelAt(html, l));
+    CV_LABELS.forEach((l, i) => ok(idx[i] >= 0, '(a) label «' + l + '» is rendered as a .mobile-cv-label'));
+    ok(idx.every((v, i) => i === 0 || v > idx[i - 1]), '(a) the 15 labels appear in the desktop row() order (indexOf strictly increasing)');
+    ok(!html.includes('<div class="mobile-cv-label">Available from</div>') && !html.includes('<div class="mobile-cv-label">Minimum salary</div>'), 'the preview-only labels «Available from» / «Minimum salary» are gone (Readiness / Minimum instead)');
+    ok(html.includes('<div class="mobile-cv-fields">') && !html.includes('<div class="mobile-cv-grid">'), 'personal details are one column (.mobile-cv-fields), not the 2-column .mobile-cv-grid');
+    ok(cvFieldValue(html, 'Position') === '2nd Officer' && cvFieldValue(html, 'Readiness') === '2026-10-01' && cvFieldValue(html, 'Citizenship') === 'Ukrainian', 'Position / Readiness / Citizenship carry the fixture values');
+    ok(cvFieldValue(html, 'Last name') === 'Seafarer' && cvFieldValue(html, 'First name') === 'Test' && cvFieldValue(html, 'Middle name') === 'Middle', 'Last / First / Middle name come from get_seafarer_personal');
+    ok(cvFieldValue(html, 'Marital status') === 'Single' && cvFieldValue(html, 'Children') === '0' && cvFieldValue(html, 'English level') === 'Good', 'Marital status / Children / English level are rendered (never shown on the phone before)');
+    ok(cvFieldValue(html, 'Birth date') === '1990-05-05' && cvFieldValue(html, 'Birth place') === 'Odesa' && cvFieldValue(html, 'Home address') === '1 Test Street, Odesa', 'Birth date / Birth place / Home address are rendered');
+    ok(cvFieldValue(html, 'Phone') === '+380 00 000 0000' && cvFieldValue(html, 'Email') === 'test.seafarer@example.com', 'Phone / Email are rendered');
+    ok(cvFieldValue(html, 'Experience') === '30 months (2y 6m)', 'Experience = 900 days → «30 months (2y 6m)» (same wording as showCv)');
+    ok(html.includes('id="mobile-cv-photo"'), 'photo box is still rendered (get_profile_photo_data_url path unchanged)');
+    ok(html.includes('Salary expectations') && cvLabelAt(html, 'Minimum') > cvLabelAt(html, 'Email') && cvLabelAt(html, 'Nearest airport') > cvLabelAt(html, 'Minimum'), 'section «Salary expectations» with Minimum + Nearest airport follows the personal block');
+    ok(cvFieldValue(html, 'Nearest airport') === 'ODS', 'Nearest airport carries the fixture value');
+    ok(html.includes("onclick=\"mobileShow('dispatch')\"") && html.includes("onclick=\"mobileShow('docs')\""), 'PRESERVE: «Use this CV in Mailings» / «Review documents» buttons stay under the form');
+    ok(html.indexOf("mobileShow('dispatch')") > html.indexOf('Sea-going experience'), 'PRESERVE: those buttons come AFTER the form');
+  } catch (e) { ok(false, '№260 form drill crashed: ' + e.message); }
+}
+
+{
+  section('№260 — VM drill: Export buttons (mutation (b)), salary «--» vs «3500 USD» (mutation (c))');
+  try {
+    const { html } = await bootCv();
+    ok(html.includes("onclick=\"mobileExportCv('pdf')\"") && /mobileExportCv\('pdf'\)[^>]*>Export \.pdf</.test(html), "(b) «Export .pdf» button with onclick=\"mobileExportCv('pdf')\"");
+    ok(html.includes("onclick=\"mobileExportCv('docx')\"") && /mobileExportCv\('docx'\)[^>]*>Export \.docx</.test(html), "(b) «Export .docx» button with onclick=\"mobileExportCv('docx')\"");
+    ok(html.indexOf("mobileExportCv('pdf')") < html.indexOf('<div class="mobile-cv-paper">'), '(b) the Export buttons sit ABOVE the form (as on the desktop)');
+    ok(cvFieldValue(html, 'Minimum') === '--', "(c) Minimum === '--' when min_salary is empty (main: «USD» → RED)");
+    ok(!/<div class="mobile-cv-value">USD<\/div>/.test(html), '(c) no bare «USD» value anywhere');
+  } catch (e) { ok(false, '№260 export/salary drill crashed: ' + e.message); }
+  try {
+    const { html } = await bootCv({ personal: { ...CV_PERSONAL_FULL, min_salary: '3500' } });
+    ok(cvFieldValue(html, 'Minimum') === '3500 USD', "(c) PRESERVE: min_salary '3500' + currency USD → «3500 USD»");
+    const { html: h2 } = await bootCv({ personal: { ...CV_PERSONAL_FULL, min_salary: '4000', currency: '', min_salary_currency: 'EUR' } });
+    ok(cvFieldValue(h2, 'Minimum') === '4000 EUR', '(c) currency falls back to min_salary_currency');
+  } catch (e) { ok(false, '№260 salary preserve drill crashed: ' + e.message); }
+}
+
+{
+  section('№260 — VM drill: certificates with the five desktop columns (mutation (d)), sorted categories (p), Permanent (q)');
+  try {
+    const { html } = await bootCv();
+    ok(html.includes('Passports, Licenses &amp; Certificates'), 'section «Passports, Licenses & Certificates» (desktop wording)');
+    CERT_COLS.forEach((c) => ok(html.includes(cvCellLabel(c)), '(d) column label «' + c + '» is rendered as text'));
+    const at = CERT_COLS.map((c) => html.indexOf(cvCellLabel(c)));
+    ok(at.every((v, i) => i === 0 || v > at[i - 1]), '(d) the five labels come in the desktop order Title → Number → Place of issue → Issued → Valid');
+    ok(cvCellValues(html, 'Title')[0] === 'GMDSS' && cvCellValues(html, 'Number')[0] === 'GM-TEST-1', '(d) Title / Number values');
+    ok(cvCellValues(html, 'Place of issue')[0] === 'Maritime Training Centre', '(d) «Maritime Training Centre» is shown under Place of issue (main: only in a joined meta line → RED)');
+    ok(cvCellValues(html, 'Issued')[0] === '2023-01-01' && cvCellValues(html, 'Valid')[0] === '2028-01-01', '(d) Issued / Valid values');
+    ok(html.includes('<div class="mobile-cv-category">STCW</div>'), 'category heading STCW');
+    ok(!html.includes('overflow-x:auto') && !html.includes('<table'), 'cards with labelled rows — no horizontal scroll, no <table> (Counselor PREP: 360px hides Issued/Valid)');
+  } catch (e) { ok(false, '№260 certificates drill crashed: ' + e.message); }
+  try {
+    const certs = [{ ...CV_CERT }, { ...CV_CERT, title: 'Medical Fitness', category: 'Medical', doc_number: 'MED-1', is_permanent: true, valid_to: '2020-01-01', status: 'valid' }, { ...CV_CERT, title: 'Old Cert', category: 'STCW', doc_number: 'OLD-1', status: 'expired', valid_to: '2020-01-01' }];
+    const { html } = await bootCv({ data: cvDataFixture({ certificates: certs }) });
+    ok(html.indexOf('<div class="mobile-cv-category">Medical</div>') > 0 && html.indexOf('<div class="mobile-cv-category">Medical</div>') < html.indexOf('<div class="mobile-cv-category">STCW</div>'), '(p) categories are sorted: Medical before STCW (input order was STCW, Medical)');
+    const valids = cvCellValues(html, 'Valid');
+    ok(valids[0] === 'Permanent', '(q) is_permanent → Valid = «Permanent» (not the stale date)');
+    ok(!/Permanent[^<]*2020-01-01/.test(html.slice(html.indexOf('Medical Fitness'), html.indexOf('<div class="mobile-cv-category">STCW</div>'))), '(q) the permanent card does not show 2020-01-01');
+    ok(/color:#c53030[^>]*>2020-01-01</.test(html), 'expired certificate: Valid cell coloured #c53030 (desktop status colour)');
+    ok(/color:#1e1e1e[^>]*>2028-01-01</.test(html), 'valid certificate: Valid cell coloured #1e1e1e');
+  } catch (e) { ok(false, '№260 sorted/permanent drill crashed: ' + e.message); }
+  try {
+    const { html } = await bootCv({ data: cvDataFixture({ certificates: [] }) });
+    ok(html.includes('No certificates on file.'), 'empty vault: «No certificates on file.»');
+  } catch (e) { ok(false, '№260 empty certificates drill crashed: ' + e.message); }
+}
+
+{
+  section('№260 — VM drill: sea service with the seven desktop columns (mutation (e)), present (q), escaping (o), no «Experience by position» (i)');
+  try {
+    const work = [{ ...CV_WORK }, { ...CV_WORK, vessel_name: '<b>x', sign_off: '', company: 'Current Co' }];
+    const { html } = await bootCv({ data: cvDataFixture({ work_history: work }) });
+    ok(html.includes('Sea-going experience'), 'section «Sea-going experience»');
+    SEA_COLS.forEach((c) => ok(html.includes(cvCellLabel(c)), '(e) column label «' + c + '» is rendered as text'));
+    const at = SEA_COLS.map((c) => html.indexOf(cvCellLabel(c)));
+    ok(at.every((v, i) => i === 0 || v > at[i - 1]), '(e) the seven labels come in the desktop order Vessel → Flag → Type → Rank → From → Till → Company');
+    ok(cvCellValues(html, 'Vessel')[0] === 'TEST VESSEL' && cvCellValues(html, 'Flag')[0] === 'MT' && cvCellValues(html, 'Type')[0] === 'Bulk' && cvCellValues(html, 'Rank')[0] === '2/O', '(e) Vessel / Flag / Type / Rank values');
+    ok(cvCellValues(html, 'From')[0] === '2024-01-01' && cvCellValues(html, 'Till')[0] === '2024-06-01', '(e) From / Till values');
+    ok(cvCellValues(html, 'Company')[0] === 'Test Shipping', '(e) «Test Shipping» is shown under Company (main: joined meta line → RED)');
+    ok(cvCellValues(html, 'Till')[1] === 'present', "(q) empty sign_off → Till = 'present'");
+    ok(!html.includes('<b>'), "(o) vessel_name '<b>x' is escaped — no raw <b> in #mobile-main");
+    ok(cvCellValues(html, 'Vessel')[1] === '&lt;b&gt;x', '(o) the escaped value &lt;b&gt;x is what the card shows');
+    ok(!html.includes('Experience by position'), '(i) no «Experience by position» block in the form (main: rendered → RED)');
+    ok(!/IMO 9999993/.test(html), 'the preview-only IMO meta line is gone (not a desktop column)');
+  } catch (e) { ok(false, '№260 sea service drill crashed: ' + e.message); }
+  try {
+    const { html } = await bootCv({ data: cvDataFixture({ work_history: [] }) });
+    ok(html.includes('No work history recorded.'), 'empty sea service: «No work history recorded.» (desktop wording)');
+  } catch (e) { ok(false, '№260 empty sea service drill crashed: ' + e.message); }
+}
+
+{
+  section('№260 — VM drill: empty-field hint without navigation (mutations (j)/(n)), RU/EN');
+  try {
+    const { html } = await bootCv();
+    ok(!html.includes('filled on desktop') && !html.includes('заполняется на десктопе'), '(j) full profile → no hint');
+    const { html: h2 } = await bootCv({ personal: { ...CV_PERSONAL_FULL, middle_name: '' } });
+    ok(h2.includes('Some fields are filled on desktop: Settings → Seafarer profile'), '(j) empty middle_name → EN hint «Some fields are filled on desktop: Settings → Seafarer profile»');
+    ok(cvFieldValue(h2, 'Middle name') === '--', "empty field renders '--'");
+    ok(!h2.includes("mobileShow('profile')") && !h2.includes('openSettings('), "(n) the hint navigates nowhere — no mobileShow('profile') / openSettings( in #mobile-main");
+    const hintAt = h2.indexOf('Some fields are filled on desktop');
+    ok(hintAt > 0 && hintAt < h2.indexOf('<div class="mobile-cv-paper">'), '(j) the hint is placed above the form');
+    ok((h2.match(/Some fields are filled on desktop/g) || []).length === 1, 'exactly one hint line');
+    const { html: h3 } = await bootCv({ personal: { ...CV_PERSONAL_FULL, middle_name: '' }, lang: 'ru' });
+    ok(h3.includes('Часть полей заполняется на десктопе: Settings → Seafarer profile') && !h3.includes('Some fields are filled'), '(j) RU hint «Часть полей заполняется на десктопе: Settings → Seafarer profile»');
+    ok(cvLabelAt(h3, 'Marital status') > 0 && h3.includes('Passports, Licenses &amp; Certificates'), 'RU UI keeps the English form labels (the form is a document for the employer)');
+    const { html: h4 } = await bootCv({ personal: { ...CV_PERSONAL_FULL, marital_status: '' } });
+    ok(h4.includes('Some fields are filled on desktop'), '(j) empty marital_status also triggers the hint');
+    const { html: h5 } = await bootCv({ data: cvDataFixture({ personal: { rank: '' } }), personal: { ...CV_PERSONAL_FULL, rank: '' } });
+    ok(h5.includes('Some fields are filled on desktop') && cvFieldValue(h5, 'Position') === '--', '(j) empty Position → hint + «--»');
+  } catch (e) { ok(false, '№260 hint drill crashed: ' + e.message); }
+}
+
+{
+  section("№260 — VM drill: android Export .pdf → Downloads path → export_cv_pdf → share sheet (mutations (f)/(g)/(h)/(f′))");
+  try {
+    let exportSettled = false, shareSawExportSettled = null;
+    const hooks = {
+      export_cv_pdf: async (args) => { await new Promise((r) => setImmediate(r)); exportSettled = true; return args.outputPath; },
+      mobile_share_dispatch: async () => { shareSawExportSettled = exportSettled; return 'ok'; },
+    };
+    const app = await bootCv({ hooks });
+    const { sandbox, invokeCalls, toasts } = app;
+    ok(sandbox.hostPlatform === 'android', "hostPlatform === 'android' (the phone)");
+    ok(typeof sandbox.saveDlg === 'undefined', '(g) no save dialog on the phone (saveDlg undefined)');
+    const before = invokeCalls.length;
+    await sandbox.mobileExportCv('pdf');
+    await cvSettle();
+    const calls = invokeCalls.slice(before);
+    const iDl = cvCallIndex(calls, 'get_downloads_dir'), iExp = cvCallIndex(calls, 'export_cv_pdf'), iShare = cvCallIndex(calls, 'mobile_share_dispatch');
+    ok(iDl >= 0 && iExp > iDl && iShare > iExp, '(f) invoke order: get_downloads_dir → export_cv_pdf → mobile_share_dispatch');
+    ok(iExp >= 0 && !calls.some(([c]) => c === 'export_cv_docx'), '(g) export_cv_pdf IS invoked without a save dialog (main: no mobile export → RED); no docx call');
+    const dest = iExp >= 0 ? calls[iExp][1].outputPath : '';
+    ok(typeof dest === 'string' && dest.startsWith(CV_DL), "(f) outputPath starts with the get_downloads_dir result '/sdcard/Download/'");
+    ok(/\.pdf$/.test(dest), "(h) outputPath ends with '.pdf'");
+    const name = dest.slice(CV_DL.length);
+    ok(/^Seafarer_Test_CV_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.pdf$/.test(name), '(h) file name = <Surname>_<First>_CV_<timestamp>.pdf (' + name + ')');
+    const share = iShare >= 0 ? calls[iShare][1] : null;
+    ok(!!share && Array.isArray(share.attachments) && share.attachments.length === 1 && share.attachments[0] === dest, '(f) mobile_share_dispatch attachments === [the same outputPath]');
+    ok(!!share && share.mode === 'share' && Array.isArray(share.recipients) && share.recipients.length === 0 && share.subject === 'Skipi CV', "(f) mode 'share', recipients [], subject 'Skipi CV'");
+    ok(shareSawExportSettled === true, "(f′) share is dispatched only AFTER export_cv_pdf resolved (await, not fire-and-forget)");
+    ok(toasts.some(([m, t]) => m === 'Saved to Downloads' && t === 'success'), 'toast «Saved to Downloads» (success)');
+    ok(!toasts.some(([m]) => /File dialog not available/.test(m)), '(g) no «File dialog not available» toast on the phone');
+  } catch (e) { ok(false, '№260 android pdf export drill crashed: ' + e.message); }
+  try {
+    const app = await bootCv();
+    const { sandbox, invokeCalls } = app;
+    const before = invokeCalls.length;
+    await sandbox.mobileExportCv('docx');
+    await cvSettle();
+    const calls = invokeCalls.slice(before);
+    const exp = calls.find(([c]) => c === 'export_cv_docx');
+    ok(!!exp && !calls.some(([c]) => c === 'export_cv_pdf'), '(h) docx → export_cv_docx (and not export_cv_pdf)');
+    ok(!!exp && exp[1].outputPath.startsWith(CV_DL) && /\.docx$/.test(exp[1].outputPath), "(h) docx outputPath in Downloads and ends with '.docx'");
+    const share = calls.find(([c]) => c === 'mobile_share_dispatch');
+    ok(!!share && exp && share[1].attachments[0] === exp[1].outputPath && share[1].mode === 'share', '(f) docx: share sheet gets the same .docx path');
+  } catch (e) { ok(false, '№260 android docx export drill crashed: ' + e.message); }
+  try {
+    const app = await bootCv({ hooks: { mobile_share_dispatch: async () => { throw 'no activity'; } } });
+    const { sandbox, invokeCalls, toasts } = app;
+    await sandbox.mobileExportCv('pdf');
+    await cvSettle();
+    ok(invokeCalls.some(([c]) => c === 'export_cv_pdf'), 'share failure path: the file was still exported');
+    ok(toasts.some(([m, t]) => m === 'Saved to Downloads. Share sheet unavailable: no activity' && t === 'warn'), 'share failure → warn toast «Saved to Downloads. Share sheet unavailable: no activity» (the vault-backup wording)');
+  } catch (e) { ok(false, '№260 share failure drill crashed: ' + e.message); }
+  try {
+    const app = await bootCv({ hooks: { export_cv_pdf: async () => { throw 'disk full'; } } });
+    const { sandbox, invokeCalls, toasts } = app;
+    await sandbox.mobileExportCv('pdf');
+    await cvSettle();
+    ok(!invokeCalls.some(([c]) => c === 'mobile_share_dispatch'), 'export failure → no share sheet');
+    ok(toasts.some(([m, t]) => /^Export error: disk full/.test(m) && t === 'error'), 'export failure → error toast «Export error: …»');
+  } catch (e) { ok(false, '№260 export failure drill crashed: ' + e.message); }
+}
+
+{
+  section('№260 — VM drill: file name filter (mutation (l)) — path parts and Cyrillic never reach the file name');
+  try {
+    const app = await bootCv({ data: cvDataFixture({ personal: { surname: '../x/Иванов', first_name: 'Test' } }) });
+    const { sandbox, invokeCalls } = app;
+    await sandbox.mobileExportCv('pdf');
+    await cvSettle();
+    const exp = invokeCalls.find(([c]) => c === 'export_cv_pdf');
+    const name = exp ? exp[1].outputPath.slice(CV_DL.length) : '';
+    ok(!!exp && exp[1].outputPath.startsWith(CV_DL), '(l) file still lands in Downloads');
+    ok(name.length > 0 && !name.includes('/') && !name.includes('..') && !name.includes('\\'), "(l) file name has no '/', '..' or '\\' (" + name + ')');
+    ok(/^x_Test_CV_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.pdf$/.test(name), '(l) only [A-Za-z0-9 _-] survive: x_Test_CV_<ts>.pdf');
+  } catch (e) { ok(false, '№260 file name filter drill crashed: ' + e.message); }
+  try {
+    const app = await bootCv({ data: cvDataFixture({ personal: { surname: 'Иванов', first_name: 'Иван', name: 'Иван Иванов' } }) });
+    const { sandbox, invokeCalls } = app;
+    await sandbox.mobileExportCv('docx');
+    await cvSettle();
+    const exp = invokeCalls.find(([c]) => c === 'export_cv_docx');
+    const name = exp ? exp[1].outputPath.slice(CV_DL.length) : '';
+    ok(/^Skipi_CV_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.docx$/.test(name), '(l) Cyrillic-only name → Skipi_CV_<ts>.docx (' + name + ')');
+  } catch (e) { ok(false, '№260 cyrillic name drill crashed: ' + e.message); }
+}
+
+{
+  section('№260 — VM drill: platform branches (mutation (m)) — iOS has no Export buttons, web/desktop shell delegates to exportCvPdf/exportCvDocx');
+  try {
+    const { sandbox, html } = await bootCv({ platform: 'ios' });
+    ok(sandbox.hostPlatform === 'ios', "hostPlatform === 'ios'");
+    ok(!html.includes('mobileExportCv(') && !html.includes('Export .pdf') && !html.includes('Export .docx'), '(m) iOS: no Export buttons (share command is Err under cfg(not(android)), Downloads = app container)');
+    ok(html.includes('Export is available on desktop and Android'), '(m) iOS: line «Export is available on desktop and Android»');
+    ok(cvLabelAt(html, 'Marital status') > 0 && html.includes('Sea-going experience'), '(m) iOS: the form itself is drawn');
+    const { html: hr } = await bootCv({ platform: 'ios', lang: 'ru' });
+    ok(hr.includes('Экспорт доступен на десктопе и Android') && !hr.includes('Export is available'), '(m) iOS RU: «Экспорт доступен на десктопе и Android»');
+  } catch (e) { ok(false, '№260 ios drill crashed: ' + e.message); }
+  try {
+    const app = await bootCv({ platform: 'linux' });
+    const { sandbox, invokeCalls, html } = app;
+    ok(sandbox.hostPlatform === 'linux', "hostPlatform === 'linux' (SaaS/web shell case)");
+    ok(html.includes("onclick=\"mobileExportCv('pdf')\"") && html.includes("onclick=\"mobileExportCv('docx')\""), '(m) web shell: Export buttons are drawn');
+    let pdfCalls = 0, docxCalls = 0;
+    sandbox.exportCvPdf = async () => { pdfCalls++; };
+    sandbox.exportCvDocx = async () => { docxCalls++; };
+    const before = invokeCalls.length;
+    await sandbox.mobileExportCv('pdf');
+    await sandbox.mobileExportCv('docx');
+    await cvSettle();
+    const calls = invokeCalls.slice(before);
+    ok(pdfCalls === 1 && docxCalls === 1, '(m) non-android: mobileExportCv delegates to exportCvPdf / exportCvDocx (the existing web/desktop path)');
+    ok(!calls.some(([c]) => c === 'mobile_share_dispatch' || c === 'get_downloads_dir' || c === 'export_cv_pdf' || c === 'export_cv_docx'), '(m) non-android: no mobile_share_dispatch / get_downloads_dir / direct export invoke');
+  } catch (e) { ok(false, '№260 web shell drill crashed: ' + e.message); }
+}
+
+{
+  section('№260 — PRESERVE: desktop showCv / exportCvPdf / exportCvDocx are byte-identical to main 3c251284 (mutation (k)); source anchors');
+  const i = HTML.indexOf('async function showCv(){');
+  const j = HTML.indexOf('function filterSt(s){');
+  ok(i > 0 && j > i, 'the desktop CV region (showCv … exportCvDocx) is locatable');
+  ok(sha256Text(HTML.slice(i, j)) === '502beb858de4b18fb7cf0de4e28dda5ed6c8a29110ed9d2965d27476558b85ae',
+    '(k) desktop CV region sha256 == main 3c251284 pin 502beb85 (got ' + sha256Text(HTML.slice(i, j)).slice(0, 8) + ')');
+  ok(/if\(!saveDlg\)\{showToast\('File dialog not available','error'\);return;\}/.test(HTML.slice(i, j)), '(k) desktop exports still start with the saveDlg guard (untouched)');
+  const src = cvFnSource('mobileExportCv');
+  ok(src.length > 0, 'mobileExportCv exists');
+  ok(/hostPlatform!=='android'/.test(src) && /exportCvPdf\(\)/.test(src) && /exportCvDocx\(\)/.test(src), "(m) mobileExportCv branches on hostPlatform!=='android' → exportCvPdf/exportCvDocx");
+  ok(!/saveDlg/.test(src), '(g) mobileExportCv never touches saveDlg');
+  ok(/invoke\('get_downloads_dir'\)/.test(src) && /invoke\('mobile_share_dispatch'/.test(src) && /mode:'share'/.test(src), '(f) android branch: get_downloads_dir + mobile_share_dispatch mode share');
+  ok(/backupTimestamp\(\)/.test(src) && /joinFolderPath\(/.test(src), '(h)/(l) file name via backupTimestamp() + joinFolderPath()');
+  ok(/replace\(\/\[\^A-Za-z0-9 _\\-\]\/g,''\)/.test(src), '(l) the desktop name filter [^A-Za-z0-9 _\\-] is applied');
+  const render = cvFnSource('renderMobileCv');
+  ok(!/mobileExperienceByRank/.test(render), '(i) renderMobileCv no longer calls mobileExperienceByRank');
+  ok(/getUiLang\(\)==='ru'/.test(render) && /getUiLang\(\)==='ru'/.test(src), 'RU/EN via the existing getUiLang() (no new i18n table)');
+  ok(/hostPlatform!=='ios'/.test(render) || /hostPlatform==='ios'/.test(render), '(m) renderMobileCv branches on hostPlatform ios for the Export buttons');
+  ok(/\.mobile-cv-cell-label\s*\{/.test(HTML) && /\.mobile-cv-fields\s*\{/.test(HTML) && /\.mobile-cv-note\s*\{/.test(HTML), 'CSS rules .mobile-cv-fields / .mobile-cv-cell-label / .mobile-cv-note exist');
+  ok(!/\.mobile-cv-(fields|cell|cell-label|cell-value|row|rows|note)\s*\{[^}]*z-index/.test(HTML), 'no z-index in the new CSS rules');
+}
+
+// ===========================================================================
 // №259 — «Add custom certificate» on the phone opens nothing (wave 0.4.191, A2).
 // Root cause (static, 09.09): #add-custom-overlay lived INSIDE <div class="app">, and
 // `body.mobile-mode .app { display:none !important; }` hides that whole container on the
