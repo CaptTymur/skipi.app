@@ -17,6 +17,10 @@ pub struct AiRecognizeResult {
 const CLAUDE_OCR_PRIMARY_MODEL: &str = "claude-haiku-4-5-20251001";
 const CLAUDE_OCR_FALLBACK_MODEL: &str = "claude-sonnet-4-6";
 
+/// Generic OCR prompt sent to the vision model (client-side; the server proxy
+/// forwards it verbatim). Kept as a const so unit tests can assert on it.
+const BASE_PROMPT: &str = "You are a strict OCR assistant for maritime identity documents. Read ONLY what is literally printed on the page. DO NOT guess, infer, or invent any value. If a field is not clearly legible, return null for that field.\n\nRULES:\n- Copy every value EXACTLY as printed, character by character. Do not correct typos, do not autocomplete, do not reformat except where explicitly allowed below.\n- Never output a value that is not visible on the document. Null is always preferred over a guess.\n- Do not read MRZ lines (lines with `<<<`) — those are machine-readable and often confuse dates.\n- Return ONLY valid JSON. All string values MUST be inside double quotes. Dates MUST be quoted strings, not bare tokens.\n\nFields to extract:\n1. doc_number — the official document number as printed next to a label like 'No.', 'Document No.', 'Passport No.', 'Certificate No.', 'card No.', or 'Серія та номер'. Letters + digits (e.g. 'AB 516117', 'GG332748'). Copy exactly.\n2. issued_by — the text next to 'Issuing authority', 'Authority', 'Issued by', 'Issuing authority of office', 'Issued by (organisation)', 'Issuing institution', 'Training centre', 'Training center', 'Approved medical practitioner', 'Examiner', 'Видано', or 'Орган, що видав'. Could be a port or office name (e.g. 'PORT SEVASTOPOL'), a training centre or institution name, a medical practitioner / examiner name, or a numeric code (e.g. '2110'). If the page has no such label but an institution or centre name is printed on a line of its own next to or under the date of issue, that printed name is issued_by. Copy exactly.\n3. valid_from — the date next to 'Date of issue' / 'Issued' / 'Date of Issue'. Return as string 'YYYY-MM-DD'. Month names: JAN=01 FEB=02 MAR/БЕР=03 APR/КВІ=04 MAY/ТРА=05 JUN/ЧЕР=06 JUL/ЛИП=07 AUG/СЕР=08 SEP/ВЕР=09 OCT/ЖОВ=10 NOV/ЛИС=11 DEC/ГРУ=12. If unreadable, return null.\n4. valid_to — the date next to 'Date of expiry' / 'Valid until' / 'Prolonged till'. If there is a handwritten extension date, use that. Return as string 'YYYY-MM-DD'. If not present or unreadable, return null.\n5. title_suggestion — the type of document in English (Passport, Seaman's Identity Document, Certificate of Competency, etc.).\n\nOutput format — a single JSON object, nothing else, no prose, no markdown fences:\n{\"doc_number\": \"...\" or null, \"issued_by\": \"...\" or null, \"valid_from\": \"YYYY-MM-DD\" or null, \"valid_to\": \"YYYY-MM-DD\" or null, \"title_suggestion\": \"...\"}";
+
 fn bundled_api_key() -> String {
     option_env!("SKIPI_ANTHROPIC_API_KEY")
         .unwrap_or("")
@@ -82,9 +86,13 @@ fn repair_unquoted_scalars(s: &str) -> String {
                 let c = bytes[i];
                 let is_quoted = c == b'"';
                 let is_structural = c == b'{' || c == b'[';
-                let is_keyword = (i + 4 <= bytes.len() && &s[i..i + 4] == "null")
-                    || (i + 4 <= bytes.len() && &s[i..i + 4] == "true")
-                    || (i + 5 <= bytes.len() && &s[i..i + 5] == "false");
+                // Compare on bytes: a `&s[i..i + n]` str slice panics when
+                // `i + n` lands inside a multi-byte codepoint (any value that
+                // starts with a Cyrillic letter, e.g. "Порт Одеса").
+                let rest = &bytes[i..];
+                let is_keyword = rest.starts_with(b"null")
+                    || rest.starts_with(b"true")
+                    || rest.starts_with(b"false");
                 let is_digit = c.is_ascii_digit() || c == b'-';
 
                 if !is_quoted && !is_structural && !is_keyword && !is_digit {
@@ -108,8 +116,12 @@ fn repair_unquoted_scalars(s: &str) -> String {
             }
             continue;
         }
-        out.push(bytes[i] as char);
-        i += 1;
+        // Copy the whole codepoint, never `bytes[i] as char`: that re-encoded
+        // every non-ASCII byte as a Latin-1 char and turned Cyrillic values
+        // into mojibake ("Порт Одеса" → "ÐÐ¾ÑÑ…").
+        let ch = s[i..].chars().next().unwrap_or('\u{fffd}');
+        out.push(ch);
+        i += ch.len_utf8();
     }
     out
 }
@@ -128,6 +140,81 @@ fn truncate_raw(s: &str) -> String {
         out.push('…');
     }
     out
+}
+
+/// True when `s` starts with the literal form `DDDD-DD-DDT` (4 digits, '-',
+/// 2 digits, '-', 2 digits, 'T'), checked codepoint by codepoint — never by
+/// byte index, so multi-byte input can neither panic nor match by accident.
+fn starts_with_iso_datetime(s: &str) -> bool {
+    let mut it = s.chars();
+    for expected in ['d', 'd', 'd', 'd', '-', 'd', 'd', '-', 'd', 'd', 'T'] {
+        let ok = match (it.next(), expected) {
+            (Some(c), 'd') => c.is_ascii_digit(),
+            (Some(c), e) => c == e,
+            (None, _) => false,
+        };
+        if !ok {
+            return false;
+        }
+    }
+    true
+}
+
+/// Keys the model sometimes uses instead of `issued_by`; mapped onto
+/// `issued_by` only when it is absent / null / blank (`issued_by` wins).
+const ISSUED_BY_SYNONYM_KEYS: [&str; 3] = ["issuing_authority", "authority", "issuer"];
+
+/// Normalize the parsed model JSON in place, before it is mapped onto
+/// `AiRecognizeResult` (and therefore before `result_has_core_fields`).
+/// Pure function, no I/O — unit-tested on fixtures.
+///
+/// №257: the date cut applies ONLY to `valid_from` / `valid_to` and ONLY when
+/// the value starts with `DDDD-DD-DDT`; every other string is left untouched
+/// (doc numbers, issuers and titles used to be cut to 10 chars whenever they
+/// contained a 'T', e.g. "COC-TEST-7788" → "COC-TEST-7").
+fn normalize_ai_json(v: &mut serde_json::Value) {
+    let Some(obj) = v.as_object_mut() else {
+        return;
+    };
+    for (key, val) in obj.iter_mut() {
+        if let Some(arr) = val.as_array() {
+            let joined = arr
+                .iter()
+                .filter_map(|x| x.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            *val = serde_json::Value::String(joined);
+        }
+        if key == "valid_from" || key == "valid_to" {
+            if let Some(s) = val.as_str() {
+                if starts_with_iso_datetime(s) {
+                    let date: String = s.chars().take(10).collect();
+                    *val = serde_json::Value::String(date);
+                }
+            }
+        }
+    }
+    // A6: issuer synonym keys → issued_by (issued_by has priority); the synonym
+    // keys are removed so the struct never sees two candidates for one field.
+    let issued_by_blank = obj
+        .get("issued_by")
+        .and_then(|x| x.as_str())
+        .map(|s| s.trim().is_empty())
+        .unwrap_or(true);
+    let mut filled = !issued_by_blank;
+    for syn in ISSUED_BY_SYNONYM_KEYS {
+        // Always remove the synonym key; use it only while issued_by is blank.
+        if let Some(candidate) = obj.remove(syn) {
+            let is_str = candidate
+                .as_str()
+                .map(|s| !s.trim().is_empty())
+                .unwrap_or(false);
+            if !filled && is_str {
+                obj.insert("issued_by".to_string(), candidate);
+                filled = true;
+            }
+        }
+    }
 }
 
 fn parse_ai_result(content_text: &str) -> Result<AiRecognizeResult, String> {
@@ -164,31 +251,10 @@ fn parse_ai_result(content_text: &str) -> Result<AiRecognizeResult, String> {
 
     let json_str = repair_unquoted_scalars(&json_str);
 
-    // Normalize JSON: convert array values to joined strings
+    // Normalize JSON (arrays, dates, key synonyms) before mapping onto the struct
     match serde_json::from_str::<serde_json::Value>(&json_str) {
         Ok(mut v) => {
-            if let Some(obj) = v.as_object_mut() {
-                for (_key, val) in obj.iter_mut() {
-                    if let Some(arr) = val.as_array() {
-                        let joined = arr
-                            .iter()
-                            .filter_map(|x| x.as_str())
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        *val = serde_json::Value::String(joined);
-                    }
-                    if let Some(s) = val.as_str() {
-                        if s.len() > 10 && s.contains('T') {
-                            // Keep the leading date (YYYY-MM-DD) but slice by
-                            // codepoints, never by byte index: a byte-index slice
-                            // panics when byte 10 lands mid-UTF-8 (bug #1 latent
-                            // panic on multi-byte model output).
-                            let date: String = s.chars().take(10).collect();
-                            *val = serde_json::Value::String(date);
-                        }
-                    }
-                }
-            }
+            normalize_ai_json(&mut v);
             serde_json::from_value(v).map_err(|e| {
                 format!("Cannot parse AI response: {} — raw: {}", e, truncate_raw(&json_str))
             })
@@ -321,7 +387,7 @@ async fn ai_recognize_fields(
         let file_path = vault_path.join(&doc.category).join(&file_name);
         let ext = file_name.rsplit('.').next().unwrap_or("").to_lowercase();
 
-        let base_prompt = "You are a strict OCR assistant for maritime identity documents. Read ONLY what is literally printed on the page. DO NOT guess, infer, or invent any value. If a field is not clearly legible, return null for that field.\n\nRULES:\n- Copy every value EXACTLY as printed, character by character. Do not correct typos, do not autocomplete, do not reformat except where explicitly allowed below.\n- Never output a value that is not visible on the document. Null is always preferred over a guess.\n- Do not read MRZ lines (lines with `<<<`) — those are machine-readable and often confuse dates.\n- Return ONLY valid JSON. All string values MUST be inside double quotes. Dates MUST be quoted strings, not bare tokens.\n\nFields to extract:\n1. doc_number — the official document number as printed next to a label like 'No.', 'Document No.', 'Passport No.', 'Certificate No.', 'card No.', or 'Серія та номер'. Letters + digits (e.g. 'AB 516117', 'GG332748'). Copy exactly.\n2. issued_by — the text next to 'Issuing authority', 'Authority', 'Issued by', or 'Issuing authority of office'. Could be a port or office name (e.g. 'PORT SEVASTOPOL') or a numeric code (e.g. '2110'). Copy exactly.\n3. valid_from — the date next to 'Date of issue' / 'Issued' / 'Date of Issue'. Return as string 'YYYY-MM-DD'. Month names: JAN=01 FEB=02 MAR/БЕР=03 APR/КВІ=04 MAY/ТРА=05 JUN/ЧЕР=06 JUL/ЛИП=07 AUG/СЕР=08 SEP/ВЕР=09 OCT/ЖОВ=10 NOV/ЛИС=11 DEC/ГРУ=12. If unreadable, return null.\n4. valid_to — the date next to 'Date of expiry' / 'Valid until' / 'Prolonged till'. If there is a handwritten extension date, use that. Return as string 'YYYY-MM-DD'. If not present or unreadable, return null.\n5. title_suggestion — the type of document in English (Passport, Seaman's Identity Document, Certificate of Competency, etc.).\n\nOutput format — a single JSON object, nothing else, no prose, no markdown fences:\n{\"doc_number\": \"...\" or null, \"issued_by\": \"...\" or null, \"valid_from\": \"YYYY-MM-DD\" or null, \"valid_to\": \"YYYY-MM-DD\" or null, \"title_suggestion\": \"...\"}";
+        let base_prompt = BASE_PROMPT;
 
         let _ = doc_title; // param kept for backwards-compat with frontend
         let tpl_key: String = doc
@@ -691,4 +757,213 @@ pub fn get_ai_corrections(
 #[tauri::command]
 pub fn category_has_template(category: String) -> bool {
     templates::get_template(&category).is_some()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(json: &str) -> AiRecognizeResult {
+        parse_ai_result(json).expect("fixture must parse")
+    }
+
+    // ---- №257: only valid_from / valid_to are date-normalized -------------
+
+    #[test]
+    fn doc_number_with_T_is_not_truncated() {
+        let r = parse(r#"{"doc_number": "COC-TEST-7788", "issued_by": null, "valid_from": null, "valid_to": null, "title_suggestion": null}"#);
+        assert_eq!(r.doc_number.as_deref(), Some("COC-TEST-7788"));
+    }
+
+    #[test]
+    fn issued_by_with_T_not_truncated() {
+        let r = parse(r#"{"doc_number": null, "issued_by": "Maritime Training Centre", "valid_from": null, "valid_to": null, "title_suggestion": null}"#);
+        assert_eq!(r.issued_by.as_deref(), Some("Maritime Training Centre"));
+    }
+
+    #[test]
+    fn title_suggestion_not_truncated() {
+        let r = parse(r#"{"doc_number": null, "issued_by": null, "valid_from": null, "valid_to": null, "title_suggestion": "Certificate of Training"}"#);
+        assert_eq!(r.title_suggestion.as_deref(), Some("Certificate of Training"));
+    }
+
+    #[test]
+    fn valid_to_iso_datetime_is_cut_to_date() {
+        let r = parse(r#"{"doc_number": null, "issued_by": null, "valid_from": null, "valid_to": "2027-03-04T00:00:00", "title_suggestion": null}"#);
+        assert_eq!(r.valid_to.as_deref(), Some("2027-03-04"));
+    }
+
+    #[test]
+    fn valid_from_iso_datetime_is_cut_to_date() {
+        // PRESERVE: the pre-existing behaviour for ISO datetimes stays.
+        let r = parse(r#"{"doc_number": null, "issued_by": null, "valid_from": "2026-01-01T00:00:00", "valid_to": null, "title_suggestion": null}"#);
+        assert_eq!(r.valid_from.as_deref(), Some("2026-01-01"));
+    }
+
+    #[test]
+    fn valid_from_non_date_with_T_untouched() {
+        // Strings containing 'T' that are NOT of the form DDDD-DD-DDT are left as-is,
+        // whatever their length.
+        for v in [
+            "TBD 2026",
+            "Tuesday",
+            "Tuesday, 12 March 2026",
+            "2027/03/04T00:00:00",
+            "27-03-2004T00:00:00",
+            "TILL 2027-03-04",
+        ] {
+            let json = format!(
+                r#"{{"doc_number": null, "issued_by": null, "valid_from": "{v}", "valid_to": "{v}", "title_suggestion": null}}"#
+            );
+            let r = parse(&json);
+            assert_eq!(r.valid_from.as_deref(), Some(v), "valid_from {v:?}");
+            assert_eq!(r.valid_to.as_deref(), Some(v), "valid_to {v:?}");
+        }
+    }
+
+    #[test]
+    fn cyrillic_long_string_no_panic_no_cut() {
+        // Bytes 11 and 13 land mid-codepoint here ("aa" + Cyrillic): any
+        // byte-index slice such as `&s[..11]` panics. Values contain an ASCII
+        // 'T' and are longer than 10 chars.
+        let v = "aaМорський Тренувальний центр TRAINING, 2026";
+        assert!(!v.is_char_boundary(11));
+        let json = format!(
+            r#"{{"doc_number": "{v}", "issued_by": "{v}", "valid_from": "{v}", "valid_to": "{v}", "title_suggestion": "{v}"}}"#
+        );
+        let r = parse(&json);
+        assert_eq!(r.doc_number.as_deref(), Some(v));
+        assert_eq!(r.issued_by.as_deref(), Some(v));
+        assert_eq!(r.valid_from.as_deref(), Some(v));
+        assert_eq!(r.valid_to.as_deref(), Some(v));
+        assert_eq!(r.title_suggestion.as_deref(), Some(v));
+    }
+
+    #[test]
+    fn repair_unquoted_scalars_cyrillic_value_no_panic() {
+        // Latent panic found by №257 tests: `&s[i..i + 4]` in
+        // repair_unquoted_scalars sliced mid-codepoint for quoted values that
+        // start with a multi-byte letter. Must neither panic nor alter the value.
+        // `title_suggestion` is an unquoted multi-byte scalar (the repair path).
+        let raw = r#"{"doc_number": "AB 516117", "issued_by": "Порт Одеса", "valid_from": "2026-01-01", "valid_to": null, "title_suggestion": Посвідчення}"#;
+        let repaired = repair_unquoted_scalars(raw);
+        assert!(repaired.contains(r#""issued_by": "Порт Одеса""#), "{repaired}");
+        assert!(repaired.contains(r#""title_suggestion": "Посвідчення""#), "{repaired}");
+        let r = parse(raw);
+        assert_eq!(r.issued_by.as_deref(), Some("Порт Одеса"));
+        assert_eq!(r.title_suggestion.as_deref(), Some("Посвідчення"));
+        assert_eq!(r.valid_from.as_deref(), Some("2026-01-01"));
+    }
+
+    #[test]
+    fn exactly_11_chars_date_form() {
+        // Exactly "DDDD-DD-DDT" (11 chars): the date form matches, keep the date.
+        let r = parse(r#"{"doc_number": null, "issued_by": null, "valid_from": "2027-03-04T", "valid_to": "2027-03-04T", "title_suggestion": null}"#);
+        assert_eq!(r.valid_from.as_deref(), Some("2027-03-04"));
+        assert_eq!(r.valid_to.as_deref(), Some("2027-03-04"));
+        // A plain date (10 chars, no 'T') is untouched.
+        let r = parse(r#"{"doc_number": null, "issued_by": null, "valid_from": "2027-03-04", "valid_to": null, "title_suggestion": null}"#);
+        assert_eq!(r.valid_from.as_deref(), Some("2027-03-04"));
+    }
+
+    // ---- A6: issuer synonym keys -------------------------------------------
+
+    #[test]
+    fn synonym_key_issuing_authority_maps_to_issued_by() {
+        // issued_by absent
+        let r = parse(r#"{"doc_number": "X1", "issuing_authority": "Maritime Training Centre", "valid_from": null, "valid_to": null, "title_suggestion": null}"#);
+        assert_eq!(r.issued_by.as_deref(), Some("Maritime Training Centre"));
+        // issued_by null
+        let r = parse(r#"{"doc_number": "X1", "issued_by": null, "authority": "PORT SEVASTOPOL", "valid_from": null, "valid_to": null, "title_suggestion": null}"#);
+        assert_eq!(r.issued_by.as_deref(), Some("PORT SEVASTOPOL"));
+        // issued_by empty string
+        let r = parse(r#"{"doc_number": "X1", "issued_by": "  ", "issuer": "Approved medical practitioner Dr. T. Smith", "valid_from": null, "valid_to": null, "title_suggestion": null}"#);
+        assert_eq!(r.issued_by.as_deref(), Some("Approved medical practitioner Dr. T. Smith"));
+    }
+
+    #[test]
+    fn both_keys_present_no_duplicate_field_error_issued_by_wins() {
+        let r = parse(r#"{"doc_number": "X1", "issued_by": "PORT ODESA", "issuing_authority": "SOMEONE ELSE", "authority": "THIRD", "valid_from": null, "valid_to": null, "title_suggestion": null}"#);
+        assert_eq!(r.issued_by.as_deref(), Some("PORT ODESA"));
+        let mut v: serde_json::Value = serde_json::from_str(r#"{"issued_by": "PORT ODESA", "issuing_authority": "SOMEONE ELSE"}"#).unwrap();
+        normalize_ai_json(&mut v);
+        assert_eq!(v.get("issued_by").and_then(|x| x.as_str()), Some("PORT ODESA"));
+        assert!(v.get("issuing_authority").is_none(), "synonym key removed after mapping");
+    }
+
+    #[test]
+    fn arrays_still_joined() {
+        let r = parse(r#"{"doc_number": ["AB", "516117"], "issued_by": ["Port", "Odesa"], "valid_from": null, "valid_to": null, "title_suggestion": null}"#);
+        assert_eq!(r.doc_number.as_deref(), Some("AB, 516117"));
+        assert_eq!(r.issued_by.as_deref(), Some("Port, Odesa"));
+    }
+
+    #[test]
+    fn null_field_stays_none() {
+        let r = parse(r#"{"doc_number": null, "issued_by": null, "valid_from": null, "valid_to": null, "title_suggestion": null}"#);
+        assert!(r.doc_number.is_none());
+        assert!(r.issued_by.is_none());
+        assert!(r.valid_from.is_none());
+        assert!(r.valid_to.is_none());
+        assert!(r.title_suggestion.is_none());
+        let mut v: serde_json::Value = serde_json::from_str(r#"{"issued_by": null, "issuing_authority": null}"#).unwrap();
+        normalize_ai_json(&mut v);
+        assert!(v.get("issued_by").map(|x| x.is_null()).unwrap_or(true));
+    }
+
+    // ---- A6: prompt ---------------------------------------------------------
+
+    #[test]
+    fn prompt_mentions_training_centre_and_medical_practitioner() {
+        let p = BASE_PROMPT;
+        let item2_start = p.find("2. issued_by").expect("item 2 present");
+        let item2_end = p.find("3. valid_from").expect("item 3 present");
+        let item2 = &p[item2_start..item2_end];
+        for needle in [
+            "Training centre",
+            "Training center",
+            "Issuing institution",
+            "Approved medical practitioner",
+            "Examiner",
+            "Issued by (organisation)",
+            "Видано",
+            "Орган, що видав",
+        ] {
+            assert!(item2.contains(needle), "item 2 must mention {needle:?}");
+        }
+        assert!(item2.contains("date of issue"), "label-less institution line near the date of issue rule");
+        assert!(!item2.to_lowercase().contains("guess"), "no 'guess' wording in issued_by rule");
+    }
+
+    #[test]
+    fn prompt_length_under_4000() {
+        assert!(BASE_PROMPT.chars().count() < 4000, "prompt is {} chars", BASE_PROMPT.chars().count());
+    }
+
+    #[test]
+    fn prompt_output_format_five_keys_unchanged() {
+        const HEAD: &str = "You are a strict OCR assistant for maritime identity documents. Read ONLY what is literally printed on the page. DO NOT guess, infer, or invent any value. If a field is not clearly legible, return null for that field.\n\nRULES:\n- Copy every value EXACTLY as printed, character by character. Do not correct typos, do not autocomplete, do not reformat except where explicitly allowed below.\n- Never output a value that is not visible on the document. Null is always preferred over a guess.\n- Do not read MRZ lines (lines with `<<<`) — those are machine-readable and often confuse dates.\n- Return ONLY valid JSON. All string values MUST be inside double quotes. Dates MUST be quoted strings, not bare tokens.\n\nFields to extract:\n";
+        const ITEM1: &str = "1. doc_number — the official document number as printed next to a label like 'No.', 'Document No.', 'Passport No.', 'Certificate No.', 'card No.', or 'Серія та номер'. Letters + digits (e.g. 'AB 516117', 'GG332748'). Copy exactly.\n";
+        const ITEM3: &str = "3. valid_from — the date next to 'Date of issue' / 'Issued' / 'Date of Issue'. Return as string 'YYYY-MM-DD'. Month names: JAN=01 FEB=02 MAR/БЕР=03 APR/КВІ=04 MAY/ТРА=05 JUN/ЧЕР=06 JUL/ЛИП=07 AUG/СЕР=08 SEP/ВЕР=09 OCT/ЖОВ=10 NOV/ЛИС=11 DEC/ГРУ=12. If unreadable, return null.\n";
+        const ITEM4: &str = "4. valid_to — the date next to 'Date of expiry' / 'Valid until' / 'Prolonged till'. If there is a handwritten extension date, use that. Return as string 'YYYY-MM-DD'. If not present or unreadable, return null.\n";
+        const ITEM5: &str = "5. title_suggestion — the type of document in English (Passport, Seaman's Identity Document, Certificate of Competency, etc.).\n\n";
+        const OUTPUT: &str = "Output format — a single JSON object, nothing else, no prose, no markdown fences:\n{\"doc_number\": \"...\" or null, \"issued_by\": \"...\" or null, \"valid_from\": \"YYYY-MM-DD\" or null, \"valid_to\": \"YYYY-MM-DD\" or null, \"title_suggestion\": \"...\"}";
+        let p = BASE_PROMPT;
+        assert!(p.starts_with(HEAD), "header/rules changed");
+        assert!(p.ends_with(OUTPUT), "output format changed");
+        assert!(p.contains(ITEM1), "item 1 changed");
+        assert!(p.contains(ITEM3), "item 3 changed");
+        assert!(p.contains(ITEM4), "item 4 changed");
+        assert!(p.contains(ITEM5), "item 5 changed");
+        let i1 = p.find(ITEM1).unwrap();
+        let i2 = p.find("2. issued_by").unwrap();
+        let i3 = p.find(ITEM3).unwrap();
+        let i4 = p.find(ITEM4).unwrap();
+        let i5 = p.find(ITEM5).unwrap();
+        assert!(i1 < i2 && i2 < i3 && i3 < i4 && i4 < i5, "item order changed");
+        assert_eq!(p.matches("2. issued_by").count(), 1);
+        for key in ["doc_number", "issued_by", "valid_from", "valid_to", "title_suggestion"] {
+            assert!(OUTPUT.contains(&format!("\"{key}\"")));
+        }
+    }
 }
