@@ -1052,8 +1052,19 @@ function bootMobile(opts) {
   // (audit 5cfff5b3 Н7). The pin is re-based — and the old pin is kept honest: revert
   // exactly those two style attributes and the ORIGINAL 34705f8b sha must come back, which
   // proves nothing else in the desktop markup was touched by this slice.
-  ok(sha256Text(region) === '584d444887da3e713d2363caa8a845c6d34c60f3e4ee3ed3ed5dcaddd0a8afbc', 'desktop static markup region sha256 == the re-based pin');
-  const preIosRegion = region
+  // 2026-09-09 (№259, wave 0.4.191 A2): #add-custom-overlay moved OUT of <div class="app">
+  // (hidden under body.mobile-mode) to body level, after .statusbar. The pin is re-based again
+  // and kept honest the same way: put ONLY that block back where it was (one indent deeper,
+  // before <!-- Center -->) and the previous pin 584d4448 must come back byte for byte.
+  ok(sha256Text(region) === '04f751938d97b1638ba5d0d9286ceb1e259e70a019c452e24a55d4fa27c6242c', 'desktop static markup region sha256 == the re-based pin');
+  const acStart = region.indexOf('<!-- Add Custom Certificate modal -->\n');
+  const acEnd = region.indexOf('</div>\n\n', acStart) + '</div>\n\n'.length;
+  const acBlock = acStart >= 0 ? region.slice(acStart, acEnd) : '';
+  const pre259Region = acStart < 0 ? region : (region.slice(0, acStart) + region.slice(acEnd))
+    .replace('    <!-- Center -->', acBlock.split('\n').map((l) => (l ? '    ' + l : l)).join('\n') + '    <!-- Center -->');
+  ok(acStart >= 0 && /id="add-custom-overlay"/.test(acBlock) && sha256Text(pre259Region) === '584d444887da3e713d2363caa8a845c6d34c60f3e4ee3ed3ed5dcaddd0a8afbc',
+    'undoing ONLY the №259 overlay relocation restores the previous pin 584d4448 byte for byte — nothing else in the desktop markup was touched by A2');
+  const preIosRegion = pre259Region
     .replace('align-items:flex-start;justify-content:center;overflow:auto;padding:calc(32px + env(safe-area-inset-top,0px)) 20px calc(32px + env(safe-area-inset-bottom,0px));', 'align-items:center;justify-content:center;overflow:auto;padding:32px 20px;')
     .replace('padding:calc(40px + env(safe-area-inset-top,0px)) 20px calc(40px + env(safe-area-inset-bottom,0px));', 'padding:40px 20px;');
   ok(sha256Text(preIosRegion) === 'b28a9c36ee5891dce24510e51189c033b8f45f50b1f5e826c0156802f19fc0ce',
@@ -4475,6 +4486,201 @@ async function adSectionHtml(app, host, mode) {
   const alwaysGreen = AD_SRC.replace("var when=(res&&res.completes_at)?String(res.completes_at):'';", "var when='in 30 days';");
   ok(alwaysGreen !== AD_SRC && /in 30 days/.test(alwaysGreen),
     'NEGATIVE: inventing a deadline in the success toast is a real, catchable mutation of these bytes');
+}
+
+// ===========================================================================
+// №259 — «Add custom certificate» on the phone opens nothing (wave 0.4.191, A2).
+// Root cause (static, 09.09): #add-custom-overlay lived INSIDE <div class="app">, and
+// `body.mobile-mode .app { display:none !important; }` hides that whole container on the
+// phone — a position:fixed overlay under a display:none ancestor is never painted, so
+// showAddCustomDoc() flipped display:flex on a node nobody could see.
+// Fix: the overlay node is a body-level sibling of #login-gate-overlay / #settings-overlay,
+// and doAddCustomDoc() gets a mobile branch after a successful save (attach the pending
+// file when the slot picker asked for it, otherwise open the new document's card).
+// The VM below has no CSS cascade and no layout, so the STRUCTURAL asserts are the proxy
+// for the cause (div depth from <body>); the emulator screenshots are the acceptance of
+// the dialog actually being visible. Both halves are recorded in the task card WORKLOG.
+// ===========================================================================
+
+function stripHtmlComments(s) { return s.replace(/<!--[\s\S]*?-->/g, ''); }
+// Number of <div> still open at `needle`, counting from `from` (both are literal markers).
+function divDepth(html, from, needle) {
+  const a = html.indexOf(from), b = html.indexOf(needle);
+  if (a < 0 || b < 0 || b < a) return NaN;
+  const slice = stripHtmlComments(html.slice(a, b));
+  return (slice.match(/<div\b/g) || []).length - (slice.match(/<\/div>/g) || []).length;
+}
+// Index just past the </div> that closes the container opened at `openMarker`.
+function divCloseIndex(html, openMarker) {
+  const start = html.indexOf(openMarker);
+  if (start < 0) return -1;
+  const re = /<div\b|<\/div>/g;
+  re.lastIndex = start;
+  let depth = 0, m;
+  while ((m = re.exec(html))) {
+    depth += m[0] === '<\/div>' ? -1 : 1;
+    if (depth === 0) return re.lastIndex;
+  }
+  return -1;
+}
+const fnSource = (name) => {
+  const m = new RegExp('\\n(?:async )?function ' + name + '\\([^)]*\\)\\{([\\s\\S]*?)\\n\\}\\n').exec(HTML);
+  return m ? m[1] : '';
+};
+
+{
+  section('№259 add-custom overlay outside the hidden desktop container — structure (proxy for the cause)');
+  const APP_OPEN = '<div class="app">', SHELL_OPEN = '<div class="mobile-shell" id="mobile-shell">', OVERLAY = '<div id="add-custom-overlay"';
+  const overlayAt = HTML.indexOf(OVERLAY);
+  const bodyAt = HTML.indexOf('<body');
+  const appOpenAt = HTML.indexOf(APP_OPEN), appCloseAt = divCloseIndex(HTML, APP_OPEN);
+  const shellOpenAt = HTML.indexOf(SHELL_OPEN), shellCloseAt = divCloseIndex(HTML, SHELL_OPEN);
+  ok(overlayAt > 0 && HTML.indexOf(OVERLAY, overlayAt + 1) < 0, 'exactly one #add-custom-overlay node in the markup');
+  ok(bodyAt > 0 && appOpenAt > bodyAt && appCloseAt > appOpenAt && shellOpenAt > bodyAt && shellCloseAt > shellOpenAt, 'markers found: <body>, <div class="app"> … </div>, #mobile-shell … </div>');
+  ok(!/<script/.test(HTML.slice(bodyAt, overlayAt)), 'guard: no <script> between <body> and the overlay (div counting is on markup only)');
+  ok(divDepth(HTML, '<body', OVERLAY) === 0, 'overlay is a BODY-LEVEL node: div depth from <body> is 0 (main: 1 → RED)');
+  ok(divDepth(HTML, '<body', OVERLAY) === divDepth(HTML, '<body', '<div id="login-gate-overlay"') && divDepth(HTML, '<body', '<div class="settings-overlay" id="settings-overlay"') === 0, 'same depth as its body-level siblings #login-gate-overlay / #settings-overlay (0)');
+  ok(!(overlayAt > appOpenAt && overlayAt < appCloseAt), 'overlay is NOT inside <div class="app"> (the container body.mobile-mode hides)');
+  ok(overlayAt > appCloseAt, 'overlay comes AFTER the closing </div> of .app');
+  ok(!(overlayAt > shellOpenAt && overlayAt < shellCloseAt), 'overlay is NOT a descendant of #mobile-shell (overflow:hidden would clip it)');
+  ok(/body\.mobile-mode \.app,?[^{]*\{[^}]*display:\s*none\s*!important/.test(HTML), 'the cause is real: body.mobile-mode .app is display:none !important (selector list :1361–1363)');
+  // z-order: the dialog (120) must stay UNDER the login gate / entry fork (100000) — moving the
+  // node is not a licence to lift it above the gate class.
+  const modalZ = Number((/\.modal-overlay\s*\{[^}]*z-index:\s*(\d+)/.exec(HTML) || [])[1]);
+  const gateZ = Number((/id="login-gate-overlay"[^>]*z-index:\s*(\d+)/.exec(HTML) || [])[1]);
+  const forkZ = Number((/\.mobile-entry-fork\s*\{[^}]*z-index:\s*(\d+)/.exec(HTML) || [])[1]);
+  ok(modalZ === 120, '.modal-overlay z-index is still 120 (no z-index "fix")');
+  ok(gateZ === 100000 && forkZ === 100000, '#login-gate-overlay (:inline) and .mobile-entry-fork (:css) are both 100000');
+  ok(modalZ < gateZ && modalZ < forkZ, 'dialog z-index < gate z-index → a shown gate/fork always covers the dialog');
+  const overlayTag = (/<div id="add-custom-overlay"[^>]*>/.exec(HTML) || [''])[0];
+  ok(/class="modal-overlay"/.test(overlayTag) && !/z-index/.test(overlayTag), 'overlay tag keeps class modal-overlay and carries no inline z-index');
+  for (const id of ['ac-title', 'ac-category', 'ac-has-expiry', 'ac-is-permanent']) {
+    ok(HTML.indexOf('id="' + id + '"') > overlayAt && HTML.indexOf('id="' + id + '"') < overlayAt + 3000, 'dialog field #' + id + ' travelled with the overlay node');
+  }
+}
+
+{
+  section('№259 — every call site still reaches showAddCustomDoc (per-site anchors, rule (198))');
+  ok(/<button id="btn-add-custom"[^>]*onclick="showAddCustomDoc\(\)"/.test(HTML), 'site 1: desktop header #btn-add-custom');
+  ok(/el\.id='doc-context-menu';[\s\S]{0,900}?showAddCustomDoc\(cat\);/.test(HTML), 'site 2: #doc-context-menu «Add custom certificate here» passes the category');
+  ok(/showAddCustomDoc\(\)/.test(fnSource('renderMobileAttachSlotPicker')), 'site 3: mobile slot picker («Choose certificate for file / PDF scan»)');
+  ok(/showAddCustomDoc\(\)/.test(fnSource('renderMobileAdd')), 'site 4: mobile Add document screen');
+  ok(/showAddCustomDoc\(\)/.test(fnSource('showDashboard')), 'site 5: dashboard header button');
+  ok((HTML.match(/showAddCustomDoc\(/g) || []).length >= 6, 'showAddCustomDoc( appears at least 6 times (definition + 5 sites)');
+  const show = fnSource('showAddCustomDoc');
+  ok(/ov\.style\.display='flex'/.test(show) && /ov\.classList\.add\('open'\)/.test(show), "showAddCustomDoc still sets display='flex' and classList.add('open')");
+  ok(/getElementById\('add-custom-overlay'\)/.test(show) && /getElementById\('add-custom-overlay'\)/.test(fnSource('hideAddCustomDoc')), 'show/hide address the overlay by id, not by parent');
+  ok(!/isMobileMode\(\)\s*\)?\s*return/.test(show), 'no mobile early-return in showAddCustomDoc');
+}
+
+async function bootMobileVault({ docs, invokeOverride }) {
+  const app = bootMobile({ seed: { 'skipi-assistant-consent': '1' }, invokeOverride });
+  await settleVm();
+  app.sandbox.applyMobileMode();
+  app.sandbox.allDocs = docs.map((d) => ({ ...d }));
+  app.sandbox.mobileView = 'docs';
+  app.sandbox.renderMobileShell();
+  return app;
+}
+const SEED_DOCS = [
+  { id: 'doc-a', title: 'STCW Basic Safety', category: 'STCW', file_name: null, expiry: null },
+  { id: 'doc-b', title: 'Seaman Book', category: 'Identity', file_name: 'seaman.pdf', expiry: null },
+];
+const NEW_DOC = { id: 'doc-new-259', title: 'TEST Custom Cert', category: 'STCW', file_name: null, expiry: null, is_custom: true };
+function addCustomInvoke() {
+  const state = { docs: SEED_DOCS.map((d) => ({ ...d })) };
+  return async (cmd, args) => {
+    if (cmd === 'add_custom_doc') { state.docs.push({ ...NEW_DOC, title: args.title, category: args.category }); return { ...NEW_DOC, title: args.title, category: args.category }; }
+    if (cmd === 'get_documents') return state.docs.map((d) => ({ ...d }));
+    if (cmd === 'attach_file_bytes') { const d = state.docs.find((x) => x.id === args.docId); if (d) d.file_name = args.fileName; return {}; }
+    if (cmd === 'get_profile_status') return { completeness_pct: 50 };
+    return undefined;
+  };
+}
+const settleMore = async () => { for (let i = 0; i < 8; i++) await settleVm(); };
+
+{
+  section('№259 — VM drill: show → overlay display=flex (site 4 / site 3), category preselect (site 2)');
+  try {
+    const app = await bootMobileVault({ docs: SEED_DOCS, invokeOverride: addCustomInvoke() });
+    const { sandbox, doc } = app;
+    ok(doc.body.classList.contains('mobile-mode') && sandbox.isMobileMode() === true, 'body.mobile-mode is on (the phone case)');
+    const ov = doc.getElementById('add-custom-overlay');
+    ok(!!ov && ov.style.display !== 'flex', 'overlay starts hidden');
+    sandbox.mobileShow('add');
+    ok(mobileHtml(doc).includes('showAddCustomDoc()'), 'Add document screen renders the «Add custom certificate» button');
+    sandbox.showAddCustomDoc();
+    ok(ov.style.display === 'flex' && ov.classList.contains('open'), "showAddCustomDoc() on the phone → overlay style.display==='flex' + .open");
+    ok(doc.getElementById('ac-title').value === '', 'Title field is cleared for a fresh entry');
+    sandbox.hideAddCustomDoc();
+    ok(ov.style.display === 'none' && !ov.classList.contains('open'), 'hideAddCustomDoc() closes it again');
+    sandbox.showAddCustomDoc('Company training');
+    ok(doc.getElementById('ac-category').value === 'Company training', 'PRESERVE (site 2): a preferred category is preselected in #ac-category');
+    ok(String(doc.getElementById('ac-category').innerHTML).includes('value="STCW"'), 'vault categories populate the dropdown');
+  } catch (e) { ok(false, '№259 show drill crashed: ' + e.message); }
+}
+
+{
+  section('№259 — VM drill: Save on the phone from the Add screen → new document card is shown (mutation (h))');
+  try {
+    const app = await bootMobileVault({ docs: SEED_DOCS, invokeOverride: addCustomInvoke() });
+    const { sandbox, doc, invokeCalls } = app;
+    sandbox.mobileShow('add');
+    sandbox.showAddCustomDoc();
+    doc.getElementById('ac-title').value = 'TEST Custom Cert';
+    await sandbox.doAddCustomDoc();
+    await settleMore();
+    ok(invokeCalls.some(([c, a]) => c === 'add_custom_doc' && a && a.title === 'TEST Custom Cert'), 'add_custom_doc was invoked with the typed title');
+    ok(doc.getElementById('add-custom-overlay').style.display === 'none', 'dialog closes after Save');
+    ok(sandbox.allDocs.some((d) => d.id === NEW_DOC.id), 'allDocs was reloaded and contains the new document');
+    ok(sandbox.mobileView === 'doc' && sandbox.selectedDocId === NEW_DOC.id, "mobile branch opens the new document's card (mobileView='doc')");
+    ok(mobileHtml(doc).includes('TEST Custom Cert'), '#mobile-main shows the new document title');
+    ok(!invokeCalls.some(([c]) => c === 'attach_file_bytes'), 'no file is attached when nothing was pending');
+  } catch (e) { ok(false, '№259 save drill (add screen) crashed: ' + e.message); }
+}
+
+{
+  section('№259 — VM drill: Save on the phone from «Choose certificate for file» → pending file attaches to the NEW doc (mutation (g))');
+  try {
+    const app = await bootMobileVault({ docs: SEED_DOCS, invokeOverride: addCustomInvoke() });
+    const { sandbox, doc, invokeCalls } = app;
+    sandbox.mobileAddMode = 'attach_single';
+    sandbox.mobilePendingPickedFile = { name: 'custom-cert.pdf', size: 1234 };
+    sandbox.mobileReadFileAsBase64 = async () => 'JVBERi0=';
+    sandbox.mobileView = 'add';
+    sandbox.renderMobileShell();
+    ok(mobileHtml(doc).includes('Choose certificate for file') && mobileHtml(doc).includes('showAddCustomDoc()'), 'slot picker renders with the «Add custom certificate» button');
+    sandbox.showAddCustomDoc();
+    doc.getElementById('ac-title').value = 'TEST Custom Cert';
+    await sandbox.doAddCustomDoc();
+    await settleMore();
+    const attach = invokeCalls.find(([c]) => c === 'attach_file_bytes');
+    ok(!!attach && attach[1] && attach[1].docId === NEW_DOC.id && attach[1].fileName === 'custom-cert.pdf', 'attach_file_bytes was invoked with the NEW docId and the pending file name');
+    ok(sandbox.mobilePendingPickedFile === null && sandbox.mobileAddMode === 'choose', 'pending intent is consumed');
+    ok(sandbox.mobileView === 'doc' && sandbox.selectedDocId === NEW_DOC.id && mobileHtml(doc).includes('TEST Custom Cert'), "the new document's card is shown with the file attached");
+  } catch (e) { ok(false, '№259 save drill (slot picker) crashed: ' + e.message); }
+}
+
+{
+  section('№259 — PRESERVE: desktop Save path is untouched (renderTree + selDoc, no mobile side effects)');
+  try {
+    const app = bootApp({ seed: {}, invokeOverride: addCustomInvoke() });
+    await settleVm();
+    const { sandbox, doc, invokeCalls } = app;
+    sandbox.applyMobileMode();
+    ok(!doc.body.classList.contains('mobile-mode') && sandbox.isMobileMode() === false, 'desktop boot: no mobile-mode');
+    sandbox.allDocs = SEED_DOCS.map((d) => ({ ...d }));
+    let selDocCalls = 0; const realSelDoc = sandbox.selDoc; sandbox.selDoc = async (id) => { selDocCalls++; return realSelDoc(id); };
+    const viewBefore = sandbox.mobileView;
+    sandbox.showAddCustomDoc();
+    ok(doc.getElementById('add-custom-overlay').style.display === 'flex', 'desktop: dialog opens as before');
+    doc.getElementById('ac-title').value = 'TEST Custom Cert';
+    await sandbox.doAddCustomDoc();
+    await settleMore();
+    ok(selDocCalls === 1 && sandbox.selectedDocId === NEW_DOC.id, 'desktop: selDoc(newId) is still the path after Save');
+    ok(doc.getElementById('add-custom-overlay').style.display === 'none', 'desktop: dialog closes after Save');
+    ok(sandbox.mobileView === viewBefore && !invokeCalls.some(([c]) => c === 'attach_file_bytes'), 'desktop: mobileView untouched, no attach');
+  } catch (e) { ok(false, '№259 desktop preserve drill crashed: ' + e.message); }
 }
 
 {

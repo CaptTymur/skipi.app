@@ -1598,22 +1598,6 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
         <div class="panel-tree" id="panel-tree"></div>
     </div>
 
-    <!-- Add Custom Certificate modal -->
-    <div id="add-custom-overlay" class="modal-overlay" style="display:none;" onclick="if(event.target===this)hideAddCustomDoc();">
-        <div class="modal-panel" style="max-width:420px;">
-            <h3 style="margin-top:0;margin-bottom:4px;font-size:16px;">Add Custom Certificate</h3>
-            <p style="color:var(--text2);font-size:12px;margin-top:0;margin-bottom:14px;">Add a certificate that isn't in the standard template — e.g. a company-specific training, ECDIS type-specific course, local endorsement, or an extra course you took.</p>
-            <div class="field"><label>Title *</label><input type="text" id="ac-title" placeholder="e.g. ECDIS Type-Specific — Furuno"></div>
-            <div class="field"><label>Category</label><select id="ac-category"></select></div>
-            <div class="field"><label><input type="checkbox" id="ac-has-expiry" checked style="margin-right:6px;">This certificate has an expiry date</label></div>
-            <div class="field"><label><input type="checkbox" id="ac-is-permanent" onchange="syncAddPermanent()" style="margin-right:6px;">Permanent certificate</label></div>
-            <div class="actions" style="margin-top:18px;text-align:right;">
-                <button class="btn btn-outline" onclick="hideAddCustomDoc()">Cancel</button>
-                <button class="btn btn-accent" onclick="doAddCustomDoc()">Add Certificate</button>
-            </div>
-        </div>
-    </div>
-
     <!-- Center -->
     <div class="center">
         <div class="tabs" id="tabs" style="display:none;"></div>
@@ -1645,6 +1629,22 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
 <div class="statusbar" id="statusbar" style="display:none;">
     <span id="st-left"></span>
     <span id="st-right"></span>
+</div>
+
+<!-- Add Custom Certificate modal -->
+<div id="add-custom-overlay" class="modal-overlay" style="display:none;" onclick="if(event.target===this)hideAddCustomDoc();">
+    <div class="modal-panel" style="max-width:420px;">
+        <h3 style="margin-top:0;margin-bottom:4px;font-size:16px;">Add Custom Certificate</h3>
+        <p style="color:var(--text2);font-size:12px;margin-top:0;margin-bottom:14px;">Add a certificate that isn't in the standard template — e.g. a company-specific training, ECDIS type-specific course, local endorsement, or an extra course you took.</p>
+        <div class="field"><label>Title *</label><input type="text" id="ac-title" placeholder="e.g. ECDIS Type-Specific — Furuno"></div>
+        <div class="field"><label>Category</label><select id="ac-category"></select></div>
+        <div class="field"><label><input type="checkbox" id="ac-has-expiry" checked style="margin-right:6px;">This certificate has an expiry date</label></div>
+        <div class="field"><label><input type="checkbox" id="ac-is-permanent" onchange="syncAddPermanent()" style="margin-right:6px;">Permanent certificate</label></div>
+        <div class="actions" style="margin-top:18px;text-align:right;">
+            <button class="btn btn-outline" onclick="hideAddCustomDoc()">Cancel</button>
+            <button class="btn btn-accent" onclick="doAddCustomDoc()">Add Certificate</button>
+        </div>
+    </div>
 </div>
 
 <!-- Settings modal (legacy inline — retained until unified shell reaches visual parity) -->
@@ -13049,7 +13049,15 @@ async function doAddCustomDoc(){
         hideAddCustomDoc();
         if(rec&&rec.id){
             selectedDocId=rec.id;
-            await selDoc(rec.id);
+            if(isMobileMode()){
+                // №259: on the phone the desktop editor is hidden — hand the new document to the
+                // mobile shell exactly as a tap on its row would: attach the pending file when the
+                // slot picker («Choose certificate for file / PDF scan») asked for one, otherwise
+                // open the new document's card.
+                mobileAddPickDoc(rec.id);
+            }else{
+                await selDoc(rec.id);
+            }
         }
     }catch(e){showToast('Error: '+e,'error');logError('op',e);}
 }
