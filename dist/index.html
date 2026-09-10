@@ -4997,7 +4997,16 @@ function mobileSetDocsFilter(filter){
 }
 function mobileSetDocsSearch(value){
     mobileDocsSearch=value||'';
-    renderMobileDocs();
+    // Хвост 5 (owner 09.09): typing must NOT repaint #mobile-main. A full renderMobileDocs()
+    // rebuilds <input class="mobile-search"> as a brand-new node, and a new node carries neither
+    // focus nor caret — the phone dropped both after every single character. Only the container
+    // BELOW the input is repainted here, so the element the user types into stays the very same
+    // node. The chips are inside that container on purpose: «Missing»/«Expiring» are counted via
+    // mobileFilteredDocs, which honours the query, so leaving them out would freeze the counters.
+    var body=document.getElementById('mobile-docs-body');
+    if(!body){renderMobileDocs();return;}
+    body.innerHTML=mobileDocsBodyHtml();
+    hydrateDocumentThumbnails(body);
 }
 function mobileFilterChip(id,label,count){
     var active=mobileDocsFilter===id?' active':'';
@@ -5137,8 +5146,27 @@ function mobileCvCertificateRows(certs){
     return h;
 }
 // №260: sea service with the desktop columns Vessel / Flag / Type / Rank / From / Till / Company.
+function sortWorkEntries(entries){
+    // Хвост 7 (owner 09.09): sea service reads newest-first, and an entry with no sign_on
+    // belongs at the BOTTOM. Rust has sorted since 0.4.190 with
+    // ORDER BY COALESCE(sign_on, created_at) DESC — which is exactly the defect: an undated
+    // entry falls back to created_at = today and outranks every past contract. Sorting here
+    // (dist only, Rust untouched) fixes every mobile surface from one place.
+    // The comparator is deliberately stable: Array#sort is stable since ES2019, and the CV
+    // path carries CvWorkEntry (cv.rs:64) which has NO created_at at all, so undated CV rows
+    // can only keep the order they arrived in.
+    var iso=function(v){return String(v==null?'':v).trim();};
+    return (entries||[]).slice().sort(function(a,b){
+        var oa=iso(a&&a.sign_on),ob=iso(b&&b.sign_on);
+        if(oa&&ob)return oa===ob?0:(oa<ob?1:-1);
+        if(oa)return -1;
+        if(ob)return 1;
+        var ca=iso(a&&a.created_at),cb=iso(b&&b.created_at);
+        return ca===cb?0:(ca<cb?1:-1);
+    });
+}
 function mobileCvWorkRows(work){
-    work=work||[];
+    work=sortWorkEntries(work);
     if(!work.length)return '<div class="mobile-cv-empty">No work history recorded.</div>';
     var h='<div class="mobile-cv-rows">';
     work.forEach(function(w){
@@ -5727,7 +5755,7 @@ async function renderMobileCv(){
         var ru=getUiLang()==='ru';
         var p=data.personal||{};
         var certs=data.certificates||[];
-        var work=data.work_history||[];
+        var work=sortWorkEntries(data.work_history);
         // №260: the phone draws the SAME form as the desktop showCv — the same 15 fields in the
         // same row() order (one column here), Salary expectations, certificates and sea service
         // with the desktop columns. Labels stay English: the form is a document for the employer.
@@ -6288,6 +6316,25 @@ function mobileReadExperiencePayload(){
         notes:g('mwh-notes')||null
     };
 }
+function mobileTodayIso(){
+    // Local calendar day, the same one the seafarer sees in the date pickers of the wizard
+    // (a UTC ISO slice would flip a day around midnight in the wrong direction at sea).
+    var d=new Date();
+    var p=function(n){return (n<10?'0':'')+n;};
+    return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());
+}
+function mobileShouldAutoAssess(payload){
+    // Хвост 8 (owner 09.09): the vessel assessment is OFFERED, never forced. It opens by itself
+    // only for a contract the seafarer is actually on — one that has already started and has not
+    // ended yet. The owner's rule is literal, with no threshold in days: a contract that ended
+    // yesterday is as finished as one that ended four years ago. The guard on sign_on additionally
+    // keeps a contract typed in advance from popping an assessment for a voyage nobody sailed.
+    var today=mobileTodayIso();
+    var on=String((payload&&payload.signOn)||'').trim();
+    var off=String((payload&&payload.signOff)||'').trim();
+    if(!on||on>today)return false;
+    return !off||off>=today;
+}
 async function mobileSaveExperience(entryId){
     var payload=mobileExperienceWizardState?mobileExperiencePayloadFromState():mobileReadExperiencePayload();
     if(!payload)return;
@@ -6303,9 +6350,15 @@ async function mobileSaveExperience(entryId){
         }else{
             var newId=await invoke('add_work_history',payload);
             mobileExperienceWizardState=null;
-            showToast('Sea Service saved. Now assess the vessel.','success');
+            var autoAssess=mobileShouldAutoAssess(payload);
+            var ruSave=getUiLang()==='ru';
+            // «Assess» is the literal label of the button on the card (mobileWorkEntryCard), which
+            // is not translated — so the Russian toast names it in Latin on purpose.
+            showToast(autoAssess
+                ?(ruSave?'Опыт сохранён. Теперь оцените судно.':'Sea Service saved. Now assess the vessel.')
+                :(ruSave?'Опыт сохранён. Нажмите «Assess» на карточке, когда захотите оценить судно.':'Sea Service saved. Tap «Assess» on the card when you want to rate the vessel.'),'success');
             await renderMobileExperience();
-            if(newId)setTimeout(function(){mobileStartAssessment(newId);},250);
+            if(newId&&autoAssess)setTimeout(function(){mobileStartAssessment(newId);},250);
         }
     }catch(e){
         if(mobileExperienceWizardState){mobileExperienceWizardState.saving=false;mobileRenderExperienceWizard();}
@@ -6316,7 +6369,7 @@ async function mobileSaveExperience(entryId){
 async function renderMobileExperience(){
     mobileMainHtml('<div class="mobile-card"><div class="mobile-card-title">Experience</div><div class="mobile-card-sub">Loading sea service...</div></div>');
     try{
-        var entries=await invoke('get_work_history')||[];
+        var entries=sortWorkEntries(await invoke('get_work_history'));
         if(mobileView!=='experience')return;
         var withImo=entries.filter(function(e){return !!normalizeImo(e&&e.imo);}).length;
         var reviewed=entries.filter(vesselReviewHasLocal).length;
@@ -7231,13 +7284,15 @@ async function mobileDeletePackage(id){
     }
 }
 // ---- END mobile Packages ----
-function renderMobileDocs(){
+function mobileDocsBodyHtml(){
+    // Everything on the Documents screen EXCEPT the search input: the chips and the list.
+    // This is the unit a keystroke repaints (see mobileSetDocsSearch), which is why the counts
+    // are computed here and not in the caller.
     var missing=mobileFilteredDocs('missing').length;
     var nofile=allDocs.filter(function(d){return !d.file_name;}).length;
     var uploaded=allDocs.filter(function(d){return !!d.file_name;}).length;
     var expiring=mobileFilteredDocs('expiring').length;
-    var h='<input class="mobile-search" type="search" placeholder="Search documents" value="'+mobileEsc(mobileDocsSearch)+'" oninput="mobileSetDocsSearch(this.value)">';
-    h+='<div class="mobile-filter-row">'
+    var h='<div class="mobile-filter-row">'
         +mobileFilterChip('all','All',allDocs.length)
         +mobileFilterChip('missing','Missing',missing)
         +mobileFilterChip('nofile','No file',nofile)
@@ -7248,6 +7303,11 @@ function renderMobileDocs(){
     h+='<div class="mobile-section-title">Documents</div>';
     if(!docs.length)h+='<div class="mobile-card">No documents in this vault.</div>';
     docs.forEach(function(d){h+=mobileDocRow(d);});
+    return h;
+}
+function renderMobileDocs(){
+    var h='<input class="mobile-search" type="search" placeholder="Search documents" value="'+mobileEsc(mobileDocsSearch)+'" oninput="mobileSetDocsSearch(this.value)">';
+    h+='<div id="mobile-docs-body">'+mobileDocsBodyHtml()+'</div>';
     mobileMainHtml(h);
     setTimeout(function(){hydrateDocumentThumbnails(document.getElementById('mobile-main'));},0);
 }

@@ -5245,6 +5245,339 @@ const ocrUpdates = (calls) => calls.filter(([c]) => c === 'update_doc_field').ma
   ok((HTML.match(/status:'offer'/g) || []).length === 3, "exactly three status:'offer' sites in the source");
 }
 
+// ===========================================================================
+// A5-I (wave 0.4.191, owner walkthrough 09.09) — three tails on the phone.
+//
+// (5) Document search lost the typed input character by character: mobileSetDocsSearch
+//     called renderMobileDocs(), which rebuilds the WHOLE screen string — <input
+//     class="mobile-search"> included — and hands it to mobileMainHtml → main.innerHTML.
+//     A fresh input node has no focus and no caret, so the phone dropped both after
+//     every keystroke. Fix (variant 1, fixed by the manager): the input is painted once
+//     and everything below it — chips AND list — lives in #mobile-docs-body, which is the
+//     only thing a keystroke repaints. The chips stay inside it on purpose: «Missing» and
+//     «Expiring» are counted through mobileFilteredDocs, which already honours the query,
+//     so leaving them outside would freeze the counters. Fallback to the full paint when
+//     the container is not there, so a changed screen can never dead-end.
+//
+// (7) Experience and the CV sea-service table were not in date order. Rust has sorted
+//     since 0.4.190 (db.rs:1306 ORDER BY COALESCE(sign_on, created_at) DESC) — that is
+//     exactly the defect: an entry with NO sign_on falls back to created_at = today and
+//     lands ABOVE every past contract, while the card wants it at the bottom. Fix in dist
+//     only: sortWorkEntries — sign_on DESC, undated to the END (created_at DESC between
+//     themselves), stable so equal dates keep the order Rust returned. It matters that the
+//     comparator is stable: the CV path carries CvWorkEntry (cv.rs:64), which has no
+//     created_at at all, so undated CV rows can only keep their incoming order.
+//
+// (8) Saving a contract force-opened the vessel assessment — `if(newId)setTimeout(
+//     mobileStartAssessment(newId))` with no condition. Owner's literal rule, no threshold
+//     in days: the assessment opens by itself only for a contract the seafarer is actually
+//     on — sign_on already started AND sign_off empty or still ahead. Everything else just
+//     saves and points at the «Assess» button, which the card has always rendered.
+// ===========================================================================
+
+const a5Iso = (offset) => {
+  const d = new Date();
+  d.setDate(d.getDate() + offset);
+  const p = (n) => (n < 10 ? '0' : '') + n;
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+};
+const A5_TODAY = a5Iso(0);
+// The Experience cards call vesselReviewHasLocal / localReviewStars, which the app loads from
+// dist/vessel-db.js via <script src> — bootApp only runs the INLINE scripts, so the real module
+// is loaded into the same context here instead of stubbing the functions away.
+const VESSEL_DB_MODULE = fs.readFileSync(path.join(DIST, 'vessel-db.js'), 'utf8');
+
+// --------------------------------------------------------------- (5) documents search
+const A5_DOCS = [
+  { id: 'a5-med', title: 'Medical certificate', category: 'Medical', file_name: 'med.pdf', has_expiry: true, valid_to: '2020-01-01' },
+  { id: 'a5-stcw', title: 'STCW Basic Safety', category: 'STCW', file_name: 'stcw.pdf', has_expiry: true, valid_to: '2020-01-01' },
+  { id: 'a5-book', title: 'Seaman Book', category: 'Identity', file_name: null, has_expiry: false, valid_to: null },
+];
+async function bootA5Docs({ withContainer = true } = {}) {
+  const app = bootMobile({
+    seed: { 'skipi-assistant-consent': '1' },
+    invokeOverride: async (cmd) => {
+      if (cmd === 'get_documents') return A5_DOCS.map((d) => ({ ...d }));
+      if (cmd === 'get_profile_status') return { completeness_pct: 50 };
+      return undefined;
+    },
+  });
+  await settleVm();
+  app.sandbox.applyMobileMode();
+  app.sandbox.allDocs = A5_DOCS.map((d) => ({ ...d }));
+  app.sandbox.mobileDocsFilter = 'all';
+  app.sandbox.mobileDocsSearch = '';
+  app.sandbox.mobileView = 'docs';
+  app.sandbox.renderMobileDocs();
+  // The fake DOM never parses innerHTML into nodes, so the container a real WebView would have
+  // after the first paint is registered by hand — that node, and only that node, is what the
+  // partial repaint writes into. The markup declaring it comes from the app's own
+  // renderMobileDocs (asserted below), not from the harness.
+  let body = null;
+  if (withContainer) { body = app.doc.createElement('div'); body.setAttribute('id', 'mobile-docs-body'); }
+  // withContainer:false models a screen whose container is genuinely absent. The id has to be
+  // dropped explicitly: VmDocument scans the raw file for id="…" and picks the string up out of
+  // the inline script itself, so «never created» is not the same as «not in the id map».
+  else app.doc._ids.delete('mobile-docs-body');
+  return { ...app, body };
+}
+
+{
+  section('A5-I (5) — VM drill: typing in document search never repaints #mobile-main (mutation (5a)); the list filters (5b); the chips keep counting with the query (5c)');
+  try {
+    const app = await bootA5Docs();
+    const { sandbox, doc, body } = app;
+    ok(mobileHtml(doc).includes('id="mobile-docs-body"'), '(5a) the first paint puts chips+list in the partial-repaint container #mobile-docs-body');
+    ok(mobileHtml(doc).indexOf('class="mobile-search"') < mobileHtml(doc).indexOf('id="mobile-docs-body"'), '(5a) the <input class="mobile-search"> is painted OUTSIDE (above) that container');
+    const beforeMain = mobileHtml(doc);
+    let mainPaints = 0;
+    const realMain = sandbox.mobileMainHtml;
+    sandbox.mobileMainHtml = (h) => { mainPaints++; return realMain(h); };
+    ['m', 'me', 'med'].forEach((q) => sandbox.mobileSetDocsSearch(q));
+    ok(mainPaints === 0, '(5a) three keystrokes → mobileMainHtml called 0 times (the input node is never re-created, so focus and caret survive)');
+    ok(mobileHtml(doc) === beforeMain, '(5a) #mobile-main innerHTML is byte-identical after typing — nothing above the container moved');
+    const listed = String(body.innerHTML || '');
+    ok(!/class="mobile-search"/.test(listed), '(5a) the repainted container never contains the search input itself');
+    ok(listed.includes('Medical certificate'), '(5b) the repainted container shows the match');
+    ok(!listed.includes('STCW Basic Safety') && !listed.includes('Seaman Book'), '(5b) …and only the match: 3 documents, query «med» → 1 row');
+    ok((listed.match(/class="mobile-doc-row"/g) || []).length === 1, '(5b) exactly one .mobile-doc-row is rendered for «med»');
+    ok(/>Expiring 1</.test(listed), '(5c) the «Expiring» chip re-counts WITH the query (2 expired docs in the vault, 1 of them matches «med»)');
+    sandbox.mobileSetDocsSearch('');
+    ok(/>Expiring 2</.test(String(body.innerHTML || '')), '(5c) clearing the query puts the chip back to 2 — the chips live inside the repainted container');
+    ok(/>All 3</.test(String(body.innerHTML || '')), '(5c) the «All» chip still counts the whole vault (unchanged semantics)');
+    ok(mainPaints === 0, '(5a) still 0 full repaints after clearing the query');
+  } catch (e) { ok(false, 'A5-I (5) docs-search drill crashed: ' + e.message); }
+}
+
+{
+  section('A5-I (5) — VM drill: PRESERVE — container missing → full repaint fallback, chips click still repaints, query survives');
+  try {
+    const app = await bootA5Docs({ withContainer: false });
+    const { sandbox, doc } = app;
+    let mainPaints = 0;
+    const realMain = sandbox.mobileMainHtml;
+    sandbox.mobileMainHtml = (h) => { mainPaints++; return realMain(h); };
+    sandbox.mobileSetDocsSearch('med');
+    ok(mainPaints === 1, '(5) no #mobile-docs-body in the document → exactly one full renderMobileDocs() repaint (fallback, never a dead screen)');
+    const h = mobileHtml(doc);
+    ok(h.includes('Medical certificate') && !h.includes('Seaman Book'), '(5) the fallback repaint is filtered too');
+    ok(h.includes('value="med"'), '(5) the fallback repaint carries the query back into the input value');
+    const app2 = await bootA5Docs();
+    app2.sandbox.mobileSetDocsSearch('med');
+    app2.sandbox.mobileSetDocsFilter('expiring');
+    ok(mobileHtml(app2.doc).includes('value="med"'), '(5) PRESERVE: tapping a filter chip still does a full repaint and keeps the typed query in the input');
+    ok(mobileHtml(app2.doc).includes('Medical certificate') && !mobileHtml(app2.doc).includes('Seaman Book'), '(5) PRESERVE: filter + query compose (expiring ∩ «med»)');
+  } catch (e) { ok(false, 'A5-I (5) fallback drill crashed: ' + e.message); }
+}
+
+{
+  section('A5-I (5) — source anchors: the partial repaint, its fallback and the thumbnail re-hydration');
+  const src = fnSource('mobileSetDocsSearch');
+  ok(src.length > 0, 'mobileSetDocsSearch exists');
+  ok(/getElementById\('mobile-docs-body'\)/.test(src), "(5a) mobileSetDocsSearch addresses the container by id 'mobile-docs-body'");
+  ok(/renderMobileDocs\(\)/.test(src), '(5) the full-repaint fallback is still reachable from mobileSetDocsSearch');
+  ok(/hydrateDocumentThumbnails\(/.test(src), '(5) thumbnails are re-hydrated after the partial repaint (they are not re-created by the paint above)');
+  ok(fnSource('mobileDocsBodyHtml').length > 0, '(5) the chips+list markup lives in one reusable builder (mobileDocsBodyHtml)');
+  ok(!/mobile-search/.test(fnSource('mobileDocsBodyHtml')), '(5a) that builder never emits the search input');
+  ok(/mobile-search/.test(fnSource('renderMobileDocs')) && /mobileDocsBodyHtml\(\)/.test(fnSource('renderMobileDocs')), '(5) renderMobileDocs paints input + builder output');
+}
+
+// --------------------------------------------------------------- (7) sea-service order
+const A5_WORK = [
+  // Deliberately NOT in the order Rust returns: the phone must sort what it is handed, so the
+  // drill must not lean on the backend's ORDER BY. Undated entries (NULL and '') sit in the
+  // middle here — with the sort removed the screen keeps this order and every assert below goes
+  // red, which is exactly mutation (7a)/(7b)/(7d).
+  { id: 'w-2019', vessel_name: 'MV NINETEEN', position: '2/O', imo: '9999993', flag: 'MT', company: 'Test Shipping', sign_on: '2019-03-01', sign_off: '2019-11-01', created_at: '2026-09-01T10:00:00Z' },
+  { id: 'w-empty', vessel_name: 'MV EMPTY', position: 'OS', imo: null, flag: null, company: 'Test Shipping', sign_on: '', sign_off: '', created_at: '2026-08-01T10:00:00Z' },
+  { id: 'w-2024', vessel_name: 'MV TWENTYFOUR', position: 'C/O', imo: '9999981', flag: 'MT', company: 'Test Shipping', sign_on: '2024-02-01', sign_off: '2024-08-01', created_at: '2026-09-02T10:00:00Z' },
+  { id: 'w-none', vessel_name: 'MV NODATE', position: 'AB', imo: null, flag: null, company: 'Test Shipping', sign_on: null, sign_off: null, created_at: '2026-09-10T10:00:00Z' },
+  { id: 'w-2022', vessel_name: 'MV TWENTYTWO', position: '3/O', imo: '9999929', flag: 'MT', company: 'Test Shipping', sign_on: '2022-05-01', sign_off: '2022-12-01', created_at: '2026-09-03T10:00:00Z' },
+];
+const A5_WORK_ORDER = ['MV TWENTYFOUR', 'MV TWENTYTWO', 'MV NINETEEN', 'MV NODATE', 'MV EMPTY'];
+const a5Increasing = (html, names) => {
+  const idx = names.map((n) => html.indexOf(n));
+  return idx.every((v, i) => v >= 0 && (i === 0 || v > idx[i - 1]));
+};
+async function bootA5Experience({ work = A5_WORK, lang = 'en' } = {}) {
+  const app = bootMobile({
+    seed: { 'skipi-assistant-consent': '1' },
+    invokeOverride: async (cmd) => {
+      if (cmd === 'get_work_history') return work.map((w) => ({ ...w }));
+      if (cmd === 'get_profile_status') return { completeness_pct: 50 };
+      return undefined;
+    },
+  });
+  vm.runInContext(VESSEL_DB_MODULE, app.sandbox, { filename: 'dist/vessel-db.js' });
+  await settleVm();
+  app.sandbox.getUiLang = () => lang;
+  app.sandbox.applyMobileMode();
+  app.sandbox.allDocs = [];
+  app.sandbox.mobileView = 'experience';
+  await app.sandbox.renderMobileExperience();
+  await settleVm();
+  return { ...app, html: mobileHtml(app.doc) };
+}
+
+{
+  section('A5-I (7) — VM drill: Experience is newest-first and undated sinks (mutations (7a) sort removed, (7b) empty sign_on, (7d) NULL sign_on)');
+  try {
+    const { html, sandbox } = await bootA5Experience();
+    ok(html.indexOf('MV TWENTYFOUR') >= 0 && html.indexOf('MV NINETEEN') >= 0, 'all fixture cards rendered');
+    ok(a5Increasing(html, ['MV TWENTYFOUR', 'MV TWENTYTWO', 'MV NINETEEN']), '(7a) dated contracts read newest-first: 2024 → 2022 → 2019 (the fixture arrives 2024 → 2022 → 2019 only AFTER sorting; Rust hands them over with the undated one on top)');
+    const lastDated = Math.max.apply(null, ['MV TWENTYFOUR', 'MV TWENTYTWO', 'MV NINETEEN'].map((n) => html.indexOf(n)));
+    ok(html.indexOf('MV NODATE') > lastDated, '(7d) the entry with sign_on = NULL is below EVERY dated contract (Rust puts it on top via COALESCE → created_at; the card wants it at the bottom)');
+    ok(html.indexOf('MV EMPTY') > lastDated, "(7b) the entry with sign_on = '' is below every dated contract too");
+    ok(a5Increasing(html, A5_WORK_ORDER), '(7) full order: ' + A5_WORK_ORDER.join(' → ') + ' (undated between themselves by created_at DESC)');
+    ok(html.includes('<strong>5</strong><span>Records</span>'), 'PRESERVE: the stats row still counts all 5 records (sorting is not filtering)');
+    ok(/mobileStartAssessment\('w-2019'\)/.test(html), 'PRESERVE: the «Assess» button is still rendered on a past contract card (the manual way in)');
+    // H2 from the step-0 hypotheses, as a direct unit assert on the comparator.
+    const eq = sandbox.sortWorkEntries([{ vessel_name: 'A', sign_on: '2023-01-01' }, { vessel_name: 'B', sign_on: '2023-01-01' }]);
+    ok(eq.map((e) => e.vessel_name).join('') === 'AB', '(7/H2) equal sign_on → stable: the order Rust returned is preserved, not shuffled');
+    const input = [{ vessel_name: 'A', sign_on: '2019-01-01' }, { vessel_name: 'B', sign_on: '2024-01-01' }];
+    const out = sandbox.sortWorkEntries(input);
+    ok(out !== input && input[0].vessel_name === 'A', '(7) sortWorkEntries returns a NEW array and does not mutate its argument');
+    ok(sandbox.sortWorkEntries(null).length === 0 && sandbox.sortWorkEntries(undefined).length === 0, '(7) sortWorkEntries survives null/undefined (empty vault)');
+  } catch (e) { ok(false, 'A5-I (7) experience drill crashed: ' + e.message); }
+}
+
+{
+  section('A5-I (7c) — VM drill: the sea-service table of the phone A4 form is sorted the same way');
+  try {
+    // CvWorkEntry (cv.rs:64) carries NO created_at and NO id — the fixture mirrors that shape
+    // exactly, so the drill proves the sort works on the data the CV path really receives.
+    const cvWork = [
+      { vessel_name: 'MV NINETEEN', vessel_type: 'Bulk', imo: '9999993', flag: 'MT', company: 'Test Shipping', position: '2/O', sign_on: '2019-03-01', sign_off: '2019-11-01' },
+      { vessel_name: 'MV NODATE', vessel_type: 'Bulk', imo: null, flag: 'MT', company: 'Test Shipping', position: 'AB', sign_on: null, sign_off: null },
+      { vessel_name: 'MV TWENTYFOUR', vessel_type: 'Bulk', imo: '9999981', flag: 'MT', company: 'Test Shipping', position: 'C/O', sign_on: '2024-02-01', sign_off: '2024-08-01' },
+      { vessel_name: 'MV TWENTYTWO', vessel_type: 'Bulk', imo: '9999929', flag: 'MT', company: 'Test Shipping', position: '3/O', sign_on: '2022-05-01', sign_off: '2022-12-01' },
+    ];
+    const { html } = await bootCv({ data: cvDataFixture({ work_history: cvWork }) });
+    const vessels = cvCellValues(html, 'Vessel');
+    ok(vessels.length === 4, 'all 4 sea-service rows are rendered in the A4 form');
+    ok(vessels.join(' | ') === 'MV TWENTYFOUR | MV TWENTYTWO | MV NINETEEN | MV NODATE',
+      '(7c) A4 sea-going experience is newest-first with the undated row last (got: ' + vessels.join(' | ') + ')');
+    const froms = cvCellValues(html, 'From');
+    ok(froms[0] === '2024-02-01' && froms[froms.length - 1] === '', '(7c) the From column proves it: 2024-02-01 first, empty date last');
+  } catch (e) { ok(false, 'A5-I (7c) CV drill crashed: ' + e.message); }
+}
+
+{
+  section('A5-I (7) — source anchors: one comparator, applied at every mobile call site (rule (198))');
+  const cmp = fnSource('sortWorkEntries');
+  ok(cmp.length > 0, 'sortWorkEntries exists as one shared function');
+  ok(/created_at/.test(cmp), '(7) the comparator uses created_at as the secondary key for undated entries');
+  ok(/sortWorkEntries\(/.test(fnSource('renderMobileExperience')), '(7a) call site 1: renderMobileExperience');
+  ok(/sortWorkEntries\(/.test(cvFnSource('renderMobileCv')), '(7c) call site 2: renderMobileCv (the A4 form on the phone) sorts before it hands the rows over');
+  ok(/sortWorkEntries\(/.test(fnSource('mobileCvWorkRows')), '(7c) call site 3: mobileCvWorkRows sorts the rows it draws');
+  ok((HTML.match(/sortWorkEntries\(/g) || []).length === 4, 'exactly four sortWorkEntries occurrences in dist: the definition plus the three mobile call sites');
+  ok(/ORDER BY COALESCE\(wh\.sign_on, wh\.created_at\) DESC/.test(fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'db.rs'), 'utf8')), 'PRESERVE: the Rust ORDER BY is untouched — the fix is dist-only');
+}
+
+// --------------------------------------------------------------- (8) assessment offered, not forced
+async function bootA5Save({ signOn, signOff, lang = 'en', entryId = '' } = {}) {
+  const added = [];
+  const updated = [];
+  const app = bootMobile({
+    seed: { 'skipi-assistant-consent': '1' },
+    invokeOverride: async (cmd, args) => {
+      if (cmd === 'add_work_history') { added.push(args); return 'a5-new-id'; }
+      if (cmd === 'update_work_history') { updated.push(args); return {}; }
+      if (cmd === 'get_work_history') return [];
+      if (cmd === 'get_profile_status') return { completeness_pct: 50 };
+      return undefined;
+    },
+  });
+  await settleVm();
+  app.sandbox.getUiLang = () => lang;
+  app.sandbox.applyMobileMode();
+  app.sandbox.allDocs = [];
+  app.sandbox.mobileView = 'experience';
+  const toasts = [];
+  app.sandbox.showToast = (m) => toasts.push(String(m));
+  // The sandbox setTimeout is a no-op stub, so the deferred assessment call has to be
+  // captured and flushed by hand — that is the only way to observe it in a fake DOM.
+  const timers = [];
+  app.sandbox.setTimeout = (fn) => { timers.push(fn); return timers.length; };
+  const assessed = [];
+  app.sandbox.mobileStartAssessment = async (id) => { assessed.push(id); };
+  app.sandbox.mobileExperienceWizardState = {
+    step: 6, id: entryId, vessel_name: 'MV SAVE TEST', imo: '9999993', position: '2/O',
+    vessel_type: 'Bulk', flag: 'MT', company: 'Test Shipping',
+    sign_on: signOn, sign_off: signOff, dwt: '', teu: '', notes: '', saving: false,
+  };
+  await app.sandbox.mobileSaveExperience(entryId);
+  await settleVm();
+  timers.forEach((fn) => { try { fn(); } catch (e) { /* unrelated deferred paint */ } });
+  await settleVm();
+  return { ...app, toasts, added, updated, assessed };
+}
+
+{
+  section('A5-I (8) — VM drill: the assessment is offered, never forced (mutations (8a) unconditional, (8b) never, (8c) day threshold, (8d) future dates)');
+  try {
+    const past = await bootA5Save({ signOn: a5Iso(-400), signOff: a5Iso(-300) });
+    ok(past.added.length === 1, 'the past contract is saved (add_work_history called once)');
+    ok(past.assessed.length === 0, '(8a) a contract that ENDED in the past → mobileStartAssessment is never called');
+    ok(past.toasts.some((t) => /^Sea Service saved/.test(t)), '(8a) the toast still confirms the save');
+    ok(!past.toasts.some((t) => /Now assess/.test(t)), '(8a) …without «Now assess the vessel»');
+    ok(past.toasts.some((t) => /Assess/.test(t) && /card/.test(t)), '(8a) …and it names the «Assess» button on the card as the way in');
+    ok(!/[А-Яа-я]/.test(past.toasts.join(' ')), 'EN UI: no Cyrillic leaks into the English toast');
+
+    const current = await bootA5Save({ signOn: a5Iso(-100), signOff: '' });
+    ok(current.assessed.length === 1 && current.assessed[0] === 'a5-new-id', '(8b) a current contract (sign_off empty) → the assessment still opens by itself, as before');
+    ok(current.toasts.some((t) => /Now assess the vessel/.test(t)), '(8b) …with the original «Now assess the vessel» toast');
+
+    const yesterday = await bootA5Save({ signOn: a5Iso(-400), signOff: a5Iso(-1) });
+    ok(yesterday.assessed.length === 0, '(8c) sign_off = YESTERDAY → still no auto-open: the rule is the literal «already finished», not a threshold in days');
+
+    const endsToday = await bootA5Save({ signOn: a5Iso(-100), signOff: A5_TODAY });
+    ok(endsToday.assessed.length === 1, '(8c) sign_off = TODAY → auto-open (the boundary is >= today, inclusive — the seafarer is still on board)');
+
+    const future = await bootA5Save({ signOn: a5Iso(30), signOff: '' });
+    ok(future.assessed.length === 0, '(8d) a contract that has NOT started (sign_on in the future, sign_off empty) → no auto-open');
+    ok(future.toasts.some((t) => /Assess/.test(t) && !/Now assess/.test(t)), '(8d) …and the future contract gets the «tap Assess» toast, not the «now assess» one');
+
+    const futureBoth = await bootA5Save({ signOn: a5Iso(30), signOff: a5Iso(90) });
+    ok(futureBoth.assessed.length === 0, '(8d) both dates in the future → no auto-open either');
+
+    const noDate = await bootA5Save({ signOn: '', signOff: '' });
+    ok(noDate.assessed.length === 0, '(8d) no sign_on at all → no auto-open (an unknown start is not «on board now»)');
+
+    const startsToday = await bootA5Save({ signOn: A5_TODAY, signOff: '' });
+    ok(startsToday.assessed.length === 1, '(8) sign_on = TODAY, sign_off empty → auto-open (the other boundary, inclusive)');
+
+    const edit = await bootA5Save({ signOn: a5Iso(-100), signOff: '', entryId: 'w-existing' });
+    ok(edit.updated.length === 1 && edit.added.length === 0, 'PRESERVE: editing an existing entry still goes through update_work_history');
+    ok(edit.assessed.length === 0, 'PRESERVE: editing never auto-opened the assessment and still does not');
+  } catch (e) { ok(false, 'A5-I (8) assessment drill crashed: ' + e.message); }
+}
+
+{
+  section('A5-I (8) — VM drill: RU/EN symmetry of the two save toasts');
+  try {
+    const ruPast = await bootA5Save({ signOn: a5Iso(-400), signOff: a5Iso(-300), lang: 'ru' });
+    ok(ruPast.toasts.some((t) => /Опыт сохранён/.test(t)), 'RU: the past-contract toast is Russian');
+    ok(ruPast.toasts.some((t) => /Assess/.test(t)), 'RU: it names the «Assess» button by its on-screen label (the card button is not translated)');
+    ok(!ruPast.toasts.some((t) => /Sea Service saved/.test(t)), 'RU: no English toast leaks at ru');
+    const ruCurrent = await bootA5Save({ signOn: a5Iso(-100), signOff: '', lang: 'ru' });
+    ok(ruCurrent.toasts.some((t) => /Теперь оцените судно/.test(t)), 'RU: the current-contract toast is Russian too');
+    ok(!ruCurrent.toasts.some((t) => /Now assess the vessel/.test(t)), 'RU: the English «Now assess the vessel» does not leak at ru');
+  } catch (e) { ok(false, 'A5-I (8) RU/EN drill crashed: ' + e.message); }
+}
+
+{
+  section('A5-I (8) — source anchors: one predicate, no day threshold, manual path untouched');
+  const pred = fnSource('mobileShouldAutoAssess');
+  ok(pred.length > 0, 'mobileShouldAutoAssess exists as one named rule');
+  ok(!/\b(?:30|60|90|180|365)\b/.test(pred) && !/864e5|86400000/.test(pred), '(8c) the rule contains NO threshold in days and no millisecond arithmetic — it compares ISO dates');
+  ok(/signOn/.test(pred) && /signOff/.test(pred), '(8) the rule reads both dates of the payload');
+  ok(/mobileShouldAutoAssess\(/.test(fnSource('mobileSaveExperience')), '(8a) mobileSaveExperience asks the rule instead of calling the assessment unconditionally');
+  ok(!/if\(newId\)setTimeout/.test(fnSource('mobileSaveExperience')), '(8a) the old unconditional `if(newId)setTimeout(...)` is gone');
+  ok(!/mobileShouldAutoAssess/.test(fnSource('mobileStartAssessment')), 'PRESERVE: mobileStartAssessment itself carries no date condition — the manual «Assess» button always works');
+  ok(/mobileStartAssessment\(/.test(fnSource('mobileWorkEntryCard')), 'PRESERVE: the card still renders the «Assess» button that the new toast points at');
+}
+
 {
   section('remote install + offline persistence harness');
   await runRemoteInstallOfflineHarness();
