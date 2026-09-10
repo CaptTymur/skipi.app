@@ -1037,6 +1037,17 @@ body.mobile-native .mobile-brand-wrap, body.mobile-native #mobile-feedback-btn, 
 .mobile-cv-line-side { font-size:10px; color:#555; text-align:right; white-space:nowrap; line-height:1.3; }
 .mobile-cv-category { font-size:10px; color:#4a4a8a; font-weight:900; text-transform:uppercase; margin:9px 0 2px; }
 .mobile-cv-empty { font-size:12px; color:#777; padding:7px 0; }
+/* №260 (wave 0.4.191 A4): the phone draws the desktop Seafarer's Application Form — one column of
+   label/value fields, and the certificate / sea-service tables as cards with labelled rows
+   (no horizontal scroll: it hides Issued/Valid on 360px). Labels stay English like the desktop. */
+.mobile-cv-fields { display:grid; grid-template-columns:1fr; gap:6px; }
+.mobile-cv-rows { display:grid; gap:6px; }
+.mobile-cv-row { border:1px solid #ececec; border-radius:6px; padding:5px 8px; font-size:12px; }
+.mobile-cv-cell { display:grid; grid-template-columns:96px minmax(0,1fr); gap:8px; padding:3px 0; border-bottom:1px solid #f2f2f2; align-items:baseline; }
+.mobile-cv-cell:last-child { border-bottom:0; }
+.mobile-cv-cell-label { font-size:9px; color:#666; text-transform:uppercase; font-weight:800; line-height:1.4; white-space:nowrap; }
+.mobile-cv-cell-value { min-width:0; font-size:12px; color:#1e1e1e; font-weight:600; line-height:1.3; word-break:break-word; }
+.mobile-cv-note { font-size:12px; color:var(--text2); line-height:1.35; margin:0 0 10px; }
 .mobile-mailing-pills { display:flex; flex-direction:column; gap:10px; margin-bottom:12px; }
 .mobile-mailing-pill { width:100%; min-height:78px; border:1px solid var(--border); border-radius:999px; background:var(--surface); color:var(--text); padding:11px 14px 11px 15px; display:flex; align-items:center; gap:11px; text-align:left; }
 .mobile-mailing-pill.active { border-color:var(--accent); background:var(--accent-bg); box-shadow:0 0 0 1px var(--accent-bg2) inset; }
@@ -5093,6 +5104,11 @@ function mobileCvCertSide(c){
     if(c.is_permanent)return 'Permanent';
     return c.valid_to||'--';
 }
+function mobileCvCell(label,value,style){
+    return '<div class="mobile-cv-cell"><span class="mobile-cv-cell-label">'+label+'</span><span class="mobile-cv-cell-value"'+(style?' style="'+style+'"':'')+'>'+mobileEsc(value)+'</span></div>';
+}
+// №260: certificates by sorted category with the desktop columns Title / Number / Place of issue /
+// Issued / Valid — each certificate is a card of labelled rows (same data, same order as showCv).
 function mobileCvCertificateRows(certs){
     certs=certs||[];
     if(!certs.length)return '<div class="mobile-cv-empty">No certificates on file.</div>';
@@ -5105,32 +5121,38 @@ function mobileCvCertificateRows(certs){
     var h='';
     Object.keys(byCat).sort().forEach(function(cat){
         h+='<div class="mobile-cv-category">'+mobileEsc(cat)+'</div>';
+        h+='<div class="mobile-cv-rows">';
         byCat[cat].forEach(function(c){
-            var statusClass=c.status==='expired'?'bad':(c.status==='warning'?'warn':'ok');
-            h+='<div class="mobile-cv-line">';
-            h+='<div><div class="mobile-cv-line-title">'+mobileEsc(c.title||'Certificate')+'</div>';
-            h+='<div class="mobile-cv-line-meta">'+mobileEsc([c.doc_number,c.issued_by,c.valid_from].filter(Boolean).join(' / ')||'No details')+'</div></div>';
-            h+='<div class="mobile-cv-line-side"><span class="mobile-pill '+statusClass+'">'+mobileEsc(mobileCvCertSide(c))+'</span></div>';
+            var vc=c.status==='expired'?'#c53030':c.status==='warning'?'#d69e2e':'#1e1e1e';
+            h+='<div class="mobile-cv-row">';
+            h+=mobileCvCell('Title',c.title);
+            h+=mobileCvCell('Number',c.doc_number,'font-family:var(--font-mono);');
+            h+=mobileCvCell('Place of issue',c.issued_by);
+            h+=mobileCvCell('Issued',c.valid_from);
+            h+=mobileCvCell('Valid',mobileCvCertSide(c),'color:'+vc+';');
             h+='</div>';
         });
+        h+='</div>';
     });
     return h;
 }
+// №260: sea service with the desktop columns Vessel / Flag / Type / Rank / From / Till / Company.
 function mobileCvWorkRows(work){
     work=work||[];
-    if(!work.length)return '<div class="mobile-cv-empty">No sea service recorded.</div>';
-    var h='';
+    if(!work.length)return '<div class="mobile-cv-empty">No work history recorded.</div>';
+    var h='<div class="mobile-cv-rows">';
     work.forEach(function(w){
-        h+='<div class="mobile-cv-line">';
-        h+='<div><div class="mobile-cv-line-title">'+mobileEsc(w.vessel_name||'Vessel')+'</div>';
-        h+='<div class="mobile-cv-line-meta">'+mobileEsc([w.position,w.vessel_type,w.flag,w.company].filter(Boolean).join(' / ')||'Sea service')+'</div>';
-        if(w.imo)h+='<div class="mobile-cv-line-meta">IMO '+mobileEsc(w.imo)+'</div>';
-        h+='</div>';
-        var dur=workEntryDays(w);
-        var durTxt=dur?' ('+mobileFormatDuration(dur)+')':'';
-        h+='<div class="mobile-cv-line-side">'+mobileEsc((w.sign_on||'?')+' - '+(w.sign_off||'present')+durTxt)+'</div>';
+        h+='<div class="mobile-cv-row">';
+        h+=mobileCvCell('Vessel',w.vessel_name);
+        h+=mobileCvCell('Flag',w.flag);
+        h+=mobileCvCell('Type',w.vessel_type);
+        h+=mobileCvCell('Rank',w.position);
+        h+=mobileCvCell('From',w.sign_on);
+        h+=mobileCvCell('Till',w.sign_off||'present');
+        h+=mobileCvCell('Company',w.company);
         h+='</div>';
     });
+    h+='</div>';
     return h;
 }
 var mobileDispatchAgencyAttempted=false;
@@ -5696,47 +5718,71 @@ async function renderMobileDispatch(){
     }
 }
 async function renderMobileCv(){
-    mobileMainHtml('<div class="mobile-card"><div class="mobile-card-title">CV</div><div class="mobile-card-sub">Loading CV preview...</div></div>');
+    mobileMainHtml('<div class="mobile-card"><div class="mobile-card-title">CV</div><div class="mobile-card-sub">Loading CV...</div></div>');
     try{
         var data=await invoke('get_cv_data');
         var sp={};
         try{sp=await invoke('get_seafarer_personal');}catch(e){sp={};}
         if(mobileView!=='cv')return;
+        var ru=getUiLang()==='ru';
         var p=data.personal||{};
         var certs=data.certificates||[];
         var work=data.work_history||[];
-        var salary=[sp.min_salary,sp.currency||sp.min_salary_currency].filter(Boolean).join(' ');
-        var h='<div class="mobile-card"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title">CV</div><div class="mobile-card-sub">Seafarer application preview.</div></div><span class="mobile-action-icon" style="width:38px;height:38px;font-size:17px;">CV</span></div></div>';
+        // №260: the phone draws the SAME form as the desktop showCv — the same 15 fields in the
+        // same row() order (one column here), Salary expectations, certificates and sea service
+        // with the desktop columns. Labels stay English: the form is a document for the employer.
+        var fields=[
+            ['Position',p.rank||sp.rank],
+            ['Readiness',sp.available_from],
+            ['Experience',mobileCvSeaExperience(data.total_sea_days)],
+            ['Citizenship',sp.nationality],
+            ['Last name',sp.surname],
+            ['Marital status',sp.marital_status],
+            ['First name',sp.first_name],
+            ['Children',sp.children_count],
+            ['Middle name',sp.middle_name],
+            ['English level',sp.english_level],
+            ['Birth date',sp.date_of_birth],
+            ['Birth place',sp.place_of_birth],
+            ['Home address',sp.home_address],
+            ['Phone',sp.phones],
+            ['Email',sp.email]
+        ];
+        // Experience is derived from sea service, not typed in the profile — it does not count as a
+        // missing profile field for the hint below.
+        var missing=fields.some(function(f){return f[0]!=='Experience'&&!String(f[1]==null?'':f[1]).trim();});
+        var salary=sp.min_salary?(sp.min_salary+' '+(sp.currency||sp.min_salary_currency||'USD')):'--';
+        var h='<div class="mobile-card"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title">CV</div><div class="mobile-card-sub">'+mobileEsc(ru?'Бланк Seafarer\'s Application Form — как на десктопе.':'Seafarer\'s Application Form — the same form as on the desktop.')+'</div></div><span class="mobile-action-icon" style="width:38px;height:38px;font-size:17px;">CV</span></div></div>';
         h+='<div class="mobile-stats">';
         h+='<div class="mobile-stat"><strong>'+certs.length+'</strong><span>Certificates</span></div>';
         h+='<div class="mobile-stat"><strong>'+work.length+'</strong><span>Sea service</span></div>';
         h+='<div class="mobile-stat"><strong>'+mobileCompletenessPercent()+'%</strong><span>Profile</span></div>';
         h+='</div>';
+        if(hostPlatform==='ios'){
+            // Share is Err under cfg(not(android)) and Downloads is the app container on iOS.
+            h+='<div class="mobile-cv-note">'+mobileEsc(ru?'Экспорт доступен на десктопе и Android.':'Export is available on desktop and Android.')+'</div>';
+        }else{
+            h+='<div class="mobile-actions" style="margin-bottom:10px;"><button class="btn btn-accent mobile-grow" type="button" onclick="mobileExportCv(\'pdf\')">Export .pdf</button><button class="btn btn-outline mobile-grow" type="button" onclick="mobileExportCv(\'docx\')">Export .docx</button></div>';
+        }
+        if(missing){
+            h+='<div class="mobile-cv-note">'+mobileEsc(ru?'Часть полей заполняется на десктопе: Settings → Seafarer profile':'Some fields are filled on desktop: Settings → Seafarer profile')+'</div>';
+        }
         h+='<div class="mobile-cv-paper">';
         h+='<div class="mobile-cv-head">';
-        h+='<div style="min-width:0;"><div class="mobile-cv-title">Seafarer Application Form</div><div class="mobile-cv-sub">'+mobileEsc(mobileCvPersonName(p,sp))+'</div><div class="mobile-cv-sub">'+mobileEsc(p.rank||sp.rank||'Rank not set')+'</div></div>';
+        h+='<div style="min-width:0;"><div class="mobile-cv-title">Seafarer\'s Application Form</div><div class="mobile-cv-sub">'+mobileEsc(mobileCvPersonName(p,sp))+'</div><div class="mobile-cv-sub">'+mobileEsc(p.rank||sp.rank||'Rank not set')+'</div></div>';
         h+='<div class="mobile-cv-photo" id="mobile-cv-photo">Photo</div>';
         h+='</div>';
         h+='<div class="mobile-cv-section">Personal details</div>';
-        h+='<div class="mobile-cv-grid">';
-        h+=mobileCvField('Position',p.rank||sp.rank);
-        h+=mobileCvField('Available from',sp.available_from||p.available_from);
-        h+=mobileCvField('Experience',mobileCvSeaExperience(data.total_sea_days));
-        h+=mobileCvField('Citizenship',sp.nationality||p.nationality);
-        h+=mobileCvField('Phone',sp.phones||p.phones);
-        h+=mobileCvField('Email',sp.email||p.email);
-        h+=mobileCvField('Nearest airport',sp.nearest_airport||p.nearest_airport);
-        h+=mobileCvField('Minimum salary',salary);
+        h+='<div class="mobile-cv-fields">';
+        fields.forEach(function(f){h+=mobileCvField(f[0],f[1]);});
         h+='</div>';
-        h+='<div class="mobile-cv-section">Certificates</div>';
+        h+='<div class="mobile-cv-section">Salary expectations</div>';
+        h+='<div class="mobile-cv-fields">';
+        h+=mobileCvField('Minimum',salary);
+        h+=mobileCvField('Nearest airport',sp.nearest_airport);
+        h+='</div>';
+        h+='<div class="mobile-cv-section">Passports, Licenses &amp; Certificates</div>';
         h+=mobileCvCertificateRows(certs);
-        var byRank=mobileExperienceByRank(work);
-        if(byRank.length){
-            h+='<div class="mobile-cv-section">Experience by position</div>';
-            byRank.forEach(function(r){
-                h+='<div class="mobile-cv-line"><div><div class="mobile-cv-line-title">'+mobileEsc(r.position)+'</div></div><div class="mobile-cv-line-side">'+mobileEsc(mobileFormatDuration(r.days))+'</div></div>';
-            });
-        }
         h+='<div class="mobile-cv-section">Sea-going experience</div>';
         h+=mobileCvWorkRows(work);
         h+='</div>';
@@ -5750,9 +5796,53 @@ async function renderMobileCv(){
         }catch(photoErr){logError('mobile_cv_photo',photoErr);}
     }catch(e){
         if(mobileView==='cv'){
-            mobileMainHtml('<div class="mobile-card"><div class="mobile-card-title">CV</div><div class="mobile-card-sub">Could not load CV preview.</div></div>');
+            mobileMainHtml('<div class="mobile-card"><div class="mobile-card-title">CV</div><div class="mobile-card-sub">Could not load CV.</div></div>');
         }
         logError('mobile_cv_render',e);
+    }
+}
+// №260: Export .pdf / .docx from the phone. Android: the file lands in Downloads (timestamped name,
+// the desktop name rule) and the system share sheet opens — the same path as the vault backup
+// (mobileExportVaultBackup). Anywhere else (web/desktop shell) the existing exportCvPdf/exportCvDocx
+// answer; iOS never draws the buttons (see renderMobileCv).
+async function mobileExportCv(kind){
+    var ext=kind==='docx'?'docx':'pdf';
+    if(hostPlatform!=='android'){
+        if(ext==='pdf')return exportCvPdf();
+        return exportCvDocx();
+    }
+    var ru=getUiLang()==='ru';
+    try{
+        var nm='';
+        try{
+            var data=await invoke('get_cv_data');
+            if(data&&data.personal){
+                var sn=(data.personal.surname||'').trim();
+                var fn=(data.personal.first_name||'').trim();
+                if(sn||fn)nm=(sn+' '+fn).trim();
+                else nm=data.personal.name||'';
+            }
+        }catch(nameErr){nm='';}
+        nm=nm.replace(/[^A-Za-z0-9 _\-]/g,'').trim().replace(/\s+/g,'_');
+        var name=(nm?nm+'_CV_':'Skipi_CV_')+backupTimestamp()+'.'+ext;
+        var dl=await invoke('get_downloads_dir');
+        var dest=joinFolderPath(dl,name);
+        await invoke(ext==='pdf'?'export_cv_pdf':'export_cv_docx',{outputPath:dest});
+        showToast(ru?'Сохранено в Downloads':'Saved to Downloads','success');
+        try{
+            await invoke('mobile_share_dispatch',{
+                recipients:[],
+                subject:'Skipi CV',
+                body:'Seafarer application form from Skipi Seafarer.',
+                attachments:[dest],
+                mode:'share'
+            });
+        }catch(shareErr){
+            showToast((ru?'Сохранено в Downloads. Меню «Поделиться» недоступно: ':'Saved to Downloads. Share sheet unavailable: ')+shareErr,'warn');
+        }
+    }catch(e){
+        showToast((ru?'Ошибка экспорта: ':'Export error: ')+e,'error');
+        logError('mobile_cv_export',e);
     }
 }
 function mobileJobsStatusText(on){
