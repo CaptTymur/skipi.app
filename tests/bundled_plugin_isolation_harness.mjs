@@ -4683,6 +4683,229 @@ const settleMore = async () => { for (let i = 0; i < 8; i++) await settleVm(); }
   } catch (e) { ok(false, '№259 desktop preserve drill crashed: ' + e.message); }
 }
 
+// ===========================================================================
+// №258 — «Check recognized fields» shows the document's OLD values as if they were
+// recognized in THIS scan (wave 0.4.191, A3).
+// Cause (main 3c251284): mobileOcrResultValue(field) returned result[field]||d[field]||''
+// — an empty recognition result fell back to the current document value, so after
+// Replace scan + Recognize the panel pre-filled MED-TEST-4455 / old dates that the new
+// scan does not contain. Confirm already skipped empty inputs (keep current), but the
+// user never saw that; a wrong-looking "recognized" number invited edits.
+// Fix: the input carries ONLY result[field]; an empty field gets a RU/EN label
+// «Not recognized. Keep current: <value>» under it; Confirm toasts «Saved N, kept M».
+// VM = value/label logic: #mobile-main is asserted on its rendered markup string (the VM
+// does not parse innerHTML into nodes, so Confirm inputs are created explicitly);
+// the emulator screenshots are the acceptance of the panel as seen on the phone.
+// ===========================================================================
+
+const OCR_DOC = { id: 'd1', title: 'Medical', category: 'Medical', file_name: 'med.pdf', doc_number: 'MED-TEST-4455', issued_by: 'Old Clinic', valid_from: '2024-01-01', valid_to: '2026-01-01' };
+const OCR_FIELDS = ['doc_number', 'issued_by', 'valid_from', 'valid_to'];
+function ocrInvoke(docs, recog) {
+  return async (cmd) => {
+    if (cmd === 'get_documents') return docs.map((d) => ({ ...d }));
+    if (cmd === 'ai_preview_recognize') return { ...recog };
+    if (cmd === 'get_effective_api_key') return '';
+    if (cmd === 'update_doc_field' || cmd === 'update_field_statuses' || cmd === 'save_ocr_label') return {};
+    return undefined;
+  };
+}
+// The OCR panel markup: from the "Check recognized fields" card title up to the document card below it.
+const ocrPanelHtml = (html) => {
+  const a = html.indexOf('Check recognized fields');
+  if (a < 0) return '';
+  const b = html.indexOf('<div class="mobile-card">', a);
+  return html.slice(a, b > a ? b : undefined);
+};
+const ocrInputValue = (html, f) => { const m = new RegExp('<input id="mobile-ocr-' + f + '"[^>]*\\svalue="([^"]*)"').exec(html); return m ? m[1] : null; };
+// Text of the .mobile-ocr-keep label rendered for field f (null when there is none).
+const ocrKeepLabel = (html, f) => {
+  const at = html.indexOf('id="mobile-ocr-' + f + '"'); if (at < 0) return null;
+  const next = html.indexOf('<div class="mobile-field">', at + 1);
+  const slice = html.slice(at, next > 0 ? next : undefined);
+  const m = /<div class="mobile-ocr-keep">([^<]*)<\/div>/.exec(slice);
+  return m ? m[1] : null;
+};
+async function bootOcr({ doc = OCR_DOC, recog = { valid_to: '2027-06-30' }, lang = 'en' } = {}) {
+  const app = await bootMobileVault({ docs: [doc], invokeOverride: ocrInvoke([doc], recog) });
+  const toasts = [];
+  app.sandbox.showToast = (m, t) => toasts.push([String(m), String(t)]);
+  app.sandbox.getUiLang = () => lang;
+  app.sandbox.selectedDocId = doc.id;
+  app.sandbox.isMobileMode = () => true;
+  await app.sandbox.mobileStartOcr(doc.id);
+  await settleMore();
+  return { ...app, toasts };
+}
+// Confirm reads document.getElementById('mobile-ocr-<f>'); the VM never materialises innerHTML,
+// so the drill creates the inputs it wants Confirm to see (missing element == empty input).
+function ocrSetInput(doc, f, value) { const el = doc.createElement('input'); el.setAttribute('id', 'mobile-ocr-' + f); el.value = value; return el; }
+const ocrUpdates = (calls) => calls.filter(([c]) => c === 'update_doc_field').map(([, a]) => a.field);
+
+{
+  section('№258 — VM drill: after Recognize the panel carries ONLY this scan (mutation (a)), labels keep-current (b), not on recognized fields (d)');
+  try {
+    const { sandbox, doc } = await bootOcr();
+    ok(sandbox.mobileOcrState && sandbox.mobileOcrState.status === 'result' && sandbox.mobileOcrState.docId === 'd1', "mobileStartOcr('d1') → state result for d1");
+    const html = mobileHtml(doc), panel = ocrPanelHtml(html);
+    ok(panel.length > 0 && panel.includes('id="mobile-ocr-doc_number"'), 'the check panel is rendered in #mobile-main');
+    ok(ocrInputValue(panel, 'doc_number') === '', "(a) #mobile-ocr-doc_number value is '' (main: MED-TEST-4455 → RED)");
+    ok(ocrInputValue(panel, 'issued_by') === '', "(a) #mobile-ocr-issued_by value is '' (main: Old Clinic → RED)");
+    ok(ocrInputValue(panel, 'valid_from') === '', "(a) #mobile-ocr-valid_from value is '' (main: 2024-01-01 → RED)");
+    ok(ocrInputValue(panel, 'valid_to') === '2027-06-30', 'the recognized field keeps its recognized value 2027-06-30 (not the old 2026-01-01)');
+    ok(!panel.includes('value="MED-TEST-4455"') && !panel.includes('value="Old Clinic"') && !panel.includes('value="2024-01-01"') && !panel.includes('value="2026-01-01"'), 'no old document value appears as an input value anywhere in the panel');
+    ok(ocrKeepLabel(panel, 'doc_number') === 'Not recognized. Keep current: MED-TEST-4455', '(b) doc_number label: «Not recognized. Keep current: MED-TEST-4455» (EN)');
+    ok(ocrKeepLabel(panel, 'issued_by') === 'Not recognized. Keep current: Old Clinic', '(b) issued_by label: «Not recognized. Keep current: Old Clinic»');
+    ok(ocrKeepLabel(panel, 'valid_from') === 'Not recognized. Keep current: 2024-01-01', '(b) valid_from label: «Not recognized. Keep current: 2024-01-01»');
+    ok(ocrKeepLabel(panel, 'valid_to') === null, '(d) the recognized field valid_to has NO keep-current label');
+    ok(html.includes('value="MED-TEST-4455"'), 'PRESERVE: the document card below still shows MED-TEST-4455 as its own value (nothing saved yet)');
+  } catch (e) { ok(false, '№258 recognize drill crashed: ' + e.message); }
+}
+
+{
+  section('№258 — VM drill: nothing recognized → every field labelled, card says prior values stay');
+  try {
+    const { doc, toasts } = await bootOcr({ recog: {} });
+    const panel = ocrPanelHtml(mobileHtml(doc));
+    ok(OCR_FIELDS.every((f) => ocrInputValue(panel, f) === ''), 'all four inputs are empty');
+    ok(OCR_FIELDS.every((f) => (ocrKeepLabel(panel, f) || '').startsWith('Not recognized. Keep current: ')), 'all four fields carry a keep-current label');
+    ok(/Prior values stay unchanged/.test(panel), 'card sub-line mentions that prior values stay unchanged (EN)');
+    ok(toasts.some(([m]) => m === 'No reliable fields found'), 'PRESERVE: the "No reliable fields found" toast is unchanged');
+  } catch (e) { ok(false, '№258 empty-result drill crashed: ' + e.message); }
+}
+
+{
+  section('№258 — VM drill: field with no current value → label without «Keep current»');
+  try {
+    const bare = { ...OCR_DOC, issued_by: '', valid_from: null };
+    const { doc } = await bootOcr({ doc: bare, recog: {} });
+    const panel = ocrPanelHtml(mobileHtml(doc));
+    ok(ocrKeepLabel(panel, 'issued_by') === 'Not recognized.', 'issued_by (empty in the document): «Not recognized.» only');
+    ok(ocrKeepLabel(panel, 'valid_from') === 'Not recognized.', 'valid_from (null in the document): «Not recognized.» only');
+    ok(ocrKeepLabel(panel, 'doc_number') === 'Not recognized. Keep current: MED-TEST-4455', 'doc_number still names the value it keeps');
+  } catch (e) { ok(false, '№258 bare-doc drill crashed: ' + e.message); }
+}
+
+{
+  section('№258 — VM drill: Confirm with empty inputs saves nothing (PRESERVE, mutation (c))');
+  try {
+    const { sandbox, invokeCalls, toasts } = await bootOcr();
+    const before = invokeCalls.length;
+    await sandbox.mobileConfirmOcr('d1');
+    await settleMore();
+    const after = invokeCalls.slice(before);
+    ok(ocrUpdates(after).length === 0, '(c) no update_doc_field at all: empty input == keep current, nothing is erased');
+    ok(after.some(([c]) => c === 'update_field_statuses'), 'update_field_statuses is still written (unchanged path)');
+    ok(sandbox.mobileOcrState === null, 'panel state cleared after Confirm');
+    ok(toasts.some(([m, t]) => m === 'Saved 0 fields, kept 4' && t === 'success'), '(f) toast «Saved 0 fields, kept 4» (all four current values kept)');
+  } catch (e) { ok(false, '№258 empty-confirm drill crashed: ' + e.message); }
+}
+
+{
+  section('№258 — VM drill: Confirm with 1 filled + 3 empty → only that field is saved, toast counts (mutations (c)/(f))');
+  try {
+    const { sandbox, doc, invokeCalls, toasts } = await bootOcr();
+    ocrSetInput(doc, 'valid_to', '2027-06-30');
+    const before = invokeCalls.length;
+    await sandbox.mobileConfirmOcr('d1');
+    await settleMore();
+    const after = invokeCalls.slice(before);
+    ok(ocrUpdates(after).length === 1 && ocrUpdates(after)[0] === 'valid_to', "(c) update_doc_field ONLY for valid_to");
+    ok(!after.some(([c, a]) => c === 'update_doc_field' && a.field === 'doc_number'), "(c) no update_doc_field with field 'doc_number'");
+    const upd = after.find(([c]) => c === 'update_doc_field')[1];
+    ok(upd.id === 'd1' && upd.value === '2027-06-30', 'saved value is the recognized one');
+    const st = JSON.parse(after.find(([c]) => c === 'update_field_statuses')[1].statuses);
+    ok(st.valid_to === 'verified' && !('doc_number' in st), "PRESERVE: status 'verified' only for the saved field");
+    const t = toasts.find(([m]) => /^Saved /.test(m));
+    ok(!!t && t[0] === 'Saved 1 fields, kept 3', '(f) toast is exactly «Saved 1 fields, kept 3»');
+    ok(!!t && /\b1\b/.test(t[0]) && /\b3\b/.test(t[0]), '(f) toast contains «1» and «3»');
+    ok(!toasts.some(([m]) => m === 'Recognized fields saved'), '(f) the old fixed toast text is gone');
+    ok(mobileHtml(doc).includes('value="MED-TEST-4455"') && !mobileHtml(doc).includes('id="mobile-ocr-doc_number"'), 'document card keeps MED-TEST-4455; panel gone');
+  } catch (e) { ok(false, '№258 one-field-confirm drill crashed: ' + e.message); }
+}
+
+{
+  section('№258 — VM drill: Confirm on a document with empty current values → kept counts only real values');
+  try {
+    const bare = { ...OCR_DOC, doc_number: '', issued_by: '', valid_from: '', valid_to: '' };
+    const { sandbox, toasts } = await bootOcr({ doc: bare, recog: {} });
+    await sandbox.mobileConfirmOcr('d1');
+    await settleMore();
+    ok(toasts.some(([m]) => m === 'Saved 0 fields, kept 0'), 'toast «Saved 0 fields, kept 0» — not «kept 4» on an empty document');
+  } catch (e) { ok(false, '№258 kept-count drill crashed: ' + e.message); }
+}
+
+{
+  section('№258 — VM drill: language follows getUiLang (mutation (g))');
+  try {
+    const { sandbox, doc } = await bootOcr({ lang: 'ru' });
+    let panel = ocrPanelHtml(mobileHtml(doc));
+    ok(ocrKeepLabel(panel, 'doc_number') === 'Не распознано. Оставить прежнее: MED-TEST-4455', '(g) RU: «Не распознано. Оставить прежнее: MED-TEST-4455»');
+    ok(!/Keep current/.test(panel), '(g) RU: no English label');
+    sandbox.getUiLang = () => 'en';
+    sandbox.renderMobileDoc();
+    panel = ocrPanelHtml(mobileHtml(doc));
+    ok(ocrKeepLabel(panel, 'doc_number') === 'Not recognized. Keep current: MED-TEST-4455', '(g) EN: «Not recognized. Keep current: MED-TEST-4455»');
+    ok(!/Оставить прежнее/.test(panel), '(g) EN: no Russian label');
+  } catch (e) { ok(false, '№258 language drill crashed: ' + e.message); }
+  try {
+    const { sandbox, doc, toasts } = await bootOcr({ lang: 'ru' });
+    ok(/Прежние значения сохранятся/.test(ocrPanelHtml(mobileHtml(doc))) === false, 'RU: with one field recognized the "prior values" sub-line is not shown (hasAny true)');
+    ocrSetInput(doc, 'valid_to', '2027-06-30');
+    await sandbox.mobileConfirmOcr('d1');
+    await settleMore();
+    ok(toasts.some(([m]) => m === 'Сохранено полей: 1, оставлено прежних: 3'), '(g)/(f) RU toast «Сохранено полей: 1, оставлено прежних: 3»');
+    const { doc: doc2 } = await bootOcr({ lang: 'ru', recog: {} });
+    ok(/Прежние значения сохранятся/.test(ocrPanelHtml(mobileHtml(doc2))), 'RU: nothing recognized → «Прежние значения сохранятся»');
+  } catch (e) { ok(false, '№258 RU confirm drill crashed: ' + e.message); }
+}
+
+{
+  section('№258 — VM drill: label value is escaped (mutation (h)), Permanent shows «Permanent» (mutation (i))');
+  try {
+    const evil = { ...OCR_DOC, doc_number: '<img src=x onerror=1>' };
+    const { doc } = await bootOcr({ doc: evil, recog: {} });
+    const html = mobileHtml(doc);
+    ok(!html.includes('<img'), '(h) no raw <img in #mobile-main');
+    ok((ocrKeepLabel(ocrPanelHtml(html), 'doc_number') || '').includes('&lt;img'), '(h) the label carries the escaped value (&lt;img)');
+  } catch (e) { ok(false, '№258 escape drill crashed: ' + e.message); }
+  try {
+    const perm = { ...OCR_DOC, is_permanent: true, valid_to: '2020-01-01' };
+    const { doc } = await bootOcr({ doc: perm, recog: {} });
+    const label = ocrKeepLabel(ocrPanelHtml(mobileHtml(doc)), 'valid_to');
+    ok(label === 'Not recognized. Keep current: Permanent', '(i) permanent certificate: «Keep current: Permanent», not the stale DB date');
+    ok(!(label || '').includes('2020-01-01'), '(i) the stale valid_to 2020-01-01 is not shown');
+  } catch (e) { ok(false, '№258 permanent drill crashed: ' + e.message); }
+}
+
+{
+  section('№258 — PRESERVE: Dismiss clears the panel (mutation (j))');
+  try {
+    const { sandbox, doc } = await bootOcr();
+    ok(mobileHtml(doc).includes('id="mobile-ocr-doc_number"'), 'panel present before Dismiss');
+    sandbox.mobileDismissOcr();
+    ok(sandbox.mobileOcrState === null, '(j) mobileOcrState === null after Dismiss');
+    ok(!mobileHtml(doc).includes('id="mobile-ocr-doc_number"'), '(j) #mobile-ocr-doc_number is gone from #mobile-main');
+    ok(mobileHtml(doc).includes('value="MED-TEST-4455"'), 'document card unchanged after Dismiss');
+  } catch (e) { ok(false, '№258 dismiss drill crashed: ' + e.message); }
+}
+
+{
+  section('№258 — source anchors (secondary to the VM drills): value source, labels, three offer sites (mutations (a)/(b)/(e)/(e′))');
+  const rv = fnSource('mobileOcrResultValue');
+  ok(rv.length > 0 && !/allDocs\.find/.test(rv) && !/d\[field\]/.test(rv), '(a) mobileOcrResultValue has no allDocs.find / d[field] fallback');
+  ok(/result\[field\]\|\|''/.test(rv), "(a) mobileOcrResultValue returns result[field]||''");
+  const panelSrc = fnSource('mobileOcrPanel');
+  ok(/Keep current: /.test(panelSrc) && /Оставить прежнее: /.test(panelSrc), '(b)/(g) EN and RU keep-current strings live in mobileOcrPanel');
+  ok(/class="mobile-ocr-keep"/.test(panelSrc), '(b) label uses the .mobile-ocr-keep class');
+  ok(/\.mobile-ocr-keep\s*\{[^}]*var\(--text2\)/.test(HTML), 'CSS: .mobile-ocr-keep rule exists with var(--text2)');
+  ok(/getUiLang\(\)==='ru'/.test(panelSrc) && /getUiLang\(\)==='ru'/.test(fnSource('mobileConfirmOcr')), '(g) language via the existing getUiLang() (no new i18n table)');
+  ok(/if\(values\[f\]\)/.test(fnSource('mobileConfirmOcr')), '(c) PRESERVE: Confirm still skips empty inputs (if(values[f]))');
+  ok(/invoke\('attach_pdf_pages'[\s\S]{0,600}?mobileOcrState=\{docId:d\.id,status:'offer'\}/.test(fnSource('mobileSavePdfBuilder')), "(e) site 1: mobileSavePdfBuilder (Replace scan → attach_pdf_pages) sets status 'offer'");
+  ok(/invoke\('attach_file_bytes'[\s\S]{0,600}?mobileOcrState=\{docId:docId,status:'offer'\}/.test(fnSource('mobileHandleFilePicked')), "(e) site 2: mobileHandleFilePicked (attach_file_bytes) sets status 'offer'");
+  ok(/invoke\('attach_file_bytes'[\s\S]{0,600}?mobileOcrState=\{docId:docId,status:'offer'\}/.test(fnSource('mobileAttachPendingFileToDoc')), "(e′) site 3: mobileAttachPendingFileToDoc («Choose certificate for file») sets status 'offer'");
+  ok((HTML.match(/status:'offer'/g) || []).length === 3, "exactly three status:'offer' sites in the source");
+}
+
 {
   section('remote install + offline persistence harness');
   await runRemoteInstallOfflineHarness();
