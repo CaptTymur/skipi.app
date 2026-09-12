@@ -2033,8 +2033,21 @@ mod cv_order_282_tests {
         context.config_mut().app.windows.clear();
         context.config_mut().plugins.0.clear();
         let csp = "default-src 'self' tauri: asset: http://tauri.localhost; connect-src 'none'; img-src 'self' asset: data: blob: http://tauri.localhost; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; worker-src 'none'";
-        context.config_mut().app.security.csp = Some(tauri::utils::config::Csp::Policy(csp.to_owned()));
-        context.config_mut().app.security.dev_csp = Some(tauri::utils::config::Csp::Policy(csp.to_owned()));
+        context.config_mut().app.security.csp =
+            Some(tauri::utils::config::Csp::Policy(csp.to_owned()));
+        context.config_mut().app.security.dev_csp =
+            Some(tauri::utils::config::Csp::Policy(csp.to_owned()));
+        // The base assets were compiled with csp:null. Keep the explicit test CSP
+        // intact instead of appending nonce/hash sources that exclude those inline scripts.
+        context
+            .config_mut()
+            .app
+            .security
+            .dangerous_disable_asset_csp_modification =
+            tauri::utils::config::DisabledCspModificationKind::List(vec![
+                "script-src".to_owned(),
+                "style-src".to_owned(),
+            ]);
         let mut app = tauri::Builder::default()
             .any_thread()
             .manage(crate::AppState {
@@ -2057,6 +2070,8 @@ mod cv_order_282_tests {
             .unwrap();
         let isolation = r#"
             window.__fixture282Blocked=[];
+            window.__fixture282Csp=[];
+            window.addEventListener('securitypolicyviolation',e=>window.__fixture282Csp.push({directive:e.effectiveDirective,blocked:e.blockedURI}));
             const denied=(kind)=>{window.__fixture282Blocked.push(kind);return new Error('isolated fixture: '+kind)};
             window.fetch=()=>Promise.reject(denied('fetch'));
             XMLHttpRequest.prototype.open=function(){throw denied('XHR')};
@@ -2138,7 +2153,7 @@ mod cv_order_282_tests {
                 std::fs::write(root.join("presets-ready"), b"ready").unwrap();
                 presets_added = true;
             }
-            if root.join("done.ack").exists() {
+            if root.join("done.ack").exists() || root.join("error.ack").exists() {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(20));
