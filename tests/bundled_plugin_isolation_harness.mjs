@@ -4752,6 +4752,103 @@ const CV_DL = '/sdcard/Download/';
 }
 
 {
+  section('№260 / №272 — Saved follows completed export, never a pending or rejected export');
+  // The export hook announces actual entry, then holds a controlled promise.
+  // invoke-call order alone cannot prove the export promise has completed.
+  const bounded = async (promise) => {
+    let timer;
+    try {
+      return await Promise.race([promise, new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('export rendezvous/completion timed out')), 1000);
+      })]);
+    } finally { clearTimeout(timer); }
+  };
+  for (const kind of ['pdf', 'docx']) for (const lang of ['en', 'ru']) {
+    for (const outcome of ['resolve', 'reject', 'share-reject']) {
+      const label = `272 ${kind}/${lang}/${outcome}`;
+      const events = [];
+      let enterExport, resolveExport, rejectExport, running;
+      const started = new Promise((resolve) => { enterExport = resolve; });
+      const deferred = new Promise((resolve, reject) => { resolveExport = resolve; rejectExport = reject; });
+      try {
+        const hooks = {
+          ['export_cv_' + kind]: (args) => {
+            events.push(['export.started']);
+            enterExport('started');
+            return deferred.then(() => {
+              events.push(['export.resolved']);
+              return args.outputPath;
+            }, (error) => {
+              events.push(['export.rejected']);
+              throw error;
+            });
+          },
+          mobile_share_dispatch: async () => {
+            events.push(['share']);
+            if (outcome === 'share-reject') throw 'no activity';
+            return 'ok';
+          },
+        };
+        const { sandbox } = await bootCv({ lang, hooks });
+        // Capture calls made by the real bundled caller, in the same trace as
+        // the hook's actual promise settlement; no expected events are injected.
+        sandbox.showToast = (message, type) => events.push(['toast', String(message), String(type)]);
+        running = sandbox.mobileExportCv(kind);
+        const entered = await bounded(Promise.race([started, running.then(() => 'completed-without-export')]));
+        ok(entered === 'started', `${label}: rendezvous reaches the export hook`);
+        if (entered !== 'started') continue;
+        await settleVm();
+        ok(events.filter(([event]) => event === 'export.started').length === 1,
+          `${label}: exactly one export has started`);
+        ok(!events.some(([event]) => event === 'export.resolved' || event === 'export.rejected'),
+          `${label}: controlled export promise is still pending`);
+        ok(!events.some(([event]) => event === 'toast'), `${label}: pending export has no Saved or other toast`);
+        ok(!events.some(([event]) => event === 'share'), `${label}: pending export has no share`);
+        if (outcome === 'reject') rejectExport('disk full');
+        else resolveExport();
+        await bounded(running);
+        const toasts = events.filter(([event]) => event === 'toast');
+        const saved = lang === 'ru' ? 'Сохранено в Downloads' : 'Saved to Downloads';
+        if (outcome === 'reject') {
+          const error = (lang === 'ru' ? 'Ошибка экспорта: ' : 'Export error: ') + 'disk full';
+          ok(toasts.length === 1 && toasts[0][1] === error && toasts[0][2] === 'error',
+            `${label}: rejected export emits only error, never Saved/success`);
+          ok(!events.some(([event]) => event === 'share'), `${label}: rejected export never shares`);
+          const rejectedAt = events.findIndex(([event]) => event === 'export.rejected');
+          ok(rejectedAt >= 0 && rejectedAt < events.findIndex(([event]) => event === 'toast'),
+            `${label}: rejection precedes the error toast`);
+        } else {
+          const successes = toasts.filter(([, , type]) => type === 'success');
+          ok(successes.length === 1 && successes[0][1] === saved, `${label}: completed export emits Saved exactly once`);
+          const resolvedAt = events.findIndex(([event]) => event === 'export.resolved');
+          const savedAt = events.findIndex(([event, message, type]) => event === 'toast' && message === saved && type === 'success');
+          const shareAt = events.findIndex(([event]) => event === 'share');
+          ok(resolvedAt >= 0 && savedAt > resolvedAt, `${label}: Saved strictly follows export promise resolution`);
+          ok(shareAt > savedAt && events.filter(([event]) => event === 'share').length === 1,
+            `${label}: exactly one share follows completed export and Saved`);
+          if (outcome === 'share-reject') {
+            const warning = (lang === 'ru' ? 'Сохранено в Downloads. Меню «Поделиться» недоступно: ' : 'Saved to Downloads. Share sheet unavailable: ') + 'no activity';
+            ok(toasts.length === 2 && toasts[1][1] === warning && toasts[1][2] === 'warn',
+              `${label}: successful export plus failed share preserves Saved and warning`);
+          } else {
+            ok(toasts.length === 1, `${label}: successful export/share emits no error or warning`);
+          }
+        }
+      } catch (e) { ok(false, `${label}: drill crashed: ${e.message || e}`); }
+      finally {
+        // A failed assertion or rendezvous must not leave a rejected promise or
+        // live timer behind to affect the next format/language/outcome.
+        resolveExport();
+        if (running) {
+          try { await bounded(running); }
+          catch (e) { ok(false, `${label}: cleanup crashed: ${e.message || e}`); }
+        }
+      }
+    }
+  }
+}
+
+{
   section('№260 — VM drill: file name filter (mutation (l)) — path parts and Cyrillic never reach the file name');
   try {
     const app = await bootCv({ data: cvDataFixture({ personal: { surname: '../x/Иванов', first_name: 'Test' } }) });
