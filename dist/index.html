@@ -7457,9 +7457,9 @@ function mobileRenderProfileMissing(){
         var missing=p.required.filter(function(d){return d.has===false||ids.indexOf(d.id)>=0;});
         if(!missing.length)h+='<p>'+mobileSetupText('All required documents are recorded in the profile.','Все обязательные документы отмечены в профиле.')+'</p>';
         else{
-            h+='<ul>';
+            h+='<ul style="margin:12px 0;padding-left:20px;">';
             missing.forEach(function(d){h+='<li>'+mobileEsc(d.title||d.id)+'</li>';});
-            h+='</ul><button class="btn btn-accent" type="button" onclick="mobileShow(\'add\')">'+mobileSetupText('Add document','Добавить документ')+'</button>';
+            h+='</ul><div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-accent mobile-grow" type="button" onclick="mobileShow(\'add\')">'+mobileSetupText('Add document','Добавить документ')+'</button></div>';
         }
     }
     h+='<div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-outline" type="button" onclick="openSettings(\'seafarer\')">'+mobileSetupText('Profile','Профиль')+'</button><button class="btn btn-outline" type="button" onclick="mobileShow(\'docs\')">'+mobileSetupText('Documents','Документы')+'</button></div>';

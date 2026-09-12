@@ -5696,6 +5696,9 @@ for(const lang of ['en','ru']){
       if(kind==='missing'){
         ok(h.includes('Required fixture A')&&!h.includes('Required fixture B'),'A5II actual missing required only '+lang);
         ok(h.includes('mobileShow(\'add\')'),'A5II missing add destination '+lang);
+        const inset=Number((h.match(/<ul[^>]*padding-left:\s*(\d+)px/)||[])[1]);
+        ok(inset>=16,'A5II missing list reserves inside space for bullet marker '+lang);
+        ok(/class="mobile-actions"[^>]*>\s*<button[^>]*class="[^"]*mobile-grow/.test(h),'A5II Add uses the existing mobile action target sizing '+lang);
       }else{
         const text=kind==='complete'?(lang==='ru'?'Все обязательные документы отмечены в профиле.':'All required documents are recorded in the profile.'):kind==='empty'?(lang==='ru'?'Задайте должность и тип судна в профиле.':'Set your rank and vessel type in the profile.'):(lang==='ru'?'Не удалось загрузить статус профиля.':'Could not load profile status.');
         ok(h.includes(text),'A5II completeness honest '+kind+' '+lang);
