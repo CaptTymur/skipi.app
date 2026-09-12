@@ -2140,6 +2140,30 @@ const appsTileTag = (h, id) => {
 const ANDROID_MAIN = path.join(__dirname, '..', 'src-tauri', 'gen', 'android', 'app', 'src', 'main');
 const MANIFEST = fs.readFileSync(path.join(ANDROID_MAIN, 'AndroidManifest.xml'), 'utf8');
 const MAIN_ACTIVITY = fs.readFileSync(path.join(ANDROID_MAIN, 'java', 'app', 'skipi', 'seafarer', 'MainActivity.kt'), 'utf8');
+
+// 271-K: permanent source contract; compiled actual Kotlin caller evidence is
+// separate. Keep the native map and its single-attachment call site together.
+{
+  section('Android dispatch MIME contract (271-K)');
+  const mimeMethod = MAIN_ACTIVITY.match(/private fun guessMime\(path: String\): String \{([\s\S]*?)\n  \}/)?.[1] || '';
+  const dispatch = MAIN_ACTIVITY.match(/fun shareSkipiDispatch\([\s\S]*?(?=\n  fun renderSkipiPdfPage)/)?.[0] || '';
+  ok(/val lower = path\.lowercase\(\)/.test(mimeMethod), '271-K extension matching remains case insensitive');
+  for (const [ext, mime] of Object.entries({
+    doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    pdf: 'application/pdf', zip: 'application/zip', png: 'image/png',
+    jpg: 'image/jpeg', jpeg: 'image/jpeg', txt: 'text/plain',
+  })) {
+    const branches = mimeMethod.split('\n').filter(line => line.includes('lower.endsWith(".' + ext + '")'));
+    ok(branches.length === 1 && branches[0].trim().endsWith('-> "' + mime + '"'), '271-K exact native MIME branch .' + ext);
+  }
+  ok(/else -> "\*\/\*"/.test(mimeMethod), '271-K unknown or missing extension keeps wildcard');
+  ok(/uris\.isEmpty\(\) -> "text\/plain"/.test(dispatch), '271-K no attachment keeps text/plain');
+  ok(/uris\.size == 1 -> guessMime\(files\[0\]\.absolutePath\)/.test(dispatch), '271-K single attachment uses actual native map');
+  ok(/else -> "\*\/\*"/.test(dispatch), '271-K multiple attachments keep wildcard');
+  ok(/Intent\.ACTION_SEND_MULTIPLE/.test(dispatch) && /Intent\.ACTION_SEND/.test(dispatch), '271-K dispatch retains both Android send actions');
+}
+
 const manifestActivity = (() => {
   const m = /<activity\b[\s\S]*?(?:\/>|<\/activity>)/.exec(MANIFEST);
   return m ? m[0] : '';

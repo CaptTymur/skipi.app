@@ -109,6 +109,8 @@ class MainActivity : TauriActivity() {
   private fun guessMime(path: String): String {
     val lower = path.lowercase()
     return when {
+      lower.endsWith(".doc") -> "application/msword"
+      lower.endsWith(".docx") -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
       lower.endsWith(".pdf") -> "application/pdf"
       lower.endsWith(".zip") -> "application/zip"
       lower.endsWith(".png") -> "image/png"
