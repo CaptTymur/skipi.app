@@ -5558,7 +5558,7 @@ async function bootA5Save({ signOn, signOff, lang = 'en', entryId = '' } = {}) {
   try {
     const ruPast = await bootA5Save({ signOn: a5Iso(-400), signOff: a5Iso(-300), lang: 'ru' });
     ok(ruPast.toasts.some((t) => /Опыт сохранён/.test(t)), 'RU: the past-contract toast is Russian');
-    ok(ruPast.toasts.some((t) => /Assess/.test(t)), 'RU: it names the «Assess» button by its on-screen label (the card button is not translated)');
+    ok(ruPast.toasts.some((t) => /«Оценить»/.test(t)), 'RU: toast names the localized «Оценить» card button');
     ok(!ruPast.toasts.some((t) => /Sea Service saved/.test(t)), 'RU: no English toast leaks at ru');
     const ruCurrent = await bootA5Save({ signOn: a5Iso(-100), signOff: '', lang: 'ru' });
     ok(ruCurrent.toasts.some((t) => /Теперь оцените судно/.test(t)), 'RU: the current-contract toast is Russian too');
@@ -5576,6 +5576,133 @@ async function bootA5Save({ signOn, signOff, lang = 'en', entryId = '' } = {}) {
   ok(!/if\(newId\)setTimeout/.test(fnSource('mobileSaveExperience')), '(8a) the old unconditional `if(newId)setTimeout(...)` is gone');
   ok(!/mobileShouldAutoAssess/.test(fnSource('mobileStartAssessment')), 'PRESERVE: mobileStartAssessment itself carries no date condition — the manual «Assess» button always works');
   ok(/mobileStartAssessment\(/.test(fnSource('mobileWorkEntryCard')), 'PRESERVE: the card still renders the «Assess» button that the new toast points at');
+}
+
+// A5-II / 280: actual callers; every external side effect is stubbed by bootApp.
+async function bootA5II(lang='en', override=null) {
+  const app=bootMobile({withSettings:true,invokeOverride:override});
+  await settleVm();
+  app.sandbox.getUiLang=()=>lang;
+  app.sandbox.loadTaxonomy=async()=>{};
+  app.sandbox.profileTax={levels:[],positions:[],vessel_tree:[]};
+  app.sandbox.applyMobileMode();
+  return app;
+}
+for (const lang of ['en','ru']) {
+  section('A5-II/280 actual RU/EN callers: '+lang);
+  try {
+    const app=await bootA5II(lang,async cmd=>cmd==='app_login_status'?{logged_in:true,email:'fixture@example.invalid'}:undefined);
+    await app.sandbox.mobileStartVaultWizard();
+    ok(app.sandbox.mobileVaultWizardState.email==='fixture@example.invalid','A5II email logged-in prefill '+lang);
+    app.sandbox.mobileVaultWizardState.step=7;
+    app.sandbox.renderMobileVaultWizard();
+    ok(app.doc.getElementById('mobile-main').innerHTML.includes('value="fixture@example.invalid"'),'A5II email is rendered in editable step7 '+lang);
+  } catch(e){ok(false,'A5II email '+e.message);}
+  try {
+    const app=await bootA5II(lang);
+    app.sandbox.allDocs=[];
+    app.sandbox.renderMobileDocs();
+    const h=app.doc.getElementById('mobile-main').innerHTML;
+    const labels=lang==='ru'?['Поиск документов','Документы','Нет документов в этом сейфе.','Все','Недостающие','Без файла','Истекающие','Загруженные']:['Search documents','Documents','No documents in this vault.','All','Missing','No file','Expiring','Uploaded'];
+    for(const label of labels)ok(h.includes(label),'280 Docs exact '+lang+' '+label);
+    app.sandbox.mobileDocsSearch='xyz';app.sandbox.allDocs=A5_DOCS;
+    app.sandbox.renderMobileDocs();
+    ok(app.doc.getElementById('mobile-main').innerHTML.includes(lang==='ru'?'Нет документов по этому фильтру или запросу.':'No documents match this filter or search.'),'280 Docs honest no-match '+lang);
+    const states=[{file_name:null},{file_name:'x.pdf',is_permanent:true},{file_name:'x.pdf',has_expiry:true,valid_to:'2020-01-01'},{file_name:'x.pdf',has_expiry:false}];
+    const expected=lang==='ru'?['Без файла','Бессрочный','Просрочен','Без срока']:['No file','Permanent','Expired','No expiry'];
+    app.sandbox.isActiveRequiredDoc=()=>false;
+    states.forEach((d,i)=>ok(app.sandbox.mobileStatusPill(d).includes(expected[i]),'280 Doc status '+lang+' '+expected[i]));
+    const toasts=[];app.sandbox.showToast=s=>toasts.push(s);
+    app.sandbox.invoke=async()=>{throw Error('fixture-error');};
+    await app.sandbox.mobileReloadDocs();
+    ok(toasts.some(s=>s.includes(lang==='ru'?'Не удалось обновить документы:':'Could not reload documents:')),'280 Docs error '+lang);
+  }catch(e){ok(false,'280 Docs '+e.message);}
+  try {
+    const app=await bootA5Experience({lang,work:A5_WORK});
+    const labels=lang==='ru'?['Опыт','Добавить стаж','Записи','С IMO','Оценено','Оценить','База судов']:['Experience','Add sea service','Records','With IMO','Assessed','Assess','Vessel DB'];
+    for(const label of labels)ok(app.html.includes(label),'280 Experience '+lang+' '+label);
+    ok(app.sandbox.mobileWorkDuration({sign_on:'2020-01-01',sign_off:'2020-06-01'})===(lang==='ru'?'5 мес.':'5m'),'280 duration unit '+lang);
+    ok(app.sandbox.mobileWorkPeriod({sign_on:'2020-01-01'}).includes(lang==='ru'?'по настоящее время':'present'),'280 current period '+lang);
+    const warnings=[];app.sandbox.showToast=s=>warnings.push(s);
+    await app.sandbox.mobileStartAssessment('not-present');
+    ok(warnings.includes(lang==='ru'?'Запись о стаже не найдена':'Sea Service entry not found'),'280 actual manual assessment missing-entry warning '+lang);
+    const empty=await bootA5Experience({lang,work:[]});
+    ok(empty.html.includes(lang==='ru'?'Пока нет стажа':'No sea service yet'),'280 Experience empty '+lang);
+    app.sandbox.invoke=async()=>{throw Error('fixture-error');};
+    await app.sandbox.renderMobileExperience();
+    ok(app.doc.getElementById('mobile-main').innerHTML.includes(lang==='ru'?'Не удалось загрузить стаж.':'Could not load sea service.'),'280 Experience error '+lang);
+  }catch(e){ok(false,'280 Experience '+e.message);}
+  try {
+    const app=await bootA5II(lang);
+    const state={eligible:true,pct:80,work_count:3};
+    const card=app.sandbox.renderDeveloperGroupInviteCard(state);
+    app.doc._ids.delete('developer-group-invite-overlay');
+    let modal='';app.doc.body.insertAdjacentHTML=(_pos,h)=>{modal=h;};
+    app.sandbox.showDeveloperGroupInviteNotice(state);
+    const title=lang==='ru'?'Доступна группа разработчиков Скипи Моряк':'Skipi Seafarer builders group is open';
+    for(const [site,h] of [['card',card],['modal',modal]]){
+      ok(h.includes(title),'A5II Builders title '+lang+' '+site);
+      ok(h.includes(lang==='ru'?'Вступить в Telegram':'Join Telegram'),'A5II Builders join '+lang+' '+site);
+      if(lang==='en')ok(!/[А-Яа-яЁё]/.test(h),'A5II Builders no RU in EN '+site);
+    }
+    ok(card.includes(lang==='ru'?'Копировать ссылку':'Copy link'),'A5II Builders copy label '+lang);
+    ok(modal.includes(lang==='ru'?'Позже':'Later'),'A5II Builders dismiss '+lang);
+    let copied='',toast='';app.sandbox.navigator.clipboard.writeText=async s=>{copied=s;};app.sandbox.showToast=s=>{toast=s;};
+    await app.sandbox.copyDeveloperGroupInvite();
+    ok(copied===app.sandbox.DEVELOPER_GROUP_INVITE_URL,'A5II Builders clipboard stub exact destination '+lang);
+    ok(toast===(lang==='ru'?'Ссылка-приглашение скопирована':'Invite link copied'),'A5II Builders copy toast '+lang);
+    ok(app.sandbox.renderDeveloperGroupInviteCard({eligible:false})==='','A5II Builders eligibility preserved '+lang);
+  }catch(e){ok(false,'A5II Builders '+e.message);}
+  try {
+    const app=await bootA5II(lang);
+    const h=app.sandbox.accountDeleteSectionHtml();
+    ok(h.includes(lang==='ru'?'Аккаунт Skipi':'Skipi account'),'280 accepted account section '+lang);
+    ok(h.includes(lang==='ru'?'Удалить аккаунт…':'Delete account…'),'280 accepted account action '+lang);
+    ok(app.invokeCalls.filter(([c])=>c==='app_account_delete').length===0,'280 rendering never deletes account '+lang);
+  }catch(e){ok(false,'280 account '+e.message);}
+}
+for(const mode of ['guest','error','manual','cleared','stale','cancel']){
+  try {
+    const app=await bootA5II();let resolve;
+    const pending=new Promise(r=>{resolve=r;});
+    app.sandbox.invoke=async cmd=>cmd==='app_login_status'?pending:{};
+    const start=app.sandbox.mobileStartVaultWizard();await settleVm();
+    const first=app.sandbox.mobileVaultWizardState;
+    if(mode==='manual')first.email='manual@example.invalid';
+    if(mode==='cleared'){first.email='';first.emailEdited=true;}
+    if(mode==='stale'){app.sandbox.mobileVaultWizardState=app.sandbox.mobileInitialVaultWizardState();}
+    if(mode==='cancel'){app.sandbox.mobileVaultWizardBack();}
+    resolve(mode==='error'?Promise.reject(Error('fixture-error')):{logged_in:mode!=='guest',email:'fixture@example.invalid'});
+    await start;
+    if(mode==='manual')ok(first.email==='manual@example.invalid','A5II manual input never overwritten');
+    else ok(first.email==='','A5II email '+mode+' never filled');
+  }catch(e){ok(false,'A5II email '+mode+' '+e.message);}
+}
+for(const lang of ['en','ru']){
+  for(const kind of ['missing','complete','empty','error']){
+    try{
+      const profile=kind==='empty'?{required:[],missing_ids:[],completeness_pct:0}:{required:[{id:'required-A',title:'Required fixture A',has:kind==='complete'},{id:'required-B',title:'Required fixture B',has:true}],missing_ids:kind==='missing'?['required-A']:[],completeness_pct:kind==='complete'?100:50};
+      const app=await bootA5II(lang,async cmd=>{if(cmd==='get_profile_status'){if(kind==='error')throw Error('fixture');return profile;}});
+      app.sandbox.allDocs=[{id:'wrong-allDocs',title:'Wrong allDocs fixture',file_name:null}];
+      app.sandbox.renderMobileProfile();
+      const main=app.doc.getElementById('mobile-main').innerHTML;
+      ok(/<button[^>]+id="mobile-profile-completeness-card"[^>]+onclick="mobileToggleProfileMissing\(\)"/.test(main),'A5II native keyboard/mouse completeness button '+lang+' '+kind);
+      const host=app.doc.createElement('div');host.setAttribute('id','mobile-profile-missing');app.doc.body.appendChild(host);
+      const button=app.doc.createElement('button');button.setAttribute('id','mobile-profile-completeness-card');app.doc.body.appendChild(button);
+      await app.sandbox.mobileRefreshProfileSummary();
+      app.sandbox.mobileToggleProfileMissing();
+      const h=host.innerHTML;
+      ok(!h.includes('Wrong allDocs fixture'),'A5II completeness never inferred from allDocs '+lang+' '+kind);
+      if(kind==='missing'){
+        ok(h.includes('Required fixture A')&&!h.includes('Required fixture B'),'A5II actual missing required only '+lang);
+        ok(h.includes('mobileShow(\'add\')'),'A5II missing add destination '+lang);
+      }else{
+        const text=kind==='complete'?(lang==='ru'?'Все обязательные документы отмечены в профиле.':'All required documents are recorded in the profile.'):kind==='empty'?(lang==='ru'?'Задайте должность и тип судна в профиле.':'Set your rank and vessel type in the profile.'):(lang==='ru'?'Не удалось загрузить статус профиля.':'Could not load profile status.');
+        ok(h.includes(text),'A5II completeness honest '+kind+' '+lang);
+      }
+      ok(h.includes(lang==='ru'?'Здесь показаны только обязательные документы.':'Only required documents are listed here.'),'A5II disclosure honest scope '+lang+' '+kind);
+    }catch(e){ok(false,'A5II completeness '+lang+' '+kind+' '+e.message);}
+  }
 }
 
 {
