@@ -1305,7 +1305,7 @@ pub fn get_work_history(conn: &Connection) -> Result<Vec<serde_json::Value>> {
          LEFT JOIN vessel_review_receipts vr ON vr.work_history_id = wh.id
          ORDER BY COALESCE(wh.sign_on, wh.created_at) DESC"
     )?;
-    let rows = stmt
+    let mut rows = stmt
         .query_map([], |row| {
             let overall_rating = row.get::<_, Option<f64>>(14)?;
             let summary = row
@@ -1342,6 +1342,28 @@ pub fn get_work_history(conn: &Connection) -> Result<Vec<serde_json::Value>> {
             }))
         })?
         .collect::<Result<Vec<_>>>()?;
+    // Match dist::sortWorkEntries: ECMAScript trim, UTF-16 lexical order,
+    // and stable ties from the existing SQL order. Do not rewrite stored values.
+    fn js_trim(value: &str) -> &str {
+        value.trim_matches(|c| matches!(c,
+            '\u{0009}'..='\u{000d}' | '\u{0020}' | '\u{00a0}' | '\u{1680}' |
+            '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' |
+            '\u{205f}' | '\u{3000}' | '\u{feff}'))
+    }
+    rows.sort_by(|a, b| {
+        let sa = js_trim(a["sign_on"].as_str().unwrap_or(""));
+        let sb = js_trim(b["sign_on"].as_str().unwrap_or(""));
+        match (sa.is_empty(), sb.is_empty()) {
+            (false, false) => sb.encode_utf16().cmp(sa.encode_utf16()),
+            (false, true) => std::cmp::Ordering::Less,
+            (true, false) => std::cmp::Ordering::Greater,
+            (true, true) => {
+                let ca = js_trim(a["created_at"].as_str().unwrap_or(""));
+                let cb = js_trim(b["created_at"].as_str().unwrap_or(""));
+                cb.encode_utf16().cmp(ca.encode_utf16())
+            }
+        }
+    });
     Ok(rows)
 }
 
@@ -1529,4 +1551,603 @@ pub fn get_dispatches(conn: &Connection) -> Result<Vec<serde_json::Value>> {
         })?
         .collect::<Result<Vec<_>>>()?;
     Ok(rows)
+}
+
+
+#[cfg(test)]
+mod cv_order_282_tests {
+    use super::*;
+
+    fn fixture() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE work_history (
+            id TEXT PRIMARY KEY, vessel_name TEXT NOT NULL, vessel_type TEXT, imo TEXT,
+            flag TEXT, company TEXT, position TEXT, sign_on TEXT, sign_off TEXT, notes TEXT,
+            created_at TEXT NOT NULL, evidence_folder TEXT, dwt TEXT, teu TEXT);
+            CREATE TABLE vessel_review_receipts (work_history_id TEXT, overall_rating REAL,
+            summary_json TEXT, submitted_at TEXT, lock_until TEXT);",
+        )
+        .unwrap();
+        conn
+    }
+
+    fn add(conn: &Connection, id: &str, sign_on: Option<&str>, created_at: &str) {
+        conn.execute(
+            "INSERT INTO work_history (id,vessel_name,position,sign_on,created_at)
+            VALUES (?1,?1,'Officer',?2,?3)",
+            params![id, sign_on, created_at],
+        )
+        .unwrap();
+    }
+
+    fn ids(rows: &[serde_json::Value]) -> Vec<String> {
+        rows.iter()
+            .map(|r| r["id"].as_str().unwrap().to_owned())
+            .collect()
+    }
+
+    #[test]
+    fn dated_contracts_precede_recent_undated_contracts() {
+        let conn = fixture();
+        add(&conn, "old", Some("2019-03-01"), "2019-03-01");
+        add(&conn, "undated", None, "2026-09-12");
+        add(&conn, "new", Some("2024-06-01"), "2024-06-01");
+        assert_eq!(
+            ids(&get_work_history(&conn).unwrap()),
+            ["new", "old", "undated"]
+        );
+    }
+
+    #[test]
+    fn ecmascript_whitespace_applies_to_both_date_fields() {
+        let conn = fixture();
+        add(&conn, "dated", Some("\u{feff}2024-06-01\u{a0}"), "x");
+        add(&conn, "new-dated", Some("2025-06-01"), "x");
+        add(&conn, "new-undated", Some(""), "\t2025\u{3000}");
+        add(&conn, "old-undated", Some(""), "2020");
+        assert_eq!(
+            ids(&get_work_history(&conn).unwrap()),
+            ["new-dated", "dated", "new-undated", "old-undated"]
+        );
+    }
+
+    #[test]
+    fn utf16_order_and_stable_sql_ties_match_screen() {
+        let conn = fixture();
+        add(&conn, "supplementary", Some("\u{10000}"), "2020");
+        add(&conn, "bmp", Some("\u{e000}"), "2020");
+        add(&conn, "first-tie", Some("2024"), "2020");
+        add(&conn, "second-tie", Some("2024"), "2026");
+        assert_eq!(
+            ids(&get_work_history(&conn).unwrap()),
+            ["bmp", "supplementary", "first-tie", "second-tie"]
+        );
+    }
+
+    #[test]
+    fn career_pattern_preserves_existing_oldest_three_group_algorithm() {
+        let conn = fixture();
+        for (id, date, rank) in [
+            ("captain-new", "2026", "Captain"),
+            ("captain-old", "2025", "Captain"),
+            ("chief", "2024", "Chief Officer"),
+            ("second", "2023", "Second Officer"),
+            ("cadet", "2022", "Cadet"),
+        ] {
+            add(&conn, id, Some(date), date);
+            conn.execute(
+                "UPDATE work_history SET position=?1 WHERE id=?2",
+                params![rank, id],
+            )
+            .unwrap();
+        }
+        let extras = crate::cv::build_redacted_extras(&conn);
+        assert_eq!(extras.contract_count, 5);
+        assert_eq!(
+            extras.career_pattern.as_deref(),
+            Some("1 contract as Cadet, 1 contract as Second Officer, 1 contract as Chief Officer")
+        );
+    }
+
+    #[test]
+    #[ignore = "requires the task's exact JS differential fixture file"]
+    fn differential_database_outputs() {
+        let input = std::env::var("SKIPI_282_DIFFERENTIAL_INPUT").unwrap();
+        let output = std::env::var("SKIPI_282_DIFFERENTIAL_OUTPUT").unwrap();
+        let cases: Vec<Vec<serde_json::Value>> =
+            serde_json::from_slice(&std::fs::read(input).unwrap()).unwrap();
+        let conn = fixture();
+        let mut results = Vec::new();
+        for case in cases {
+            conn.execute("DELETE FROM work_history", []).unwrap();
+            for row in case {
+                add(
+                    &conn,
+                    row["id"].as_str().unwrap(),
+                    row["sign_on"].as_str(),
+                    row["created_at"].as_str().unwrap(),
+                );
+            }
+            let actual = get_work_history(&conn).unwrap();
+            let baseline_ids = conn
+                .prepare("SELECT id FROM work_history ORDER BY COALESCE(sign_on,created_at) DESC")
+                .unwrap()
+                .query_map([], |r| r.get::<_, String>(0))
+                .unwrap()
+                .collect::<Result<Vec<_>>>()
+                .unwrap();
+            let baseline: Vec<_> = baseline_ids
+                .iter()
+                .map(|id| {
+                    actual
+                        .iter()
+                        .find(|r| r["id"].as_str() == Some(id))
+                        .unwrap()
+                        .clone()
+                })
+                .collect();
+            results.push(serde_json::json!({"baseline": baseline, "actual": actual}));
+        }
+        std::fs::write(output, serde_json::to_vec(&results).unwrap()).unwrap();
+    }
+
+    // Explicit, serial runtime drill: real public command calls with synthetic state.
+    // Run only with SKIPI_282_RUNTIME_DIR and the isolated child environment documented
+    // in the task evidence. This never starts the product frontend or plugins.
+    #[test]
+    #[ignore = "requires isolated display, synthetic directory and local HTTP stub"]
+    fn real_assistant_reader_runtime() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::sync::Mutex;
+        use std::time::{Duration, Instant};
+        use tauri::Manager;
+        let root = std::path::PathBuf::from(std::env::var("SKIPI_282_RUNTIME_DIR").unwrap());
+        assert!(root.is_absolute());
+        assert!(root.starts_with(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .join("scratchpad/282")
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let conn = open_db(&root).unwrap();
+        for (id, date, created) in [
+            ("old", Some("2019-03-01"), "2019"),
+            ("undated", None, "2026-09-12"),
+            ("new", Some("2024-06-01"), "2024"),
+        ] {
+            add_work_entry(
+                &conn,
+                id,
+                &format!("SYNTHETIC-{id}"),
+                Some("Container Ship"),
+                None,
+                None,
+                Some("SYNTHETIC COMPANY"),
+                "Officer",
+                date,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            conn.execute(
+                "UPDATE work_history SET created_at=?1 WHERE id=?2",
+                params![created, id],
+            )
+            .unwrap();
+        }
+        set_vault_info(&conn, "assistant_key", "synthetic-local-fixture-only").unwrap();
+        let listener = TcpListener::bind("127.0.0.2:0").unwrap();
+        let address = format!("http://{}", listener.local_addr().unwrap());
+        std::env::set_var("SKIPI_API_BASE", &address);
+        assert_eq!(crate::api::api_bases(), vec![address]);
+        for key in [
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "ALL_PROXY",
+            "http_proxy",
+            "https_proxy",
+            "all_proxy",
+        ] {
+            assert!(
+                std::env::var_os(key).is_none(),
+                "proxy variable still set: {key}"
+            );
+        }
+        assert_eq!(std::env::var("NO_PROXY").unwrap(), "*");
+        listener.set_nonblocking(true).unwrap();
+        let server = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(15);
+            let mut stream = loop {
+                match listener.accept() {
+                    Ok((s, peer)) => {
+                        assert!(peer.ip().is_loopback());
+                        break s;
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        assert!(Instant::now() < deadline, "local stub accept timeout");
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(e) => panic!("stub accept: {e}"),
+                }
+            };
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut request = Vec::new();
+            let (header_len, body_len) = loop {
+                let mut chunk = [0_u8; 4096];
+                let n = stream.read(&mut chunk).unwrap();
+                assert!(n > 0);
+                request.extend_from_slice(&chunk[..n]);
+                if let Some(i) = request.windows(4).position(|w| w == b"\r\n\r\n") {
+                    let headers = std::str::from_utf8(&request[..i]).unwrap();
+                    assert!(headers.starts_with("POST /api/assistant/chat HTTP/1.1"));
+                    let len: usize = headers
+                        .lines()
+                        .find_map(|s| {
+                            let (k, v) = s.split_once(':')?;
+                            k.eq_ignore_ascii_case("content-length")
+                                .then(|| v.trim().parse().unwrap())
+                        })
+                        .unwrap();
+                    break (i + 4, len);
+                }
+            };
+            while request.len() < header_len + body_len {
+                let mut chunk = [0_u8; 4096];
+                let n = stream.read(&mut chunk).unwrap();
+                assert!(n > 0);
+                request.extend_from_slice(&chunk[..n]);
+            }
+            let body: serde_json::Value =
+                serde_json::from_slice(&request[header_len..header_len + body_len]).unwrap();
+            let reply = r#"{"reply":"synthetic stub","model":"local-fixture","remaining_today":1}"#;
+            write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", reply.len(), reply).unwrap();
+            body
+        });
+        let mut context = tauri::generate_context!();
+        context.config_mut().app.windows.clear();
+        context.config_mut().plugins.0.clear();
+        assert!(context.config().app.windows.is_empty());
+        let app = tauri::Builder::default()
+            .any_thread()
+            .manage(crate::AppState {
+                conn: Mutex::new(Some(conn)),
+                vault_path: Mutex::new(Some(root.clone())),
+                login_pending: Mutex::new(None),
+            })
+            .build(context)
+            .unwrap();
+        assert!(app.webview_windows().is_empty());
+        let reply = tauri::async_runtime::block_on(crate::commands::assistant::assistant_chat(
+            app.state(),
+            vec![],
+            None,
+            None,
+            Some("en".to_owned()),
+        ))
+        .unwrap();
+        assert_eq!(reply.reply, "synthetic stub");
+        let captured = server.join().unwrap();
+        std::fs::write(
+            root.join("actual-assistant-request.json"),
+            serde_json::to_vec_pretty(&captured).unwrap(),
+        )
+        .unwrap();
+        let cv_data = crate::commands::cv_commands::get_cv_data(app.state()).unwrap();
+        std::fs::write(
+            root.join("cv-data.json"),
+            serde_json::to_vec_pretty(&cv_data).unwrap(),
+        )
+        .unwrap();
+        crate::commands::cv_commands::export_cv_docx(
+            app.state(),
+            root.join("cv.docx").to_str().unwrap().to_owned(),
+        )
+        .unwrap();
+        crate::commands::cv_commands::export_cv_pdf(
+            app.state(),
+            root.join("cv.pdf").to_str().unwrap().to_owned(),
+        )
+        .unwrap();
+        crate::commands::cv_commands::export_redacted_cv_pdf(
+            app.state(),
+            root.join("privacy.pdf").to_str().unwrap().to_owned(),
+        )
+        .unwrap();
+        let attachments = crate::commands::packages::prepare_dispatch_attachments(
+            app.state(),
+            None,
+            Some(true),
+            Some(false),
+        )
+        .unwrap();
+        let private_attachments = crate::commands::packages::prepare_dispatch_attachments(
+            app.state(),
+            None,
+            Some(true),
+            Some(true),
+        )
+        .unwrap();
+        assert!(attachments
+            .iter()
+            .chain(private_attachments.iter())
+            .all(|p| std::path::Path::new(p).starts_with(&root)));
+        {
+            let state = app.state::<crate::AppState>();
+            let guard = state.conn.lock().unwrap();
+            let conn = guard.as_ref().unwrap();
+            for id in ["old", "undated", "new"] {
+                let dir =
+                    crate::commands::work_history::work_entry_storage_dir(&root, conn, id).unwrap();
+                assert!(dir.starts_with(&root));
+                std::fs::create_dir_all(&dir).unwrap();
+                std::fs::write(dir.join("synthetic.txt"), format!("SYNTHETIC {id}")).unwrap();
+                add_work_file(
+                    conn,
+                    &format!("file-{id}"),
+                    id,
+                    "synthetic.txt",
+                    Some("contract"),
+                )
+                .unwrap();
+            }
+            let extras = crate::cv::build_redacted_extras(conn);
+            std::fs::write(
+                root.join("career-pattern.txt"),
+                extras.career_pattern.as_deref().unwrap(),
+            )
+            .unwrap();
+        }
+        crate::commands::documents::export_documents_bundle(
+            app.state(),
+            root.join("documents.zip").to_str().unwrap().to_owned(),
+        )
+        .unwrap();
+        let downloads = std::path::PathBuf::from(std::env::var("SKIPI_282_DOWNLOAD_DIR").unwrap());
+        assert!(downloads.starts_with(root.parent().unwrap()));
+        assert_eq!(dirs::download_dir().unwrap(), downloads);
+        let stub_dir = std::path::PathBuf::from(std::env::var("PATH").unwrap());
+        assert!(stub_dir.starts_with(root.parent().unwrap()));
+        for name in ["which", "thunderbird", "xdg-email", "xdg-open"] {
+            let script = std::fs::read_to_string(stub_dir.join(name)).unwrap();
+            assert!(script.contains("SKIPI_282_NO_EXTERNAL_EFFECT_STUB"));
+        }
+        crate::commands::packages::dispatch_package(
+            app.state(),
+            None,
+            vec!["synthetic@example.invalid".to_owned()],
+            "SYNTHETIC LOCAL TEST".to_owned(),
+            "No real mail".to_owned(),
+            Some(true),
+            Some(false),
+            None,
+        )
+        .unwrap();
+        let spawn_log = std::env::var("SKIPI_282_STUB_LOG").unwrap();
+        let spawn_deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let text = std::fs::read_to_string(&spawn_log).unwrap_or_default();
+            if text.contains("\"thunderbird\"")
+                && text.contains("\"xdg-open\"")
+                && text.lines().count() >= 3
+            {
+                break;
+            }
+            assert!(
+                Instant::now() < spawn_deadline,
+                "mail effect stubs did not finish"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let profile = captured["profile_context"].as_str().unwrap();
+        assert!(profile.find("SYNTHETIC-new").unwrap() < profile.find("SYNTHETIC-old").unwrap());
+        assert!(
+            profile.find("SYNTHETIC-old").unwrap() < profile.find("SYNTHETIC-undated").unwrap()
+        );
+    }
+
+    struct UiCapture282 {
+        root: std::path::PathBuf,
+    }
+
+    #[tauri::command]
+    async fn capture_282(
+        state: tauri::State<'_, UiCapture282>,
+        payload: serde_json::Value,
+    ) -> Result<(), String> {
+        let name = payload["name"].as_str().ok_or("capture name missing")?;
+        if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') {
+            return Err("invalid capture name".to_owned());
+        }
+        let out = state.root.join(format!("{name}.json"));
+        let ack = state.root.join(format!("{name}.ack"));
+        std::fs::write(
+            out,
+            serde_json::to_vec_pretty(&payload).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
+        tauri::async_runtime::spawn_blocking(move || {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+            while !ack.exists() {
+                if std::time::Instant::now() >= deadline {
+                    return Err("capture acknowledgement timeout".to_owned());
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            Ok(())
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
+
+    #[test]
+    #[ignore = "requires the reviewed isolated UI fixture, CSP and screenshot driver"]
+    fn real_ui_runtime() {
+        use std::sync::Mutex;
+        use tauri::Manager;
+        let root = std::path::PathBuf::from(std::env::var("SKIPI_282_UI_DIR").unwrap());
+        let scratch = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("scratchpad/282");
+        assert!(root.starts_with(&scratch));
+        assert_eq!(std::env::var("DISPLAY").unwrap(), ":193");
+        std::fs::create_dir_all(&root).unwrap();
+        let conn = open_db(&root).unwrap();
+        for (id, date, created) in [
+            ("old", Some("2019-03-01"), "2019"),
+            ("undated", None, "2026-09-12"),
+            ("new", Some("2024-06-01"), "2024"),
+        ] {
+            add_work_entry(
+                &conn,
+                id,
+                &format!("SYNTHETIC-{id}"),
+                Some("Container Ship"),
+                Some("9000001"),
+                None,
+                Some("SYNTHETIC COMPANY"),
+                "Officer",
+                date,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            conn.execute(
+                "UPDATE work_history SET created_at=?1 WHERE id=?2",
+                params![created, id],
+            )
+            .unwrap();
+        }
+        // Same-name contracts exercise the visible vessel preset, independent of the
+        // three-row CV fixture; inserted only when the driver requests that stage.
+        let mut context = tauri::generate_context!();
+        context.config_mut().app.windows.clear();
+        context.config_mut().plugins.0.clear();
+        let csp = "default-src 'self' tauri: asset: http://tauri.localhost; connect-src 'none'; img-src 'self' asset: data: blob: http://tauri.localhost; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; worker-src 'none'";
+        context.config_mut().app.security.csp = Some(tauri::utils::config::Csp::Policy(csp.to_owned()));
+        context.config_mut().app.security.dev_csp = Some(tauri::utils::config::Csp::Policy(csp.to_owned()));
+        let mut app = tauri::Builder::default()
+            .any_thread()
+            .manage(crate::AppState {
+                conn: Mutex::new(Some(conn)),
+                vault_path: Mutex::new(Some(root.clone())),
+                login_pending: Mutex::new(None),
+            })
+            .manage(UiCapture282 { root: root.clone() })
+            .invoke_handler(tauri::generate_handler![
+                crate::commands::cv_commands::get_cv_data,
+                crate::commands::profile::get_seafarer_personal,
+                crate::commands::profile::get_profile_photo_data_url,
+                crate::commands::profile::get_profile_status,
+                crate::commands::documents::get_documents,
+                crate::commands::work_history::get_work_history,
+                crate::commands::work_history::get_work_files,
+                capture_282
+            ])
+            .build(context)
+            .unwrap();
+        let isolation = r#"
+            window.__fixture282Blocked=[];
+            const denied=(kind)=>{window.__fixture282Blocked.push(kind);return new Error('isolated fixture: '+kind)};
+            window.fetch=()=>Promise.reject(denied('fetch'));
+            XMLHttpRequest.prototype.open=function(){throw denied('XHR')};
+            window.WebSocket=function(){throw denied('WebSocket')};
+            window.EventSource=function(){throw denied('EventSource')};
+            navigator.sendBeacon=()=>{denied('sendBeacon');return false};
+            window.open=()=>{denied('window.open');return null};
+        "#;
+        let driver = std::fs::read_to_string(scratch.join("ui-driver.js")).unwrap();
+        let window = tauri::WebviewWindowBuilder::new(
+            &app,
+            "main",
+            tauri::WebviewUrl::App("index.html".into()),
+        )
+        .title("Synthetic Seafarer 282 fixture")
+        .inner_size(1180.0, 860.0)
+        .data_directory(root.join("webview"))
+        .initialization_script(isolation)
+        .on_navigation(|url| {
+            url.port().is_none()
+                && url.username().is_empty()
+                && url.password().is_none()
+                && ((url.scheme() == "tauri" && url.host_str() == Some("localhost"))
+                    || (url.scheme() == "http" && url.host_str() == Some("tauri.localhost")))
+        })
+        .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
+        .build()
+        .unwrap();
+        let started = std::time::Instant::now();
+        let mut injected = false;
+        let mut presets_added = false;
+        let mut resized = false;
+        while started.elapsed() < std::time::Duration::from_secs(150) {
+            #[allow(deprecated)]
+            app.run_iteration(|_, _| {});
+            if !injected && started.elapsed() > std::time::Duration::from_secs(4) {
+                window.eval(&driver).unwrap();
+                injected = true;
+            }
+            if !resized && root.join("resize-mobile.ack").exists() {
+                window
+                    .set_size(tauri::Size::Logical(tauri::LogicalSize::new(480.0, 860.0)))
+                    .unwrap();
+                resized = true;
+            }
+            if !presets_added && root.join("add-presets.ack").exists() {
+                let state = app.state::<crate::AppState>();
+                let guard = state.conn.lock().unwrap();
+                let conn = guard.as_ref().unwrap();
+                for (id, date, created, company) in [
+                    ("preset-old", Some("2019-03-01"), "2019", "OLD COMPANY"),
+                    ("preset-undated", None, "2026-09-12", "UNDATED COMPANY"),
+                    ("preset-new", Some("2024-06-01"), "2024", "NEW COMPANY"),
+                    ("tie-first", Some("2023-01-01"), "2023", "FIRST TIE"),
+                    ("tie-second", Some("2023-01-01"), "2023", "SECOND TIE"),
+                ] {
+                    add_work_entry(
+                        conn,
+                        id,
+                        "SYNTHETIC SHARED",
+                        Some("Container Ship"),
+                        Some("9000002"),
+                        None,
+                        Some(company),
+                        "Officer",
+                        date,
+                        None,
+                        None,
+                        None,
+                        None,
+                    )
+                    .unwrap();
+                    conn.execute(
+                        "UPDATE work_history SET created_at=?1 WHERE id=?2",
+                        params![created, id],
+                    )
+                    .unwrap();
+                }
+                std::fs::write(root.join("presets-ready"), b"ready").unwrap();
+                presets_added = true;
+            }
+            if root.join("done.ack").exists() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(root.join("done.ack").exists(), "UI fixture timed out");
+        assert!(
+            !root.join("error.json").exists(),
+            "UI driver reported failure"
+        );
+        window.close().unwrap();
+    }
 }
