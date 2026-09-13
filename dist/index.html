@@ -1767,6 +1767,109 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
 <script src="plugin-host-ui.js"></script>
 <script>
 var invoke, open, saveDlg, convertFileSrc;
+// ONE ACCOUNT SYNC BEGIN
+var oneAccountSyncTimer=null, oneAccountSyncBusy=false, oneAccountSyncLast=null;
+var oneAccountDisplayed=Object.create(null);
+function oneAccountCapture(kind,record,reset){if(!record||record.sync_revision==null)return;var id=kind==='profile'?'main':record.id;if(!id)return;var key=kind+':'+id;if(reset||oneAccountDisplayed[key]==null)oneAccountDisplayed[key]=record.sync_revision;}
+function oneAccountMutation(command,args){
+    if(/^(update_doc_field|update_field_statuses|update_expiry|delete_doc)$/.test(command))return {kind:'document',id:args.id};
+    if(/^(attach_file|attach_file_bytes|attach_pdf_pages|ai_recognize)$/.test(command))return {kind:'document',id:args.docId};
+    if(/^(update_work_history|delete_work_entry)$/.test(command))return {kind:'experience',id:args.id};
+    if(command==='attach_work_file')return {kind:'experience',id:args.entryId};
+    if(command==='delete_work_file')return {kind:'experience_file',id:args.id};
+    if(command==='set_seafarer_personal')return {kind:'profile',id:'main'};
+    if(/^(upload_profile_photo|upload_profile_photo_bytes|clear_profile_photo)$/.test(command))return window.__SKIPI_WEBDESKTOP__?null:{kind:'profile',id:'main'};
+    return null;
+}
+
+function oneAccountSyncTexts(){
+    var ru=typeof getUiLang==='function'&&getUiLang()==='ru';
+    return ru?{webTitle:'Данные аккаунта',webSaved:'Данные сохранены в этом аккаунте. Включите синхронизацию в приложениях.',webUnavailable:'Данные аккаунта недоступны',title:'Синхронизация аккаунта',contextMissing:'Откройте профиль и войдите в аккаунт перед включением синхронизации.',contextChanged:'Профиль или вход в аккаунт изменились. Подтвердите синхронизацию заново.',cancel:'Отмена',enable:'Включить синхронизацию',retry:'Синхронизировать сейчас',disable:'Выключить',local:'Оставить версию устройства',remote:'Использовать версию аккаунта',device:'На устройстве: ',account:'В аккаунте: ',consent:'Синхронизировать профиль, фото, морской стаж и все прикреплённые документы и сканы этого аккаунта с устройством? Перед заменой данных будут показаны существующие различия.',messages:{disabled:'Синхронизация выключена',pending:'Изменения ожидают синхронизации',syncing:'Синхронизация…',current:'Профиль, морской стаж и документы синхронизированы',conflict:'Выберите, какие изменения сохранить',error:'Синхронизация требует внимания'}}
+        :{webTitle:'Account data',webSaved:'Data is saved in this account. Enable sync in your apps.',webUnavailable:'Account data unavailable',title:'Account sync',contextMissing:'Open a profile and sign in before enabling sync.',contextChanged:'The profile or sign-in changed. Confirm synchronization again.',cancel:'Cancel',enable:'Enable account sync',retry:'Sync now',disable:'Turn off',local:'Keep this device version',remote:'Use account version',device:'This device: ',account:'Account: ',consent:'Sync this signed-in account’s profile, photo, sea service and all attached documents/scans with this device? Existing differences will be shown before either version is replaced.',messages:{disabled:'Sync is off',pending:'Changes are waiting to sync',syncing:'Synchronizing…',current:'Profile, sea service and documents are synchronized',conflict:'Choose which changes to keep',error:'Sync needs attention'}};
+}
+function oneAccountSyncRender(status,target){
+    oneAccountSyncLast=status;
+    var root=document.getElementById('settings-root'),overlay=document.getElementById('skipi-settings-overlay');
+    var el=target||(overlay&&overlay.classList.contains('open')&&root&&root.querySelector('#one-account-sync'))||document.getElementById('one-account-sync');if(!el)return;
+    var esc=function(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});};
+    var account=status.account_email||status.account_id||'';
+    var t=oneAccountSyncTexts();
+    if(status.web_account===true||window.__SKIPI_WEBDESKTOP__){
+        var message=status.web_account===true&&!status.error?t.webSaved:t.webUnavailable;
+        el.innerHTML='<strong>'+esc(t.webTitle)+'</strong><div>'+esc(account)+'</div><div>'+esc(message)+'</div>'+(status.error?'<div>'+esc(status.error)+'</div>':'');
+        return;
+    }
+    var displayState=status.enabled===false?'disabled':status.state;
+    el.innerHTML='<strong>'+esc(t.title)+'</strong><div>'+esc(account)+'</div><div>'+esc(t.messages[displayState]||displayState)+'</div>'+(status.error?'<div>'+esc(status.error)+'</div>':'')+(status.enabled?'<button type="button" data-sync-action="retry">'+esc(t.retry)+'</button> <button type="button" data-sync-action="disable">'+esc(t.disable)+'</button>':'<button type="button" data-sync-action="enable">'+esc(t.enable)+'</button>');
+    (status.enabled===true?status.conflicts||[]:[]).forEach(function(c){
+        var row=document.createElement('div');row.style.marginTop='12px';
+        var label=document.createElement('div');label.textContent=c.kind+' · '+c.id;row.appendChild(label);
+        var preview=document.createElement('pre');preview.style.whiteSpace='pre-wrap';preview.textContent=t.device+JSON.stringify(c.local)+'\n'+t.account+JSON.stringify(c.remote);row.appendChild(preview);
+        ['local','remote'].forEach(function(choice){var button=document.createElement('button');button.type='button';button.textContent=choice==='local'?t.local:t.remote;button.onclick=function(){oneAccountSyncResolve(c.kind,c.id,choice,c.revision);};row.appendChild(button);});el.appendChild(row);
+    });
+    el.querySelectorAll('[data-sync-action]').forEach(function(b){b.onclick=function(){var a=b.getAttribute('data-sync-action');if(a==='enable')oneAccountSyncEnable();else if(a==='retry')oneAccountSyncRun();else oneAccountSyncDisable();};});
+}
+async function oneAccountSyncRun(){
+    if(window.__SKIPI_WEBDESKTOP__||oneAccountSyncBusy)return;oneAccountSyncBusy=true;
+    try{var status=await invoke('get_account_sync_status');if(!status.enabled){oneAccountSyncRender(status);return;}oneAccountSyncRender(Object.assign({},status,{state:'syncing'}));oneAccountSyncRender(await invoke('sync_account_now'));await oneAccountSyncRefreshLists();}
+    catch(e){oneAccountSyncRender(Object.assign({},oneAccountSyncLast||{},{state:'error',error:String(e)}));}
+    finally{oneAccountSyncBusy=false;}
+}
+async function oneAccountSyncRefreshLists(){
+    // Refresh navigation data, keeping any open form and its displayed revision.
+    if(typeof allDocs==='undefined')return;
+    allDocs=await invoke('get_documents');
+    if(typeof renderTree==='function'&&document.getElementById('tree'))renderTree();
+    if(typeof mobileView!=='undefined'&&mobileView==='docs'&&typeof renderMobileDocs==='function')renderMobileDocs();
+}
+function oneAccountSyncSchedule(){if(oneAccountSyncTimer)clearTimeout(oneAccountSyncTimer);oneAccountSyncTimer=setTimeout(async function(){oneAccountSyncTimer=null;await oneAccountSyncRun();},1200);}
+async function oneAccountSyncEnable(){
+    try{
+        var t=oneAccountSyncTexts();
+        if(window.__SKIPI_WEBDESKTOP__)return;
+        var before=await invoke('get_account_sync_status');
+        var context=before&&before.consent_context;
+        if(typeof context!=='string'||!context)throw new Error(t.contextMissing);
+        var consent=await uiConfirm(t.consent,{confirmLabel:t.enable,cancelLabel:t.cancel});
+        if(consent!==true)return;
+        var after=await invoke('get_account_sync_status');
+        if(!after||after.consent_context!==context)throw new Error(t.contextChanged);
+        oneAccountSyncRender(await invoke('enable_account_sync',{consent:true,consentContext:context}));
+        await oneAccountSyncRun();
+    }catch(e){oneAccountSyncRender({state:'error',error:String(e),conflicts:[]});}
+}
+async function oneAccountSyncDisable(){try{oneAccountSyncRender(await invoke('disable_account_sync'));}catch(e){showToast(String(e));}}
+async function oneAccountSyncResolve(kind,id,choice,revision){try{oneAccountSyncRender(await invoke('resolve_account_sync_conflict',{kind:kind,id:id,choice:choice,revision:revision}));await oneAccountSyncRun();}catch(e){showToast(String(e));}}
+function oneAccountSyncInstall(){
+    if(!window.__TAURI__||typeof invoke!=='function'||invoke._accountSyncWrapped)return;
+    var raw=invoke;
+    invoke=async function(command,args){
+        args=Object.assign({},args||{});
+        var target=oneAccountMutation(command,args), key=target?target.kind+':'+target.id:null;
+        if(target&&args.expectedRevision==null&&oneAccountDisplayed[key]!=null)args.expectedRevision=oneAccountDisplayed[key];
+        var sentRevision=args.expectedRevision;
+        var result=await raw(command,args);
+        // List reads never replace an open editor's saved revision.
+        if(command==='get_documents'&&Array.isArray(result))result.forEach(function(r){oneAccountCapture('document',r,false);});
+        if(command==='get_work_history'&&Array.isArray(result))result.forEach(function(r){oneAccountCapture('experience',r,false);});
+        if(command==='get_work_files'&&Array.isArray(result))result.forEach(function(r){oneAccountCapture('experience_file',r,false);});
+        if(command==='get_seafarer_personal')oneAccountCapture('profile',result,false);
+        if(command==='add_custom_doc'||command==='add_catalog_doc')oneAccountCapture('document',result,true);
+        // Acknowledgement belongs to the exact form version sent. An editor
+        // reopened during the request keeps its own newly displayed baseline.
+        if(target&&command!=='attach_work_file'&&result&&result.sync_revision!=null&&oneAccountDisplayed[key]===sentRevision)oneAccountDisplayed[key]=result.sync_revision;
+        // Child acknowledgements cannot advance a parent form: they may also
+        // include another device's unseen parent edits. Reopening loads its base.
+        if(/^(create_vault|open_vault|close_vault|app_logout)$/.test(command))oneAccountDisplayed=Object.create(null);
+        if(!window.__SKIPI_WEBDESKTOP__&&(/^(set_seafarer_|upload_profile_photo|clear_profile_photo|add_work_history|update_work_history|delete_work_entry|attach_work_file|delete_work_file|attach_file|attach_bytes|attach_document|attach_pdf_pages|update_doc|update_field_statuses|update_expiry|delete_doc|add_custom_doc|create_vault|open_vault|app_login)/.test(command)))oneAccountSyncSchedule();
+        return result;
+    };
+    invoke._accountSyncWrapped=true;
+    if(!window.__SKIPI_WEBDESKTOP__){oneAccountSyncSchedule();if(typeof setInterval==='function')setInterval(function(){if(document.visibilityState==='visible'&&oneAccountSyncLast&&oneAccountSyncLast.enabled)oneAccountSyncSchedule();},30000);}
+}
+document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')oneAccountSyncSchedule();});
+window.addEventListener('online',oneAccountSyncSchedule);
+// ONE ACCOUNT SYNC END
 var types = {vessel_types:[], ranks:[]};
 var allDocs = [], selectedDocId = null, searchTerm = '', docTreeFilter = 'all', currentView = 'files';
 var pkgMode = false, pkgSelected = [];
@@ -3730,6 +3833,7 @@ async function init() {
     for(var i=0;i<10;i++){if(window.__TAURI__&&window.__TAURI__.core)break;await new Promise(r=>setTimeout(r,300));}
     if(!window.__TAURI__||!window.__TAURI__.core){err('Tauri API not available');return;}
     invoke=window.__TAURI__.core.invoke;
+    setTimeout(oneAccountSyncInstall,0);
     if(window.__TAURI__.dialog){open=window.__TAURI__.dialog.open;saveDlg=window.__TAURI__.dialog.save;}
     await loadBuildInfo();
     convertFileSrc=window.__TAURI__.core.convertFileSrc||function(p){return p;};
@@ -4177,12 +4281,17 @@ function mobileDocHasAttachedFile(d){
         Number(d.file_size||0)>0
     ));
 }
+function requiredDocumentSummary(){
+    if(!activeTemplateIdsLoaded)return {loaded:false,required:null,missing:null,missingIds:[]};
+    // The backend supplies the active required-template universe, including absent rows.
+    var ids=Array.from(new Set(activeTemplateIds)),satisfied=new Set();
+    (allDocs||[]).forEach(function(d){if(isActiveRequiredDoc(d)&&mobileDocHasAttachedFile(d))satisfied.add(d.template_id);});
+    var missing=ids.filter(function(id){return !satisfied.has(id);});
+    return {loaded:true,required:ids.length,missing:missing.length,missingIds:missing};
+}
 function mobileCompletenessPercent(){
-    if(!Array.isArray(allDocs)||!allDocs.length)return 0;
-    var required=allDocs.filter(function(d){return isActiveRequiredDoc(d);});
-    if(!required.length)return 0;
-    var uploaded=required.filter(mobileDocHasAttachedFile).length;
-    return Math.round((uploaded/required.length)*100);
+    var summary=requiredDocumentSummary();
+    return summary.loaded&&summary.required?Math.round((summary.required-summary.missing)/summary.required*100):0;
 }
 function mobileSetProfileMeterPct(pct){
     pct=Math.max(0,Math.min(100,Math.round(Number(pct)||0)));
@@ -4892,7 +5001,8 @@ function mobileShow(view){
 }
 function mobileStats(){
     var uploaded=allDocs.filter(function(d){return !!d.file_name;}).length;
-    var missing=allDocs.filter(function(d){return !d.file_name&&isActiveRequiredDoc(d);}).length;
+    var summary=requiredDocumentSummary();
+    var missing=summary.loaded?summary.missing:'—';
     var expiring=allDocs.filter(function(d){return d.file_name&&(classify(d)==='critical'||classify(d)==='warning');}).length;
     return {uploaded:uploaded,missing:missing,expiring:expiring,total:allDocs.length};
 }
@@ -4983,7 +5093,7 @@ function mobileDocRow(d, extraAction){
 }
 function mobileFilteredDocs(kind){
     var docs=allDocs.slice();
-    if(kind==='missing')docs=docs.filter(function(d){return !d.file_name&&isActiveRequiredDoc(d);});
+    if(kind==='missing')docs=docs.filter(function(d){return isActiveRequiredDoc(d)&&requiredDocumentSummary().missingIds.indexOf(d.template_id)!==-1;});
     else if(kind==='nofile')docs=docs.filter(function(d){return !d.file_name;});
     else if(kind==='uploaded')docs=docs.filter(function(d){return !!d.file_name;});
     else if(kind==='expiring')docs=docs.filter(function(d){return d.file_name&&(classify(d)==='expired'||classify(d)==='critical'||classify(d)==='warning');});
@@ -5014,7 +5124,7 @@ function mobileSetDocsSearch(value){
     // focus nor caret — the phone dropped both after every single character. Only the container
     // BELOW the input is repainted here, so the element the user types into stays the very same
     // node. The chips are inside that container on purpose: «Missing»/«Expiring» are counted via
-    // mobileFilteredDocs, which honours the query, so leaving them out would freeze the counters.
+    // the current requirements (Missing) and query (Expiring), so leaving them out would freeze the counters.
     var body=document.getElementById('mobile-docs-body');
     if(!body){renderMobileDocs();return;}
     body.innerHTML=mobileDocsBodyHtml();
@@ -5022,7 +5132,7 @@ function mobileSetDocsSearch(value){
 }
 function mobileFilterChip(id,label,count){
     var active=mobileDocsFilter===id?' active':'';
-    return '<button class="mobile-filter-chip'+active+'" type="button" onclick="mobileSetDocsFilter(\''+jsString(id)+'\')">'+mobileEsc(label)+(typeof count==='number'?' '+count:'')+'</button>';
+    return '<button class="mobile-filter-chip'+active+'" type="button" onclick="mobileSetDocsFilter(\''+jsString(id)+'\')">'+mobileEsc(label)+(typeof count==='number'||count==='—'?' '+count:'')+'</button>';
 }
 function mobileModuleInfo(view){
     var map={
@@ -6305,6 +6415,7 @@ async function mobileShowExperienceForm(entryId,prefill){
         try{entry=mobileWorkEntryById(await invoke('get_work_history')||[],entryId);}catch(e){entry=null;}
         if(!entry){showToast('Sea Service entry not found','warn');return renderMobileExperience();}
     }
+    oneAccountCapture('experience',entry,true);
     mobileExperienceWizardState=mobileExperienceInitialState(entry,prefill);
     mobileRenderExperienceWizard();
 }
@@ -7299,7 +7410,8 @@ function mobileDocsBodyHtml(){
     // Everything on the Documents screen EXCEPT the search input: the chips and the list.
     // This is the unit a keystroke repaints (see mobileSetDocsSearch), which is why the counts
     // are computed here and not in the caller.
-    var missing=mobileFilteredDocs('missing').length;
+    var requiredSummary=requiredDocumentSummary();
+    var missing=requiredSummary.loaded?requiredSummary.missing:'—';
     var nofile=allDocs.filter(function(d){return !d.file_name;}).length;
     var uploaded=allDocs.filter(function(d){return !!d.file_name;}).length;
     var expiring=mobileFilteredDocs('expiring').length;
@@ -7312,6 +7424,10 @@ function mobileDocsBodyHtml(){
         +'</div>';
     var docs=mobileFilteredDocs(mobileDocsFilter);
     h+='<div class="mobile-section-title">'+mobileSetupText('Documents','Документы')+'</div>';
+    if(mobileDocsFilter==='missing'){
+        var absent=requiredSummary.missingIds.some(function(id){return !allDocs.some(function(d){return d.template_id===id;});});
+        if(!requiredSummary.loaded||absent)h+='<div class="mobile-card">'+(!requiredSummary.loaded?mobileSetupText('The requirements list is not available yet.','Список требований пока недоступен.'):mobileSetupText('Some required documents have not been added yet.','Некоторые обязательные документы ещё не добавлены.'))+'</div>';
+    }
     if(!docs.length)h+='<div class="mobile-card">'+(allDocs.length?mobileSetupText('No documents match this filter or search.','Нет документов по этому фильтру или запросу.'):mobileSetupText('No documents in this vault.','Нет документов в этом сейфе.'))+'</div>';
     docs.forEach(function(d){h+=mobileDocRow(d);});
     return h;
@@ -7477,6 +7593,7 @@ function renderMobileProfile(){
     }
     h+='<div class="mobile-stats"><div class="mobile-stat"><strong>'+st.total+'</strong><span>Total</span></div><div class="mobile-stat"><strong>'+st.uploaded+'</strong><span>Files</span></div><div class="mobile-stat"><strong>'+st.missing+'</strong><span>Missing</span></div></div>';
     h+='<button class="mobile-card" id="mobile-profile-completeness-card" type="button" onclick="mobileToggleProfileMissing()" aria-expanded="false" aria-controls="mobile-profile-missing" style="width:100%;text-align:left;color:inherit;"><span class="mobile-row"><span><span class="mobile-card-title" style="display:block;">'+mobileSetupText('Profile completeness','Полнота профиля')+'</span><span class="mobile-card-sub" style="display:block;">'+mobileSetupText('Show missing required documents','Показать недостающие обязательные документы')+'</span></span><span class="mobile-pill ok" id="mobile-profile-card-pct">'+pct+'</span></span></button><div class="mobile-card" id="mobile-profile-missing" hidden></div>';
+    h+='<section class="mobile-card" id="one-account-sync"></section>';
     h+='<div id="mobile-identity-trust"></div>';
     if(trustContributionEnabled()){
         h+='<button class="mobile-primary-action" type="button" data-qa="my-contribution-mobile-entry" onclick="mobileShow(\'contribution\')"><span class="mobile-action-icon">&#10003;</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(getUiLang()==='ru'?'Мой вклад':'My contribution')+'</span><span class="mobile-action-sub">'+mobileEsc(getUiLang()==='ru'?'Приватный прогресс по подтверждённым событиям.':'Private progress from confirmed events.')+'</span></span></button>';
@@ -7484,6 +7601,7 @@ function renderMobileProfile(){
     h+='<button class="mobile-primary-action" type="button" onclick="mobileShow(\'add\')"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">Add more documents</span><span class="mobile-action-sub">Scan or attach files from this phone.</span></span></button>';
     h+='<div class="mobile-card"><div class="mobile-card-title">Vault</div><div class="mobile-card-sub">Stored locally on this phone. Export a ZIP backup to open this profile on desktop.</div><div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-accent mobile-grow" onclick="mobileExportVaultBackup(true)">Export / share backup</button><button class="btn btn-outline mobile-grow" onclick="mobileOpenExistingVault()">Switch vault</button><button class="btn btn-outline mobile-grow" onclick="openSettings()">Settings</button></div><div class="mobile-actions" style="margin-top:8px;"><button class="btn btn-outline btn-red mobile-grow" onclick="mobileDeleteCurrentVault()">Delete this vault</button></div></div>';
     mobileMainHtml(h);
+    invoke('get_account_sync_status').then(oneAccountSyncRender).catch(function(){});
     mobileRefreshProfileSummary();
     mobileRefreshIdentityTrust();
 }
@@ -7769,6 +7887,7 @@ async function mobileConfirmOcr(docId){
 function renderMobileDoc(){
     var d=allDocs.find(function(x){return x.id===selectedDocId;});
     if(!d){mobileView='docs';return renderMobileDocs();}
+    oneAccountCapture('document',d,true);
     mobileSetBottomNav(true);
     var h='<button class="btn btn-outline btn-sm" onclick="mobileShow(\'docs\')" style="margin-bottom:10px;">Back</button>';
     h+='<div class="mobile-card"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title">'+mobileEsc(d.title)+'</div><div class="mobile-card-sub">'+mobileEsc(d.category)+'</div></div>'+mobileStatusPill(d)+'</div>';
@@ -9177,6 +9296,7 @@ async function openForcedProfile(forceOpen){
     // If already complete, don't force (unless forceOpen=true).
     try{
         var data=await invoke('get_seafarer_personal');
+        oneAccountCapture('profile',data,true);
         var minSal=String(data.min_salary||localStorage.getItem('skipi-sp-min_salary')||'');
         if(!forceOpen){
             var allSet=true;
@@ -11326,7 +11446,7 @@ function docTreeFilterLabels(){
 function docMatchesTreeFilter(d){
     if(!d)return false;
     if(docTreeFilter==='required')return isActiveRequiredDoc(d);
-    if(docTreeFilter==='missing')return isActiveRequiredDoc(d)&&!d.file_name;
+    if(docTreeFilter==='missing')return isActiveRequiredDoc(d)&&requiredDocumentSummary().missingIds.indexOf(d.template_id)!==-1;
     if(docTreeFilter==='expiring'){
         var s=classify(d);
         return !!d.file_name&&(s==='expired'||s==='critical'||s==='warning');
@@ -11336,6 +11456,7 @@ function docMatchesTreeFilter(d){
     return true;
 }
 function docFilterCount(filter){
+    if(filter==='required'||filter==='missing'){var summary=requiredDocumentSummary();return summary.loaded?summary[filter]:'—';}
     var prev=docTreeFilter;
     docTreeFilter=filter;
     var n=(allDocs||[]).filter(docMatchesTreeFilter).length;
@@ -11411,6 +11532,11 @@ function renderTree(){
         });
         h+='</div></div>';
     });
+    if(docTreeFilter==='missing'){
+        var missingSummary=requiredDocumentSummary();
+        var absent=missingSummary.missingIds.some(function(id){return !allDocs.some(function(d){return d.template_id===id;});});
+        if(!missingSummary.loaded||absent)h+='<div class="tree-empty">'+esc(!missingSummary.loaded?(getUiLang()==='ru'?'Список требований пока недоступен.':'The requirements list is not available yet.'):(getUiLang()==='ru'?'Некоторые обязательные документы ещё не добавлены. Откройте «Недостающие документы» на главной.':'Some required documents have not been added yet. Open Missing documents on the dashboard.'))+'</div>';
+    }
     if(!h)h='<div class="tree-empty">'+esc(getUiLang()==='ru'?'Нет документов для этого фильтра.':'No documents match this filter.')+'</div>';
     document.getElementById('panel-tree').innerHTML=h;
     setTimeout(function(){hydrateDocumentThumbnails(document.getElementById('panel-tree'));},0);
@@ -11471,6 +11597,7 @@ async function selDoc(id){
 }
 
 async function renderDoc(d){
+    oneAccountCapture('document',d,true);
     var s=classify(d),dl=days(d),bc='badge-'+s;
     var st={expired:'Expired',critical:'Expiring soon',warning:'Attention',valid:'Valid',none:'No expiry'}[s];
     if(d.is_permanent)st='Permanent';
@@ -11772,7 +11899,8 @@ async function showDashboard(){
     // (template rows without file_name) must not be counted as documents — they
     // represent expected certificates, not actual ones.
     var uploadedDocs=allDocs.filter(function(d){return !!d.file_name;});
-    var requiredMissing=allDocs.filter(function(d){return !d.file_name && isActiveRequiredDoc(d);}).length;
+    var requiredSummary=requiredDocumentSummary();
+    var requiredMissing=requiredSummary.loaded?requiredSummary.missing:null;
     var c={expired:0,critical:0,warning:0,warning_soft:0,valid:0,none:0};
     uploadedDocs.forEach(function(d){c[classify(d)]++;});
     var h='<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap;"><h2 style="font-size:18px;margin:0;">Dashboard</h2><button class="btn btn-accent btn-sm" onclick="showAddCustomDoc()">+ Add custom certificate</button></div>';
@@ -12583,7 +12711,7 @@ async function showWorkHistory(){
                 h+='<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);">';
                 h+='<div style="font-size:11px;color:var(--text2);margin-bottom:6px;">Supporting documents ('+files.length+')</div>';
                 files.forEach(function(f){
-                    var kind=f.kind?' <span style="color:var(--text2);font-size:10px;">['+f.kind+']</span>':'';
+                    var kind=f.kind?' <span style="color:var(--text2);font-size:10px;">['+esc(f.kind)+']</span>':'';
                     h+='<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:12px;">';
                     h+='<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">&#128196; '+f.file_name+kind+'</span>';
                     h+='<span style="display:flex;gap:4px;">';
@@ -12778,6 +12906,7 @@ function workPositionValue(){
 }
 
 function renderWorkEntryForm(entry){
+    oneAccountCapture('experience',entry,true);
     entry=entry||null;
     var isEdit=!!entry;
     var title=isEdit?'Edit Work Entry':'Add Work Entry';
@@ -16605,8 +16734,9 @@ function seafarerProfileFormHtml(){
     // 2026-08-06 (25)): device pairing + explicit Import/Send. Both network
     // directions run ONLY from these buttons — never automatically.
     h += '<div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border);">';
-    h += '<div style="font-weight:800;font-size:13px;">Skipi account</div>';
-    h += '<div class="section-desc" style="margin:4px 0 10px;">Import these details from — or send them to — your account at assistant.skipi.app. Each transfer happens only when you tap a button below and shows exactly which fields move. Your photo never syncs.</div>';
+    h += '<section id="one-account-sync" style="padding:12px 0;"></section>';
+    h += '<div style="font-weight:800;font-size:13px;">Manual profile transfer</div>';
+    h += '<div class="section-desc" style="margin:4px 0 10px;">Import these details from — or send them to — your account at assistant.skipi.app. Each transfer happens only when you tap a button below and shows exactly which fields move. This manual transfer excludes photos; account sync above includes them.</div>';
     h += '<div id="sp-acc-status" style="font-size:12px;color:var(--text2);margin-bottom:8px;">Checking device link…</div>';
     h += '<div id="sp-acc-link-row" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">';
     h += '<input id="sp-acc-code" placeholder="Link code from assistant.skipi.app" maxlength="8" autocapitalize="characters" autocomplete="off" style="flex:1;min-width:170px;">';
@@ -16688,7 +16818,7 @@ function renderSettingsBody(){
     }
 
     if(settingsTab === 'seafarer'){
-        h += '<div class="settings-section"><h3>Seafarer Profile</h3><div class="section-desc">Personal details used to generate your CV/Application Form PDF. Stored inside this vault on disk. Leaves the vault only when you tap ‘Send to account’.</div>';
+        h += '<div class="settings-section"><h3>Seafarer Profile</h3><div class="section-desc">Personal details used to generate your CV/Application Form PDF. Stored inside this vault on disk. Shared with your account after you enable account sync, or when you choose a manual transfer.</div>';
         h += seafarerProfileFormHtml();
         h += '</div>';
     }
@@ -16863,7 +16993,7 @@ function renderSettingsBody(){
     }
 
     document.getElementById('settings-body').innerHTML = h;
-    if(settingsTab === 'seafarer'){ spLoad(); }
+    if(settingsTab === 'seafarer'){ spLoad(); invoke('get_account_sync_status').then(oneAccountSyncRender).catch(function(){}); }
     if(settingsTab === 'email'){ smtpLoad(); populateMailClientsHint(); }
     if(settingsTab === 'ai'){
         invoke('get_api_key').then(function(k){var el=document.getElementById('set-key');if(el)el.value=k;}).catch(function(){});
@@ -17043,6 +17173,7 @@ async function spLoadPhoto(){
 async function spLoad(){
     try{
         var data=await invoke('get_seafarer_personal');
+        oneAccountCapture('profile',data,true);
         // Populate dropdowns before assigning values
         populateNationalitySelect(document.getElementById('sp-nationality'),data.nationality||'');
         populateRankControl('sp',data.rank||'','-- Select rank --');
@@ -17957,7 +18088,8 @@ async function saveKey(){try{await invoke('save_api_key',{key:document.getElemen
 
 function updateStatus(){
     var c={expired:0,total:allDocs.length,nofile:0};
-    allDocs.forEach(function(d){if(d.file_name&&classify(d)==='expired')c.expired++;if(!d.file_name&&isActiveRequiredDoc(d))c.nofile++;});
+    allDocs.forEach(function(d){if(d.file_name&&classify(d)==='expired')c.expired++;});
+    var summary=requiredDocumentSummary();c.nofile=summary.loaded?summary.missing:'—';
     document.getElementById('st-left').textContent=c.total+' documents'+(c.expired?' · '+c.expired+' expired':'');
     document.getElementById('st-right').textContent=c.nofile+' required missing';
     updateProfileCompletionChip();
@@ -18161,7 +18293,9 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
     // timer handle re-arms on every render, which also guards against
     // parallel loaders when the section re-renders in quick succession.
     var _spEmbedTimer = null;
+    var _spEmbedRequest = 0;
     function scheduleSeafarerFormLoad(){
+        var request = ++_spEmbedRequest;
         try{ if(_spEmbedTimer !== null){ clearTimeout(_spEmbedTimer); } }catch(e){}
         _spEmbedTimer = null;
         var attempts = 0;
@@ -18192,6 +18326,21 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
                 }
             }catch(e){}
             try{ spLoad(); }catch(err){ try{ logError('unified seafarer spLoad', err); }catch(e){} }
+            var panel = root.querySelector('#one-account-sync');
+            function currentSyncPanel(){
+                var overlay = document.getElementById('skipi-settings-overlay');
+                return request === _spEmbedRequest && root.isConnected && panel && panel.isConnected
+                    && document.getElementById('settings-root') === root
+                    && root.querySelector('#one-account-sync') === panel
+                    && overlay && overlay.classList.contains('open');
+            }
+            if(currentSyncPanel()){
+                Promise.resolve().then(function(){ return invoke('get_account_sync_status'); }).then(function(status){
+                    if(currentSyncPanel())oneAccountSyncRender(status,panel);
+                }).catch(function(error){
+                    if(currentSyncPanel())oneAccountSyncRender({state:'error',error:String(error),conflicts:[]},panel);
+                });
+            }
         }
         _spEmbedTimer = setTimeout(tick, 0);
     }
@@ -18206,8 +18355,8 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
                 var e = ctx.escapeHtml;
                 var h = '';
                 h += '<div class="section-desc" style="margin-bottom:12px;">'
-                    + e(ru ? 'Личные данные для генерации CV/Application Form PDF. Хранятся в этом хранилище на диске и покидают его только по нажатию «Send to account».'
-                          : 'Personal details used to generate your CV/Application Form PDF. Stored inside this vault on disk. Leaves the vault only when you tap ‘Send to account’.')
+                    + e(ru ? 'Личные данные для генерации CV/Application Form PDF. Хранятся в этом хранилище и передаются в аккаунт после включения синхронизации или по команде ручного переноса.'
+                          : 'Personal details used to generate your CV/Application Form PDF. Stored inside this vault on disk. Shared with your account after you enable account sync, or when you choose a manual transfer.')
                     + '</div>';
                 h += seafarerProfileFormHtml();
                 // Side effect by necessity (see scheduleSeafarerFormLoad above):

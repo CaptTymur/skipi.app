@@ -69,7 +69,9 @@ pub fn update_work_history(
     dwt: Option<String>,
     teu: Option<String>,
     notes: Option<String>,
-) -> Result<(), String> {
+
+    expected_revision: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
     let vessel_name = vessel_name.trim();
     let position = position.trim();
     if vessel_name.is_empty() {
@@ -79,8 +81,17 @@ pub fn update_work_history(
         return Err("Position is required".to_string());
     }
 
+    let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
+    let vault_path = vault_lock.as_ref().ok_or("No vault open")?;
     let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = lock.as_ref().ok_or("No vault open")?;
+    super::account_sync::vault_sync::require_edit_revision(
+        conn,
+        "experience",
+        &id,
+        expected_revision.as_ref(),
+    )?;
+    work_entry_storage_dir(vault_path, conn, &id)?;
     let imo = normalize_required_imo(imo)?;
     db::update_work_entry(
         conn,
@@ -97,33 +108,58 @@ pub fn update_work_history(
         teu.as_deref(),
         notes.as_deref(),
     )
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    super::account_sync::vault_sync::edit_result(conn, "experience", &id)
 }
 
 #[tauri::command]
 pub fn get_work_history(state: State<AppState>) -> Result<Vec<serde_json::Value>, String> {
     let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = lock.as_ref().ok_or("No vault open")?;
-    db::get_work_history(conn).map_err(|e| e.to_string())
+    let mut rows = db::get_work_history(conn).map_err(|e| e.to_string())?;
+    for row in &mut rows {
+        row["sync_revision"] =
+            serde_json::Value::String(super::account_sync::vault_sync::edit_revision(
+                conn,
+                "experience",
+                row["id"].as_str().unwrap_or(""),
+            )?);
+    }
+    Ok(rows)
 }
 
 #[tauri::command]
-pub fn delete_work_entry(state: State<AppState>, id: String) -> Result<(), String> {
+pub fn delete_work_entry(
+    state: State<AppState>,
+    id: String,
+    expected_revision: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
     let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
     let vault_path = vault_lock.as_ref().ok_or("No vault open")?;
     let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = conn_lock.as_ref().ok_or("No vault open")?;
+    super::account_sync::vault_sync::require_edit_revision(
+        conn,
+        "experience",
+        &id,
+        expected_revision.as_ref(),
+    )?;
 
-    if let Ok(entry_dir) = work_entry_storage_dir(vault_path, conn, &id) {
-        if entry_dir.exists() {
-            let _ = fs::remove_dir_all(&entry_dir);
+    let mut dirs = vec![vault_path.join(LEGACY_WORK_HISTORY_DIR).join(&id)];
+    if let Ok(path) = work_entry_storage_dir(vault_path, conn, &id) {
+        dirs.push(path);
+    }
+    for path in &dirs {
+        super::account_sync::vault_sync::preserve_tree(vault_path, path)?;
+    }
+    db::delete_work_entry(conn, &id).map_err(|e| e.to_string())?;
+    // Recovery bytes remain in the vault. Remove old active paths only after DB success.
+    for path in dirs {
+        if path.exists() {
+            let _ = fs::remove_dir_all(path);
         }
     }
-    let entry_dir = vault_path.join(LEGACY_WORK_HISTORY_DIR).join(&id);
-    if entry_dir.exists() {
-        let _ = fs::remove_dir_all(&entry_dir);
-    }
-    db::delete_work_entry(conn, &id).map_err(|e| e.to_string())
+    super::account_sync::vault_sync::edit_result(conn, "experience", &id)
 }
 
 /// Attach a supporting document to a work-history entry.
@@ -133,6 +169,8 @@ pub fn attach_work_file(
     entry_id: String,
     source_path: String,
     kind: Option<String>,
+
+    expected_revision: Option<serde_json::Value>,
 ) -> Result<serde_json::Value, String> {
     let src = PathBuf::from(&source_path);
     if !src.exists() {
@@ -160,6 +198,12 @@ pub fn attach_work_file(
     let entry_dir = {
         let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
         let conn = conn_lock.as_ref().ok_or("No vault open")?;
+        super::account_sync::vault_sync::require_edit_revision(
+            conn,
+            "experience",
+            &entry_id,
+            expected_revision.as_ref(),
+        )?;
         let exists: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM work_history WHERE id = ?1",
@@ -198,7 +242,11 @@ pub fn attach_work_file(
             .map_err(|e| e.to_string())?;
     }
 
+    let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = conn_lock.as_ref().ok_or("No vault open")?;
     Ok(serde_json::json!({
+        "sync_revision":super::account_sync::vault_sync::edit_revision(conn,"experience_file",&file_id)?,
+        "parent_revision":super::account_sync::vault_sync::edit_revision(conn,"experience",&entry_id)?,
         "id": file_id,
         "file_name": final_name,
         "kind": kind,
@@ -212,22 +260,55 @@ pub fn get_work_files(
 ) -> Result<Vec<serde_json::Value>, String> {
     let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = lock.as_ref().ok_or("No vault open")?;
-    db::get_work_files(conn, &entry_id).map_err(|e| e.to_string())
+    let mut rows = db::get_work_files(conn, &entry_id).map_err(|e| e.to_string())?;
+    for row in &mut rows {
+        row["sync_revision"] =
+            serde_json::Value::String(super::account_sync::vault_sync::edit_revision(
+                conn,
+                "experience_file",
+                row["id"].as_str().unwrap_or(""),
+            )?);
+    }
+    Ok(rows)
 }
 
 #[tauri::command]
-pub fn delete_work_file(state: State<AppState>, id: String) -> Result<(), String> {
+pub fn delete_work_file(
+    state: State<AppState>,
+    id: String,
+    expected_revision: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
     let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
     let vault_path = vault_lock.as_ref().ok_or("No vault open")?;
     let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = conn_lock.as_ref().ok_or("No vault open")?;
+    super::account_sync::vault_sync::require_edit_revision(
+        conn,
+        "experience_file",
+        &id,
+        expected_revision.as_ref(),
+    )?;
 
-    if let Some((entry_id, file_name)) = db::get_work_file(conn, &id).map_err(|e| e.to_string())? {
-        for fp in work_file_candidates(vault_path, conn, &entry_id, &file_name) {
-            let _ = fs::remove_file(&fp);
-        }
+    let previous = db::get_work_file(conn, &id).map_err(|e| e.to_string())?;
+    let mut paths = Vec::new();
+    if let Some((entry_id, file_name)) = &previous {
+        paths = work_file_candidates(vault_path, conn, entry_id, file_name);
     }
-    db::delete_work_file(conn, &id).map_err(|e| e.to_string())
+    for path in &paths {
+        super::account_sync::vault_sync::preserve_file(vault_path, path)?;
+    }
+    db::delete_work_file(conn, &id).map_err(|e| e.to_string())?;
+    for path in paths {
+        let _ = fs::remove_file(path);
+    }
+    let mut result = super::account_sync::vault_sync::edit_result(conn, "experience_file", &id)?;
+    if let Some((entry_id, _)) = previous {
+        result["parent_revision"] = serde_json::Value::String(
+            super::account_sync::vault_sync::edit_revision(conn, "experience", &entry_id)?,
+        );
+        result["parent_id"] = serde_json::Value::String(entry_id);
+    }
+    Ok(result)
 }
 
 /// Link a folder on the user's device as the evidence location for a
@@ -337,9 +418,50 @@ pub(crate) fn work_entry_storage_dir(
     conn: &rusqlite::Connection,
     entry_id: &str,
 ) -> Result<PathBuf, String> {
-    Ok(vault_path
-        .join(SEA_SERVICE_DOCS_DIR)
-        .join(work_entry_folder_name(conn, entry_id)?))
+    use rusqlite::OptionalExtension;
+    let existing: Option<String> = conn
+        .query_row(
+            "SELECT relative_dir FROM work_evidence_storage WHERE entry_id=?1",
+            [entry_id],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let relative = match existing {
+        Some(r) => r,
+        None => {
+            let legacy_named =
+                Path::new(SEA_SERVICE_DOCS_DIR).join(work_entry_folder_name(conn, entry_id)?);
+            let relative = if vault_path.join(&legacy_named).exists() {
+                legacy_named
+            } else {
+                Path::new(SEA_SERVICE_DOCS_DIR).join(entry_id)
+            };
+            let value = relative.to_string_lossy().into_owned();
+            conn.execute(
+                "INSERT INTO work_evidence_storage(entry_id,relative_dir) VALUES(?1,?2)",
+                rusqlite::params![entry_id, value],
+            )
+            .map_err(|e| e.to_string())?;
+            value
+        }
+    };
+    if Path::new(&relative).is_absolute()
+        || Path::new(&relative)
+            .components()
+            .any(|c| !matches!(c, std::path::Component::Normal(_)))
+    {
+        return Err("Invalid evidence storage path".into());
+    }
+    let probe = super::account_sync::vault_sync::shareable_path(
+        vault_path,
+        "experience_file",
+        &Path::new(&relative).join("attachment"),
+    )?;
+    Ok(probe
+        .parent()
+        .ok_or("Invalid evidence directory")?
+        .to_path_buf())
 }
 
 pub(crate) fn work_file_candidates(
@@ -558,9 +680,12 @@ mod tests {
         let dir = work_entry_storage_dir(&vault_path, &conn, "entry-abcdef12-3456").unwrap();
         assert!(dir.starts_with(vault_path.join("Sea Service")));
         let name = dir.file_name().unwrap().to_string_lossy();
-        assert!(name.contains("IMO9855551"));
-        assert!(name.contains("202506"));
-        assert!(name.ends_with("entryabc"));
+        assert!(name.contains("entry-abcdef12-3456"));
+        conn.execute("UPDATE work_history SET imo='1234567', sign_on='2026-01-01' WHERE id='entry-abcdef12-3456'", []).unwrap();
+        assert_eq!(
+            work_entry_storage_dir(&vault_path, &conn, "entry-abcdef12-3456").unwrap(),
+            dir
+        );
 
         drop(conn);
         let _ = fs::remove_dir_all(&vault_path);

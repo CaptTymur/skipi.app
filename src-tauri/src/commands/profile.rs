@@ -1147,6 +1147,7 @@ pub fn get_seafarer_personal(state: State<AppState>) -> Result<serde_json::Value
     let rank = g("personal_rank").or_else(|| g("rank"));
     let preferred_vessel_types = g("preferred_vessel_types").or_else(|| g("vessel_category"));
     Ok(serde_json::json!({
+        "sync_revision":super::account_sync::vault_sync::edit_revision(conn,"profile","main")?,
         "rank": rank,
         "available_from": g("personal_available_from"),
         "surname": g("personal_surname"),
@@ -1193,6 +1194,8 @@ pub fn get_seafarer_personal(state: State<AppState>) -> Result<serde_json::Value
 pub fn set_seafarer_personal(
     state: State<AppState>,
     fields: serde_json::Value,
+
+    expected_revision: Option<serde_json::Value>,
 ) -> Result<serde_json::Value, String> {
     let vault_path = state
         .vault_path
@@ -1201,6 +1204,12 @@ pub fn set_seafarer_personal(
         .clone();
     let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = lock.as_ref().ok_or("No vault open")?;
+    super::account_sync::vault_sync::require_edit_revision(
+        conn,
+        "profile",
+        &"main",
+        expected_revision.as_ref(),
+    )?;
     let allowed = [
         ("rank", "personal_rank"),
         ("available_from", "personal_available_from"),
@@ -1258,6 +1267,9 @@ pub fn set_seafarer_personal(
                 serde_json::Value::String(s) => s.clone(),
                 other => other.to_string(),
             };
+            if *db_key == "personal_ready_for_offers" {
+                db::set_vault_info(conn, "sync_ready_preference", &s).map_err(|e| e.to_string())?;
+            }
             db::set_vault_info(conn, db_key, &s).map_err(|e| e.to_string())?;
             changed = true;
         }
@@ -1302,6 +1314,7 @@ pub fn set_seafarer_personal(
         }
     }
     Ok(serde_json::json!({
+        "sync_revision":super::account_sync::vault_sync::edit_revision(conn,"profile","main")?,
         "saved": changed,
         "framework_changed": framework_changed,
         "docs_added": docs_added,
@@ -1312,42 +1325,51 @@ pub fn set_seafarer_personal(
 // ========== PROFILE PHOTO ========================================
 
 #[tauri::command]
-pub fn upload_profile_photo(state: State<AppState>, source_path: String) -> Result<String, String> {
+pub fn upload_profile_photo(
+    state: State<AppState>,
+    source_path: String,
+    expected_revision: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
     let src = PathBuf::from(&source_path);
     if !src.exists() {
         return Err("Source photo does not exist".to_string());
     }
     let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
     let vault_path = vault_lock.as_ref().ok_or("No vault open")?;
+    let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = conn_lock.as_ref().ok_or("No vault open")?;
+    super::account_sync::vault_sync::require_edit_revision(
+        conn,
+        "profile",
+        "main",
+        expected_revision.as_ref(),
+    )?;
     let profile_dir = vault_path.join("_profile");
+    if let Some(old) = db::get_vault_info_value(conn, "personal_photo_path") {
+        super::account_sync::vault_sync::preserve_file(
+            vault_path,
+            &super::account_sync::vault_sync::shareable_path(
+                vault_path,
+                "photo",
+                std::path::Path::new(&old),
+            )?,
+        )?;
+    }
     fs::create_dir_all(&profile_dir).map_err(|e| e.to_string())?;
     let ext = src
         .extension()
         .and_then(|e| e.to_str())
         .map(|s| s.to_lowercase())
         .unwrap_or_else(|| "jpg".to_string());
-    if profile_dir.exists() {
-        if let Ok(entries) = fs::read_dir(&profile_dir) {
-            for entry in entries.flatten() {
-                let name = entry.file_name();
-                if let Some(n) = name.to_str() {
-                    if n.starts_with("photo.") {
-                        let _ = fs::remove_file(entry.path());
-                    }
-                }
-            }
-        }
-    }
-    let dest_name = format!("photo.{}", ext);
+    let dest_name = format!("photo-{}.{}", uuid::Uuid::new_v4(), ext);
     let dest = profile_dir.join(&dest_name);
     fs::copy(&src, &dest).map_err(|e| e.to_string())?;
     let rel = format!("_profile/{}", dest_name);
     {
-        let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
-        let conn = conn_lock.as_ref().ok_or("No vault open")?;
         db::set_vault_info(conn, "personal_photo_path", &rel).map_err(|e| e.to_string())?;
     }
-    Ok(rel)
+    super::account_sync::vault_sync::photo_changed(conn)?;
+    super::account_sync::vault_sync::edit_result(conn, "profile", "main")
 }
 
 /// Mobile-safe profile photo upload. The desktop `upload_profile_photo` copies
@@ -1360,7 +1382,9 @@ pub fn upload_profile_photo_bytes(
     state: State<AppState>,
     file_name: String,
     data_base64: String,
-) -> Result<String, String> {
+
+    expected_revision: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
     let ext = std::path::Path::new(&file_name)
         .extension()
         .and_then(|e| e.to_str())
@@ -1375,40 +1399,62 @@ pub fn upload_profile_photo_bytes(
     }
     let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
     let vault_path = vault_lock.as_ref().ok_or("No vault open")?;
+    let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = conn_lock.as_ref().ok_or("No vault open")?;
+    super::account_sync::vault_sync::require_edit_revision(
+        conn,
+        "profile",
+        "main",
+        expected_revision.as_ref(),
+    )?;
     let profile_dir = vault_path.join("_profile");
-    fs::create_dir_all(&profile_dir).map_err(|e| e.to_string())?;
-    if let Ok(entries) = fs::read_dir(&profile_dir) {
-        for entry in entries.flatten() {
-            if let Some(n) = entry.file_name().to_str() {
-                if n.starts_with("photo.") {
-                    let _ = fs::remove_file(entry.path());
-                }
-            }
-        }
+    if let Some(old) = db::get_vault_info_value(conn, "personal_photo_path") {
+        super::account_sync::vault_sync::preserve_file(
+            vault_path,
+            &super::account_sync::vault_sync::shareable_path(
+                vault_path,
+                "photo",
+                std::path::Path::new(&old),
+            )?,
+        )?;
     }
-    let dest_name = format!("photo.{}", ext);
+    fs::create_dir_all(&profile_dir).map_err(|e| e.to_string())?;
+    let dest_name = format!("photo-{}.{}", uuid::Uuid::new_v4(), ext);
     fs::write(profile_dir.join(&dest_name), &bytes).map_err(|e| e.to_string())?;
     let rel = format!("_profile/{}", dest_name);
     {
-        let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
-        let conn = conn_lock.as_ref().ok_or("No vault open")?;
         db::set_vault_info(conn, "personal_photo_path", &rel).map_err(|e| e.to_string())?;
     }
-    Ok(rel)
+    super::account_sync::vault_sync::photo_changed(conn)?;
+    super::account_sync::vault_sync::edit_result(conn, "profile", "main")
 }
 
 #[tauri::command]
-pub fn clear_profile_photo(state: State<AppState>) -> Result<(), String> {
+pub fn clear_profile_photo(
+    state: State<AppState>,
+    expected_revision: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
     let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
     let vault_path = vault_lock.as_ref().ok_or("No vault open")?;
     let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = conn_lock.as_ref().ok_or("No vault open")?;
+    super::account_sync::vault_sync::require_edit_revision(
+        conn,
+        "profile",
+        "main",
+        expected_revision.as_ref(),
+    )?;
     if let Some(rel) = db::get_vault_info_value(conn, "personal_photo_path") {
-        let abs = vault_path.join(&rel);
-        let _ = fs::remove_file(&abs);
+        let abs = super::account_sync::vault_sync::shareable_path(
+            vault_path,
+            "photo",
+            std::path::Path::new(&rel),
+        )?;
+        super::account_sync::vault_sync::preserve_file(vault_path, &abs)?;
     }
     db::set_vault_info(conn, "personal_photo_path", "").map_err(|e| e.to_string())?;
-    Ok(())
+    super::account_sync::vault_sync::photo_changed(conn)?;
+    super::account_sync::vault_sync::edit_result(conn, "profile", "main")
 }
 
 #[tauri::command]

@@ -278,6 +278,17 @@ fn migrations() -> Vec<(u32, &'static str)> {
                );
         "#,
         ),
+        (11, r#"
+            CREATE TABLE account_sync_entities (
+                account_id TEXT NOT NULL, kind TEXT NOT NULL, entity_id TEXT NOT NULL,
+                baseline TEXT NOT NULL, local_hash TEXT NOT NULL,
+                queued TEXT, conflict TEXT,
+                PRIMARY KEY(account_id, kind, entity_id)
+            );
+            CREATE TABLE work_evidence_storage (
+                entry_id TEXT PRIMARY KEY, relative_dir TEXT NOT NULL
+            );
+        "#),
     ]
 }
 
@@ -1117,6 +1128,8 @@ mod tests {
             let app = tauri::Builder::default()
                 .any_thread()
                 .manage(crate::AppState {
+                    sync_epoch: std::sync::atomic::AtomicU64::new(0),
+                    sync_worker: std::sync::Mutex::new(()),
                     conn: Mutex::new(Some(conn)),
                     vault_path: Mutex::new(Some(root.clone())),
                     login_pending: Mutex::new(None),
@@ -1355,6 +1368,8 @@ mod tests {
             let mut app = tauri::Builder::default()
                 .any_thread()
                 .manage(crate::AppState {
+                    sync_epoch: std::sync::atomic::AtomicU64::new(0),
+                    sync_worker: std::sync::Mutex::new(()),
                     conn: Mutex::new(Some(conn)),
                     vault_path: Mutex::new(Some(root.clone())),
                     login_pending: Mutex::new(None),

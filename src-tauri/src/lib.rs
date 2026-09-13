@@ -21,6 +21,8 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 pub(crate) struct AppState {
+    pub sync_epoch: std::sync::atomic::AtomicU64,
+    pub sync_worker: Mutex<()>,
     pub conn: Mutex<Option<Connection>>,
     pub vault_path: Mutex<Option<PathBuf>>,
     /// Login accepted before the first vault exists (№162b): parked here until
@@ -115,6 +117,8 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(AppState {
+            sync_epoch: std::sync::atomic::AtomicU64::new(0),
+            sync_worker: Mutex::new(()),
             conn: Mutex::new(None),
             vault_path: Mutex::new(None),
             login_pending: Mutex::new(None),
@@ -229,6 +233,11 @@ pub fn run() {
             profile::get_profile_photo_abs_path,
             profile::get_profile_photo_data_url,
             // Skipi account profile sync (№96(б): explicit import/export only)
+            account_sync::vault_sync::enable_account_sync,
+            account_sync::vault_sync::disable_account_sync,
+            account_sync::vault_sync::get_account_sync_status,
+            account_sync::vault_sync::sync_account_now,
+            account_sync::vault_sync::resolve_account_sync_conflict,
             account_sync::link_account_device,
             account_sync::get_account_link_status,
             account_sync::unlink_account_device,
