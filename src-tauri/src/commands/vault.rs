@@ -1352,11 +1352,7 @@ mod tests {
 
         let _ = fs::remove_dir_all(root);
     }
-}
 
-#[cfg(test)]
-mod account_sync_portable_tests {
-    use super::*;
     #[test]
     fn portable_zip_contains_documents_photo_and_evidence_but_no_privileged_state() {
         let root = std::env::current_dir()

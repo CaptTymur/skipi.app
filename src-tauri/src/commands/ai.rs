@@ -1001,11 +1001,7 @@ mod tests {
             assert!(OUTPUT.contains(&format!("\"{key}\"")));
         }
     }
-}
 
-#[cfg(test)]
-mod sync_recognition_tests {
-    use super::*;
     #[test]
     fn delayed_stub_recognition_cannot_save_into_changed_vault_or_document(){
         let root=std::env::current_dir().unwrap().join("../scratchpad/one-account-sync-20260913").join(uuid::Uuid::new_v4().to_string());std::fs::create_dir_all(&root).unwrap();let conn=db::open_db(&root).unwrap();
