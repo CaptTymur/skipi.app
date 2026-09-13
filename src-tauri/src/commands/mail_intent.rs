@@ -61,6 +61,8 @@ fn guess_mime(path: &Path) -> &'static str {
         .map(|s| s.to_lowercase())
         .as_deref()
     {
+        Some("doc") => "application/msword",
+        Some("docx") => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         Some("pdf") => "application/pdf",
         Some("zip") => "application/zip",
         Some("png") => "image/png",
@@ -386,4 +388,65 @@ pub fn mobile_share_dispatch(
     _mode: Option<String>,
 ) -> Result<String, String> {
     Err("Mobile share sheet is only available on Android in this build.".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn word_attachment_mime_is_case_insensitive() {
+        for name in ["cv.doc", "CV.DOC", "résumé.final.DoC"] {
+            assert_eq!(guess_mime(Path::new(name)), "application/msword", "{name}");
+        }
+        for name in ["cv.docx", "CV.DOCX", "резюме.final.DoCx"] {
+            assert_eq!(guess_mime(Path::new(name)), "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "{name}");
+        }
+    }
+
+    #[test]
+    fn existing_attachment_mime_and_fallback_are_preserved() {
+        for (extension, expected) in [
+            ("pdf", "application/pdf"), ("zip", "application/zip"),
+            ("png", "image/png"), ("jpg", "image/jpeg"), ("jpeg", "image/jpeg"),
+            ("gif", "image/gif"), ("txt", "text/plain"), ("csv", "text/csv"),
+            ("eml", "message/rfc822"), ("unknown", "application/octet-stream"),
+        ] {
+            for suffix in [extension.to_string(), extension.to_uppercase()] {
+                assert_eq!(guess_mime(Path::new(&format!("résumé.final.{suffix}"))), expected);
+            }
+        }
+        for name in ["noextension", ".doc", "cv.docx.bak", "cv."] {
+            assert_eq!(guess_mime(Path::new(name)), "application/octet-stream");
+        }
+    }
+
+    #[test]
+    fn plain_body_headers_footer_and_crlf_are_preserved() {
+        for body in ["", "plain\ntext", "<b>literal</b>\r\nnext", FOOTER] {
+            let intent = MailIntent {
+                to: vec!["one@example.invalid".into(), "two@example.invalid".into()],
+                subject: "Резюме".into(), body: body.into(), attachments: vec![], purpose: None,
+            };
+            let eml = build_eml(&intent).unwrap();
+            assert!(eml.starts_with("To: one@example.invalid, two@example.invalid\r\n"));
+            assert!(eml.contains(&format!("Subject: {}\r\n", encode_header("Резюме"))));
+            assert!(eml.contains("Content-Type: text/plain; charset=utf-8\r\n"));
+            assert!(!eml.contains("Content-Type: text/html"));
+            assert_eq!(eml.matches(FOOTER).count(), 1);
+            assert!(!eml.replace("\r\n", "").contains('\n'));
+            if body.starts_with('<') { assert!(eml.contains("<b>literal</b>\r\nnext")); }
+        }
+    }
+
+    #[test]
+    fn header_encoding_and_filename_slug_are_preserved() {
+        assert_eq!(encode_header("ASCII subject"), "ASCII subject");
+        let encoded = encode_header("Резюме");
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(encoded.strip_prefix("=?UTF-8?B?").unwrap().strip_suffix("?=").unwrap()).unwrap();
+        assert_eq!(decoded, "Резюме".as_bytes());
+        assert_eq!(slugify(" /Apply CV-1_ "), "Apply_CV-1");
+        assert!(chrono::DateTime::parse_from_rfc2822(&rfc2822_date_now()).is_ok());
+    }
 }
