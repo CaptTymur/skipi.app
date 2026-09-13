@@ -4391,17 +4391,29 @@ function mobileSetupPositionDisplayLabel(){
     return positionDisplayLabel(p);
 }
 async function mobileStartVaultWizard(){
+    var s=mobileInitialVaultWizardState();
+    mobileVaultWizardState=s;
     try{
         await loadTaxonomy();
-        mobileVaultWizardState=mobileInitialVaultWizardState();
+        if(mobileVaultWizardState!==s)return;
         renderMobileVaultWizard();
+        // Never let a late login reply replace a newer wizard or the user's input.
+        try{
+            var st=await invoke('app_login_status');
+            if(mobileVaultWizardState!==s||!st||!st.logged_in||!st.email||s.email||s.emailEdited)return;
+            var input=document.getElementById('mobile-setup-email');
+            if(input&&input.value)return;
+            s.email=String(st.email);
+            if(input)input.value=s.email;
+        }catch(loginError){ /* Offline/guest setup remains usable. */ }
     }catch(e){
-        showToast('Could not load setup wizard: '+e,'error');
+        if(mobileVaultWizardState!==s)return;
+        showToast(mobileSetupText('Could not load setup wizard: ','Не удалось открыть мастер: ')+e,'error');
         logError('mobile_setup_load',e);
     }
 }
 function mobileVaultWizardBack(){
-    if(mobileVaultWizardState.step<=1){renderMobileWelcome();return;}
+    if(mobileVaultWizardState.step<=1){mobileVaultWizardState=null;renderMobileWelcome();return;}
     mobileVaultWizardState.step--;
     renderMobileVaultWizard();
 }
@@ -4638,7 +4650,7 @@ function renderMobileVaultWizard(){
         }
     } else if(s.step===7){
         h+='<div class="mobile-card">';
-        h+=mobileSetupInput('mobile-setup-email','Email',s.email,'type="email" autocomplete="email"');
+        h+=mobileSetupInput('mobile-setup-email','Email',s.email,'type="email" autocomplete="email" oninput="mobileVaultWizardState.email=this.value;mobileVaultWizardState.emailEdited=true;"');
         h+=mobileSetupInput('mobile-setup-home_address',ru?'Домашний адрес':'Home address',s.homeAddress,'autocomplete="street-address" placeholder="'+mobileEsc(ru?'Город, страна, адрес':'City, country, address')+'"');
         h+='</div>';
     } else if(s.step===8){
@@ -4887,15 +4899,15 @@ function mobileStats(){
 var documentThumbCache={};
 var documentThumbInFlight={};
 function mobileStatusPill(d){
-    if(!d.file_name&&isActiveRequiredDoc(d))return '<span class="mobile-pill bad">Missing</span>';
-    if(!d.file_name)return '<span class="mobile-pill">No file</span>';
-    if(d.is_permanent)return '<span class="mobile-pill ok">Permanent</span>';
+    if(!d.file_name&&isActiveRequiredDoc(d))return '<span class="mobile-pill bad">'+mobileSetupText('Missing','Недостающий')+'</span>';
+    if(!d.file_name)return '<span class="mobile-pill">'+mobileSetupText('No file','Без файла')+'</span>';
+    if(d.is_permanent)return '<span class="mobile-pill ok">'+mobileSetupText('Permanent','Бессрочный')+'</span>';
     var s=classify(d),dl=days(d);
-    if(s==='expired')return '<span class="mobile-pill bad">Expired</span>';
-    if(s==='critical')return '<span class="mobile-pill warn">&lt;30 days</span>';
-    if(s==='warning')return '<span class="mobile-pill warn">&lt;90 days</span>';
-    if(s==='valid')return '<span class="mobile-pill ok">Valid</span>';
-    return '<span class="mobile-pill">No expiry</span>';
+    if(s==='expired')return '<span class="mobile-pill bad">'+mobileSetupText('Expired','Просрочен')+'</span>';
+    if(s==='critical')return '<span class="mobile-pill warn">'+mobileSetupText('&lt;30 days','&lt;30 дней')+'</span>';
+    if(s==='warning')return '<span class="mobile-pill warn">'+mobileSetupText('&lt;90 days','&lt;90 дней')+'</span>';
+    if(s==='valid')return '<span class="mobile-pill ok">'+mobileSetupText('Valid','Действителен')+'</span>';
+    return '<span class="mobile-pill">'+mobileSetupText('No expiry','Без срока')+'</span>';
 }
 function mobileFileKind(fileName){
     var ext=String(fileName||'').split('.').pop().toLowerCase();
@@ -6060,7 +6072,7 @@ function mobileHideJob(vacancyId){
     mobileRenderJobsFeed(lastJobsItems||[]);
 }
 function mobileWorkPeriod(e){
-    return (e.sign_on||'?')+' -> '+(e.sign_off||'present');
+    return (e.sign_on||'?')+' -> '+(e.sign_off||mobileSetupText('present','по настоящее время'));
 }
 function mobileWorkDuration(e){
     var months=monthsBetween(e.sign_on,e.sign_off);
@@ -6068,9 +6080,9 @@ function mobileWorkDuration(e){
     if(!months)return '';
     var years=Math.floor(months/12);
     var rest=months%12;
-    if(years&&rest)return years+'y '+rest+'m';
-    if(years)return years+'y';
-    return months+'m';
+    if(years&&rest)return years+mobileSetupText('y ',' г. ')+rest+mobileSetupText('m',' мес.');
+    if(years)return years+mobileSetupText('y',' г.');
+    return months+mobileSetupText('m',' мес.');
 }
 function mobileWorkEntryCard(e){
     var imo=normalizeImo(e.imo);
@@ -6080,8 +6092,8 @@ function mobileWorkEntryCard(e){
     var h='<div class="mobile-card">';
     h+='<div class="mobile-row" style="align-items:flex-start;">';
     h+='<div style="min-width:0;flex:1;">';
-    h+='<div class="mobile-card-title">'+mobileEsc(e.vessel_name||'Vessel')+'</div>';
-    h+='<div class="mobile-card-sub">'+mobileEsc([e.position,e.vessel_type,e.flag].filter(Boolean).join(' · ')||'Sea service entry')+'</div>';
+    h+='<div class="mobile-card-title">'+mobileEsc(e.vessel_name||mobileSetupText('Vessel','Судно'))+'</div>';
+    h+='<div class="mobile-card-sub">'+mobileEsc([e.position,e.vessel_type,e.flag].filter(Boolean).join(' · ')||mobileSetupText('Sea service entry','Запись о стаже'))+'</div>';
     if(e.company)h+='<div class="mobile-card-sub">'+mobileEsc(e.company)+'</div>';
     h+='</div>';
     if(duration)h+='<span class="mobile-pill ok">'+mobileEsc(duration)+'</span>';
@@ -6091,13 +6103,13 @@ function mobileWorkEntryCard(e){
     if(cap)h+='<div class="mobile-card-sub">'+mobileEsc(cap)+'</div>';
     if(e.notes)h+='<div class="mobile-card-sub">'+mobileEsc(e.notes)+'</div>';
     if(hasReview){
-        h+='<div class="mobile-card-sub" style="color:var(--green);font-weight:800;">'+mobileEsc(localReviewStars(e.local_review.overall_rating)+' Your assessment '+localReviewRatingText(e.local_review.overall_rating))+'</div>';
+        h+='<div class="mobile-card-sub" style="color:var(--green);font-weight:800;">'+mobileEsc(localReviewStars(e.local_review.overall_rating)+mobileSetupText(' Your assessment ',' Ваша оценка ')+localReviewRatingText(e.local_review.overall_rating))+'</div>';
     }
     h+='<div class="mobile-actions" style="margin-top:11px;">';
     h+='<button class="btn btn-outline mobile-grow" type="button" onclick="mobileShowExperienceForm(\''+jsString(e.id)+'\')">'+(getUiLang()==='ru'?'✎ Редактировать':'✎ Edit')+'</button>';
     if(imo){
-        h+='<button class="btn btn-outline mobile-grow" type="button" onclick="mobileOpenVesselFromExperience(\''+jsString(e.id)+'\',\''+jsString(imo)+'\',\''+jsString(e.vessel_name||'')+'\')">Vessel DB</button>';
-        h+='<button class="btn btn-accent mobile-grow" type="button" onclick="mobileStartAssessment(\''+jsString(e.id)+'\')">'+(hasReview?'View / update':'Assess')+'</button>';
+        h+='<button class="btn btn-outline mobile-grow" type="button" onclick="mobileOpenVesselFromExperience(\''+jsString(e.id)+'\',\''+jsString(imo)+'\',\''+jsString(e.vessel_name||'')+'\')">'+mobileSetupText('Vessel DB','База судов')+'</button>';
+        h+='<button class="btn btn-accent mobile-grow" type="button" onclick="mobileStartAssessment(\''+jsString(e.id)+'\')">'+(hasReview?mobileSetupText('View / update','Просмотр / правка'):mobileSetupText('Assess','Оценить'))+'</button>';
     }
     h+='</div>';
     return h+'</div>';
@@ -6352,39 +6364,38 @@ async function mobileSaveExperience(entryId){
             mobileExperienceWizardState=null;
             var autoAssess=mobileShouldAutoAssess(payload);
             var ruSave=getUiLang()==='ru';
-            // «Assess» is the literal label of the button on the card (mobileWorkEntryCard), which
-            // is not translated — so the Russian toast names it in Latin on purpose.
+            // The toast names the same localized action as the experience card.
             showToast(autoAssess
                 ?(ruSave?'Опыт сохранён. Теперь оцените судно.':'Sea Service saved. Now assess the vessel.')
-                :(ruSave?'Опыт сохранён. Нажмите «Assess» на карточке, когда захотите оценить судно.':'Sea Service saved. Tap «Assess» on the card when you want to rate the vessel.'),'success');
+                :(ruSave?'Опыт сохранён. Нажмите «Оценить» на карточке, когда захотите оценить судно.':'Sea Service saved. Tap «Assess» on the card when you want to rate the vessel.'),'success');
             await renderMobileExperience();
             if(newId&&autoAssess)setTimeout(function(){mobileStartAssessment(newId);},250);
         }
     }catch(e){
         if(mobileExperienceWizardState){mobileExperienceWizardState.saving=false;mobileRenderExperienceWizard();}
-        showToast('Could not save Sea Service: '+e,'error');
+        showToast(mobileSetupText('Could not save Sea Service: ','Не удалось сохранить стаж: ')+e,'error');
         logError('mobile_save_experience',e);
     }
 }
 async function renderMobileExperience(){
-    mobileMainHtml('<div class="mobile-card"><div class="mobile-card-title">Experience</div><div class="mobile-card-sub">Loading sea service...</div></div>');
+    mobileMainHtml('<div class="mobile-card"><div class="mobile-card-title">'+mobileSetupText('Experience','Опыт')+'</div><div class="mobile-card-sub">'+mobileSetupText('Loading sea service...','Загрузка стажа...')+'</div></div>');
     try{
         var entries=sortWorkEntries(await invoke('get_work_history'));
         if(mobileView!=='experience')return;
         var withImo=entries.filter(function(e){return !!normalizeImo(e&&e.imo);}).length;
         var reviewed=entries.filter(vesselReviewHasLocal).length;
-        var h='<div class="mobile-card"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title">Experience</div><div class="mobile-card-sub">Sea service, vessels, contracts and onboard experience.</div></div><span class="mobile-action-icon" style="width:38px;height:38px;font-size:18px;">&#9873;</span></div></div>';
-        h+='<button class="mobile-primary-action" type="button" onclick="mobileShowExperienceForm(\'\')"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">Add sea service</span><span class="mobile-action-sub">Enter vessel, IMO, rank and dates. Then assess the vessel.</span></span></button>';
-        h+='<div class="mobile-stats"><div class="mobile-stat"><strong>'+entries.length+'</strong><span>Records</span></div><div class="mobile-stat"><strong>'+withImo+'</strong><span>With IMO</span></div><div class="mobile-stat"><strong>'+reviewed+'</strong><span>Assessed</span></div></div>';
+        var h='<div class="mobile-card"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title">'+mobileSetupText('Experience','Опыт')+'</div><div class="mobile-card-sub">'+mobileSetupText('Sea service, vessels, contracts and onboard experience.','Стаж, суда, контракты и опыт на борту.')+'</div></div><span class="mobile-action-icon" style="width:38px;height:38px;font-size:18px;">&#9873;</span></div></div>';
+        h+='<button class="mobile-primary-action" type="button" onclick="mobileShowExperienceForm(\'\')"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileSetupText('Add sea service','Добавить стаж')+'</span><span class="mobile-action-sub">'+mobileSetupText('Enter vessel, IMO, rank and dates. Then assess the vessel.','Укажите судно, IMO, должность и даты. Затем оцените судно.')+'</span></span></button>';
+        h+='<div class="mobile-stats"><div class="mobile-stat"><strong>'+entries.length+'</strong><span>'+mobileSetupText('Records','Записи')+'</span></div><div class="mobile-stat"><strong>'+withImo+'</strong><span>'+mobileSetupText('With IMO','С IMO')+'</span></div><div class="mobile-stat"><strong>'+reviewed+'</strong><span>'+mobileSetupText('Assessed','Оценено')+'</span></div></div>';
         if(!entries.length){
-            h+='<div class="mobile-card"><div class="mobile-card-title">No sea service yet</div><div class="mobile-card-sub">Start with your latest contract. The IMO number links your experience to the vessel database.</div></div>';
+            h+='<div class="mobile-card"><div class="mobile-card-title">'+mobileSetupText('No sea service yet','Пока нет стажа')+'</div><div class="mobile-card-sub">'+mobileSetupText('Start with your latest contract. The IMO number links your experience to the vessel database.','Начните с последнего контракта. IMO связывает ваш стаж с базой судов.')+'</div></div>';
         }else{
             entries.forEach(function(e){h+=mobileWorkEntryCard(e);});
         }
         mobileMainHtml(h);
     }catch(e){
         if(mobileView==='experience'){
-            mobileMainHtml('<div class="mobile-card"><div class="mobile-card-title">Experience</div><div class="mobile-card-sub">Could not load sea service.</div></div>');
+            mobileMainHtml('<div class="mobile-card"><div class="mobile-card-title">'+mobileSetupText('Experience','Опыт')+'</div><div class="mobile-card-sub">'+mobileSetupText('Could not load sea service.','Не удалось загрузить стаж.')+'</div></div>');
         }
         logError('mobile_experience_render',e);
     }
@@ -6411,11 +6422,11 @@ async function mobileStartAssessment(entryId){
     try{
         var entries=await invoke('get_work_history')||[];
         var entry=mobileWorkEntryById(entries,entryId);
-        if(!entry){showToast('Sea Service entry not found','warn');return;}
+        if(!entry){showToast(mobileSetupText('Sea Service entry not found','Запись о стаже не найдена'),'warn');return;}
         var imo=normalizeImo(entry.imo);
-        if(!imo){showToast('Assessment needs a valid IMO number','warn');return;}
+        if(!imo){showToast(mobileSetupText('Assessment needs a valid IMO number','Для оценки нужен правильный IMO'),'warn');return;}
         if(localReviewLocked(entry.local_review)){
-            showToast('This assessment is locked until '+formatLocalReviewDate(entry.local_review.lock_until),'warn');
+            showToast(mobileSetupText('This assessment is locked until ','Эта оценка заблокирована до ')+formatLocalReviewDate(entry.local_review.lock_until),'warn');
         }
         mobileView='experience';
         mobileAssessmentState={
@@ -6426,7 +6437,7 @@ async function mobileStartAssessment(entryId){
         };
         mobileRenderAssessment();
     }catch(e){
-        showToast('Could not open assessment: '+e,'error');
+        showToast(mobileSetupText('Could not open assessment: ','Не удалось открыть оценку: ')+e,'error');
         logError('mobile_start_assessment',e);
     }
 }
@@ -7293,20 +7304,20 @@ function mobileDocsBodyHtml(){
     var uploaded=allDocs.filter(function(d){return !!d.file_name;}).length;
     var expiring=mobileFilteredDocs('expiring').length;
     var h='<div class="mobile-filter-row">'
-        +mobileFilterChip('all','All',allDocs.length)
-        +mobileFilterChip('missing','Missing',missing)
-        +mobileFilterChip('nofile','No file',nofile)
-        +mobileFilterChip('expiring','Expiring',expiring)
-        +mobileFilterChip('uploaded','Uploaded',uploaded)
+        +mobileFilterChip('all',mobileSetupText('All','Все'),allDocs.length)
+        +mobileFilterChip('missing',mobileSetupText('Missing','Недостающие'),missing)
+        +mobileFilterChip('nofile',mobileSetupText('No file','Без файла'),nofile)
+        +mobileFilterChip('expiring',mobileSetupText('Expiring','Истекающие'),expiring)
+        +mobileFilterChip('uploaded',mobileSetupText('Uploaded','Загруженные'),uploaded)
         +'</div>';
     var docs=mobileFilteredDocs(mobileDocsFilter);
-    h+='<div class="mobile-section-title">Documents</div>';
-    if(!docs.length)h+='<div class="mobile-card">No documents in this vault.</div>';
+    h+='<div class="mobile-section-title">'+mobileSetupText('Documents','Документы')+'</div>';
+    if(!docs.length)h+='<div class="mobile-card">'+(allDocs.length?mobileSetupText('No documents match this filter or search.','Нет документов по этому фильтру или запросу.'):mobileSetupText('No documents in this vault.','Нет документов в этом сейфе.'))+'</div>';
     docs.forEach(function(d){h+=mobileDocRow(d);});
     return h;
 }
 function renderMobileDocs(){
-    var h='<input class="mobile-search" type="search" placeholder="Search documents" value="'+mobileEsc(mobileDocsSearch)+'" oninput="mobileSetDocsSearch(this.value)">';
+    var h='<input class="mobile-search" type="search" placeholder="'+mobileSetupText('Search documents','Поиск документов')+'" value="'+mobileEsc(mobileDocsSearch)+'" oninput="mobileSetDocsSearch(this.value)">';
     h+='<div id="mobile-docs-body">'+mobileDocsBodyHtml()+'</div>';
     mobileMainHtml(h);
     setTimeout(function(){hydrateDocumentThumbnails(document.getElementById('mobile-main'));},0);
@@ -7418,15 +7429,54 @@ function renderMobileAdd(){
     }
     mobileMainHtml(h);
 }
+var mobileProfileMissingExpanded=false;
+var mobileProfileSummary=null;
+var mobileProfileSummaryError=false;
+var mobileProfileSummaryRequest=0;
+function mobileToggleProfileMissing(){
+    mobileProfileMissingExpanded=!mobileProfileMissingExpanded;
+    mobileRenderProfileMissing();
+}
+function mobileRenderProfileMissing(){
+    var host=document.getElementById('mobile-profile-missing');
+    var button=document.getElementById('mobile-profile-completeness-card');
+    if(button)button.setAttribute('aria-expanded',String(mobileProfileMissingExpanded));
+    if(!host)return;
+    host.hidden=!mobileProfileMissingExpanded;
+    if(!mobileProfileMissingExpanded){host.innerHTML='';return;}
+    var p=mobileProfileSummary;
+    var h='<div class="mobile-card-sub">'+mobileSetupText('Only required documents are listed here. Other profile fields are available on desktop.','Здесь показаны только обязательные документы. Остальные поля профиля доступны на десктопе.')+'</div>';
+    if(mobileProfileSummaryError){
+        h+='<p>'+mobileSetupText('Could not load profile status.','Не удалось загрузить статус профиля.')+'</p>';
+    }else if(!p){
+        h+='<p>'+mobileSetupText('Loading profile status...','Загрузка статуса профиля...')+'</p>';
+    }else if(!Array.isArray(p.required)||!p.required.length){
+        h+='<p>'+mobileSetupText('Set your rank and vessel type in the profile.','Задайте должность и тип судна в профиле.')+'</p>';
+    }else{
+        var ids=Array.isArray(p.missing_ids)?p.missing_ids:[];
+        var missing=p.required.filter(function(d){return d.has===false||ids.indexOf(d.id)>=0;});
+        if(!missing.length)h+='<p>'+mobileSetupText('All required documents are recorded in the profile.','Все обязательные документы отмечены в профиле.')+'</p>';
+        else{
+            h+='<ul style="margin:12px 0;padding-left:20px;">';
+            missing.forEach(function(d){h+='<li>'+mobileEsc(d.title||d.id)+'</li>';});
+            h+='</ul><div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-accent mobile-grow" type="button" onclick="mobileShow(\'add\')">'+mobileSetupText('Add document','Добавить документ')+'</button></div>';
+        }
+    }
+    h+='<div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-outline" type="button" onclick="openSettings(\'seafarer\')">'+mobileSetupText('Profile','Профиль')+'</button><button class="btn btn-outline" type="button" onclick="mobileShow(\'docs\')">'+mobileSetupText('Documents','Документы')+'</button></div>';
+    host.innerHTML=h;
+}
 function renderMobileProfile(){
     var st=mobileStats();
-    var pct=st.total?Math.round((st.uploaded/st.total)*100):0;
+    var pct='…';
+    mobileProfileSummary=null;
+    mobileProfileSummaryError=false;
+    mobileProfileMissingExpanded=false;
     var h='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(mobileVaultLabel())+'</div><div class="mobile-card-sub">Local-first seafarer vault on this device.</div></div>';
     if(mobilePostCreateVaultHint){
         h+='<div class="mobile-card"><div class="mobile-card-title">Vault created</div><div class="mobile-card-sub">To open this profile on desktop, export a ZIP backup and import it in Skipi desktop from Settings -> Vaults -> Import vault backup.</div><div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-accent mobile-grow" type="button" onclick="mobileExportVaultBackup(true)">Share to desktop</button><button class="btn btn-outline mobile-grow" type="button" onclick="mobilePostCreateVaultHint=false;mobileShow(\'docs\')">Continue</button></div></div>';
     }
     h+='<div class="mobile-stats"><div class="mobile-stat"><strong>'+st.total+'</strong><span>Total</span></div><div class="mobile-stat"><strong>'+st.uploaded+'</strong><span>Files</span></div><div class="mobile-stat"><strong>'+st.missing+'</strong><span>Missing</span></div></div>';
-    h+='<div class="mobile-card"><div class="mobile-row"><div><div class="mobile-card-title">Profile completeness</div><div class="mobile-card-sub">Required profile documents and details.</div></div><span class="mobile-pill ok" id="mobile-profile-card-pct">'+pct+'%</span></div></div>';
+    h+='<button class="mobile-card" id="mobile-profile-completeness-card" type="button" onclick="mobileToggleProfileMissing()" aria-expanded="false" aria-controls="mobile-profile-missing" style="width:100%;text-align:left;color:inherit;"><span class="mobile-row"><span><span class="mobile-card-title" style="display:block;">'+mobileSetupText('Profile completeness','Полнота профиля')+'</span><span class="mobile-card-sub" style="display:block;">'+mobileSetupText('Show missing required documents','Показать недостающие обязательные документы')+'</span></span><span class="mobile-pill ok" id="mobile-profile-card-pct">'+pct+'</span></span></button><div class="mobile-card" id="mobile-profile-missing" hidden></div>';
     h+='<div id="mobile-identity-trust"></div>';
     if(trustContributionEnabled()){
         h+='<button class="mobile-primary-action" type="button" data-qa="my-contribution-mobile-entry" onclick="mobileShow(\'contribution\')"><span class="mobile-action-icon">&#10003;</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(getUiLang()==='ru'?'Мой вклад':'My contribution')+'</span><span class="mobile-action-sub">'+mobileEsc(getUiLang()==='ru'?'Приватный прогресс по подтверждённым событиям.':'Private progress from confirmed events.')+'</span></span></button>';
@@ -7438,15 +7488,26 @@ function renderMobileProfile(){
     mobileRefreshIdentityTrust();
 }
 async function mobileRefreshProfileSummary(){
+    var request=++mobileProfileSummaryRequest;
+    var host=document.getElementById('mobile-profile-missing');
     try{
         var profile=await invoke('get_profile_status');
+        if(request!==mobileProfileSummaryRequest||document.getElementById('mobile-profile-missing')!==host)return;
+        mobileProfileSummary=profile;
+        mobileProfileSummaryError=false;
         if(profile&&isFinite(Number(profile.completeness_pct))){
             var pct=Math.max(0,Math.min(100,Math.round(Number(profile.completeness_pct))));
             var el=document.getElementById('mobile-profile-card-pct');
             if(el)el.textContent=pct+'%';
             mobileSetProfileMeterPct(pct);
         }
-    }catch(e){}
+        mobileRenderProfileMissing();
+    }catch(e){
+        if(request!==mobileProfileSummaryRequest||document.getElementById('mobile-profile-missing')!==host)return;
+        mobileProfileSummary=null;
+        mobileProfileSummaryError=true;
+        mobileRenderProfileMissing();
+    }
 }
 function identityTrustBadgeHtml(status){
     if(status==='possible_duplicate')return '<span class="mobile-pill warn">Possible duplicate</span>';
@@ -7960,7 +8021,7 @@ async function mobileSavePdfBuilder(){
     }
 }
 async function mobileReloadDocs(){
-    try{allDocs=await invoke('get_documents');}catch(e){showToast('Could not reload documents: '+e,'error');}
+    try{allDocs=await invoke('get_documents');}catch(e){showToast(mobileSetupText('Could not reload documents: ','Не удалось обновить документы: ')+e,'error');}
     try{renderTree();}catch(e){}
     try{updateStatus();}catch(e){}
 }
@@ -10249,13 +10310,13 @@ function renderDeveloperGroupInviteCard(state){
     h+='<div style="display:flex;justify-content:space-between;gap:14px;align-items:flex-start;">';
     h+='<div style="min-width:0;">';
     h+='<div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);font-weight:800;margin-bottom:5px;">Skipi builders</div>';
-    h+='<div style="font-size:16px;font-weight:700;margin-bottom:5px;">Доступна группа разработчиков Скипи Моряк</div>';
-    h+='<div style="font-size:12px;color:var(--text2);line-height:1.45;">Вы заполнили профиль на '+pct+'% и добавили Sea Service ('+workCount+'). Можно вступить в Telegram-группу, где активные моряки помогают формировать развитие Скипи Моряк.</div>';
-    h+='<div style="font-size:11px;color:var(--text2);margin-top:7px;">Проверка выполняется локально. Ваш профиль не отправляется в Telegram или на сервер Скипи Моряк.</div>';
+    h+='<div style="font-size:16px;font-weight:700;margin-bottom:5px;">'+mobileSetupText('Skipi Seafarer builders group is open','Доступна группа разработчиков Скипи Моряк')+'</div>';
+    h+='<div style="font-size:12px;color:var(--text2);line-height:1.45;">'+mobileEsc(mobileSetupText('You have filled your profile to '+pct+'% and added sea service ('+workCount+'). Join the Telegram group where active seafarers help shape Skipi Seafarer.','Вы заполнили профиль на '+pct+'% и добавили стаж ('+workCount+'). Можно вступить в Telegram-группу, где активные моряки помогают формировать развитие Скипи Моряк.'))+'</div>';
+    h+='<div style="font-size:11px;color:var(--text2);margin-top:7px;">'+mobileSetupText('Eligibility is checked locally. Your profile is not sent to Telegram or the Skipi Seafarer server.','Проверка выполняется локально. Ваш профиль не отправляется в Telegram или на сервер Скипи Моряк.')+'</div>';
     h+='</div>';
     h+='<div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;flex:0 0 auto;">';
-    h+='<button class="btn btn-accent btn-sm" onclick="openDeveloperGroupInvite()">Вступить в Telegram</button>';
-    h+='<button class="btn btn-outline btn-sm" onclick="copyDeveloperGroupInvite()">Copy link</button>';
+    h+='<button class="btn btn-accent btn-sm" onclick="openDeveloperGroupInvite()">'+mobileSetupText('Join Telegram','Вступить в Telegram')+'</button>';
+    h+='<button class="btn btn-outline btn-sm" onclick="copyDeveloperGroupInvite()">'+mobileSetupText('Copy link','Копировать ссылку')+'</button>';
     h+='</div></div></div>';
     return h;
 }
@@ -10287,7 +10348,7 @@ async function copyDeveloperGroupInvite(){
     try{
         if(navigator.clipboard&&navigator.clipboard.writeText){
             await navigator.clipboard.writeText(DEVELOPER_GROUP_INVITE_URL);
-            showToast('Invite link copied','success');
+            showToast(mobileSetupText('Invite link copied','Ссылка-приглашение скопирована'),'success');
             return;
         }
     }catch(e){}
@@ -10300,13 +10361,13 @@ function showDeveloperGroupInviteNotice(state){
     var h='<div id="developer-group-invite-overlay" class="modal-overlay open" onclick="if(event.target===this)dismissDeveloperGroupInvite();">';
     h+='<div class="modal-panel" style="width:min(560px,92vw);">';
     h+='<div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);font-weight:800;margin-bottom:6px;">Skipi builders</div>';
-    h+='<h3 style="margin:0 0 8px;font-size:18px;">Доступна группа разработчиков Скипи Моряк</h3>';
-    h+='<p style="font-size:13px;color:var(--text2);line-height:1.5;margin:0 0 10px;">Вы заполнили профиль моряка минимум на '+DEVELOPER_GROUP_INVITE_MIN_PCT+'% и добавили свой Sea Service. Это значит, что вы уже проверяете Скипи Моряк как реальный рабочий инструмент.</p>';
-    h+='<p style="font-size:13px;color:var(--text2);line-height:1.5;margin:0 0 12px;">Можно вступить в Telegram-группу, где мы обсуждаем разработку с активными пользователями: что ломается, чего не хватает, какие workflow важны морякам.</p>';
-    h+='<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:12px;color:var(--text2);line-height:1.45;margin-bottom:14px;">Проверка выполнена локально: профиль '+(state.pct||0)+'%, Sea Service записей: '+(state.work_count||0)+'. Ваши документы и профиль не отправляются.</div>';
+    h+='<h3 style="margin:0 0 8px;font-size:18px;">'+mobileSetupText('Skipi Seafarer builders group is open','Доступна группа разработчиков Скипи Моряк')+'</h3>';
+    h+='<p style="font-size:13px;color:var(--text2);line-height:1.5;margin:0 0 10px;">'+mobileEsc(mobileSetupText('You have filled your seafarer profile to at least '+DEVELOPER_GROUP_INVITE_MIN_PCT+'% and added sea service. You are already trying Skipi Seafarer as a working tool.','Вы заполнили профиль моряка минимум на '+DEVELOPER_GROUP_INVITE_MIN_PCT+'% и добавили свой стаж. Это значит, что вы уже проверяете Скипи Моряк как реальный рабочий инструмент.'))+'</p>';
+    h+='<p style="font-size:13px;color:var(--text2);line-height:1.5;margin:0 0 12px;">'+mobileSetupText('Join our Telegram group to discuss development with active users: what breaks, what is missing, and which tasks matter to seafarers.','Можно вступить в Telegram-группу, где мы обсуждаем разработку с активными пользователями: что ломается, чего не хватает, какие задачи важны морякам.')+'</p>';
+    h+='<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:12px;color:var(--text2);line-height:1.45;margin-bottom:14px;">'+mobileEsc(mobileSetupText('Checked locally: profile '+(state.pct||0)+'%, sea service records: '+(state.work_count||0)+'. Your documents and profile are not sent.','Проверка выполнена локально: профиль '+(state.pct||0)+'%, записей о стаже: '+(state.work_count||0)+'. Ваши документы и профиль не отправляются.'))+'</div>';
     h+='<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">';
-    h+='<button class="btn btn-outline btn-sm" onclick="dismissDeveloperGroupInvite()">Позже</button>';
-    h+='<button class="btn btn-accent btn-sm" onclick="openDeveloperGroupInvite()">Вступить в Telegram</button>';
+    h+='<button class="btn btn-outline btn-sm" onclick="dismissDeveloperGroupInvite()">'+mobileSetupText('Later','Позже')+'</button>';
+    h+='<button class="btn btn-accent btn-sm" onclick="openDeveloperGroupInvite()">'+mobileSetupText('Join Telegram','Вступить в Telegram')+'</button>';
     h+='</div></div></div>';
     document.body.insertAdjacentHTML('beforeend',h);
 }
