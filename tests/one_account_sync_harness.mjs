@@ -51,3 +51,49 @@ ctx.oneAccountSyncInstall();
 await ctx.invoke('clear_profile_photo',{});
 assert.equal(calls.at(-1)[1].expectedRevision,11,'native photo keeps the complete local profile fingerprint');
 console.log('SaaS/native photo revision isolation PASS');
+
+// Exercise the actual unified Settings post-mount callback, not a direct sync render.
+const scheduleCode=html.slice(html.indexOf('    var _spEmbedTimer = null;'),html.indexOf('    function seafarerSection(){'));
+assert.ok(scheduleCode.includes('function scheduleSeafarerFormLoad()'));
+function mountedSyncSettings(){
+    const scheduled=[];const requests=[];let loads=0;let shown=true;
+    function panel(){return {isConnected:true,buttons:[],children:[],style:{},appendChild(child){this.children.push(child);},html:'',set innerHTML(value){this.html=value;this.children=[];this.buttons=value.includes('data-sync-action="enable"')?[{getAttribute:()=> 'enable'}]:[];},get innerHTML(){return this.html;},querySelectorAll(){return this.buttons;}};}
+    const active=panel(),competing=panel();let livePanel=active;
+    const root={isConnected:true,querySelector:s=>s==='#sp-photo-box'?{}:s==='#one-account-sync'?livePanel:null};let currentRoot=root;
+    const legacy={innerHTML:'<input id="sp-old">'};
+    const overlay={classList:{contains:()=>shown}};
+    const doc={addEventListener:()=>{},createElement:()=>panel(),getElementById:id=>({'settings-root':currentRoot,'skipi-settings-overlay':overlay,'settings-body':legacy,'settings-overlay':{classList:{contains:()=>false}},'one-account-sync':competing}[id]||null)};
+    const sandbox={document:doc,window:{addEventListener:()=>{}},console,Promise,setTimeout:f=>{scheduled.push(f);return scheduled.length;},clearTimeout:()=>{},spLoad:()=>{loads++;},logError:()=>{},invoke:name=>new Promise((resolve,reject)=>{requests.push({name,resolve,reject});})};
+    vm.createContext(sandbox);vm.runInContext(code,sandbox);vm.runInContext(scheduleCode,sandbox);
+    return {sandbox,active,competing,root,legacy,requests,scheduled,loads:()=>loads,close:()=>{shown=false;},replace:()=>{livePanel=panel();return livePanel;},replaceRoot:()=>{currentRoot={isConnected:true,querySelector:root.querySelector};}};
+}
+const flush=()=>new Promise(resolve=>setImmediate(resolve));
+async function mountSync(){const s=mountedSyncSettings();s.sandbox.scheduleSeafarerFormLoad();s.scheduled.shift()();await flush();assert.equal(s.loads(),1,'actual callback still loads profile');assert.equal(s.legacy.innerHTML,'','stale legacy form still cleared');assert.equal(s.requests.length,1,'actual unified post-mount callback requests sync status');assert.equal(s.requests[0].name,'get_account_sync_status');return s;}
+let mounted=await mountSync();
+mounted.requests[0].resolve({enabled:false,state:'disabled',account_email:'synthetic@example.invalid',conflicts:[]});await flush();
+assert.equal(mounted.active.buttons.length,1,'actual callback/status response renders Enable in mounted unified panel');
+assert.ok(mounted.active.html.includes('Enable account sync'));
+assert.equal(mounted.competing.innerHTML,'','competing mobile/legacy copy never receives unified status');
+assert.equal(mounted.requests.length,1,'mount never enables synchronization automatically');
+for(const change of ['close','replace','replaceRoot']){
+    const s=await mountSync();s[change]();s.requests[0].resolve({enabled:false,state:'disabled',conflicts:[]});await flush();assert.equal(s.active.innerHTML,'',`${change}: delayed response cannot fill old panel`);assert.equal(s.competing.innerHTML,'');
+}
+mounted=await mountSync();mounted.root.isConnected=false;mounted.requests[0].reject(new Error('late closed error'));await flush();assert.equal(mounted.active.innerHTML,'','detached panel does not receive late error');
+mounted=await mountSync();mounted.requests[0].reject(new Error('synthetic status unavailable'));await flush();assert.ok(mounted.active.html.includes('synthetic status unavailable'),'live panel shows status failure');
+mounted=await mountSync();mounted.sandbox.scheduleSeafarerFormLoad();mounted.scheduled.shift()();await flush();mounted.requests[0].resolve({enabled:false,state:'disabled',account_email:'stale',conflicts:[]});await flush();assert.equal(mounted.active.innerHTML,'','superseded request cannot overwrite current request');mounted.requests[1].resolve({enabled:false,state:'disabled',account_email:'fresh',conflicts:[]});await flush();assert.ok(mounted.active.html.includes('fresh'));
+console.log('unified Settings actual post-mount sync control and stale-response isolation PASS');
+
+// Subsequent sync updates prefer the open unified panel over an earlier hidden copy.
+mounted.sandbox.oneAccountSyncRender({enabled:true,state:'current',conflicts:[]});
+assert.ok(mounted.active.html.includes('documents are synchronized'));assert.equal(mounted.competing.innerHTML,'');
+for(const language of ['en','ru']){
+    const s=await mountSync();s.sandbox.getUiLang=()=>language;
+    s.requests[0].resolve({enabled:false,state:'disabled',conflicts:[]});await flush();
+    assert.ok(s.active.html.includes(language==='ru'?'Включить синхронизацию':'Enable account sync'));
+    s.sandbox.oneAccountSyncRender({enabled:true,state:'conflict',conflicts:[{kind:'profile',id:'main',local:{name:'local'},remote:{name:'remote'},revision:1}]},s.active);
+    const row=s.active.children[0];assert.equal(row.children[2].textContent,language==='ru'?'Оставить версию устройства':'Keep this device version');assert.equal(row.children[3].textContent,language==='ru'?'Использовать версию аккаунта':'Use account version');assert.ok(row.children[1].textContent.startsWith(language==='ru'?'На устройстве: ':'This device: '));
+    s.sandbox.oneAccountSyncRender({state:'error',error:'raw server error <retry>',conflicts:[]},s.active);assert.ok(s.active.html.includes(language==='ru'?'Синхронизация требует внимания':'Sync needs attention'));assert.ok(s.active.html.includes('raw server error &lt;retry&gt;'));
+    let consent;s.sandbox.confirm=message=>{consent=message;return false;};await s.sandbox.oneAccountSyncEnable();assert.ok(consent.startsWith(language==='ru'?'Синхронизировать профиль':'Sync this signed-in'));assert.equal(s.requests.length,1,'declined real consent never enables sync');
+}
+mounted=mountedSyncSettings();mounted.root.querySelector=()=>null;mounted.sandbox.scheduleSeafarerFormLoad();let ticks=0;while(mounted.scheduled.length){mounted.scheduled.shift()();assert.ok(++ticks<=42,'post-mount polling stays bounded');}assert.equal(mounted.requests.length,0,'unmounted form never requests sync');
+console.log('sync control RU/EN, explicit consent, errors and bounded mount wait PASS');

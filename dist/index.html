@@ -1782,18 +1782,24 @@ function oneAccountMutation(command,args){
     return null;
 }
 
-function oneAccountSyncRender(status){
+function oneAccountSyncTexts(){
+    var ru=typeof getUiLang==='function'&&getUiLang()==='ru';
+    return ru?{title:'Синхронизация аккаунта',enable:'Включить синхронизацию',retry:'Синхронизировать сейчас',disable:'Выключить',local:'Оставить версию устройства',remote:'Использовать версию аккаунта',device:'На устройстве: ',account:'В аккаунте: ',consent:'Синхронизировать профиль, фото, морской стаж и все прикреплённые документы и сканы этого аккаунта с устройством? Перед заменой данных будут показаны существующие различия.',messages:{disabled:'Синхронизация выключена',pending:'Изменения ожидают синхронизации',syncing:'Синхронизация…',current:'Профиль, морской стаж и документы синхронизированы',conflict:'Выберите, какие изменения сохранить',error:'Синхронизация требует внимания'}}
+        :{title:'Account sync',enable:'Enable account sync',retry:'Sync now',disable:'Turn off',local:'Keep this device version',remote:'Use account version',device:'This device: ',account:'Account: ',consent:'Sync this signed-in account’s profile, photo, sea service and all attached documents/scans with this device? Existing differences will be shown before either version is replaced.',messages:{disabled:'Sync is off',pending:'Changes are waiting to sync',syncing:'Synchronizing…',current:'Profile, sea service and documents are synchronized',conflict:'Choose which changes to keep',error:'Sync needs attention'}};
+}
+function oneAccountSyncRender(status,target){
     oneAccountSyncLast=status;
-    var el=document.getElementById('one-account-sync');if(!el)return;
+    var root=document.getElementById('settings-root'),overlay=document.getElementById('skipi-settings-overlay');
+    var el=target||(overlay&&overlay.classList.contains('open')&&root&&root.querySelector('#one-account-sync'))||document.getElementById('one-account-sync');if(!el)return;
     var esc=function(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});};
     var account=status.account_email||status.account_id||'';
-    var messages={disabled:'Sync is off',pending:'Changes are waiting to sync',syncing:'Synchronizing…',current:'Profile, sea service and documents are synchronized',conflict:'Choose which changes to keep',error:'Sync needs attention'};
-    el.innerHTML='<strong>Account sync</strong><div>'+esc(account)+'</div><div>'+esc(messages[status.state]||status.state)+'</div>'+(status.error?'<div>'+esc(status.error)+'</div>':'')+(status.enabled?'<button type="button" data-sync-action="retry">Sync now</button> <button type="button" data-sync-action="disable">Turn off</button>':'<button type="button" data-sync-action="enable">Enable account sync</button>');
+    var t=oneAccountSyncTexts();
+    el.innerHTML='<strong>'+esc(t.title)+'</strong><div>'+esc(account)+'</div><div>'+esc(t.messages[status.state]||status.state)+'</div>'+(status.error?'<div>'+esc(status.error)+'</div>':'')+(status.enabled?'<button type="button" data-sync-action="retry">'+esc(t.retry)+'</button> <button type="button" data-sync-action="disable">'+esc(t.disable)+'</button>':'<button type="button" data-sync-action="enable">'+esc(t.enable)+'</button>');
     (status.conflicts||[]).forEach(function(c){
         var row=document.createElement('div');row.style.marginTop='12px';
         var label=document.createElement('div');label.textContent=c.kind+' · '+c.id;row.appendChild(label);
-        var preview=document.createElement('pre');preview.style.whiteSpace='pre-wrap';preview.textContent='This device: '+JSON.stringify(c.local)+'\nAccount: '+JSON.stringify(c.remote);row.appendChild(preview);
-        ['local','remote'].forEach(function(choice){var button=document.createElement('button');button.type='button';button.textContent=choice==='local'?'Keep this device version':'Use account version';button.onclick=function(){oneAccountSyncResolve(c.kind,c.id,choice,c.revision);};row.appendChild(button);});el.appendChild(row);
+        var preview=document.createElement('pre');preview.style.whiteSpace='pre-wrap';preview.textContent=t.device+JSON.stringify(c.local)+'\n'+t.account+JSON.stringify(c.remote);row.appendChild(preview);
+        ['local','remote'].forEach(function(choice){var button=document.createElement('button');button.type='button';button.textContent=choice==='local'?t.local:t.remote;button.onclick=function(){oneAccountSyncResolve(c.kind,c.id,choice,c.revision);};row.appendChild(button);});el.appendChild(row);
     });
     el.querySelectorAll('[data-sync-action]').forEach(function(b){b.onclick=function(){var a=b.getAttribute('data-sync-action');if(a==='enable')oneAccountSyncEnable();else if(a==='retry')oneAccountSyncRun();else oneAccountSyncDisable();};});
 }
@@ -1812,7 +1818,7 @@ async function oneAccountSyncRefreshLists(){
 }
 function oneAccountSyncSchedule(){if(oneAccountSyncTimer)clearTimeout(oneAccountSyncTimer);oneAccountSyncTimer=setTimeout(async function(){oneAccountSyncTimer=null;await oneAccountSyncRun();},1200);}
 async function oneAccountSyncEnable(){
-    if(!confirm('Sync this signed-in account’s profile, photo, sea service and all attached documents/scans with this device? Existing differences will be shown before either version is replaced.'))return;
+    if(!confirm(oneAccountSyncTexts().consent))return;
     try{oneAccountSyncRender(await invoke('enable_account_sync',{consent:true}));await oneAccountSyncRun();}catch(e){oneAccountSyncRender({state:'error',error:String(e),conflicts:[]});}
 }
 async function oneAccountSyncDisable(){try{oneAccountSyncRender(await invoke('disable_account_sync'));}catch(e){showToast(String(e));}}
@@ -18251,7 +18257,9 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
     // timer handle re-arms on every render, which also guards against
     // parallel loaders when the section re-renders in quick succession.
     var _spEmbedTimer = null;
+    var _spEmbedRequest = 0;
     function scheduleSeafarerFormLoad(){
+        var request = ++_spEmbedRequest;
         try{ if(_spEmbedTimer !== null){ clearTimeout(_spEmbedTimer); } }catch(e){}
         _spEmbedTimer = null;
         var attempts = 0;
@@ -18282,6 +18290,21 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
                 }
             }catch(e){}
             try{ spLoad(); }catch(err){ try{ logError('unified seafarer spLoad', err); }catch(e){} }
+            var panel = root.querySelector('#one-account-sync');
+            function currentSyncPanel(){
+                var overlay = document.getElementById('skipi-settings-overlay');
+                return request === _spEmbedRequest && root.isConnected && panel && panel.isConnected
+                    && document.getElementById('settings-root') === root
+                    && root.querySelector('#one-account-sync') === panel
+                    && overlay && overlay.classList.contains('open');
+            }
+            if(currentSyncPanel()){
+                Promise.resolve().then(function(){ return invoke('get_account_sync_status'); }).then(function(status){
+                    if(currentSyncPanel())oneAccountSyncRender(status,panel);
+                }).catch(function(error){
+                    if(currentSyncPanel())oneAccountSyncRender({state:'error',error:String(error),conflicts:[]},panel);
+                });
+            }
         }
         _spEmbedTimer = setTimeout(tick, 0);
     }
