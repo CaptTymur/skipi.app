@@ -913,7 +913,7 @@ mod tests {
         }
 
         #[test]
-        fn career_pattern_preserves_existing_oldest_three_group_algorithm() {
+        fn cv_extras_preserve_contract_count_and_newest_first_database_order() {
             let conn = fixture();
             for (id, date, rank) in [
                 ("captain-new", "2026", "Captain"),
@@ -929,12 +929,22 @@ mod tests {
                 )
                 .unwrap();
             }
+            let work = get_work_history(&conn).unwrap();
+            assert_eq!(
+                ids(&work),
+                ["captain-new", "captain-old", "chief", "second", "cadet"]
+            );
+            assert_eq!(
+                work.iter().map(|row| row["position"].as_str().unwrap()).collect::<Vec<_>>(),
+                ["Captain", "Captain", "Chief Officer", "Second Officer", "Cadet"]
+            );
             let extras = crate::cv::build_redacted_extras(&conn);
             assert_eq!(extras.contract_count, 5);
-            assert_eq!(
-            extras.career_pattern.as_deref(),
-            Some("1 contract as Cadet, 1 contract as Second Officer, 1 contract as Chief Officer")
-        );
+            // A single consecutive group preserves counts regardless of career selection order.
+            conn.execute("UPDATE work_history SET position='Captain'", []).unwrap();
+            let extras = crate::cv::build_redacted_extras(&conn);
+            assert_eq!(extras.contract_count, 5);
+            assert_eq!(extras.career_pattern.as_deref(), Some("5 contracts as Captain"));
         }
 
         #[test]
