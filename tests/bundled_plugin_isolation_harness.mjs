@@ -3462,7 +3462,7 @@ const stripCodeComments = (text) => text.split('\n').map((line) => {
     'so does the developer-invite door (Supervisor Н-B: it used to keep its own catch with a window.open fallback that can be a no-op inside the webview)');
   ok(!/window\.open\(DEVELOPER_GROUP_INVITE_URL/.test(HTML), 'and its old silent fallback is gone, not merely bypassed');
   // both call sites of the audit are still the same two, and both go through that one function
-  ok(/function entryForkRegister\(\)\{ openRegisterPage\(\); \}/.test(HTML), 'SITE 1: the Register door of the entry fork calls openRegisterPage');
+  ok(/function entryForkRegister\(\)\{[^{}]{0,400}\bopenRegisterPage\(\);[^{}]{0,40}\}/.test(HTML), 'SITE 1: the Register door of the entry fork calls openRegisterPage');
   ok(/id="lg-register"[^>]*onclick="openRegisterPage\(\);return false;"/.test(HTML), 'SITE 2: the Register link inside the login gate calls openRegisterPage');
   ok(/onclick="openExternalUrlSafe\(/.test(HTML), 'SITE 3: the update banner’s «Download manually» link too');
   // negatives
@@ -5735,6 +5735,121 @@ for(const lang of ['en','ru']){
 {
   section('remote install + offline persistence harness');
   await runRemoteInstallOfflineHarness();
+}
+
+// A5-III: actual callers and fresh VM/DOM reload; backend/URL/clipboard are synthetic.
+const A5III_KEY='skipi-ef-register-hint';
+const A5III_NOW=1800000000000;
+const A5III_TTL=24*60*60*1000;
+const A5III_COPY={ru:'Подтвердите e-mail по ссылке из письма, затем вернитесь сюда и нажмите «Войти».',en:'Confirm your e-mail using the link in the message, then return here and press Sign in.'};
+async function bootA5III({lang='en',seed={},platform='android',override=null,now=A5III_NOW}={}){
+  // bootApp installs all synthetic effects BEFORE evaluating actual shipped scripts.
+  const a=bootApp({seed,platform,invokeOverride:override});
+  await settleVm();
+  a.sandbox.getUiLang=()=>lang;
+  vm.runInContext('Date.now = () => '+now,a.sandbox);
+  return a;
+}
+function a5iiiHtml(a,site){return (a.doc.getElementById(site==='fork'?'mobile-entry-fork':'mobile-account-first')||{}).innerHTML||'';}
+function a5iiiRender(a,site){a.sandbox[site==='fork'?'showEntryFork':'showAccountFirst']();}
+function a5iiiTap(a,site){a.sandbox[site==='fork'?'entryForkRegister':'accountFirstRegister']();}
+function a5iiiHint(a,site){return /data-qa="register-hint"/.test(a5iiiHtml(a,site));}
+function a5iiiControls(a,site,label){
+  const h=a5iiiHtml(a,site), names=site==='fork'?['sign-in','register','demo']:['account-first-sign-in','account-first-register'];
+  ok((h.match(/<button\b/g)||[]).length===names.length,'A5III controls exact '+label);
+  for(const name of names)ok((h.match(new RegExp('data-qa="'+name+'"','g'))||[]).length===1,'A5III door '+name+' '+label);
+  const hint=(h.match(/<div\b[^>]*data-qa="register-hint"[^>]*>[\s\S]*?<\/div>/)||[])[0]||'';
+  if(a5iiiHint(a,site))ok(hint.length>0&&!/<(?:a|button|input)\b|\b(?:onclick|href|tabindex|role)\s*=/i.test(hint),'A5III hint text only '+label);
+  if(site==='account')ok(/<a\b[^>]*data-qa="account-first-back"/.test(h)&&/data-qa="account-first-demo-note"/.test(h),'A5III account Back and Demo note '+label);
+}
+for(const lang of ['ru','en'])for(const site of ['fork','account']){
+  section('A5III Register '+site+' '+lang);
+  try{
+    let app,release,observed=false;
+    const waiting=new Promise(r=>{release=r;});
+    app=await bootA5III({lang,override:async(cmd,args)=>{
+      if(cmd==='open_external_url'){
+        observed=app.lstore.get(A5III_KEY)===String(A5III_NOW)&&a5iiiHint(app,site);
+        ok(observed,'A5III marker and own repaint BEFORE external invoke '+site+' '+lang);
+        return waiting;
+      }
+    }});
+    a5iiiRender(app,site);
+    ok(!a5iiiHint(app,site),'A5III cold absent '+site+' '+lang);
+    const historyBefore=app.sandbox.history.calls.length;
+    a5iiiTap(app,site);
+    ok(a5iiiHint(app,site),'A5III immediate before external settles '+site+' '+lang);
+    ok(app.lstore.get(A5III_KEY)===String(A5III_NOW),'A5III timestamp only '+site+' '+lang);
+    ok(a5iiiHtml(app,site).includes(A5III_COPY[lang]),'A5III exact localized instructions '+site+' '+lang);
+    ok(app.sandbox.history.calls.length===historyBefore,'A5III repaint preserves history '+site+' '+lang);
+    a5iiiControls(app,site,site+' '+lang);
+    const urls=app.invokeCalls.filter(([cmd])=>cmd==='open_external_url');
+    ok(urls.length===1&&urls[0][1].url==='https://assistant.skipi.app/register','A5III exactly one original URL '+site+' '+lang);
+    release({});await settleVm();
+    const reboot=await bootA5III({lang,seed:Object.fromEntries(app.lstore)});
+    ok(reboot.sandbox!==app.sandbox&&reboot.doc!==app.doc,'A5III reload new JS and DOM '+site+' '+lang);
+    a5iiiRender(reboot,site);
+    ok(a5iiiHint(reboot,site),'A5III fresh boot persistence '+site+' '+lang);
+    ok(reboot.lstore.get(A5III_KEY)===String(A5III_NOW),'A5III render never refreshes marker '+site+' '+lang);
+  }catch(e){ok(false,'A5III register crashed '+site+' '+lang+' '+e.message);}
+  for(const [name,raw,shown] of [['under',String(A5III_NOW-A5III_TTL+1),true],['exact',String(A5III_NOW-A5III_TTL),false],['older',String(A5III_NOW-A5III_TTL-1),false],['future',String(A5III_NOW+1),false],['malformed','abc',false],['infinity','Infinity',false],['empty','',false],['nan','NaN',false]]){
+    try{
+      const app=await bootA5III({lang,seed:{[A5III_KEY]:raw}});a5iiiRender(app,site);
+      ok(a5iiiHint(app,site)===shown,'A5III TTL '+name+' '+site+' '+lang);
+      ok(app.lstore.get(A5III_KEY)===raw,'A5III TTL read does not rewrite '+name+' '+site+' '+lang);
+    }catch(e){ok(false,'A5III TTL crashed '+e.message);}
+  }
+  try{
+    const a=await bootA5III({lang,override:async cmd=>{if(cmd==='open_external_url')throw Error('synthetic URL failure');}});
+    const copies=[],toasts=[];a.sandbox.writeClipboardText=async t=>copies.push(t);a.sandbox.showToast=t=>toasts.push(t);
+    a5iiiRender(a,site);a5iiiTap(a,site);await settleVm();
+    ok(copies.length===1&&copies[0]==='https://assistant.skipi.app/register','A5III original failure copy '+site+' '+lang);
+    ok(toasts.some(t=>t.includes('assistant.skipi.app/register')),'A5III failure visible URL '+site+' '+lang);
+  }catch(e){ok(false,'A5III fallback crashed '+e.message);}
+  for(const failing of ['getItem','setItem']){
+    const a=await bootA5III({lang});a.sandbox.localStorage[failing]=()=>{throw Error('synthetic storage failure');};
+    try{a5iiiRender(a,site);a5iiiTap(a,site);await settleVm();ok(a.invokeCalls.filter(([c])=>c==='open_external_url').length===1,'A5III storage '+failing+' nonblocking Register '+site+' '+lang);}catch(e){ok(false,'A5III storage Register crashed '+failing+' '+e.message);}
+  }
+}
+for(const outcome of ['rejected','success','success-next-error','success-vault-error','success-remove-error']){
+  try{
+    const a=await bootA5III({seed:{[A5III_KEY]:String(A5III_NOW)},override:async cmd=>{if(cmd==='app_login'){if(outcome==='rejected')throw Error('synthetic rejected login');return {};}}});
+    a.doc.getElementById('lg-email').value='fixture@example.invalid';a.doc.getElementById('lg-password').value='synthetic-password';
+    let continued=0,clearAtContinuation=false;
+    const next=async()=>{continued++;clearAtContinuation=!a.lstore.has(A5III_KEY);if(outcome.includes('error'))throw Error('synthetic continuation failure');};
+    if(outcome==='success-vault-error'){a.sandbox._loginGatePending={path:'synthetic'};a.sandbox.loadVault=next;}else a.sandbox._loginGateNext=next;
+    if(outcome==='success-remove-error')a.sandbox.localStorage.removeItem=()=>{throw Error('synthetic storage remove failure');};
+    await a.sandbox.doAppLogin();
+    if(outcome==='rejected')ok(a.lstore.has(A5III_KEY)&&continued===0,'A5III rejected login retains marker and blocks continuation');
+    else{
+      ok(continued===1,'A5III successful login continues once '+outcome);
+      if(outcome!=='success-remove-error')ok(!a.lstore.has(A5III_KEY)&&clearAtContinuation,'A5III clear BEFORE continuation '+outcome);
+      ok(a.doc.getElementById('lg-password').value==='','A5III original password cleanup '+outcome);
+    }
+  }catch(e){ok(false,'A5III login crashed '+outcome+' '+e.message);}
+}
+for(const platform of ['linux','web']){
+  try{
+    const a=await bootA5III({platform,seed:{[A5III_KEY]:String(A5III_NOW)}});
+    a.sandbox.showLoginGate();
+    ok((a.doc.getElementById('login-gate-overlay')||{}).style.display==='flex','A5III plain login shown '+platform);
+    ok(!a.doc.getElementById('mobile-entry-fork')||a.doc.getElementById('mobile-entry-fork').style.display!=='flex','A5III plain login has no native fork '+platform);
+    a5iiiRender(a,'account');a5iiiTap(a,'account');await settleVm();a5iiiControls(a,'account',platform);
+    ok(!a.doc.getElementById('mobile-entry-fork')||a.doc.getElementById('mobile-entry-fork').style.display!=='flex','A5III shared account Register no fork '+platform);
+  }catch(e){ok(false,'A5III platform crashed '+platform+' '+e.message);}
+}
+for(const lang of ['ru','en']){
+  try{
+    const a=await bootA5III({lang,override:async cmd=>cmd==='get_profile_status'?{is_demo:'0'}:undefined});
+    a5iiiRender(a,'account');a5iiiTap(a,'account');await settleVm();
+    await a.sandbox.accountFirstSignIn();
+    let wizardCalls=0;const timers=[];
+    a.sandbox.mobileStartVaultWizard=async()=>{wizardCalls++;};
+    a.sandbox.setTimeout=fn=>{timers.push(fn);return 0;};
+    a.doc.getElementById('lg-email').value='fixture@example.invalid';a.doc.getElementById('lg-password').value='synthetic-password';
+    await a.sandbox.doAppLogin();for(const fn of timers)fn();await settleVm();
+    ok(wizardCalls===1&&!a.lstore.has(A5III_KEY),'A5III actual account sign-in resumes wizard once and clears '+lang);
+  }catch(e){ok(false,'A5III account continuation crashed '+lang+' '+e.message);}
 }
 
 console.log('\n' + (fail === 0 ? 'ALL GREEN' : 'FAILURES') + ': ' + pass + ' passed, ' + fail + ' failed');

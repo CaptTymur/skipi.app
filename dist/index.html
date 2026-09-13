@@ -9586,6 +9586,7 @@ async function doAppLogin(){
     _lgError('');
     try{
         await invoke('app_login',{email:em,password:pw});
+        _efClearRegisterHint();
         // Success: clear the password field, hide the gate, resume the shell.
         var pwEl=document.getElementById('lg-password');if(pwEl)pwEl.value='';
         hideLoginGate();
@@ -9896,6 +9897,22 @@ async function _efOpenVaultIsDemo(){
 function _efDoorHtml(qa,onclick,icon,title,sub){
     return '<button class="mobile-primary-action" type="button" data-qa="'+qa+'" onclick="'+onclick+'"><span class="mobile-action-icon">'+icon+'</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(title)+'</span><span class="mobile-action-sub">'+mobileEsc(sub)+'</span></span></button>';
 }
+function _efRememberRegister(){
+    try{ localStorage.setItem('skipi-ef-register-hint',String(Date.now())); }catch(e){}
+}
+function _efClearRegisterHint(){
+    try{ localStorage.removeItem('skipi-ef-register-hint'); }catch(e){}
+}
+function _efRegisterHintHtml(){
+    var raw;
+    try{ raw=localStorage.getItem('skipi-ef-register-hint'); }catch(e){ return ''; }
+    if(!raw)return '';
+    var stamp=Number(raw),age=Date.now()-stamp;
+    if(!Number.isFinite(stamp)||!(age>=0&&age<24*60*60*1000))return '';
+    var ru=false;try{ ru=getUiLang()==='ru'; }catch(e){}
+    var text=ru?'Подтвердите e-mail по ссылке из письма, затем вернитесь сюда и нажмите «Войти».':'Confirm your e-mail using the link in the message, then return here and press Sign in.';
+    return '<div class="mobile-entry-fork-sub" data-qa="register-hint" style="margin:16px 0 0;">'+mobileEsc(text)+'</div>';
+}
 function showEntryFork(){
     var t=_efTxt();
     var o=document.getElementById('mobile-entry-fork');
@@ -9912,6 +9929,7 @@ function showEntryFork(){
         +_efDoorHtml('sign-in','entryForkSignIn()','&#10140;',t.signin,t.signinSub)
         +_efDoorHtml('register','entryForkRegister()','+',t.register,t.registerSub)
         +_efDoorHtml('demo','entryForkDemo()','&#9679;',t.demo,t.demoSub)
+        +_efRegisterHintHtml()
         +'</div>';
     o.style.display='flex';
 }
@@ -9929,7 +9947,7 @@ function entryForkSignIn(){
     _efEnsureBackLink(true);
     showLoginGate();
 }
-function entryForkRegister(){ openRegisterPage(); }
+function entryForkRegister(){ _efRememberRegister(); showEntryFork(); openRegisterPage(); }
 function entryForkDemo(){ hideEntryFork(); loadDemoVault(); }
 // «← Back» inside the gate: inserted by JS (the gate markup is a PRESERVE region), visible
 // only while the gate was opened from the fork.
@@ -10032,6 +10050,7 @@ function showAccountFirst(){
         +'<div class="mobile-entry-fork-sub">'+mobileEsc(t.sub)+'</div>'
         +_efDoorHtml('account-first-sign-in','accountFirstSignIn()','&#10140;',t.signin,t.signinSub)
         +_efDoorHtml('account-first-register','accountFirstRegister()','+',t.register,t.registerSub)
+        +_efRegisterHintHtml()
         +'<div class="mobile-entry-fork-sub" data-qa="account-first-demo-note" style="margin:16px 0 0;">'+mobileEsc(t.foot)+'</div>'
         +'</div>';
     o.style.display='flex';
@@ -10076,7 +10095,7 @@ async function accountFirstSignIn(){
 }
 // Registration is the web one, opened in the system browser through the helper that
 // always answers on screen (REG1). Step 0 stays up: the user comes back and signs in.
-function accountFirstRegister(){ openRegisterPage(); }
+function accountFirstRegister(){ _efRememberRegister(); showAccountFirst(); openRegisterPage(); }
 
 async function loadVault(info){
     // HARD LOGIN GATE (№117): block the entire shell until a valid token
