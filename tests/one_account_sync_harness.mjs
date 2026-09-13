@@ -97,3 +97,20 @@ for(const language of ['en','ru']){
 }
 mounted=mountedSyncSettings();mounted.root.querySelector=()=>null;mounted.sandbox.scheduleSeafarerFormLoad();let ticks=0;while(mounted.scheduled.length){mounted.scheduled.shift()();assert.ok(++ticks<=42,'post-mount polling stays bounded');}assert.equal(mounted.requests.length,0,'unmounted form never requests sync');
 console.log('sync control RU/EN, explicit consent, errors and bounded mount wait PASS');
+
+for(const language of ['en','ru']){
+    const s=mountedSyncSettings();s.sandbox.getUiLang=()=>language;
+    s.sandbox.oneAccountSyncRender({web_account:true,account_id:'opaque-account',state:'account'},s.active);
+    assert.ok(s.active.html.includes('opaque-account'));
+    assert.ok(s.active.html.includes(language==='ru'?'Данные сохранены в этом аккаунте':'Data is saved in this account'));
+    assert.ok(!s.active.html.includes('data-sync-action'),'web account has no native sync actions');
+    s.sandbox.window.__SKIPI_WEBDESKTOP__={};
+    for(const status of [{state:'error',error:'actual manifest failure'},{state:'disabled'},{state:'conflict',conflicts:[{kind:'profile',id:'main',revision:1}]}]){
+        s.sandbox.oneAccountSyncRender(status,s.active);
+        assert.ok(!s.active.html.includes('data-sync-action'),'real web surface suppresses native actions even without status marker');
+        assert.equal(s.active.children.length,0,'web surface has no native conflict choices');
+        assert.ok(!s.active.html.includes(language==='ru'?'Данные сохранены':'Data is saved'),'failed/unconfirmed web read does not claim saved');
+        if(status.error)assert.ok(s.active.html.includes(status.error),'actual web error remains visible');
+    }
+}
+console.log('web account success/error/native-control suppression RU/EN PASS');
