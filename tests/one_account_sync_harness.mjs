@@ -206,3 +206,14 @@ console.log('backend context rejection blocks sync and web never requests native
     assert.equal(counter.docFilterCount('required'),'—');assert.equal(counter.docFilterCount('missing'),'—');assert.equal(counter.mobileCompletenessPercent(),0,'unloaded framework cannot imply completeness');
 }
 console.log('unique active-template counters preserve absent requirements and all document rows PASS');
+
+// Retained sync history is not an active connection after logout/disable.
+for(const language of ['en','ru'])for(const oldState of ['current','error','conflict']){
+    const s=mountedSyncSettings();s.sandbox.getUiLang=()=>language;
+    s.sandbox.oneAccountSyncRender({enabled:false,state:oldState,last_completed:'preserved',conflicts:[{kind:'document',id:'saved-conflict',revision:2,local:{},remote:null}]},s.active);
+    assert.ok(s.active.html.includes(language==='ru'?'Синхронизация выключена':'Sync is off'),'disabled binding never displays synchronized history');
+    assert.equal(s.active.children.length,0,'inactive native binding hides retained conflict resolution actions');
+    assert.ok(s.active.html.includes('data-sync-action="enable"'));
+    assert.ok(!s.active.html.includes('data-sync-action="retry"'));
+}
+console.log('disabled native UI hides retained conflict actions and never claims current RU/EN PASS');

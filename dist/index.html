@@ -1799,8 +1799,9 @@ function oneAccountSyncRender(status,target){
         el.innerHTML='<strong>'+esc(t.webTitle)+'</strong><div>'+esc(account)+'</div><div>'+esc(message)+'</div>'+(status.error?'<div>'+esc(status.error)+'</div>':'');
         return;
     }
-    el.innerHTML='<strong>'+esc(t.title)+'</strong><div>'+esc(account)+'</div><div>'+esc(t.messages[status.state]||status.state)+'</div>'+(status.error?'<div>'+esc(status.error)+'</div>':'')+(status.enabled?'<button type="button" data-sync-action="retry">'+esc(t.retry)+'</button> <button type="button" data-sync-action="disable">'+esc(t.disable)+'</button>':'<button type="button" data-sync-action="enable">'+esc(t.enable)+'</button>');
-    (status.conflicts||[]).forEach(function(c){
+    var displayState=status.enabled===false?'disabled':status.state;
+    el.innerHTML='<strong>'+esc(t.title)+'</strong><div>'+esc(account)+'</div><div>'+esc(t.messages[displayState]||displayState)+'</div>'+(status.error?'<div>'+esc(status.error)+'</div>':'')+(status.enabled?'<button type="button" data-sync-action="retry">'+esc(t.retry)+'</button> <button type="button" data-sync-action="disable">'+esc(t.disable)+'</button>':'<button type="button" data-sync-action="enable">'+esc(t.enable)+'</button>');
+    (status.enabled===true?status.conflicts||[]:[]).forEach(function(c){
         var row=document.createElement('div');row.style.marginTop='12px';
         var label=document.createElement('div');label.textContent=c.kind+' · '+c.id;row.appendChild(label);
         var preview=document.createElement('pre');preview.style.whiteSpace='pre-wrap';preview.textContent=t.device+JSON.stringify(c.local)+'\n'+t.account+JSON.stringify(c.remote);row.appendChild(preview);

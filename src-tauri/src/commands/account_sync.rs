@@ -2121,8 +2121,9 @@ pub mod vault_sync {
         let account = db::get_vault_info_value(conn, "sync_account_id").unwrap_or_default();
         let known = ledger(conn, &account)?;
         let conflicts:Vec<Value>=known.values().filter(|b|!b["conflict"].is_null()).map(|b|json!({"kind":b["baseline"]["kind"],"id":b["baseline"]["id"],"revision":b["conflict"]["remote"]["revision"],"local":b["conflict"]["local"]["data"],"remote":b["conflict"]["remote"]["data"]})).collect();
+        let enabled = require_bound(conn).is_ok();
         Ok(
-            json!({"enabled":require_bound(conn).is_ok(),"account_id":account,"account_email":db::get_vault_info_value(conn,"skipi_user_email").unwrap_or_default(),"state":if conflicts.is_empty(){db::get_vault_info_value(conn,"sync_state").unwrap_or_else(||"disabled".into())}else{"conflict".into()},"conflicts":conflicts,"pending":known.values().filter(|b|!b["queued"].is_null()).count(),"error":db::get_vault_info_value(conn,"sync_error").unwrap_or_default(),"last_completed":db::get_vault_info_value(conn,"sync_last_completed").unwrap_or_default()}),
+            json!({"enabled":enabled,"account_id":account,"account_email":db::get_vault_info_value(conn,"skipi_user_email").unwrap_or_default(),"state":if !enabled{"disabled".into()}else if conflicts.is_empty(){db::get_vault_info_value(conn,"sync_state").unwrap_or_else(||"disabled".into())}else{"conflict".into()},"conflicts":conflicts,"pending":known.values().filter(|b|!b["queued"].is_null()).count(),"error":db::get_vault_info_value(conn,"sync_error").unwrap_or_default(),"last_completed":db::get_vault_info_value(conn,"sync_last_completed").unwrap_or_default()}),
         )
     }
     // Freshness binding only: never expose a path or bearer token, and never
@@ -2600,6 +2601,36 @@ pub mod vault_sync {
                 assert_eq!(before, state.conn.lock().unwrap().as_ref().unwrap().total_changes());
                 assert!(!ledger(state.conn.lock().unwrap().as_ref().unwrap(), &pin.account).unwrap()["document:race-doc"]["conflict"].is_null());
                 drop(state);fs::remove_dir_all(root).unwrap();
+            }
+        }
+        #[test]
+        fn inactive_binding_status_is_disabled_without_erasing_sync_history() {
+            for stored in ["current", "error", "conflict"] {
+                for change in ["disable", "logout", "missing_parent", "changed_parent", "missing_child"] {
+                    let (root, state, pin) = bound_fixture();
+                    {let lock = state.conn.lock().unwrap();let conn=lock.as_ref().unwrap();
+                        db::set_vault_info(conn,"sync_state",stored).unwrap();
+                        db::set_vault_info(conn,"sync_last_completed","preserved-time").unwrap();
+                        db::set_vault_info(conn,"sync_error","preserved-error").unwrap();
+                        let e=wire_doc("retained-doc",None);let q=json!({"request":{"mutation_id":"retained"}});
+                        let conflict=json!({"remote":{"revision":2},"local":{"data":{"notes":"preserved"}}});
+                        write_ledger(conn,&pin.account,&e,"hash",Some(&q),if stored=="conflict"{Some(&conflict)}else{None}).unwrap();
+                        assert_eq!(status(conn).unwrap()["state"],stored,"enabled normal status unchanged");
+                        match change {
+                            "disable"=>db::set_vault_info(conn,"sync_enabled","0").unwrap(),
+                            "logout"=>{for key in ["skipi_user_token","sync_token","sync_enabled","sync_parent_hash"]{db::set_vault_info(conn,key,"").unwrap();}},
+                            "missing_parent"=>db::set_vault_info(conn,"skipi_user_token","").unwrap(),
+                            "changed_parent"=>db::set_vault_info(conn,"skipi_user_token","synthetic-new-parent").unwrap(),
+                            _=>db::set_vault_info(conn,"sync_token","").unwrap(),
+                        }
+                        let before=ledger(conn,&pin.account).unwrap();let writes=conn.total_changes();
+                        let output=status(conn).unwrap();assert_eq!(output["enabled"],false);assert_eq!(output["state"],"disabled","{stored}/{change}");
+                        assert_eq!(output["pending"],1);assert_eq!(output["last_completed"],"preserved-time");assert_eq!(output["error"],"preserved-error");
+                        assert_eq!(output["conflicts"].as_array().unwrap().len(),if stored=="conflict"{1}else{0});
+                        assert_eq!(before,ledger(conn,&pin.account).unwrap());assert_eq!(writes,conn.total_changes());
+                    }
+                    drop(state);fs::remove_dir_all(root).unwrap();
+                }
             }
         }
         #[test]
