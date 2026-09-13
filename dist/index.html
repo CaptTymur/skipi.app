@@ -5124,7 +5124,7 @@ function mobileSetDocsSearch(value){
     // focus nor caret — the phone dropped both after every single character. Only the container
     // BELOW the input is repainted here, so the element the user types into stays the very same
     // node. The chips are inside that container on purpose: «Missing»/«Expiring» are counted via
-    // mobileFilteredDocs, which honours the query, so leaving them out would freeze the counters.
+    // the current requirements (Missing) and query (Expiring), so leaving them out would freeze the counters.
     var body=document.getElementById('mobile-docs-body');
     if(!body){renderMobileDocs();return;}
     body.innerHTML=mobileDocsBodyHtml();
@@ -5132,7 +5132,7 @@ function mobileSetDocsSearch(value){
 }
 function mobileFilterChip(id,label,count){
     var active=mobileDocsFilter===id?' active':'';
-    return '<button class="mobile-filter-chip'+active+'" type="button" onclick="mobileSetDocsFilter(\''+jsString(id)+'\')">'+mobileEsc(label)+(typeof count==='number'?' '+count:'')+'</button>';
+    return '<button class="mobile-filter-chip'+active+'" type="button" onclick="mobileSetDocsFilter(\''+jsString(id)+'\')">'+mobileEsc(label)+(typeof count==='number'||count==='—'?' '+count:'')+'</button>';
 }
 function mobileModuleInfo(view){
     var map={
@@ -7410,7 +7410,8 @@ function mobileDocsBodyHtml(){
     // Everything on the Documents screen EXCEPT the search input: the chips and the list.
     // This is the unit a keystroke repaints (see mobileSetDocsSearch), which is why the counts
     // are computed here and not in the caller.
-    var missing=mobileFilteredDocs('missing').length;
+    var requiredSummary=requiredDocumentSummary();
+    var missing=requiredSummary.loaded?requiredSummary.missing:'—';
     var nofile=allDocs.filter(function(d){return !d.file_name;}).length;
     var uploaded=allDocs.filter(function(d){return !!d.file_name;}).length;
     var expiring=mobileFilteredDocs('expiring').length;
@@ -7423,6 +7424,10 @@ function mobileDocsBodyHtml(){
         +'</div>';
     var docs=mobileFilteredDocs(mobileDocsFilter);
     h+='<div class="mobile-section-title">'+mobileSetupText('Documents','Документы')+'</div>';
+    if(mobileDocsFilter==='missing'){
+        var absent=requiredSummary.missingIds.some(function(id){return !allDocs.some(function(d){return d.template_id===id;});});
+        if(!requiredSummary.loaded||absent)h+='<div class="mobile-card">'+(!requiredSummary.loaded?mobileSetupText('The requirements list is not available yet.','Список требований пока недоступен.'):mobileSetupText('Some required documents have not been added yet.','Некоторые обязательные документы ещё не добавлены.'))+'</div>';
+    }
     if(!docs.length)h+='<div class="mobile-card">'+(allDocs.length?mobileSetupText('No documents match this filter or search.','Нет документов по этому фильтру или запросу.'):mobileSetupText('No documents in this vault.','Нет документов в этом сейфе.'))+'</div>';
     docs.forEach(function(d){h+=mobileDocRow(d);});
     return h;

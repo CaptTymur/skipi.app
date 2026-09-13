@@ -217,3 +217,23 @@ for(const language of ['en','ru'])for(const oldState of ['current','error','conf
     assert.ok(!s.active.html.includes('data-sync-action="retry"'));
 }
 console.log('disabled native UI hides retained conflict actions and never claims current RU/EN PASS');
+
+// Render the actual mobile Documents caller and chip, with only inert row markup.
+for(const language of ['en','ru'])for(const scenario of ['empty-duplicates','absent','unknown']){
+    const rows=scenario==='empty-duplicates'?[{id:'empty-one',template_id:'passport',category:'Passport'},{id:'empty-two',template_id:'passport',category:'Passport'}]:[{id:'custom',category:'Custom'}];
+    const mobile={allDocs:rows,activeTemplateIds:['passport'],activeTemplateIdSet:{passport:true},activeTemplateIdsLoaded:scenario!=='unknown',mobileDocsFilter:'missing',mobileDocsSearch:'',isOptionalCategory:()=>false,classify:()=> 'none',docStatusRank:()=>0,mobileSetupText:(en,ru)=>language==='ru'?ru:en,mobileEsc:String,jsString:String,mobileDocRow:d=>'<span data-doc="'+d.id+'"></span>'};
+    vm.createContext(mobile);
+    for(const name of ['isActiveTemplateId','isActiveRequiredDoc','mobileDocHasAttachedFile','requiredDocumentSummary','mobileFilteredDocs','mobileFilterChip','mobileDocsBodyHtml']){
+        const start=html.indexOf('function '+name+'(');assert.ok(start>=0,name);
+        const end=html.indexOf('\nfunction ',start+1);vm.runInContext(html.slice(start,end).split('\nvar ')[0],mobile);
+    }
+    const result=mobile.mobileDocsBodyHtml();
+    const chip=id=>result.match(new RegExp('onclick="mobileSetDocsFilter\\(\\\''+id+'\\\'\\)">([^<]+)</button>'))?.[1];
+    assert.equal(chip('missing'),(language==='ru'?'Недостающие':'Missing')+' '+(scenario==='unknown'?'—':'1'),'actual mobile caller counts requirements, including absent templates: '+scenario);
+    assert.equal(chip('nofile'),(language==='ru'?'Без файла':'No file')+' '+rows.length,'No file retains the per-row meaning');
+    assert.equal(chip('all'),(language==='ru'?'Все':'All')+' '+rows.length);
+    if(scenario==='empty-duplicates')assert.equal((result.match(/data-doc=/g)||[]).length,2,'retained empty rows are still available');
+    else assert.ok(result.includes(scenario==='unknown'?(language==='ru'?'Список требований пока недоступен.':'The requirements list is not available yet.'):(language==='ru'?'Некоторые обязательные документы ещё не добавлены.':'Some required documents have not been added yet.')),'actual mobile list explains absent/unknown requirements');
+    mobile.mobileDocsFilter='all';assert.equal((mobile.mobileDocsBodyHtml().match(/data-doc=/g)||[]).length,rows.length,'All still lists every stored row');
+}
+console.log('actual mobile Documents caller counts missing templates and explains absent/unknown RU/EN PASS');
