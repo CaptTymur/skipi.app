@@ -1628,12 +1628,6 @@ pub mod vault_sync {
         if e["data"].to_string().len() > 65536 {
             return Err("Entity metadata exceeds limit".into());
         }
-        if kind == "experience"
-            && (text(&e["data"], "vessel_name").is_empty()
-                || text(&e["data"], "position").is_empty())
-        {
-            return Err("Incomplete experience".into());
-        }
         if kind == "document" {
             let cat = text(&e["data"], "category");
             if cat.is_empty() || !shareable_relative("document", &Path::new(cat).join("attachment"))
@@ -1641,11 +1635,7 @@ pub mod vault_sync {
                 return Err("Unsafe document category".into());
             }
         }
-        if kind == "experience" {
-            super::super::work_history::normalize_required_imo(
-                e["data"]["imo"].as_str().map(str::to_string),
-            )?;
-        }
+        // Historical entries retain unknown IMO and empty fields; new-entry UI validation is separate.
         let b = &e["blob"];
         if kind == "photo" && !matches!(text(b, "mime"), "image/jpeg" | "image/png" | "image/webp")
         {
@@ -2568,6 +2558,24 @@ pub mod vault_sync {
             let mut e=entity("document",id,json!({"category":"Other","title":"Same title","valid_from":null,"valid_to":null,"issued_by":null,"doc_number":null,"notes":"preserved notes","field_statuses":"{\"doc_number\":\"verified\"}","regulatory_basis":"custom basis","template_id":null,"has_expiry":false,"is_permanent":true,"is_national":false,"visibility":"private","created_at":null}),bytes.map(|b|json!({"sha256":digest(b),"size":b.len(),"mime":"application/msword","filename":"scan.doc"})).unwrap_or(Value::Null));
             e["revision"] = json!(1);
             e
+        }
+        #[test]
+        fn legacy_sea_service_with_unknown_imo_and_empty_fields_round_trips() {
+            let (root, conn) = fixture();
+            let mut legacy = entity(
+                "experience",
+                "legacy",
+                json!({"vessel_name":"","position":"","imo":null,"notes":"historic entry"}),
+                Value::Null,
+            );
+            legacy["revision"] = json!(1);
+            validate_entity(&legacy).unwrap();
+            apply_entity(&conn, &root, &legacy, None).unwrap();
+            let all = scan(&conn, &root, "A").unwrap();
+            assert_eq!(all["experience:legacy"]["data"]["imo"], Value::Null);
+            assert_eq!(all["experience:legacy"]["data"]["notes"], "historic entry");
+            drop(conn);
+            fs::remove_dir_all(root).unwrap();
         }
         #[test]
         fn private_registered_paths_never_enter_inventory_or_incoming_storage() {
