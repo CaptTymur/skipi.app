@@ -296,20 +296,48 @@ pub(crate) fn normalize_known_custom_docs(conn: &rusqlite::Connection) -> Result
 }
 
 #[tauri::command]
-pub fn get_documents(state: State<AppState>) -> Result<Vec<DocRecord>, String> {
+pub fn get_documents(state: State<AppState>) -> Result<Vec<serde_json::Value>, String> {
     let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = lock.as_ref().ok_or("No vault open")?;
-    let _ = normalize_known_custom_docs(conn);
-    let _ = refresh_known_template_metadata(conn);
-    let _ = prune_empty_catalog_only_docs(conn);
-    db::get_all_docs(conn).map_err(|e| e.to_string())
+    // Imported account metadata is authoritative user content. The historical
+    // catalog refresh must not rewrite notes or prune metadata-only synced rows.
+    if db::get_vault_info_value(conn, "sync_account_id")
+        .filter(|v| !v.is_empty())
+        .is_none()
+    {
+        let _ = normalize_known_custom_docs(conn);
+        let _ = refresh_known_template_metadata(conn);
+        let _ = prune_empty_catalog_only_docs(conn);
+    }
+    db::get_all_docs(conn)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|d| {
+            let revision = super::account_sync::vault_sync::edit_revision(conn, "document", &d.id)?;
+            let mut value = serde_json::to_value(d).map_err(|e| e.to_string())?;
+            value["sync_revision"] = serde_json::Value::String(revision);
+            Ok(value)
+        })
+        .collect()
 }
 
 #[tauri::command]
-pub fn update_expiry(state: State<AppState>, id: String, valid_to: String) -> Result<(), String> {
+pub fn update_expiry(
+    state: State<AppState>,
+    id: String,
+    valid_to: String,
+    expected_revision: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
     let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = lock.as_ref().ok_or("No vault open")?;
-    db::update_doc_expiry(conn, &id, &valid_to).map_err(|e| e.to_string())
+    super::account_sync::vault_sync::require_edit_revision(
+        conn,
+        "document",
+        &id,
+        expected_revision.as_ref(),
+    )?;
+    db::update_doc_expiry(conn, &id, &valid_to).map_err(|e| e.to_string())?;
+    super::account_sync::vault_sync::edit_result(conn, "document", &id)
 }
 
 #[tauri::command]
@@ -318,10 +346,19 @@ pub fn update_doc_field(
     id: String,
     field: String,
     value: String,
-) -> Result<(), String> {
+
+    expected_revision: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
     let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = lock.as_ref().ok_or("No vault open")?;
-    db::update_doc_field(conn, &id, &field, &value).map_err(|e| e.to_string())
+    super::account_sync::vault_sync::require_edit_revision(
+        conn,
+        "document",
+        &id,
+        expected_revision.as_ref(),
+    )?;
+    db::update_doc_field(conn, &id, &field, &value).map_err(|e| e.to_string())?;
+    super::account_sync::vault_sync::edit_result(conn, "document", &id)
 }
 
 /// Add a user-defined (custom) certificate row to the vault.
@@ -504,15 +541,26 @@ pub fn add_catalog_doc(
 
 /// Delete a document row from the vault. Also removes any attached file on disk.
 #[tauri::command]
-pub fn delete_doc(state: State<AppState>, id: String) -> Result<(), String> {
+pub fn delete_doc(
+    state: State<AppState>,
+    id: String,
+    expected_revision: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
     let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
     let vault_path = vault_lock.as_ref().ok_or("No vault open")?;
 
     let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = conn_lock.as_ref().ok_or("No vault open")?;
+    super::account_sync::vault_sync::require_edit_revision(
+        conn,
+        "document",
+        &id,
+        expected_revision.as_ref(),
+    )?;
 
     let docs = db::get_all_docs(conn).map_err(|e| e.to_string())?;
     let doc = docs.iter().find(|d| d.id == id);
+    super::account_sync::vault_sync::preserve_doc(conn, vault_path, &id)?;
     if let Some(d) = doc {
         if is_hard_required_doc(conn, d) {
             return Err(
@@ -531,14 +579,15 @@ pub fn delete_doc(state: State<AppState>, id: String) -> Result<(), String> {
             });
             if !still_referenced {
                 let fp = vault_path.join(&d.category).join(fname);
-                let _ = fs::remove_file(&fp);
+                // Retain these bytes; synced deletion must stay recoverable.
+                let _ = fp;
             }
         }
     }
     conn.execute("DELETE FROM documents WHERE id = ?1", rusqlite::params![id])
         .map_err(|e| e.to_string())?;
     let _ = db::log_event(conn, "doc_deleted", "document", Some(&id), None);
-    Ok(())
+    super::account_sync::vault_sync::edit_result(conn, "document", &id)
 }
 
 /// Resolve a vault document to its absolute path on disk so the chat
@@ -1018,8 +1067,13 @@ fn attach_file_to_vault(
         .extension()
         .map(|e| e.to_string_lossy().to_string())
         .unwrap_or_default();
-    let dest_name = attachment_file_name(doc, &ext);
+    let dest_name = format!(
+        "{}-{}",
+        uuid::Uuid::new_v4(),
+        attachment_file_name(doc, &ext)
+    );
 
+    super::account_sync::vault_sync::preserve_doc(conn, vault_path, doc_id)?;
     let cat_dir = vault_path.join(&doc.category);
     fs::create_dir_all(&cat_dir).map_err(|e| e.to_string())?;
 
@@ -1087,8 +1141,13 @@ fn attach_bytes_to_vault(
         .extension()
         .map(|e| e.to_string_lossy().to_string())
         .unwrap_or_else(|| "jpg".to_string());
-    let dest_name = attachment_file_name(doc, &ext);
+    let dest_name = format!(
+        "{}-{}",
+        uuid::Uuid::new_v4(),
+        attachment_file_name(doc, &ext)
+    );
 
+    super::account_sync::vault_sync::preserve_doc(conn, vault_path, doc_id)?;
     let cat_dir = vault_path.join(&doc.category);
     fs::create_dir_all(&cat_dir).map_err(|e| e.to_string())?;
 
@@ -1289,15 +1348,26 @@ pub fn attach_file(
     state: State<AppState>,
     doc_id: String,
     source_path: String,
-) -> Result<String, String> {
+
+    expected_revision: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
     let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
     let vault_path = vault_lock.as_ref().ok_or("No vault open")?;
 
     let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = conn_lock.as_ref().ok_or("No vault open")?;
+    super::account_sync::vault_sync::require_edit_revision(
+        conn,
+        "document",
+        &doc_id,
+        expected_revision.as_ref(),
+    )?;
 
     let src = PathBuf::from(source_path);
-    attach_file_to_vault(conn, vault_path, &doc_id, &src)
+    let file_name = attach_file_to_vault(conn, vault_path, &doc_id, &src)?;
+    let mut result = super::account_sync::vault_sync::edit_result(conn, "document", &doc_id)?;
+    result["file_name"] = serde_json::Value::String(file_name);
+    Ok(result)
 }
 
 #[tauri::command]
@@ -1306,17 +1376,28 @@ pub fn attach_file_bytes(
     doc_id: String,
     file_name: String,
     data_base64: String,
-) -> Result<String, String> {
+
+    expected_revision: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
     let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
     let vault_path = vault_lock.as_ref().ok_or("No vault open")?;
 
     let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = conn_lock.as_ref().ok_or("No vault open")?;
+    super::account_sync::vault_sync::require_edit_revision(
+        conn,
+        "document",
+        &doc_id,
+        expected_revision.as_ref(),
+    )?;
 
     let bytes = data_encoding::BASE64
         .decode(data_base64.as_bytes())
         .map_err(|e| format!("Invalid file encoding: {}", e))?;
-    attach_bytes_to_vault(conn, vault_path, &doc_id, &file_name, &bytes)
+    let file_name = attach_bytes_to_vault(conn, vault_path, &doc_id, &file_name, &bytes)?;
+    let mut result = super::account_sync::vault_sync::edit_result(conn, "document", &doc_id)?;
+    result["file_name"] = serde_json::Value::String(file_name);
+    Ok(result)
 }
 
 #[tauri::command]
@@ -1325,14 +1406,25 @@ pub fn attach_pdf_pages(
     doc_id: String,
     file_name: String,
     pages: Vec<PdfPageImage>,
-) -> Result<String, String> {
+
+    expected_revision: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
     let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
     let vault_path = vault_lock.as_ref().ok_or("No vault open")?;
 
     let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = conn_lock.as_ref().ok_or("No vault open")?;
+    super::account_sync::vault_sync::require_edit_revision(
+        conn,
+        "document",
+        &doc_id,
+        expected_revision.as_ref(),
+    )?;
 
-    attach_pdf_pages_to_vault(conn, vault_path, &doc_id, &file_name, &pages)
+    let file_name = attach_pdf_pages_to_vault(conn, vault_path, &doc_id, &file_name, &pages)?;
+    let mut result = super::account_sync::vault_sync::edit_result(conn, "document", &doc_id)?;
+    result["file_name"] = serde_json::Value::String(file_name);
+    Ok(result)
 }
 
 #[cfg(test)]

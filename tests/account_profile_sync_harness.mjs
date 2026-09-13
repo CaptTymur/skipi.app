@@ -34,8 +34,8 @@ console.log('# Account profile sync contract');
 // honest one (manager default, handoff §3.2) in BOTH profile screens.
 ok(!html.includes('Stored only inside this vault on disk.'),
   'stale absolute promise "Stored only inside this vault on disk." is gone');
-ok(count(html, 'Leaves the vault only when you tap') >= 2,
-  'honest promise present in both (legacy + unified) seafarer sections');
+ok(count(html, 'Shared with your account after you enable account sync') >= 2,
+  'opt-in sync and manual transfer privacy description is present in both profile sections');
 ok(!html.includes('Хранятся только в этом хранилище на диске.'),
   'stale RU absolute promise is gone');
 

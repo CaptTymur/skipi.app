@@ -618,6 +618,11 @@ pub async fn ai_preview_recognize(
     .await
 }
 
+fn require_recognition_snapshot(conn:&rusqlite::Connection,doc_id:&str,initial_revision:&str,initial_epoch:u64,current_epoch:u64)->Result<(),String>{
+    if current_epoch!=initial_epoch{return Err("Vault changed during recognition; recognized data was not saved".into())}
+    super::account_sync::vault_sync::require_edit_revision(conn,"document",doc_id,Some(&serde_json::Value::String(initial_revision.into())))
+}
+
 #[tauri::command]
 pub async fn ai_recognize(
     state: tauri::State<'_, AppState>,
@@ -627,7 +632,21 @@ pub async fn ai_recognize(
     ollama_model: Option<String>,
     ollama_endpoint: Option<String>,
     doc_title: Option<String>,
+
+    expected_revision: Option<serde_json::Value>,
 ) -> Result<AiRecognizeResult, String> {
+    let epoch = state.sync_epoch.load(std::sync::atomic::Ordering::SeqCst);
+    let initial_revision = {
+        let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = lock.as_ref().ok_or("No vault open")?;
+        super::account_sync::vault_sync::require_edit_revision(
+            conn,
+            "document",
+            &doc_id,
+            expected_revision.as_ref(),
+        )?;
+        super::account_sync::vault_sync::edit_revision(conn, "document", &doc_id)?
+    };
     let result = ai_recognize_fields(
         &state,
         &doc_id,
@@ -641,7 +660,14 @@ pub async fn ai_recognize(
 
     let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = conn_lock.as_ref().ok_or("No vault open")?;
+    super::account_sync::vault_sync::require_edit_revision(
+        conn,
+        "document",
+        &doc_id,
+        expected_revision.as_ref(),
+    )?;
 
+    require_recognition_snapshot(conn,&doc_id,&initial_revision,epoch,state.sync_epoch.load(std::sync::atomic::Ordering::SeqCst))?;
     // Auto-save recognized fields to DB
     let mut statuses = std::collections::HashMap::new();
     if let Some(ref v) = result.doc_number {
@@ -696,10 +722,19 @@ pub fn update_field_statuses(
     state: State<AppState>,
     id: String,
     statuses: String,
-) -> Result<(), String> {
+
+    expected_revision: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
     let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = lock.as_ref().ok_or("No vault open")?;
-    db::update_field_statuses(conn, &id, &statuses).map_err(|e| e.to_string())
+    super::account_sync::vault_sync::require_edit_revision(
+        conn,
+        "document",
+        &id,
+        expected_revision.as_ref(),
+    )?;
+    db::update_field_statuses(conn, &id, &statuses).map_err(|e| e.to_string())?;
+    super::account_sync::vault_sync::edit_result(conn, "document", &id)
 }
 
 #[tauri::command]
@@ -965,5 +1000,20 @@ mod tests {
         for key in ["doc_number", "issued_by", "valid_from", "valid_to", "title_suggestion"] {
             assert!(OUTPUT.contains(&format!("\"{key}\"")));
         }
+    }
+}
+
+#[cfg(test)]
+mod sync_recognition_tests {
+    use super::*;
+    #[test]
+    fn delayed_stub_recognition_cannot_save_into_changed_vault_or_document(){
+        let root=std::env::current_dir().unwrap().join("../scratchpad/one-account-sync-20260913").join(uuid::Uuid::new_v4().to_string());std::fs::create_dir_all(&root).unwrap();let conn=db::open_db(&root).unwrap();
+        conn.execute("INSERT INTO documents(id,category,title) VALUES('doc','Other','Original')",[]).unwrap();
+        let snapshot=super::super::account_sync::vault_sync::edit_revision(&conn,"document","doc").unwrap();
+        let stub_network_completion=||serde_json::json!({"title":"recognized synthetic value"});
+        let apply_stub=|current_epoch|->Result<(),String>{let result=stub_network_completion();require_recognition_snapshot(&conn,"doc",&snapshot,1,current_epoch)?;conn.execute("UPDATE documents SET title=?1 WHERE id='doc'",[result["title"].as_str().unwrap()]).map_err(|e|e.to_string())?;Ok(())};
+        assert!(apply_stub(2).is_err());assert_eq!(db::get_all_docs(&conn).unwrap()[0].title,"Original");
+        conn.execute("UPDATE documents SET title='Remote edit' WHERE id='doc'",[]).unwrap();assert!(apply_stub(1).is_err());assert_eq!(db::get_all_docs(&conn).unwrap()[0].title,"Remote edit");drop(conn);std::fs::remove_dir_all(root).unwrap();
     }
 }

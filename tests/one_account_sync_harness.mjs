@@ -1,0 +1,40 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+const html=fs.readFileSync(new URL('../dist/index.html',import.meta.url),'utf8');
+const code=html.match(/\/\/ ONE ACCOUNT SYNC BEGIN([\s\S]*?)\/\/ ONE ACCOUNT SYNC END/)?.[1];
+assert.ok(code,'native shared sync UI must exist');
+const calls=[];let timer;
+const ctx={console, document:{getElementById:()=>null,addEventListener:()=>{},visibilityState:'visible'},window:{addEventListener:()=>{}},setTimeout:f=>{timer=f;return 1},clearTimeout:()=>{},invoke:async(name,args)=>{calls.push([name,args]);return {enabled:true,account_id:'7',state:'current',conflicts:[]}},escapeHtml:s=>String(s),showToast:()=>{},confirm:()=>true};
+vm.createContext(ctx);vm.runInContext(code,ctx);
+await ctx.oneAccountSyncEnable();
+assert.equal(calls[0][0],'enable_account_sync');assert.equal(calls[0][1].consent,true);
+assert.ok(calls.some(c=>c[0]==='sync_account_now'),'enable performs actual synchronization');
+calls.length=0;
+ctx.oneAccountSyncSchedule();ctx.oneAccountSyncSchedule();await timer();
+assert.equal(calls.filter(c=>c[0]==='sync_account_now').length,1,'save bursts coalesce');
+await ctx.oneAccountSyncResolve('document','safe-id','remote');
+assert.ok(calls.some(c=>c[0]==='resolve_account_sync_conflict'&&c[1].choice==='remote'));
+console.log('one-account-sync UI integration PASS');
+
+// An unrelated/background GET must not replace the version displayed in a form.
+ctx.oneAccountCapture('document',{id:'doc',sync_revision:1},true);
+ctx.oneAccountCapture('document',{id:'doc',sync_revision:2},false);
+assert.equal(ctx.oneAccountDisplayed['document:doc'],1);
+ctx.window.__TAURI__={};ctx.window.__SKIPI_WEBDESKTOP__={};
+ctx.invoke=async(name,args)=>{calls.push([name,args]);return {sync_revision:3};};
+ctx.oneAccountSyncInstall();
+await ctx.invoke('update_doc_field',{id:'doc',field:'title',value:'mine'});
+assert.equal(calls.at(-1)[1].expectedRevision,1,'save carries displayed version even after background data changed');
+assert.equal(ctx.oneAccountDisplayed['document:doc'],3,'only own successful acknowledgement advances the form');
+console.log('shared displayed-version CAS PASS');
+// A child acknowledgement is not a fresh display of the parent form.
+ctx.oneAccountCapture('experience',{id:'work',sync_revision:4},true);
+ctx.invoke=async()=>({sync_revision:8,parent_revision:10,parent_id:'work'});
+ctx.oneAccountSyncInstall();
+await ctx.invoke('attach_work_file',{entryId:'work'});
+assert.equal(ctx.oneAccountDisplayed['experience:work'],4,'child ack cannot absorb unseen parent edits');
+ctx.oneAccountCapture('experience_file',{id:'file',sync_revision:7},true);
+await ctx.invoke('delete_work_file',{id:'file'});
+assert.equal(ctx.oneAccountDisplayed['experience:work'],4,'deleting evidence cannot advance an open parent form');
+console.log('child acknowledgement isolation PASS');

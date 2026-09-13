@@ -1767,6 +1767,85 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
 <script src="plugin-host-ui.js"></script>
 <script>
 var invoke, open, saveDlg, convertFileSrc;
+// ONE ACCOUNT SYNC BEGIN
+var oneAccountSyncTimer=null, oneAccountSyncBusy=false, oneAccountSyncLast=null;
+var oneAccountDisplayed=Object.create(null);
+function oneAccountCapture(kind,record,reset){if(!record||record.sync_revision==null)return;var id=kind==='profile'?'main':record.id;if(!id)return;var key=kind+':'+id;if(reset||oneAccountDisplayed[key]==null)oneAccountDisplayed[key]=record.sync_revision;}
+function oneAccountMutation(command,args){
+    if(/^(update_doc_field|update_field_statuses|update_expiry|delete_doc)$/.test(command))return {kind:'document',id:args.id};
+    if(/^(attach_file|attach_file_bytes|attach_pdf_pages|ai_recognize)$/.test(command))return {kind:'document',id:args.docId};
+    if(/^(update_work_history|delete_work_entry)$/.test(command))return {kind:'experience',id:args.id};
+    if(command==='attach_work_file')return {kind:'experience',id:args.entryId};
+    if(command==='delete_work_file')return {kind:'experience_file',id:args.id};
+    if(/^(set_seafarer_personal|upload_profile_photo|upload_profile_photo_bytes|clear_profile_photo)$/.test(command))return {kind:'profile',id:'main'};
+    return null;
+}
+
+function oneAccountSyncRender(status){
+    oneAccountSyncLast=status;
+    var el=document.getElementById('one-account-sync');if(!el)return;
+    var esc=function(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});};
+    var account=status.account_email||status.account_id||'';
+    var messages={disabled:'Sync is off',pending:'Changes are waiting to sync',syncing:'Synchronizing…',current:'Profile, sea service and documents are synchronized',conflict:'Choose which changes to keep',error:'Sync needs attention'};
+    el.innerHTML='<strong>Account sync</strong><div>'+esc(account)+'</div><div>'+esc(messages[status.state]||status.state)+'</div>'+(status.error?'<div>'+esc(status.error)+'</div>':'')+(status.enabled?'<button type="button" data-sync-action="retry">Sync now</button> <button type="button" data-sync-action="disable">Turn off</button>':'<button type="button" data-sync-action="enable">Enable account sync</button>');
+    (status.conflicts||[]).forEach(function(c){
+        var row=document.createElement('div');row.style.marginTop='12px';
+        var label=document.createElement('div');label.textContent=c.kind+' · '+c.id;row.appendChild(label);
+        var preview=document.createElement('pre');preview.style.whiteSpace='pre-wrap';preview.textContent='This device: '+JSON.stringify(c.local)+'\nAccount: '+JSON.stringify(c.remote);row.appendChild(preview);
+        ['local','remote'].forEach(function(choice){var button=document.createElement('button');button.type='button';button.textContent=choice==='local'?'Keep this device version':'Use account version';button.onclick=function(){oneAccountSyncResolve(c.kind,c.id,choice,c.revision);};row.appendChild(button);});el.appendChild(row);
+    });
+    el.querySelectorAll('[data-sync-action]').forEach(function(b){b.onclick=function(){var a=b.getAttribute('data-sync-action');if(a==='enable')oneAccountSyncEnable();else if(a==='retry')oneAccountSyncRun();else oneAccountSyncDisable();};});
+}
+async function oneAccountSyncRun(){
+    if(window.__SKIPI_WEBDESKTOP__||oneAccountSyncBusy)return;oneAccountSyncBusy=true;
+    try{var status=await invoke('get_account_sync_status');if(!status.enabled){oneAccountSyncRender(status);return;}oneAccountSyncRender(Object.assign({},status,{state:'syncing'}));oneAccountSyncRender(await invoke('sync_account_now'));await oneAccountSyncRefreshLists();}
+    catch(e){oneAccountSyncRender(Object.assign({},oneAccountSyncLast||{},{state:'error',error:String(e)}));}
+    finally{oneAccountSyncBusy=false;}
+}
+async function oneAccountSyncRefreshLists(){
+    // Refresh navigation data, keeping any open form and its displayed revision.
+    if(typeof allDocs==='undefined')return;
+    allDocs=await invoke('get_documents');
+    if(typeof renderTree==='function'&&document.getElementById('tree'))renderTree();
+    if(typeof mobileView!=='undefined'&&mobileView==='docs'&&typeof renderMobileDocs==='function')renderMobileDocs();
+}
+function oneAccountSyncSchedule(){if(oneAccountSyncTimer)clearTimeout(oneAccountSyncTimer);oneAccountSyncTimer=setTimeout(async function(){oneAccountSyncTimer=null;await oneAccountSyncRun();},1200);}
+async function oneAccountSyncEnable(){
+    if(!confirm('Sync this signed-in account’s profile, photo, sea service and all attached documents/scans with this device? Existing differences will be shown before either version is replaced.'))return;
+    try{oneAccountSyncRender(await invoke('enable_account_sync',{consent:true}));await oneAccountSyncRun();}catch(e){oneAccountSyncRender({state:'error',error:String(e),conflicts:[]});}
+}
+async function oneAccountSyncDisable(){try{oneAccountSyncRender(await invoke('disable_account_sync'));}catch(e){showToast(String(e));}}
+async function oneAccountSyncResolve(kind,id,choice,revision){try{oneAccountSyncRender(await invoke('resolve_account_sync_conflict',{kind:kind,id:id,choice:choice,revision:revision}));await oneAccountSyncRun();}catch(e){showToast(String(e));}}
+function oneAccountSyncInstall(){
+    if(!window.__TAURI__||typeof invoke!=='function'||invoke._accountSyncWrapped)return;
+    var raw=invoke;
+    invoke=async function(command,args){
+        args=Object.assign({},args||{});
+        var target=oneAccountMutation(command,args), key=target?target.kind+':'+target.id:null;
+        if(target&&args.expectedRevision==null&&oneAccountDisplayed[key]!=null)args.expectedRevision=oneAccountDisplayed[key];
+        var sentRevision=args.expectedRevision;
+        var result=await raw(command,args);
+        // List reads never replace an open editor's saved revision.
+        if(command==='get_documents'&&Array.isArray(result))result.forEach(function(r){oneAccountCapture('document',r,false);});
+        if(command==='get_work_history'&&Array.isArray(result))result.forEach(function(r){oneAccountCapture('experience',r,false);});
+        if(command==='get_work_files'&&Array.isArray(result))result.forEach(function(r){oneAccountCapture('experience_file',r,false);});
+        if(command==='get_seafarer_personal')oneAccountCapture('profile',result,false);
+        if(command==='add_custom_doc'||command==='add_catalog_doc')oneAccountCapture('document',result,true);
+        // Acknowledgement belongs to the exact form version sent. An editor
+        // reopened during the request keeps its own newly displayed baseline.
+        if(target&&command!=='attach_work_file'&&result&&result.sync_revision!=null&&oneAccountDisplayed[key]===sentRevision)oneAccountDisplayed[key]=result.sync_revision;
+        // Child acknowledgements cannot advance a parent form: they may also
+        // include another device's unseen parent edits. Reopening loads its base.
+        if(/^(create_vault|open_vault|close_vault|app_logout)$/.test(command))oneAccountDisplayed=Object.create(null);
+        if(!window.__SKIPI_WEBDESKTOP__&&(/^(set_seafarer_|upload_profile_photo|clear_profile_photo|add_work_history|update_work_history|delete_work_entry|attach_work_file|delete_work_file|attach_file|attach_bytes|attach_document|attach_pdf_pages|update_doc|update_field_statuses|update_expiry|delete_doc|add_custom_doc|create_vault|open_vault|app_login)/.test(command)))oneAccountSyncSchedule();
+        return result;
+    };
+    invoke._accountSyncWrapped=true;
+    if(!window.__SKIPI_WEBDESKTOP__){oneAccountSyncSchedule();if(typeof setInterval==='function')setInterval(function(){if(document.visibilityState==='visible'&&oneAccountSyncLast&&oneAccountSyncLast.enabled)oneAccountSyncSchedule();},30000);}
+}
+document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')oneAccountSyncSchedule();});
+window.addEventListener('online',oneAccountSyncSchedule);
+// ONE ACCOUNT SYNC END
 var types = {vessel_types:[], ranks:[]};
 var allDocs = [], selectedDocId = null, searchTerm = '', docTreeFilter = 'all', currentView = 'files';
 var pkgMode = false, pkgSelected = [];
@@ -3730,6 +3809,7 @@ async function init() {
     for(var i=0;i<10;i++){if(window.__TAURI__&&window.__TAURI__.core)break;await new Promise(r=>setTimeout(r,300));}
     if(!window.__TAURI__||!window.__TAURI__.core){err('Tauri API not available');return;}
     invoke=window.__TAURI__.core.invoke;
+    setTimeout(oneAccountSyncInstall,0);
     if(window.__TAURI__.dialog){open=window.__TAURI__.dialog.open;saveDlg=window.__TAURI__.dialog.save;}
     await loadBuildInfo();
     convertFileSrc=window.__TAURI__.core.convertFileSrc||function(p){return p;};
@@ -6305,6 +6385,7 @@ async function mobileShowExperienceForm(entryId,prefill){
         try{entry=mobileWorkEntryById(await invoke('get_work_history')||[],entryId);}catch(e){entry=null;}
         if(!entry){showToast('Sea Service entry not found','warn');return renderMobileExperience();}
     }
+    oneAccountCapture('experience',entry,true);
     mobileExperienceWizardState=mobileExperienceInitialState(entry,prefill);
     mobileRenderExperienceWizard();
 }
@@ -7477,6 +7558,7 @@ function renderMobileProfile(){
     }
     h+='<div class="mobile-stats"><div class="mobile-stat"><strong>'+st.total+'</strong><span>Total</span></div><div class="mobile-stat"><strong>'+st.uploaded+'</strong><span>Files</span></div><div class="mobile-stat"><strong>'+st.missing+'</strong><span>Missing</span></div></div>';
     h+='<button class="mobile-card" id="mobile-profile-completeness-card" type="button" onclick="mobileToggleProfileMissing()" aria-expanded="false" aria-controls="mobile-profile-missing" style="width:100%;text-align:left;color:inherit;"><span class="mobile-row"><span><span class="mobile-card-title" style="display:block;">'+mobileSetupText('Profile completeness','Полнота профиля')+'</span><span class="mobile-card-sub" style="display:block;">'+mobileSetupText('Show missing required documents','Показать недостающие обязательные документы')+'</span></span><span class="mobile-pill ok" id="mobile-profile-card-pct">'+pct+'</span></span></button><div class="mobile-card" id="mobile-profile-missing" hidden></div>';
+    h+='<section class="mobile-card" id="one-account-sync"></section>';
     h+='<div id="mobile-identity-trust"></div>';
     if(trustContributionEnabled()){
         h+='<button class="mobile-primary-action" type="button" data-qa="my-contribution-mobile-entry" onclick="mobileShow(\'contribution\')"><span class="mobile-action-icon">&#10003;</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(getUiLang()==='ru'?'Мой вклад':'My contribution')+'</span><span class="mobile-action-sub">'+mobileEsc(getUiLang()==='ru'?'Приватный прогресс по подтверждённым событиям.':'Private progress from confirmed events.')+'</span></span></button>';
@@ -7484,6 +7566,7 @@ function renderMobileProfile(){
     h+='<button class="mobile-primary-action" type="button" onclick="mobileShow(\'add\')"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">Add more documents</span><span class="mobile-action-sub">Scan or attach files from this phone.</span></span></button>';
     h+='<div class="mobile-card"><div class="mobile-card-title">Vault</div><div class="mobile-card-sub">Stored locally on this phone. Export a ZIP backup to open this profile on desktop.</div><div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-accent mobile-grow" onclick="mobileExportVaultBackup(true)">Export / share backup</button><button class="btn btn-outline mobile-grow" onclick="mobileOpenExistingVault()">Switch vault</button><button class="btn btn-outline mobile-grow" onclick="openSettings()">Settings</button></div><div class="mobile-actions" style="margin-top:8px;"><button class="btn btn-outline btn-red mobile-grow" onclick="mobileDeleteCurrentVault()">Delete this vault</button></div></div>';
     mobileMainHtml(h);
+    invoke('get_account_sync_status').then(oneAccountSyncRender).catch(function(){});
     mobileRefreshProfileSummary();
     mobileRefreshIdentityTrust();
 }
@@ -7769,6 +7852,7 @@ async function mobileConfirmOcr(docId){
 function renderMobileDoc(){
     var d=allDocs.find(function(x){return x.id===selectedDocId;});
     if(!d){mobileView='docs';return renderMobileDocs();}
+    oneAccountCapture('document',d,true);
     mobileSetBottomNav(true);
     var h='<button class="btn btn-outline btn-sm" onclick="mobileShow(\'docs\')" style="margin-bottom:10px;">Back</button>';
     h+='<div class="mobile-card"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title">'+mobileEsc(d.title)+'</div><div class="mobile-card-sub">'+mobileEsc(d.category)+'</div></div>'+mobileStatusPill(d)+'</div>';
@@ -9177,6 +9261,7 @@ async function openForcedProfile(forceOpen){
     // If already complete, don't force (unless forceOpen=true).
     try{
         var data=await invoke('get_seafarer_personal');
+        oneAccountCapture('profile',data,true);
         var minSal=String(data.min_salary||localStorage.getItem('skipi-sp-min_salary')||'');
         if(!forceOpen){
             var allSet=true;
@@ -11471,6 +11556,7 @@ async function selDoc(id){
 }
 
 async function renderDoc(d){
+    oneAccountCapture('document',d,true);
     var s=classify(d),dl=days(d),bc='badge-'+s;
     var st={expired:'Expired',critical:'Expiring soon',warning:'Attention',valid:'Valid',none:'No expiry'}[s];
     if(d.is_permanent)st='Permanent';
@@ -12583,7 +12669,7 @@ async function showWorkHistory(){
                 h+='<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);">';
                 h+='<div style="font-size:11px;color:var(--text2);margin-bottom:6px;">Supporting documents ('+files.length+')</div>';
                 files.forEach(function(f){
-                    var kind=f.kind?' <span style="color:var(--text2);font-size:10px;">['+f.kind+']</span>':'';
+                    var kind=f.kind?' <span style="color:var(--text2);font-size:10px;">['+esc(f.kind)+']</span>':'';
                     h+='<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:12px;">';
                     h+='<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">&#128196; '+f.file_name+kind+'</span>';
                     h+='<span style="display:flex;gap:4px;">';
@@ -12778,6 +12864,7 @@ function workPositionValue(){
 }
 
 function renderWorkEntryForm(entry){
+    oneAccountCapture('experience',entry,true);
     entry=entry||null;
     var isEdit=!!entry;
     var title=isEdit?'Edit Work Entry':'Add Work Entry';
@@ -16605,8 +16692,9 @@ function seafarerProfileFormHtml(){
     // 2026-08-06 (25)): device pairing + explicit Import/Send. Both network
     // directions run ONLY from these buttons — never automatically.
     h += '<div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border);">';
-    h += '<div style="font-weight:800;font-size:13px;">Skipi account</div>';
-    h += '<div class="section-desc" style="margin:4px 0 10px;">Import these details from — or send them to — your account at assistant.skipi.app. Each transfer happens only when you tap a button below and shows exactly which fields move. Your photo never syncs.</div>';
+    h += '<section id="one-account-sync" style="padding:12px 0;"></section>';
+    h += '<div style="font-weight:800;font-size:13px;">Manual profile transfer</div>';
+    h += '<div class="section-desc" style="margin:4px 0 10px;">Import these details from — or send them to — your account at assistant.skipi.app. Each transfer happens only when you tap a button below and shows exactly which fields move. This manual transfer excludes photos; account sync above includes them.</div>';
     h += '<div id="sp-acc-status" style="font-size:12px;color:var(--text2);margin-bottom:8px;">Checking device link…</div>';
     h += '<div id="sp-acc-link-row" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">';
     h += '<input id="sp-acc-code" placeholder="Link code from assistant.skipi.app" maxlength="8" autocapitalize="characters" autocomplete="off" style="flex:1;min-width:170px;">';
@@ -16688,7 +16776,7 @@ function renderSettingsBody(){
     }
 
     if(settingsTab === 'seafarer'){
-        h += '<div class="settings-section"><h3>Seafarer Profile</h3><div class="section-desc">Personal details used to generate your CV/Application Form PDF. Stored inside this vault on disk. Leaves the vault only when you tap ‘Send to account’.</div>';
+        h += '<div class="settings-section"><h3>Seafarer Profile</h3><div class="section-desc">Personal details used to generate your CV/Application Form PDF. Stored inside this vault on disk. Shared with your account after you enable account sync, or when you choose a manual transfer.</div>';
         h += seafarerProfileFormHtml();
         h += '</div>';
     }
@@ -16863,7 +16951,7 @@ function renderSettingsBody(){
     }
 
     document.getElementById('settings-body').innerHTML = h;
-    if(settingsTab === 'seafarer'){ spLoad(); }
+    if(settingsTab === 'seafarer'){ spLoad(); invoke('get_account_sync_status').then(oneAccountSyncRender).catch(function(){}); }
     if(settingsTab === 'email'){ smtpLoad(); populateMailClientsHint(); }
     if(settingsTab === 'ai'){
         invoke('get_api_key').then(function(k){var el=document.getElementById('set-key');if(el)el.value=k;}).catch(function(){});
@@ -17043,6 +17131,7 @@ async function spLoadPhoto(){
 async function spLoad(){
     try{
         var data=await invoke('get_seafarer_personal');
+        oneAccountCapture('profile',data,true);
         // Populate dropdowns before assigning values
         populateNationalitySelect(document.getElementById('sp-nationality'),data.nationality||'');
         populateRankControl('sp',data.rank||'','-- Select rank --');
@@ -18206,8 +18295,8 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
                 var e = ctx.escapeHtml;
                 var h = '';
                 h += '<div class="section-desc" style="margin-bottom:12px;">'
-                    + e(ru ? 'Личные данные для генерации CV/Application Form PDF. Хранятся в этом хранилище на диске и покидают его только по нажатию «Send to account».'
-                          : 'Personal details used to generate your CV/Application Form PDF. Stored inside this vault on disk. Leaves the vault only when you tap ‘Send to account’.')
+                    + e(ru ? 'Личные данные для генерации CV/Application Form PDF. Хранятся в этом хранилище и передаются в аккаунт после включения синхронизации или по команде ручного переноса.'
+                          : 'Personal details used to generate your CV/Application Form PDF. Stored inside this vault on disk. Shared with your account after you enable account sync, or when you choose a manual transfer.')
                     + '</div>';
                 h += seafarerProfileFormHtml();
                 // Side effect by necessity (see scheduleSeafarerFormLoad above):

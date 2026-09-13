@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 use tauri::State;
 
 const SKIPI_RELEASES_API: &str = "https://api.github.com/repos/CaptTymur/skipi.app/releases/tags";
-const SKIPI_RELEASE_DOWNLOAD_BASE: &str = "https://github.com/CaptTymur/skipi.app/releases/download";
+const SKIPI_RELEASE_DOWNLOAD_BASE: &str =
+    "https://github.com/CaptTymur/skipi.app/releases/download";
 const TAURI_CONF_JSON: &str = include_str!("../../tauri.conf.json");
 
 #[derive(serde::Serialize)]
@@ -37,7 +38,9 @@ pub fn get_app_version() -> String {
 
 #[tauri::command]
 pub fn get_build_info() -> BuildInfo {
-    let sha = option_env!("SKIPI_BUILD_SHA").unwrap_or("unknown").to_string();
+    let sha = option_env!("SKIPI_BUILD_SHA")
+        .unwrap_or("unknown")
+        .to_string();
     let short_sha = if sha == "unknown" {
         "unknown".to_string()
     } else {
@@ -315,9 +318,14 @@ mod ios_open_url {
     /// uses `AppHandle::run_on_main_thread` for exactly that reason.
     pub fn open_on_main_thread(url: &str) -> Result<(), String> {
         unsafe {
-            let c_url = CString::new(url).map_err(|_| "The address is not a valid URL".to_string())?;
+            let c_url =
+                CString::new(url).map_err(|_| "The address is not a valid URL".to_string())?;
             let ns_string = class_named("NSString")?;
-            let string = send1_cstr(ns_string, selector("stringWithUTF8String:")?, c_url.as_ptr());
+            let string = send1_cstr(
+                ns_string,
+                selector("stringWithUTF8String:")?,
+                c_url.as_ptr(),
+            );
             if string.is_null() {
                 return Err("Could not build the URL string".to_string());
             }
@@ -397,7 +405,11 @@ fn valid_release_version(version: &str) -> bool {
 fn product_asset_stem() -> String {
     serde_json::from_str::<serde_json::Value>(TAURI_CONF_JSON)
         .ok()
-        .and_then(|v| v.get("productName").and_then(|name| name.as_str()).map(str::to_string))
+        .and_then(|v| {
+            v.get("productName")
+                .and_then(|name| name.as_str())
+                .map(str::to_string)
+        })
         .filter(|name| !name.trim().is_empty())
         .unwrap_or_else(|| "Skipi Seafarer".to_string())
         .split_whitespace()
@@ -410,10 +422,7 @@ fn fallback_deb_asset_name(version: &str) -> String {
 }
 
 fn release_asset_download_url(version: &str, filename: &str) -> String {
-    format!(
-        "{}/v{}/{}",
-        SKIPI_RELEASE_DOWNLOAD_BASE, version, filename
-    )
+    format!("{}/v{}/{}", SKIPI_RELEASE_DOWNLOAD_BASE, version, filename)
 }
 
 fn deb_asset_from_release_json(
@@ -575,8 +584,11 @@ pub fn create_vault(
     let info = db::get_vault_info(&conn).map_err(|e| e.to_string())?;
 
     crate::save_last_vault(&path);
-    *state.vault_path.lock().unwrap_or_else(|e| e.into_inner()) = Some(vault_path);
-    *state.conn.lock().unwrap_or_else(|e| e.into_inner()) = Some(conn);
+    crate::commands::account_sync::vault_sync::invalidate(&state);
+    let mut path_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
+    let mut conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    *path_lock = Some(vault_path);
+    *conn_lock = Some(conn);
 
     Ok(info)
 }
@@ -597,16 +609,22 @@ pub fn open_vault(state: State<AppState>, path: String) -> Result<VaultInfo, Str
     let _ = crate::commands::profile::ensure_profile_templates(&conn, &vault_path);
 
     crate::save_last_vault(&path);
-    *state.vault_path.lock().unwrap_or_else(|e| e.into_inner()) = Some(vault_path);
-    *state.conn.lock().unwrap_or_else(|e| e.into_inner()) = Some(conn);
+    crate::commands::account_sync::vault_sync::invalidate(&state);
+    let mut path_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
+    let mut conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    *path_lock = Some(vault_path);
+    *conn_lock = Some(conn);
 
     Ok(info)
 }
 
 #[tauri::command]
 pub fn close_vault(state: State<AppState>, forget: Option<bool>) -> Result<(), String> {
-    *state.conn.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    *state.vault_path.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    crate::commands::account_sync::vault_sync::invalidate(&state);
+    let mut path_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
+    let mut conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    *conn_lock = None;
+    *path_lock = None;
     if forget.unwrap_or(false) {
         let cfg = crate::config_path();
         let _ = fs::write(cfg, serde_json::json!({}).to_string());
@@ -695,41 +713,24 @@ pub fn delete_vault(state: State<AppState>, path: Option<String>) -> Result<(), 
             .clone(),
     };
 
-    let is_current = state
-        .vault_path
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
+    let mut path_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
+    let mut conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let is_current = path_lock
         .as_ref()
         .map(|p| path_matches(p, &target))
         .unwrap_or(false);
-
-    if !target.exists() {
-        let _ = prune_vault_from_config(&target);
-        if is_current {
-            *state.conn.lock().unwrap_or_else(|e| e.into_inner()) = None;
-            *state.vault_path.lock().unwrap_or_else(|e| e.into_inner()) = None;
-        }
-        return Ok(());
-    }
-    if !target.is_dir() || !target.join("skipi.db").is_file() {
+    if target.exists() && (!target.is_dir() || !target.join("skipi.db").is_file()) {
         return Err("Refusing to delete: this folder is not a Skipi vault.".to_string());
     }
-
     if is_current {
-        *state.conn.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        crate::commands::account_sync::vault_sync::invalidate(&state);
+        *conn_lock = None;
+        *path_lock = None;
+    }
+    if target.exists() {
+        fs::remove_dir_all(&target).map_err(|e| format!("Could not delete vault: {e}"))?;
     }
 
-    match fs::remove_dir_all(&target) {
-        Ok(()) => {}
-        Err(e)
-            if e.kind() == std::io::ErrorKind::NotFound
-                || e.raw_os_error() == Some(2)
-                || !target.exists() => {}
-        Err(e) => return Err(format!("Could not delete vault: {}", e)),
-    }
-    if is_current {
-        *state.vault_path.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    }
     let _ = prune_vault_from_config(&target);
     Ok(())
 }
@@ -768,6 +769,40 @@ pub fn get_identity_trust_status(state: State<AppState>) -> Result<serde_json::V
     let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = conn_lock.as_ref().ok_or("No vault open")?;
     identity::get_identity_trust_status(conn, &vault_path, crate::load_recent_vaults())
+}
+
+// Exported/imported portable content is never a reusable login or sync session.
+fn scrub_portable_sessions(conn: &rusqlite::Connection) -> Result<(), String> {
+    conn.execute("DELETE FROM vault_info WHERE key LIKE 'skipi_user_%' OR key LIKE 'skipi_device_%' OR key LIKE 'sync_%' OR key LIKE '%secret%' OR key LIKE '%token%' OR key LIKE '%api_key%' OR key IN ('identity_recovery_key','identity_private_key')", []).map_err(|e|e.to_string())?;
+    let has_sync: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='account_sync_entities')", [], |r|r.get(0)).map_err(|e|e.to_string())?;
+    if has_sync {
+        conn.execute("DELETE FROM account_sync_entities", [])
+            .map_err(|e| e.to_string())?;
+    }
+    // VACUUM prevents deleted token text surviving in free database pages.
+    conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;")
+        .map_err(|e| e.to_string())
+}
+fn write_portable_database(conn: &rusqlite::Connection, db_snapshot: &Path) -> Result<(), String> {
+    // Remove credentials in memory before any portable snapshot reaches disk.
+    let mut portable = rusqlite::Connection::open_in_memory().map_err(|e| e.to_string())?;
+    {
+        let backup =
+            rusqlite::backup::Backup::new(conn, &mut portable).map_err(|e| e.to_string())?;
+        backup
+            .run_to_completion(128, std::time::Duration::from_millis(1), None)
+            .map_err(|e| e.to_string())?;
+    }
+    scrub_portable_sessions(&portable)?;
+    portable
+        .backup(DatabaseName::Main, &db_snapshot, None)
+        .map_err(|e| format!("database backup failed: {e}"))?;
+    Ok(())
+}
+fn portable_private_path(relative: &Path) -> bool {
+    relative.starts_with("_identity")
+        || relative.starts_with("_sync/queue")
+        || relative.starts_with("_sync/staging")
 }
 
 fn zip_path_name(path: &Path) -> String {
@@ -811,6 +846,9 @@ fn add_vault_tree_to_zip(
     for entry in fs::read_dir(dir).map_err(|e| format!("read {}: {}", dir.display(), e))? {
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
+        if portable_private_path(path.strip_prefix(vault_path).map_err(|e| e.to_string())?) {
+            continue;
+        }
         let meta = fs::symlink_metadata(&path)
             .map_err(|e| format!("metadata {}: {}", path.display(), e))?;
         if meta.file_type().is_symlink() {
@@ -876,8 +914,7 @@ pub fn export_vault_backup(
     if db_snapshot.exists() {
         let _ = fs::remove_file(&db_snapshot);
     }
-    conn.backup(DatabaseName::Main, &db_snapshot, None)
-        .map_err(|e| format!("database backup failed: {}", e))?;
+    write_portable_database(conn, &db_snapshot)?;
 
     let file =
         fs::File::create(&tmp_out).map_err(|e| format!("create {}: {}", tmp_out.display(), e))?;
@@ -953,7 +990,7 @@ fn extract_backup_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
         let enclosed = entry
             .enclosed_name()
             .ok_or_else(|| format!("Unsafe path in backup: {}", entry.name()))?;
-        if enclosed.as_os_str().is_empty() {
+        if enclosed.as_os_str().is_empty() || portable_private_path(&enclosed) {
             continue;
         }
         let out_path = dest.join(&enclosed);
@@ -1009,6 +1046,7 @@ pub fn import_vault_backup(
         {
             let conn =
                 db::open_db(&temp).map_err(|e| format!("Imported database is invalid: {}", e))?;
+            scrub_portable_sessions(&conn)?;
             let _ = db::get_vault_info(&conn)
                 .map_err(|e| format!("Imported vault metadata is invalid: {}", e))?;
         }
@@ -1022,8 +1060,11 @@ pub fn import_vault_backup(
         let _ = crate::commands::profile::ensure_profile_templates(&conn, &target);
         let path_str = target.to_string_lossy().to_string();
         crate::save_last_vault(&path_str);
-        *state.vault_path.lock().unwrap_or_else(|e| e.into_inner()) = Some(target);
-        *state.conn.lock().unwrap_or_else(|e| e.into_inner()) = Some(conn);
+        crate::commands::account_sync::vault_sync::invalidate(&state);
+        let mut path_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
+        let mut conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+        *path_lock = Some(target);
+        *conn_lock = Some(conn);
         Ok(info)
     })();
 
@@ -1098,7 +1139,9 @@ mod tests {
 
     #[test]
     fn external_url_allowlist_accepts_supported_schemes() {
-        assert!(external_url_is_allowed("https://assistant.skipi.app/register"));
+        assert!(external_url_is_allowed(
+            "https://assistant.skipi.app/register"
+        ));
         assert!(external_url_is_allowed("http://example.com"));
         assert!(external_url_is_allowed("mailto:crew@skipi.app"));
         assert!(external_url_is_allowed("tel:+15551234567"));
@@ -1143,10 +1186,7 @@ mod tests {
         let src = include_str!("vault.rs");
         // Build the needle from fragments so this test's own source doesn't
         // contain the literal it forbids (which would make it self-defeating).
-        let needle = format!(
-            "Opening external URLs {} for mobile yet.",
-            "is not wired"
-        );
+        let needle = format!("Opening external URLs {} for mobile yet.", "is not wired");
         assert!(
             !src.contains(&needle),
             "the removed Android stub string must not reappear in vault.rs"
@@ -1211,7 +1251,11 @@ mod tests {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     #[test]
     fn desktop_open_external_url_rejects_a_disallowed_scheme() {
-        for bad in ["file:///etc/passwd", "javascript:alert(1)", "ftp://example.com"] {
+        for bad in [
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "ftp://example.com",
+        ] {
             let e = open_external_url(bad.to_string())
                 .expect_err(&format!("expected {bad:?} to be rejected"));
             assert!(e.contains("http(s)/mailto/tel"), "unexpected message: {e}");
@@ -1307,5 +1351,130 @@ mod tests {
         assert!(!names.contains("out.zip"));
 
         let _ = fs::remove_dir_all(root);
+    }
+}
+
+#[cfg(test)]
+mod account_sync_portable_tests {
+    use super::*;
+    #[test]
+    fn portable_zip_contains_documents_photo_and_evidence_but_no_privileged_state() {
+        let root = std::env::current_dir()
+            .unwrap()
+            .join("../scratchpad/one-account-sync-20260913")
+            .join(uuid::Uuid::new_v4().to_string());
+        fs::create_dir_all(&root).unwrap();
+        let conn = db::open_db(&root).unwrap();
+        db::set_vault_info(&conn, "sync_token", "SYNTHETIC_PRIVILEGED_SYNC_TOKEN").unwrap();
+        db::set_vault_info(&conn, "skipi_user_token", "SYNTHETIC_APP_TOKEN").unwrap();
+        db::set_vault_info(&conn, "personal_first_name", "Ada").unwrap();
+        for (path, bytes) in [
+            ("_identity/private.key", b"SYNTHETIC_PRIVATE_KEY".as_slice()),
+            ("_sync/queue/payload", b"SYNTHETIC_QUEUE".as_slice()),
+            ("_profile/photo.png", b"photo".as_slice()),
+            ("Sea Service/work/evidence.doc", b"word evidence".as_slice()),
+            ("Other/scan.pdf", b"scan".as_slice()),
+        ] {
+            let path = root.join(path);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, bytes).unwrap();
+        }
+        let snapshot = root.join("portable.db");
+        write_portable_database(&conn, &snapshot).unwrap();
+        let output = root.join("portable.zip");
+        let mut writer = zip::ZipWriter::new(fs::File::create(&output).unwrap());
+        let options = zip::write::SimpleFileOptions::default();
+        add_file_to_zip(&mut writer, &snapshot, "skipi.db", options).unwrap();
+        add_vault_tree_to_zip(
+            &mut writer,
+            &root,
+            &root,
+            &[snapshot.clone(), output.clone()],
+            options,
+        )
+        .unwrap();
+        writer.finish().unwrap();
+        let mut archive = zip::ZipArchive::new(fs::File::open(&output).unwrap()).unwrap();
+        let names: Vec<String> = archive.file_names().map(str::to_string).collect();
+        assert!(!names
+            .iter()
+            .any(|n| n.starts_with("_identity/") || n.starts_with("_sync/queue/")));
+        for (name, bytes) in [
+            ("_profile/photo.png", b"photo".as_slice()),
+            ("Sea Service/work/evidence.doc", b"word evidence".as_slice()),
+            ("Other/scan.pdf", b"scan".as_slice()),
+        ] {
+            let mut body = Vec::new();
+            archive
+                .by_name(name)
+                .unwrap()
+                .read_to_end(&mut body)
+                .unwrap();
+            assert_eq!(body, bytes);
+        }
+        let mut db_bytes = Vec::new();
+        archive
+            .by_name("skipi.db")
+            .unwrap()
+            .read_to_end(&mut db_bytes)
+            .unwrap();
+        assert!(!String::from_utf8_lossy(&db_bytes).contains("SYNTHETIC_"));
+        let restored = root.join("restored.db");
+        fs::write(&restored, db_bytes).unwrap();
+        let imported = rusqlite::Connection::open(restored).unwrap();
+        scrub_portable_sessions(&imported).unwrap();
+        assert_eq!(
+            db::get_vault_info_value(&imported, "personal_first_name").as_deref(),
+            Some("Ada")
+        );
+        assert!(db::get_vault_info_value(&imported, "sync_token").is_none());
+        assert_eq!(
+            db::get_vault_info_value(&conn, "sync_token").as_deref(),
+            Some("SYNTHETIC_PRIVILEGED_SYNC_TOKEN")
+        );
+        drop(imported);
+        drop(archive);
+        drop(conn);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn portable_copy_strips_tokens_and_queue_but_preserves_profile_and_photo_paths() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE vault_info(key TEXT PRIMARY KEY,value TEXT); CREATE TABLE account_sync_entities(payload TEXT);").unwrap();
+        for (k, v) in [
+            ("sync_token", "SYNTHETIC_PRIVILEGED"),
+            ("skipi_user_token", "SYNTHETIC_LOGIN"),
+            ("personal_first_name", "Ada"),
+            ("personal_photo_path", "_profile/photo.png"),
+        ] {
+            db::set_vault_info(&conn, k, v).unwrap();
+        }
+        conn.execute(
+            "INSERT INTO account_sync_entities VALUES('synthetic queue')",
+            [],
+        )
+        .unwrap();
+        scrub_portable_sessions(&conn).unwrap();
+        assert!(db::get_vault_info_value(&conn, "sync_token").is_none());
+        assert!(db::get_vault_info_value(&conn, "skipi_user_token").is_none());
+        assert_eq!(
+            db::get_vault_info_value(&conn, "personal_first_name").as_deref(),
+            Some("Ada")
+        );
+        assert_eq!(
+            db::get_vault_info_value(&conn, "personal_photo_path").as_deref(),
+            Some("_profile/photo.png")
+        );
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM account_sync_entities", [], |r| r
+                .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        assert!(portable_private_path(Path::new("_identity/secret.key")));
+        assert!(!portable_private_path(Path::new("_profile/photo.png")));
+        assert!(!portable_private_path(Path::new(
+            "Sea Service/entry/scan.pdf"
+        )));
     }
 }

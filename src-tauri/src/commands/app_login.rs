@@ -49,6 +49,7 @@ pub(crate) struct PendingLogin {
     pub token: String,
     pub email: String,
     pub login_at: String,
+    pub account_id: Option<String>,
 }
 
 pub(crate) type PendingLoginSlot = Mutex<Option<PendingLogin>>;
@@ -58,6 +59,16 @@ fn write_login(conn: &Connection, token: &str, email: &str, login_at: &str) -> R
     db::set_vault_info(conn, USER_TOKEN_KEY, token).map_err(|e| e.to_string())?;
     db::set_vault_info(conn, USER_EMAIL_KEY, email).map_err(|e| e.to_string())?;
     db::set_vault_info(conn, USER_LOGIN_AT_KEY, login_at).map_err(|e| e.to_string())
+}
+
+fn check_sync_account(conn: &Connection, account: Option<&str>) -> Result<(), String> {
+    if let Some(bound) = db::get_vault_info_value(conn, "sync_account_id").filter(|v| !v.is_empty())
+    {
+        if account != Some(bound.as_str()) {
+            return Err("This local profile is linked to another account. Open a separate profile for this account.".into());
+        }
+    }
+    Ok(())
 }
 
 /// Move a parked pre-vault login into the open vault. Returns Ok(true) when
@@ -73,6 +84,7 @@ pub(crate) fn persist_pending_login(
         Some(p) => p,
         None => return Ok(false),
     };
+    check_sync_account(conn, pending.account_id.as_deref())?;
     if stored_user_token(conn).is_some() {
         return Ok(false);
     }
@@ -112,6 +124,7 @@ fn login_status_json(conn: Option<&Connection>, slot: &PendingLoginSlot) -> Resu
 /// runtime (or the main thread) blocks/panics — that was bug class №140/№162.
 fn http_client() -> Result<reqwest::blocking::Client, String> {
     reqwest::blocking::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
         .timeout(std::time::Duration::from_secs(15))
         .connect_timeout(std::time::Duration::from_secs(4))
         .build()
@@ -131,6 +144,7 @@ pub(crate) fn stored_user_token(conn: &Connection) -> Option<String> {
 struct AppLoginOk {
     token: String,
     role: Option<String>,
+    account_id: Option<String>,
 }
 
 /// POST {base}/api/app/login {email,password,label} → token + role.
@@ -172,7 +186,16 @@ fn post_app_login(
                 .and_then(|r| r.as_str())
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty());
-            Ok(AppLoginOk { token, role })
+            let account_id = parsed
+                .get("account_id")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+            Ok(AppLoginOk {
+                token,
+                role,
+                account_id,
+            })
         }
         _ => Err(format!("assistant.skipi.app returned {status}: {body}")),
     }
@@ -189,20 +212,16 @@ fn post_app_login(
 /// stays shown.
 fn seafarer_role_allowed(role: Option<&str>) -> Result<(), String> {
     match role {
-        Some("broker") => Err(
-            "This account is registered as Broker. \
+        Some("broker") => Err("This account is registered as Broker. \
              Please sign in with the Skipi Broker app.\n\
              Этот аккаунт зарегистрирован как Broker. \
              Войдите в приложение Skipi Broker."
-                .to_string(),
-        ),
-        Some("crewing") => Err(
-            "This account is registered as Crewing. \
+            .to_string()),
+        Some("crewing") => Err("This account is registered as Crewing. \
              Please sign in with the Skipi Crewing app.\n\
              Этот аккаунт зарегистрирован как Crewing. \
              Войдите в приложение Skipi Crewing."
-                .to_string(),
-        ),
+            .to_string()),
         // "seafarer", unset/null, or any unknown value → allowed on this app.
         _ => Ok(()),
     }
@@ -247,6 +266,8 @@ pub async fn app_login(
     email: String,
     password: String,
 ) -> Result<Value, String> {
+    crate::commands::account_sync::vault_sync::invalidate(&state);
+    let epoch = state.sync_epoch.load(std::sync::atomic::Ordering::SeqCst);
     let email = email.trim().to_lowercase();
     if email.is_empty() || password.is_empty() {
         return Err("Enter your email and password.".to_string());
@@ -264,27 +285,44 @@ pub async fn app_login(
     // Per-app role gate (DECISIONS 59/60): reject foreign roles BEFORE storing
     // the token, so a rejected broker/crewing account never unlocks the shell
     // and no token is persisted (the login gate stays shown).
-    seafarer_role_allowed(ok.role.as_deref())?;
-    let token = ok.token;
-    let login_at = chrono::Utc::now().to_rfc3339();
-    // Short-lived lock (no network inside): vault open → store now; no vault
-    // yet → park until the first vault opens (persisted by app_login_status).
-    let pending = {
+    let stored: Result<bool, String> = (|| {
+        seafarer_role_allowed(ok.role.as_deref())?;
+        let login_at = chrono::Utc::now().to_rfc3339();
         let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+        if state.sync_epoch.load(std::sync::atomic::Ordering::SeqCst) != epoch {
+            return Err("Vault or account changed during sign in; please retry.".into());
+        }
         match lock.as_ref() {
             Some(conn) => {
-                write_login(conn, &token, &email, &login_at)?;
-                false
+                check_sync_account(conn, ok.account_id.as_deref())?;
+                write_login(conn, &ok.token, &email, &login_at)?;
+                Ok(false)
             }
             None => {
-                *state.login_pending.lock().unwrap_or_else(|e| e.into_inner()) =
-                    Some(PendingLogin {
-                        token,
-                        email: email.clone(),
-                        login_at,
-                    });
-                true
+                *state
+                    .login_pending
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner()) = Some(PendingLogin {
+                    token: ok.token.clone(),
+                    email: email.clone(),
+                    login_at,
+                    account_id: ok.account_id.clone(),
+                });
+                Ok(true)
             }
+        }
+    })();
+    let pending = match stored {
+        Ok(pending) => pending,
+        Err(reason) => {
+            let rejected_token = ok.token;
+            let _ = tauri::async_runtime::spawn_blocking(move || {
+                if let Ok(client) = http_client() {
+                    post_app_logout(&assistant_api_base(), &client, &rejected_token);
+                }
+            })
+            .await;
+            return Err(reason);
         }
     };
     Ok(json!({"logged_in": true, "email": email, "pending": pending}))
@@ -298,11 +336,10 @@ pub async fn app_login(
 /// runs in `spawn_blocking` with no lock held.
 #[tauri::command]
 pub async fn app_logout(state: State<'_, AppState>) -> Result<Value, String> {
-    // Short-lived lock: read the stored token (vault, or the parked pre-vault
-    // login when no vault is open); released before any network.
+    crate::commands::account_sync::vault_sync::invalidate(&state);
     let token = {
         let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
-        match lock.as_ref() {
+        let token = match lock.as_ref() {
             Some(conn) => stored_user_token(conn),
             None => state
                 .login_pending
@@ -310,26 +347,32 @@ pub async fn app_logout(state: State<'_, AppState>) -> Result<Value, String> {
                 .unwrap_or_else(|e| e.into_inner())
                 .as_ref()
                 .map(|p| p.token.clone()),
+        };
+        if let Some(conn) = lock.as_ref() {
+            for key in [
+                USER_TOKEN_KEY,
+                USER_EMAIL_KEY,
+                USER_LOGIN_AT_KEY,
+                "sync_token",
+                "sync_enabled",
+                "sync_parent_hash",
+            ] {
+                db::set_vault_info(conn, key, "").map_err(|e| e.to_string())?;
+            }
         }
+        *state
+            .login_pending
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = None;
+        token
     };
     if let Some(token) = token {
-        // Best-effort revoke; ignore network errors AND task-join errors
-        // (we still clear locally either way).
         let _ = tauri::async_runtime::spawn_blocking(move || {
             if let Ok(client) = http_client() {
                 post_app_logout(&assistant_api_base(), &client, &token);
             }
         })
         .await;
-    }
-    {
-        let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(conn) = lock.as_ref() {
-            for key in [USER_TOKEN_KEY, USER_EMAIL_KEY, USER_LOGIN_AT_KEY] {
-                db::set_vault_info(conn, key, "").map_err(|e| e.to_string())?;
-            }
-        }
-        *state.login_pending.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
     Ok(json!({"logged_in": false}))
 }
@@ -350,11 +393,30 @@ mod tests {
         (path, conn)
     }
 
+    #[test]
+    fn pending_other_account_cannot_open_an_already_bound_vault() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE vault_info(key TEXT PRIMARY KEY,value TEXT)")
+            .unwrap();
+        db::set_vault_info(&conn, "sync_account_id", "public-A").unwrap();
+        assert!(check_sync_account(&conn, Some("public-B")).is_err());
+        assert!(check_sync_account(&conn, None).is_err());
+        assert!(check_sync_account(&conn, Some("public-A")).is_ok());
+        let slot = Mutex::new(Some(PendingLogin {
+            token: "synthetic-B".into(),
+            email: "b@example.test".into(),
+            login_at: "test".into(),
+            account_id: Some("public-B".into()),
+        }));
+        assert!(persist_pending_login(&conn, &slot).is_err());
+        assert!(stored_user_token(&conn).is_none());
+    }
     fn parked(token: &str) -> PendingLogin {
         PendingLogin {
             token: token.to_string(),
             email: "reviewer@example.com".to_string(),
             login_at: "2026-09-02T00:00:00+00:00".to_string(),
+            account_id: None,
         }
     }
 
@@ -362,7 +424,10 @@ mod tests {
     fn status_without_vault_is_fail_closed_until_a_login_is_parked() {
         let slot: PendingLoginSlot = Mutex::new(None);
         let st = login_status_json(None, &slot).unwrap();
-        assert_eq!(st["logged_in"], false, "no vault + no login → gate stays up");
+        assert_eq!(
+            st["logged_in"], false,
+            "no vault + no login → gate stays up"
+        );
         assert_eq!(st["pending"], false);
 
         *slot.lock().unwrap() = Some(parked("tok-1"));
@@ -370,7 +435,10 @@ mod tests {
         assert_eq!(st["logged_in"], true, "pre-vault login counts for the gate");
         assert_eq!(st["pending"], true);
         assert_eq!(st["email"], "reviewer@example.com");
-        assert!(slot.lock().unwrap().is_some(), "nothing to persist into yet — slot kept");
+        assert!(
+            slot.lock().unwrap().is_some(),
+            "nothing to persist into yet — slot kept"
+        );
     }
 
     #[test]
@@ -389,7 +457,10 @@ mod tests {
             db::get_vault_info_value(&conn, USER_LOGIN_AT_KEY).as_deref(),
             Some("2026-09-02T00:00:00+00:00")
         );
-        assert!(slot.lock().unwrap().is_none(), "slot cleared once persisted");
+        assert!(
+            slot.lock().unwrap().is_none(),
+            "slot cleared once persisted"
+        );
 
         let st = login_status_json(Some(&conn), &slot).unwrap();
         assert_eq!(st["logged_in"], true);
@@ -416,7 +487,13 @@ mod tests {
     #[test]
     fn vault_token_wins_and_a_stale_parked_login_never_leaks() {
         let (path, conn) = temp_vault();
-        write_login(&conn, "vault-tok", "owner@example.com", "2026-01-01T00:00:00+00:00").unwrap();
+        write_login(
+            &conn,
+            "vault-tok",
+            "owner@example.com",
+            "2026-01-01T00:00:00+00:00",
+        )
+        .unwrap();
         let slot: PendingLoginSlot = Mutex::new(Some(parked("stale")));
 
         assert!(!persist_pending_login(&conn, &slot).unwrap());
@@ -425,7 +502,10 @@ mod tests {
             db::get_vault_info_value(&conn, USER_EMAIL_KEY).as_deref(),
             Some("owner@example.com")
         );
-        assert!(slot.lock().unwrap().is_none(), "stale pre-vault login discarded");
+        assert!(
+            slot.lock().unwrap().is_none(),
+            "stale pre-vault login discarded"
+        );
 
         drop(conn);
         let _ = fs::remove_dir_all(&path);

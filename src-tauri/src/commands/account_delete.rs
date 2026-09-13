@@ -69,6 +69,7 @@ fn delete_url(base: &str) -> String {
 /// runtime blocks or panics (bug class №140/№162).
 fn http_client() -> Result<reqwest::blocking::Client, String> {
     reqwest::blocking::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
         .timeout(std::time::Duration::from_secs(15))
         .connect_timeout(std::time::Duration::from_secs(4))
         .build()
@@ -185,6 +186,8 @@ pub async fn delete_account(state: State<'_, AppState>, password: String) -> Res
     if password.trim().is_empty() {
         return Err(delete_error_message(400, ""));
     }
+    crate::commands::account_sync::vault_sync::invalidate(&state);
+    let epoch = state.sync_epoch.load(std::sync::atomic::Ordering::SeqCst);
     // Short-lived lock: read the session token (from the open vault, or from a
     // login parked before the first vault exists — №162b). Released before any
     // network call.
@@ -220,8 +223,10 @@ pub async fn delete_account(state: State<'_, AppState>, password: String) -> Res
     // the lines happen to sit — see the doc comment on finish_deletion.
     finish_deletion(outcome, || {
         let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+        if state.sync_epoch.load(std::sync::atomic::Ordering::SeqCst) != epoch { return Ok(()); }
+        crate::commands::account_sync::vault_sync::invalidate(&state);
         if let Some(conn) = lock.as_ref() {
-            for key in SESSION_KEYS {
+            for key in SESSION_KEYS.iter().copied().chain(["sync_token", "sync_enabled", "sync_parent_hash"]) {
                 crate::db::set_vault_info(conn, key, "").map_err(|e| e.to_string())?;
             }
         }
