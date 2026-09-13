@@ -11529,7 +11529,7 @@ function renderTree(){
     if(docTreeFilter==='missing'){
         var missingSummary=requiredDocumentSummary();
         var absent=missingSummary.missingIds.some(function(id){return !allDocs.some(function(d){return d.template_id===id;});});
-        if(!missingSummary.loaded||absent)h+='<div class="tree-empty">'+esc(!missingSummary.loaded?(getUiLang()==='ru'?'Список требований пока недоступен.':'The requirements list is not available yet.'):(getUiLang()==='ru'?'В счётчик включены обязательные документы, для которых ещё нет строки. Откройте «Недостающие документы» на главной.':'The count includes required documents without a row. Open Missing documents on the dashboard.'))+'</div>';
+        if(!missingSummary.loaded||absent)h+='<div class="tree-empty">'+esc(!missingSummary.loaded?(getUiLang()==='ru'?'Список требований пока недоступен.':'The requirements list is not available yet.'):(getUiLang()==='ru'?'Некоторые обязательные документы ещё не добавлены. Откройте «Недостающие документы» на главной.':'Some required documents have not been added yet. Open Missing documents on the dashboard.'))+'</div>';
     }
     if(!h)h='<div class="tree-empty">'+esc(getUiLang()==='ru'?'Нет документов для этого фильтра.':'No documents match this filter.')+'</div>';
     document.getElementById('panel-tree').innerHTML=h;
