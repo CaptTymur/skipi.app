@@ -2080,25 +2080,78 @@ pub mod vault_sync {
             json!({"enabled":require_bound(conn).is_ok(),"account_id":account,"account_email":db::get_vault_info_value(conn,"skipi_user_email").unwrap_or_default(),"state":if conflicts.is_empty(){db::get_vault_info_value(conn,"sync_state").unwrap_or_else(||"disabled".into())}else{"conflict".into()},"conflicts":conflicts,"pending":known.values().filter(|b|!b["queued"].is_null()).count(),"error":db::get_vault_info_value(conn,"sync_error").unwrap_or_default(),"last_completed":db::get_vault_info_value(conn,"sync_last_completed").unwrap_or_default()}),
         )
     }
-    #[tauri::command]
-    pub fn get_account_sync_status(state: State<AppState>) -> Result<Value, String> {
+    // Freshness binding only: never expose a path or bearer token, and never
+    // create a vault UUID while reading status. Lengths preserve exact OS bytes.
+    fn consent_context(path: &Path, epoch: u64, parent: &str) -> String {
+        let mut hash = Sha256::new();
+        hash.update(b"skipi.native.sync-consent.v1\0");
+        let path = path.as_os_str().as_encoded_bytes();
+        hash.update((path.len() as u64).to_le_bytes());
+        hash.update(path);
+        hash.update(epoch.to_le_bytes());
+        hash.update((parent.len() as u64).to_le_bytes());
+        hash.update(parent.as_bytes());
+        format!("{:x}", hash.finalize())
+    }
+    fn consent_status(state: &AppState) -> Result<Value, String> {
+        let path = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
         let conn = state.conn.lock().unwrap_or_else(|e| e.into_inner());
         match conn.as_ref() {
-            Some(conn) => status(conn),
+            Some(conn) => {
+                let mut result = status(conn)?;
+                if let (Some(path), Some(parent)) =
+                    (path.as_ref(), super::super::app_login::stored_user_token(conn))
+                {
+                    result["consent_context"] = json!(consent_context(
+                        path, state.sync_epoch.load(Ordering::SeqCst), &parent,
+                    ));
+                }
+                Ok(result)
+            }
             None => Ok(json!({"enabled":false,"state":"disabled","conflicts":[]})),
         }
+    }
+    #[tauri::command]
+    pub fn get_account_sync_status(state: State<AppState>) -> Result<Value, String> {
+        consent_status(&state)
+    }
+    // Caller holds sync_worker. The context check and preparation share the
+    // same path -> connection lock scope; rejection precedes every side effect.
+    fn prepare_enable(
+        state: &AppState,
+        supplied: Option<&str>,
+    ) -> Result<(PathBuf, String, u64, String, String), String> {
+        let path = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = conn.as_ref().ok_or("Open a profile first")?;
+        let path = path.as_ref().ok_or("No vault open")?;
+        require_seafarer_vault(conn)?;
+        if db::get_vault_info_value(conn, "is_demo").as_deref() == Some("1") {
+            return Err("Open your own profile to enable synchronization".into());
+        }
+        let parent = super::super::app_login::stored_user_token(conn).ok_or("Sign in first")?;
+        let epoch = state.sync_epoch.load(Ordering::SeqCst);
+        let expected = consent_context(path, epoch, &parent);
+        if supplied.filter(|v| !v.is_empty()) != Some(expected.as_str()) {
+            return Err("Vault or login changed during consent. Confirm synchronization again.".into());
+        }
+        let device = db::get_vault_info_value(conn, "sync_device_id")
+            .filter(|v| valid_id(v)).unwrap_or_else(uid);
+        db::set_vault_info(conn, "sync_device_id", &device).map_err(err)?;
+        Ok((path.clone(), vault_uuid(conn)?, epoch, parent, device))
     }
     #[tauri::command]
     pub async fn enable_account_sync(
         app: tauri::AppHandle,
         consent: bool,
+        consent_context: Option<String>,
     ) -> Result<Value, String> {
         if !consent {
             return Err("Explicit consent is required to synchronize profile, sea service and all attached files".into());
         }
         tauri::async_runtime::spawn_blocking(move||{
             let state=app.state::<AppState>();let _single=state.sync_worker.lock().unwrap_or_else(|e|e.into_inner());
-            let(path,vault,epoch,parent,device)={let path=state.vault_path.lock().unwrap_or_else(|e|e.into_inner());let conn=state.conn.lock().unwrap_or_else(|e|e.into_inner());let conn=conn.as_ref().ok_or("Open a profile first")?;require_seafarer_vault(conn)?;if db::get_vault_info_value(conn,"is_demo").as_deref()==Some("1"){return Err("Open your own profile to enable synchronization".into())}let parent=super::super::app_login::stored_user_token(conn).ok_or("Sign in first")?;let device=db::get_vault_info_value(conn,"sync_device_id").filter(|v|valid_id(v)).unwrap_or_else(uid);db::set_vault_info(conn,"sync_device_id",&device).map_err(err)?;(path.clone().ok_or("No vault open")?,vault_uuid(conn)?,state.sync_epoch.load(Ordering::SeqCst),parent,device)};
+            let(path,vault,epoch,parent,device)=prepare_enable(&state,consent_context.as_deref())?;
             let(s,v)=http_json(client()?.post(api("/api/app/vault-token")).bearer_auth(&parent).json(&json!({"device_id":device,"consent_vault":true})))?;if s!=200{return Err(status_error(s))}let account=text(&v,"account_id");let token=text(&v,"token");if v["schema"]!=1||text(&v,"scope")!="seafarer-profile+vault"||text(&v,"device_id")!=device||account.is_empty()||token.is_empty(){return Err("Invalid account binding response".into())}
             let path_lock=state.vault_path.lock().unwrap_or_else(|e|e.into_inner());let conn=state.conn.lock().unwrap_or_else(|e|e.into_inner());let conn=conn.as_ref().ok_or("Vault closed")?;
             if path_lock.as_ref()!=Some(&path)||state.sync_epoch.load(Ordering::SeqCst)!=epoch||db::get_vault_info_value(conn,"sync_vault_uuid").as_deref()!=Some(&vault)||super::super::app_login::stored_user_token(conn).as_deref()!=Some(&parent){return Err("Vault or login changed during consent".into())}
@@ -2191,6 +2244,99 @@ pub mod vault_sync {
             let conn = db::open_db(&path).unwrap();
             db::set_vault_info(&conn, "account_type", "seafarer").unwrap();
             (path, conn)
+        }
+        fn consent_fixture() -> (PathBuf, AppState) {
+            let (root, conn) = fixture();
+            db::set_vault_info(&conn, "skipi_user_token", "synthetic-parent-consent").unwrap();
+            let state = AppState {
+                conn: std::sync::Mutex::new(Some(conn)),
+                vault_path: std::sync::Mutex::new(Some(root.clone())),
+                login_pending: std::sync::Mutex::new(None),
+                sync_epoch: std::sync::atomic::AtomicU64::new(0),
+                sync_worker: std::sync::Mutex::new(()),
+            };
+            (root, state)
+        }
+        #[test]
+        fn consent_status_is_read_only_and_requires_vault_and_login() {
+            let (root, state) = consent_fixture();
+            let changes = || state.conn.lock().unwrap().as_ref().unwrap().total_changes();
+            let before = changes();
+            let first = consent_status(&state).unwrap();
+            assert_eq!(first, consent_status(&state).unwrap());
+            let context = first["consent_context"].as_str().unwrap();
+            assert_eq!(context.len(), 64);
+            assert!(context.bytes().all(|b| b.is_ascii_hexdigit()));
+            assert_eq!(before, changes(), "GET cannot create device ID or vault UUID");
+            *state.vault_path.lock().unwrap() = None;
+            assert!(consent_status(&state).unwrap()["consent_context"].is_null());
+            assert!(prepare_enable(&state, Some(context)).is_err());
+            *state.vault_path.lock().unwrap() = Some(root.clone());
+            db::set_vault_info(state.conn.lock().unwrap().as_ref().unwrap(), "skipi_user_token", "").unwrap();
+            let before = changes();
+            assert!(consent_status(&state).unwrap()["consent_context"].is_null());
+            assert!(prepare_enable(&state, Some(context)).is_err());
+            assert_eq!(before, changes());
+            *state.conn.lock().unwrap() = None;
+            assert!(consent_status(&state).unwrap()["consent_context"].is_null());
+            assert!(prepare_enable(&state, Some(context)).is_err());
+            drop(state);
+            fs::remove_dir_all(root).unwrap();
+        }
+        #[test]
+        fn consent_context_race_rejects_before_writes_or_http() {
+            for change in ["path", "epoch", "parent", "missing", "empty"] {
+                let (root, state) = consent_fixture();
+                let first = consent_status(&state).unwrap();
+                let second = consent_status(&state).unwrap();
+                assert_eq!(first["consent_context"], second["consent_context"]);
+                let captured = first["consent_context"].as_str().unwrap();
+                // The UI has just reread the context. Change it before the real
+                // enable preparation; the HTTP continuation is an inert stub.
+                match change {
+                    "path" => *state.vault_path.lock().unwrap() = Some(root.join("other")),
+                    "epoch" => { invalidate(&state); },
+                    "parent" => db::set_vault_info(state.conn.lock().unwrap().as_ref().unwrap(), "skipi_user_token", "synthetic-other-parent").unwrap(),
+                    _ => {},
+                }
+                let supplied = match change { "missing" => None, "empty" => Some(""), _ => Some(captured) };
+                let before = state.conn.lock().unwrap().as_ref().unwrap().total_changes();
+                let mut http_calls = 0;
+                let result = prepare_enable(&state, supplied).map(|_| { http_calls += 1; });
+                assert!(result.is_err(), "{change}");
+                assert_eq!(http_calls, 0, "{change}: rejected preparation never reaches HTTP");
+                {
+                let conn = state.conn.lock().unwrap();
+                let conn = conn.as_ref().unwrap();
+                assert_eq!(before, conn.total_changes(), "{change}: no DB writes");
+                assert!(db::get_vault_info_value(conn, "sync_device_id").is_none());
+                assert!(db::get_vault_info_value(conn, "sync_vault_uuid").is_none());
+                }
+                drop(state);
+                fs::remove_dir_all(root).unwrap();
+            }
+        }
+        #[test]
+        fn consent_context_accepts_only_current_exact_path_epoch_and_parent() {
+            let (root, state) = consent_fixture();
+            let current = consent_status(&state).unwrap();
+            let captured = current["consent_context"].as_str().unwrap();
+            let prepared = prepare_enable(&state, Some(captured)).unwrap();
+            assert_eq!(prepared.0, root);
+            assert_eq!(prepared.2, 0);
+            assert_eq!(prepared.3, "synthetic-parent-consent");
+            assert!(valid_id(&prepared.1) && valid_id(&prepared.4));
+            assert_eq!(consent_status(&state).unwrap()["consent_context"], captured);
+            assert_ne!(consent_context(Path::new("ab"), 0, "c"), consent_context(Path::new("a"), 0, "bc"));
+            #[cfg(unix)] {
+                use std::os::unix::ffi::OsStrExt;
+                let a = Path::new(std::ffi::OsStr::from_bytes(b"path-\xff"));
+                let b = Path::new(std::ffi::OsStr::from_bytes(b"path-\xfe"));
+                assert_eq!(a.to_string_lossy(), b.to_string_lossy());
+                assert_ne!(consent_context(a, 0, "parent"), consent_context(b, 0, "parent"));
+            }
+            drop(state);
+            fs::remove_dir_all(root).unwrap();
         }
         fn wire_doc(id: &str, bytes: Option<&[u8]>) -> Value {
             let mut e=entity("document",id,json!({"category":"Other","title":"Same title","valid_from":null,"valid_to":null,"issued_by":null,"doc_number":null,"notes":"preserved notes","field_statuses":"{\"doc_number\":\"verified\"}","regulatory_basis":"custom basis","template_id":null,"has_expiry":false,"is_permanent":true,"is_national":false,"visibility":"private","created_at":null}),bytes.map(|b|json!({"sha256":digest(b),"size":b.len(),"mime":"application/msword","filename":"scan.doc"})).unwrap_or(Value::Null));

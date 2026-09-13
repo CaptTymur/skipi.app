@@ -1784,8 +1784,8 @@ function oneAccountMutation(command,args){
 
 function oneAccountSyncTexts(){
     var ru=typeof getUiLang==='function'&&getUiLang()==='ru';
-    return ru?{webTitle:'Данные аккаунта',webSaved:'Данные сохранены в этом аккаунте. Включите синхронизацию в приложениях.',webUnavailable:'Данные аккаунта недоступны',title:'Синхронизация аккаунта',enable:'Включить синхронизацию',retry:'Синхронизировать сейчас',disable:'Выключить',local:'Оставить версию устройства',remote:'Использовать версию аккаунта',device:'На устройстве: ',account:'В аккаунте: ',consent:'Синхронизировать профиль, фото, морской стаж и все прикреплённые документы и сканы этого аккаунта с устройством? Перед заменой данных будут показаны существующие различия.',messages:{disabled:'Синхронизация выключена',pending:'Изменения ожидают синхронизации',syncing:'Синхронизация…',current:'Профиль, морской стаж и документы синхронизированы',conflict:'Выберите, какие изменения сохранить',error:'Синхронизация требует внимания'}}
-        :{webTitle:'Account data',webSaved:'Data is saved in this account. Enable sync in your apps.',webUnavailable:'Account data unavailable',title:'Account sync',enable:'Enable account sync',retry:'Sync now',disable:'Turn off',local:'Keep this device version',remote:'Use account version',device:'This device: ',account:'Account: ',consent:'Sync this signed-in account’s profile, photo, sea service and all attached documents/scans with this device? Existing differences will be shown before either version is replaced.',messages:{disabled:'Sync is off',pending:'Changes are waiting to sync',syncing:'Synchronizing…',current:'Profile, sea service and documents are synchronized',conflict:'Choose which changes to keep',error:'Sync needs attention'}};
+    return ru?{webTitle:'Данные аккаунта',webSaved:'Данные сохранены в этом аккаунте. Включите синхронизацию в приложениях.',webUnavailable:'Данные аккаунта недоступны',title:'Синхронизация аккаунта',contextMissing:'Откройте профиль и войдите в аккаунт перед включением синхронизации.',contextChanged:'Профиль или вход в аккаунт изменились. Подтвердите синхронизацию заново.',cancel:'Отмена',enable:'Включить синхронизацию',retry:'Синхронизировать сейчас',disable:'Выключить',local:'Оставить версию устройства',remote:'Использовать версию аккаунта',device:'На устройстве: ',account:'В аккаунте: ',consent:'Синхронизировать профиль, фото, морской стаж и все прикреплённые документы и сканы этого аккаунта с устройством? Перед заменой данных будут показаны существующие различия.',messages:{disabled:'Синхронизация выключена',pending:'Изменения ожидают синхронизации',syncing:'Синхронизация…',current:'Профиль, морской стаж и документы синхронизированы',conflict:'Выберите, какие изменения сохранить',error:'Синхронизация требует внимания'}}
+        :{webTitle:'Account data',webSaved:'Data is saved in this account. Enable sync in your apps.',webUnavailable:'Account data unavailable',title:'Account sync',contextMissing:'Open a profile and sign in before enabling sync.',contextChanged:'The profile or sign-in changed. Confirm synchronization again.',cancel:'Cancel',enable:'Enable account sync',retry:'Sync now',disable:'Turn off',local:'Keep this device version',remote:'Use account version',device:'This device: ',account:'Account: ',consent:'Sync this signed-in account’s profile, photo, sea service and all attached documents/scans with this device? Existing differences will be shown before either version is replaced.',messages:{disabled:'Sync is off',pending:'Changes are waiting to sync',syncing:'Synchronizing…',current:'Profile, sea service and documents are synchronized',conflict:'Choose which changes to keep',error:'Sync needs attention'}};
 }
 function oneAccountSyncRender(status,target){
     oneAccountSyncLast=status;
@@ -1823,8 +1823,19 @@ async function oneAccountSyncRefreshLists(){
 }
 function oneAccountSyncSchedule(){if(oneAccountSyncTimer)clearTimeout(oneAccountSyncTimer);oneAccountSyncTimer=setTimeout(async function(){oneAccountSyncTimer=null;await oneAccountSyncRun();},1200);}
 async function oneAccountSyncEnable(){
-    if(!confirm(oneAccountSyncTexts().consent))return;
-    try{oneAccountSyncRender(await invoke('enable_account_sync',{consent:true}));await oneAccountSyncRun();}catch(e){oneAccountSyncRender({state:'error',error:String(e),conflicts:[]});}
+    try{
+        var t=oneAccountSyncTexts();
+        if(window.__SKIPI_WEBDESKTOP__)return;
+        var before=await invoke('get_account_sync_status');
+        var context=before&&before.consent_context;
+        if(typeof context!=='string'||!context)throw new Error(t.contextMissing);
+        var consent=await uiConfirm(t.consent,{confirmLabel:t.enable,cancelLabel:t.cancel});
+        if(consent!==true)return;
+        var after=await invoke('get_account_sync_status');
+        if(!after||after.consent_context!==context)throw new Error(t.contextChanged);
+        oneAccountSyncRender(await invoke('enable_account_sync',{consent:true,consentContext:context}));
+        await oneAccountSyncRun();
+    }catch(e){oneAccountSyncRender({state:'error',error:String(e),conflicts:[]});}
 }
 async function oneAccountSyncDisable(){try{oneAccountSyncRender(await invoke('disable_account_sync'));}catch(e){showToast(String(e));}}
 async function oneAccountSyncResolve(kind,id,choice,revision){try{oneAccountSyncRender(await invoke('resolve_account_sync_conflict',{kind:kind,id:id,choice:choice,revision:revision}));await oneAccountSyncRun();}catch(e){showToast(String(e));}}
