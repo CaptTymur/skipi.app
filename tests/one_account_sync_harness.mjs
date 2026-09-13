@@ -38,3 +38,16 @@ ctx.oneAccountCapture('experience_file',{id:'file',sync_revision:7},true);
 await ctx.invoke('delete_work_file',{id:'file'});
 assert.equal(ctx.oneAccountDisplayed['experience:work'],4,'deleting evidence cannot advance an open parent form');
 console.log('child acknowledgement isolation PASS');
+// SaaS photo CAS belongs to the shim's displayed photo, not profile/main.
+ctx.oneAccountCapture('profile',{sync_revision:11},true);
+ctx.invoke=async(name,args)=>{calls.push([name,args]);return {sync_revision:29};};
+ctx.oneAccountSyncInstall();
+await ctx.invoke('upload_profile_photo_bytes',{fileName:'photo.png',dataBase64:'cGhvdG8='});
+assert.equal(calls.at(-1)[1].expectedRevision,undefined,'SaaS photo must not send profile revision');
+assert.equal(ctx.oneAccountDisplayed['profile:main'],11,'photo ack cannot advance profile form');
+ctx.window.__SKIPI_WEBDESKTOP__=false;
+ctx.invoke=async(name,args)=>{calls.push([name,args]);return {sync_revision:'native-photo-ack'};};
+ctx.oneAccountSyncInstall();
+await ctx.invoke('clear_profile_photo',{});
+assert.equal(calls.at(-1)[1].expectedRevision,11,'native photo keeps the complete local profile fingerprint');
+console.log('SaaS/native photo revision isolation PASS');

@@ -1777,7 +1777,8 @@ function oneAccountMutation(command,args){
     if(/^(update_work_history|delete_work_entry)$/.test(command))return {kind:'experience',id:args.id};
     if(command==='attach_work_file')return {kind:'experience',id:args.entryId};
     if(command==='delete_work_file')return {kind:'experience_file',id:args.id};
-    if(/^(set_seafarer_personal|upload_profile_photo|upload_profile_photo_bytes|clear_profile_photo)$/.test(command))return {kind:'profile',id:'main'};
+    if(command==='set_seafarer_personal')return {kind:'profile',id:'main'};
+    if(/^(upload_profile_photo|upload_profile_photo_bytes|clear_profile_photo)$/.test(command))return window.__SKIPI_WEBDESKTOP__?null:{kind:'profile',id:'main'};
     return null;
 }
 
