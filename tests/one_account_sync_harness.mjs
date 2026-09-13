@@ -183,3 +183,26 @@ console.log('authoritative consent context capture and pending account/vault cha
     sent.length=0;s.sandbox.window.__SKIPI_WEBDESKTOP__={};await s.sandbox.oneAccountSyncEnable();assert.equal(sent.length,0);
 }
 console.log('backend context rejection blocks sync and web never requests native consent PASS');
+
+// Required counters use the active template universe, not retained document rows.
+{
+    const counter={activeTemplateIds:['passport','sid','passport'],activeTemplateIdsLoaded:true,activeTemplateIdSet:{passport:true,sid:true},allDocs:[{id:'p1',template_id:'passport',category:'Passport',file_name:'p.pdf'},{id:'p2',template_id:'passport',category:'Passport'},{id:'s1',template_id:'sid',category:'SID',sha256:'synthetic-sha'},{id:'s2',template_id:'sid',category:'SID'},{id:'custom',category:'Custom'},{id:'conditional',template_id:'conditional',category:'Conditional'}],docTreeFilter:'all',isOptionalCategory:c=>c==='Optional',classify:()=> 'none'};
+    vm.createContext(counter);
+    for(const name of ['isActiveTemplateId','isActiveRequiredDoc','mobileDocHasAttachedFile','requiredDocumentSummary','mobileCompletenessPercent','mobileStats','docMatchesTreeFilter','docFilterCount']){
+        const start=html.indexOf('function '+name+'(');if(start<0)continue;
+        const end=html.indexOf('\nfunction ',start+1);vm.runInContext(html.slice(start,end).split('\nvar ')[0],counter);
+    }
+    assert.equal(counter.docFilterCount('required'),2,'retained fileless duplicate rows do not add required qualifications');
+    assert.equal(counter.docFilterCount('missing'),0,'any qualifying attachment satisfies the same-template requirement');
+    counter.docTreeFilter='missing';assert.equal(counter.allDocs.filter(counter.docMatchesTreeFilter).length,0,'zero missing count must not show empty duplicate rows');counter.docTreeFilter='all';
+    assert.equal(counter.mobileStats().missing,0);assert.equal(counter.mobileCompletenessPercent(),100);
+    assert.equal(counter.docFilterCount('all'),6,'all document rows remain counted');
+    counter.activeTemplateIds.push('absent');counter.activeTemplateIdSet.absent=true;
+    assert.equal(counter.docFilterCount('required'),3);assert.equal(counter.docFilterCount('missing'),1,'wholly absent template is still missing');
+    assert.equal(counter.mobileStats().missing,1);assert.equal(counter.mobileCompletenessPercent(),67);
+    counter.allDocs.push({id:'absent-file',template_id:'absent',category:'Certificate',file_size:1});
+    assert.equal(counter.docFilterCount('missing'),0,'size-only attached-file evidence retains canonical predicate');
+    counter.activeTemplateIdsLoaded=false;
+    assert.equal(counter.docFilterCount('required'),'—');assert.equal(counter.docFilterCount('missing'),'—');assert.equal(counter.mobileCompletenessPercent(),0,'unloaded framework cannot imply completeness');
+}
+console.log('unique active-template counters preserve absent requirements and all document rows PASS');

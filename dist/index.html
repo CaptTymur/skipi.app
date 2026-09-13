@@ -4280,12 +4280,17 @@ function mobileDocHasAttachedFile(d){
         Number(d.file_size||0)>0
     ));
 }
+function requiredDocumentSummary(){
+    if(!activeTemplateIdsLoaded)return {loaded:false,required:null,missing:null,missingIds:[]};
+    // The backend supplies the active required-template universe, including absent rows.
+    var ids=Array.from(new Set(activeTemplateIds)),satisfied=new Set();
+    (allDocs||[]).forEach(function(d){if(isActiveRequiredDoc(d)&&mobileDocHasAttachedFile(d))satisfied.add(d.template_id);});
+    var missing=ids.filter(function(id){return !satisfied.has(id);});
+    return {loaded:true,required:ids.length,missing:missing.length,missingIds:missing};
+}
 function mobileCompletenessPercent(){
-    if(!Array.isArray(allDocs)||!allDocs.length)return 0;
-    var required=allDocs.filter(function(d){return isActiveRequiredDoc(d);});
-    if(!required.length)return 0;
-    var uploaded=required.filter(mobileDocHasAttachedFile).length;
-    return Math.round((uploaded/required.length)*100);
+    var summary=requiredDocumentSummary();
+    return summary.loaded&&summary.required?Math.round((summary.required-summary.missing)/summary.required*100):0;
 }
 function mobileSetProfileMeterPct(pct){
     pct=Math.max(0,Math.min(100,Math.round(Number(pct)||0)));
@@ -4995,7 +5000,8 @@ function mobileShow(view){
 }
 function mobileStats(){
     var uploaded=allDocs.filter(function(d){return !!d.file_name;}).length;
-    var missing=allDocs.filter(function(d){return !d.file_name&&isActiveRequiredDoc(d);}).length;
+    var summary=requiredDocumentSummary();
+    var missing=summary.loaded?summary.missing:'—';
     var expiring=allDocs.filter(function(d){return d.file_name&&(classify(d)==='critical'||classify(d)==='warning');}).length;
     return {uploaded:uploaded,missing:missing,expiring:expiring,total:allDocs.length};
 }
@@ -5086,7 +5092,7 @@ function mobileDocRow(d, extraAction){
 }
 function mobileFilteredDocs(kind){
     var docs=allDocs.slice();
-    if(kind==='missing')docs=docs.filter(function(d){return !d.file_name&&isActiveRequiredDoc(d);});
+    if(kind==='missing')docs=docs.filter(function(d){return isActiveRequiredDoc(d)&&requiredDocumentSummary().missingIds.indexOf(d.template_id)!==-1;});
     else if(kind==='nofile')docs=docs.filter(function(d){return !d.file_name;});
     else if(kind==='uploaded')docs=docs.filter(function(d){return !!d.file_name;});
     else if(kind==='expiring')docs=docs.filter(function(d){return d.file_name&&(classify(d)==='expired'||classify(d)==='critical'||classify(d)==='warning');});
@@ -11434,7 +11440,7 @@ function docTreeFilterLabels(){
 function docMatchesTreeFilter(d){
     if(!d)return false;
     if(docTreeFilter==='required')return isActiveRequiredDoc(d);
-    if(docTreeFilter==='missing')return isActiveRequiredDoc(d)&&!d.file_name;
+    if(docTreeFilter==='missing')return isActiveRequiredDoc(d)&&requiredDocumentSummary().missingIds.indexOf(d.template_id)!==-1;
     if(docTreeFilter==='expiring'){
         var s=classify(d);
         return !!d.file_name&&(s==='expired'||s==='critical'||s==='warning');
@@ -11444,6 +11450,7 @@ function docMatchesTreeFilter(d){
     return true;
 }
 function docFilterCount(filter){
+    if(filter==='required'||filter==='missing'){var summary=requiredDocumentSummary();return summary.loaded?summary[filter]:'—';}
     var prev=docTreeFilter;
     docTreeFilter=filter;
     var n=(allDocs||[]).filter(docMatchesTreeFilter).length;
@@ -11519,6 +11526,11 @@ function renderTree(){
         });
         h+='</div></div>';
     });
+    if(docTreeFilter==='missing'){
+        var missingSummary=requiredDocumentSummary();
+        var absent=missingSummary.missingIds.some(function(id){return !allDocs.some(function(d){return d.template_id===id;});});
+        if(!missingSummary.loaded||absent)h+='<div class="tree-empty">'+esc(!missingSummary.loaded?(getUiLang()==='ru'?'Список требований пока недоступен.':'The requirements list is not available yet.'):(getUiLang()==='ru'?'В счётчик включены обязательные документы, для которых ещё нет строки. Откройте «Недостающие документы» на главной.':'The count includes required documents without a row. Open Missing documents on the dashboard.'))+'</div>';
+    }
     if(!h)h='<div class="tree-empty">'+esc(getUiLang()==='ru'?'Нет документов для этого фильтра.':'No documents match this filter.')+'</div>';
     document.getElementById('panel-tree').innerHTML=h;
     setTimeout(function(){hydrateDocumentThumbnails(document.getElementById('panel-tree'));},0);
@@ -11881,7 +11893,8 @@ async function showDashboard(){
     // (template rows without file_name) must not be counted as documents — they
     // represent expected certificates, not actual ones.
     var uploadedDocs=allDocs.filter(function(d){return !!d.file_name;});
-    var requiredMissing=allDocs.filter(function(d){return !d.file_name && isActiveRequiredDoc(d);}).length;
+    var requiredSummary=requiredDocumentSummary();
+    var requiredMissing=requiredSummary.loaded?requiredSummary.missing:null;
     var c={expired:0,critical:0,warning:0,warning_soft:0,valid:0,none:0};
     uploadedDocs.forEach(function(d){c[classify(d)]++;});
     var h='<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap;"><h2 style="font-size:18px;margin:0;">Dashboard</h2><button class="btn btn-accent btn-sm" onclick="showAddCustomDoc()">+ Add custom certificate</button></div>';
@@ -18069,7 +18082,8 @@ async function saveKey(){try{await invoke('save_api_key',{key:document.getElemen
 
 function updateStatus(){
     var c={expired:0,total:allDocs.length,nofile:0};
-    allDocs.forEach(function(d){if(d.file_name&&classify(d)==='expired')c.expired++;if(!d.file_name&&isActiveRequiredDoc(d))c.nofile++;});
+    allDocs.forEach(function(d){if(d.file_name&&classify(d)==='expired')c.expired++;});
+    var summary=requiredDocumentSummary();c.nofile=summary.loaded?summary.missing:'—';
     document.getElementById('st-left').textContent=c.total+' documents'+(c.expired?' · '+c.expired+' expired':'');
     document.getElementById('st-right').textContent=c.nofile+' required missing';
     updateProfileCompletionChip();
