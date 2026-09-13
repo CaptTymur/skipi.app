@@ -1694,6 +1694,51 @@ pub mod vault_sync {
         )?;
         Ok(q)
     }
+    fn acknowledged_hash(q: &Value, remote: &Value) -> Result<String, String> {
+        // Mirror only scan's server-only metadata fallback on the exact queued
+        // snapshot. Never hash today's local record: an edit during HTTP stays dirty.
+        let mut acknowledged = q["entity"].clone();
+        if acknowledged["deleted"] != true {
+            if ["document", "experience_file"].contains(&text(&acknowledged, "kind")) {
+                let before = &acknowledged["data"]["created_at"];
+                let after = &remote["data"]["created_at"];
+                if before.is_null() {
+                    if after.as_str().is_some_and(|s| !s.is_empty()) {
+                        acknowledged["data"]["created_at"] = after.clone();
+                    }
+                } else if before != after {
+                    return Err("Mutation response changed original creation metadata".into());
+                }
+            }
+            if !acknowledged["blob"].is_null()
+                && acknowledged["blob"]["sha256"] == remote["blob"]["sha256"]
+                && acknowledged["blob"]["size"] == remote["blob"]["size"]
+            {
+                acknowledged["blob"] = remote["blob"].clone();
+            }
+        }
+        Ok(content_hash(&acknowledged))
+    }
+    fn keep_local_choice(state: &AppState, pin: &Pin, remote: &Value, selected: &Value, revision: u64) -> Result<(), String> {
+        pinned(state, pin, |conn, root| {
+            let kind = text(selected, "kind"); let id = text(selected, "id");
+            let known = ledger(conn, &pin.account)?;
+            let entry = known.get(&key(kind, id)).ok_or("Conflict no longer exists")?;
+            if revision == 0 || entry["conflict"].is_null()
+                || entry["conflict"]["remote"]["revision"].as_u64() != Some(revision)
+                || remote["revision"].as_u64() != Some(revision)
+                || text(remote, "kind") != kind || text(remote, "id") != id
+            { return Err("Conflict changed. Refresh before choosing a version.".into()); }
+            let current = current_entity(&scan(conn, root, &pin.account)?, kind, id);
+            if content_hash(&current) != content_hash(selected) {
+                return Err("Local item changed. Refresh before choosing a version.".into());
+            }
+            recovery_metadata(root, kind, id, remote)?;
+            // One transaction preserves the exact selected metadata and remote
+            // CAS revision, and clears the conflict only after the queue is durable.
+            transaction(conn, || queue_entity(conn, root, pin, &current, remote).map(|_| ()))
+        })
+    }
     fn send_queue(
         state: &AppState,
         pin: &Pin,
@@ -1755,7 +1800,7 @@ pub mod vault_sync {
                 conn,
                 &pin.account,
                 &v["entity"],
-                text(q, "local_hash"),
+                &acknowledged_hash(q, &v["entity"] )?,
                 None,
                 None,
             )
@@ -2214,17 +2259,7 @@ pub mod vault_sync {
             if choice == "remote" {
                 apply_remote(&state, &pin, &client, remote, &content_hash(&local))?;
             } else {
-                pinned(&state, &pin, |conn, root| {
-                    recovery_metadata(root, &kind, &id, remote)?;
-                    write_ledger(
-                        conn,
-                        &pin.account,
-                        remote,
-                        "explicit-local-choice",
-                        None,
-                        None,
-                    )
-                })?;
+                keep_local_choice(&state, &pin, remote, &local, revision)?;
             }
             pinned(&state, &pin, |conn, _| status(conn))
         })
@@ -2496,6 +2531,94 @@ pub mod vault_sync {
             assert!(require_edit_revision(&conn, "document", "doc", Some(&fresh)).is_ok());
             drop(conn);
             fs::remove_dir_all(root).unwrap();
+        }
+        fn bound_fixture() -> (PathBuf, AppState, Pin) {
+            let (root, state) = consent_fixture();
+            { let lock = state.conn.lock().unwrap(); let conn = lock.as_ref().unwrap();
+              for (k, v) in [("sync_enabled", "1"), ("sync_account_id", "public-A"), ("sync_token", "synthetic-child")] { db::set_vault_info(conn, k, v).unwrap(); }
+              db::set_vault_info(conn, "sync_parent_hash", &digest(b"synthetic-parent-consent")).unwrap(); }
+            let pin = pin(&state).unwrap();
+            (root, state, pin)
+        }
+        #[test]
+        fn restoration_keeps_selected_created_at_and_exact_tombstone_cas() {
+            let (root, state, pin) = bound_fixture();
+            let mut original = wire_doc("restore-doc", None);
+            original["data"]["created_at"] = json!("2026-01-01T00:00:00Z");
+            let mut remote = deleted("document", "restore-doc"); remote["revision"] = json!(2);
+            let selected = pinned(&state, &pin, |conn, root| {
+                apply_entity(conn, root, &original, None)?;
+                write_ledger(conn, &pin.account, &original, "old", None, None)?;
+                let selected = scan(conn, root, &pin.account)?["document:restore-doc"].clone();
+                record_conflict(conn, &pin.account, &original, "old", None, &selected, &remote)?;
+                Ok(selected)
+            }).unwrap();
+            keep_local_choice(&state, &pin, &remote, &selected, 2).unwrap();
+            pinned(&state, &pin, |conn, root| {
+                let entry = ledger(conn, &pin.account)?["document:restore-doc"].clone();
+                let q = &entry["queued"];
+                assert_eq!(entry["baseline"], remote, "retain exact tombstone independently of selected snapshot");
+                assert_eq!(q["request"]["expected_revision"], 2);
+                assert_eq!(q["entity"], selected);
+                assert_eq!(q["request"]["data"]["created_at"], original["data"]["created_at"]);
+                let mut acknowledged = selected.clone(); acknowledged["revision"] = json!(3);
+                write_ledger(conn, &pin.account, &acknowledged, &acknowledged_hash(q, &acknowledged)?, None, None)?;
+                let repeated = scan(conn, root, &pin.account)?;
+                assert_eq!(content_hash(&repeated["document:restore-doc"]), text(&ledger(conn, &pin.account)?["document:restore-doc"], "local_hash"), "one restoration then stable repeat, no echo upload");
+                Ok(())
+            }).unwrap();
+            drop(state); fs::remove_dir_all(root).unwrap();
+        }
+        #[test]
+        fn acknowledgement_metadata_is_from_queued_snapshot_not_later_edit() {
+            for kind in ["document", "experience_file"] {
+                let mut queued = entity(kind, "new-record", json!({"created_at":null,"notes":"queued"}), Value::Null);
+                let q = json!({"entity":queued,"local_hash":content_hash(&queued)});
+                let mut response = queued.clone();response["revision"] = json!(1);response["data"]["created_at"] = json!("2026-01-01T00:00:00Z");
+                queued["data"]["created_at"] = response["data"]["created_at"].clone();
+                assert_eq!(acknowledged_hash(&q, &response).unwrap(), content_hash(&queued), "normalize only server-only created_at for {kind}");
+                queued["data"]["notes"] = json!("later edit during HTTP");
+                assert_ne!(acknowledged_hash(&q, &response).unwrap(), content_hash(&queued), "later edits remain dirty");
+            }
+        }
+        #[test]
+        fn restoration_rejects_stale_zero_revision_and_local_race_without_writes() {
+            for change in ["zero", "stale", "local"] {
+                let (root, state, pin) = bound_fixture();
+                let original = wire_doc("race-doc", None);
+                let mut remote = deleted("document", "race-doc"); remote["revision"] = json!(2);
+                let selected = pinned(&state, &pin, |conn, root| {
+                    apply_entity(conn, root, &original, None)?;
+                    write_ledger(conn, &pin.account, &original, "old", None, None)?;
+                    let local = scan(conn, root, &pin.account)?["document:race-doc"].clone();
+                    record_conflict(conn, &pin.account, &original, "old", None, &local, &remote)?;
+                    if change == "local" { conn.execute("UPDATE documents SET notes='later edit' WHERE id='race-doc'", []).map_err(err)?; }
+                    Ok(local)
+                }).unwrap();
+                let before = state.conn.lock().unwrap().as_ref().unwrap().total_changes();
+                assert!(keep_local_choice(&state, &pin, &remote, &selected, if change=="zero"{0}else if change=="stale"{1}else{2}).is_err());
+                assert_eq!(before, state.conn.lock().unwrap().as_ref().unwrap().total_changes());
+                assert!(!ledger(state.conn.lock().unwrap().as_ref().unwrap(), &pin.account).unwrap()["document:race-doc"]["conflict"].is_null());
+                drop(state);fs::remove_dir_all(root).unwrap();
+            }
+        }
+        #[test]
+        fn each_binding_dimension_rejects_delayed_apply_without_epoch_change() {
+            for change in ["path", "vault", "account", "child", "parent", "parent_binding"] {
+                let (root, state, pin) = bound_fixture();
+                match change {
+                    "path" => *state.vault_path.lock().unwrap() = Some(root.join("another")),
+                    _ => { let lock=state.conn.lock().unwrap();let conn=lock.as_ref().unwrap();
+                        let key=match change {"vault"=>"sync_vault_uuid","account"=>"sync_account_id","child"=>"sync_token","parent"=>"skipi_user_token",_=>"sync_parent_hash"};
+                        db::set_vault_info(conn,key,"synthetic-changed").unwrap();
+                    }
+                }
+                assert_eq!(state.sync_epoch.load(Ordering::SeqCst),pin.epoch);
+                let before=state.conn.lock().unwrap().as_ref().unwrap().total_changes();
+                assert!(pinned::<()>(&state,&pin,|_,_|panic!("{change}: stale callback must not execute")).is_err());
+                assert_eq!(before,state.conn.lock().unwrap().as_ref().unwrap().total_changes());
+                drop(state);fs::remove_dir_all(root).unwrap();
+            }
         }
         #[test]
         fn vault_epoch_and_account_switch_reject_delayed_completion() {
