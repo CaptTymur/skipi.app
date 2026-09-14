@@ -232,7 +232,7 @@ pub fn create_email_file(intent: MailIntent) -> Result<MailIntentResult, String>
     })
 }
 
-#[cfg(any(target_os = "android", target_os = "ios"))]
+#[cfg(any(test, target_os = "android", target_os = "ios"))]
 fn safe_share_file_name(path: &Path, idx: usize) -> String {
     let original = path
         .file_name()
@@ -241,14 +241,14 @@ fn safe_share_file_name(path: &Path, idx: usize) -> String {
     let clean: String = original
         .chars()
         .map(|c| {
-            if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') {
+            if c.is_alphanumeric() || matches!(c, '.' | '-' | '_') {
                 c
             } else {
                 '_'
             }
         })
         .collect();
-    let clean = clean.trim_matches('_');
+    let clean = clean.trim_matches(|c| c == '_' || c == '.');
     if clean.is_empty() {
         format!("skipi-attachment-{}", idx + 1)
     } else {
@@ -272,11 +272,25 @@ const SHARE_CACHE_RETENTION_MS: u128 = 24 * 60 * 60 * 1000;
 /// (`<stamp>-<index>-<safe name>`). Anything else is not ours to delete.
 #[allow(dead_code)]
 fn share_cache_stamp(name: &str) -> Option<u128> {
-    let head = name.split('-').next()?;
-    if head.is_empty() || !head.bytes().all(|b| b.is_ascii_digit()) {
+    if let Some(rest) = name.strip_prefix("share-") {
+        let (stamp, id) = rest.split_once('-')?;
+        if stamp.is_empty() || !stamp.bytes().all(|b| b.is_ascii_digit()) { return None; }
+        let parsed = uuid::Uuid::parse_str(id).ok()?;
+        if parsed.to_string() != id { return None; }
+        return stamp.parse().ok();
+    }
+    let mut parts = name.splitn(3, '-');
+    let stamp = parts.next()?;
+    let index = parts.next()?;
+    let basename = parts.next()?;
+    if stamp.is_empty() || !stamp.bytes().all(|b| b.is_ascii_digit())
+        || index.is_empty() || !index.bytes().all(|b| b.is_ascii_digit())
+        || index.parse::<usize>().ok()? == 0 || basename.is_empty()
+        || basename == "." || basename == ".."
+        || !basename.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_')) {
         return None;
     }
-    head.parse::<u128>().ok()
+    stamp.parse().ok()
 }
 
 /// A staged copy is removable only when its own stamp is at least a whole
@@ -295,24 +309,84 @@ fn share_cache_entry_is_stale(name: &str, now_ms: u128, retention_ms: u128) -> b
 /// staged; leaves anything it does not recognise alone.
 #[cfg(any(target_os = "android", target_os = "ios"))]
 fn purge_stale_share_cache(cache_dir: &Path, now_ms: u128) {
-    let entries = match fs::read_dir(cache_dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
+    purge_share_cache_entries(cache_dir, now_ms);
+}
+
+#[cfg(any(test, target_os = "android", target_os = "ios"))]
+fn purge_share_cache_entries(cache_dir: &Path, now_ms: u128) {
+    let Ok(entries) = fs::read_dir(cache_dir) else { return; };
     for entry in entries.flatten() {
         let name = entry.file_name();
-        let name = match name.to_str() {
-            Some(n) => n,
-            None => continue,
-        };
-        if !share_cache_entry_is_stale(name, now_ms, SHARE_CACHE_RETENTION_MS) {
-            continue;
+        let Some(name) = name.to_str() else { continue; };
+        let Ok(kind) = entry.file_type() else { continue; };
+        if kind.is_symlink() || !share_cache_entry_is_stale(name, now_ms, SHARE_CACHE_RETENTION_MS) { continue; }
+        if name.starts_with("share-") && kind.is_dir() {
+            // Owned sessions contain only ordinary files. Leave tampered or foreign
+            // trees intact, including any symlinks; never traverse them for cleanup.
+            let ordinary = fs::read_dir(entry.path()).map(|children| children.into_iter().all(|child|
+                child.ok().and_then(|c| c.file_type().ok()).map(|t| t.is_file()).unwrap_or(false)
+            )).unwrap_or(false);
+            if ordinary { let _ = fs::remove_dir_all(entry.path()); }
+        } else if !name.starts_with("share-") && kind.is_file() {
+            let _ = fs::remove_file(entry.path());
         }
-        if entry.file_type().map(|t| t.is_dir()).unwrap_or(true) {
-            continue;
-        }
-        let _ = fs::remove_file(entry.path());
     }
+}
+
+#[cfg(any(test, target_os = "android", target_os = "ios"))]
+fn stage_share_attachments(cache_dir: &Path, attachments: &[String], stamp: u128) -> Result<Vec<String>, String> {
+    stage_share_attachments_with(cache_dir, attachments, stamp, |source, target| {
+        std::io::copy(source, target).map(|_| ())
+    })
+}
+
+#[cfg(any(test, target_os = "android", target_os = "ios"))]
+fn stage_share_attachments_with(
+    cache_dir: &Path, attachments: &[String], stamp: u128,
+    mut copy: impl FnMut(&mut fs::File, &mut fs::File) -> std::io::Result<()>,
+) -> Result<Vec<String>, String> {
+    // Open and validate every input before creating a session. The open handles
+    // bind reads to those actual files if a caller changes a path during staging.
+    let mut inputs = Vec::new();
+    for (idx, path) in attachments.iter().enumerate() {
+        let source = Path::new(path);
+        let kind = fs::symlink_metadata(source).map_err(|e| format!("Read attachment: {}", e))?;
+        if !kind.is_file() { return Err("Attachment is not a regular file".into()); }
+        let file = fs::File::open(source).map_err(|e| format!("Open attachment: {}", e))?;
+        if !file.metadata().map_err(|e| e.to_string())?.is_file() { return Err("Attachment is not a regular file".into()); }
+        inputs.push((file, safe_share_file_name(source, idx)));
+    }
+    if inputs.is_empty() { return Ok(Vec::new()); }
+    fs::create_dir_all(cache_dir).map_err(|e| format!("Create share cache: {}", e))?;
+    let session = cache_dir.join(format!("share-{}-{}", stamp, uuid::Uuid::new_v4()));
+    fs::create_dir(&session).map_err(|e| format!("Create share session: {}", e))?;
+    let result = (|| {
+        let mut out = Vec::new();
+        for (mut source, name) in inputs {
+            let base = Path::new(&name);
+            let stem = base.file_stem().and_then(|s| s.to_str()).unwrap_or("attachment");
+            let ext = base.extension().and_then(|s| s.to_str());
+            let mut suffix = 1usize;
+            loop {
+                let candidate = if suffix == 1 { name.clone() } else {
+                    format!("{}-{}{}", stem, suffix, ext.map(|e| format!(".{}", e)).unwrap_or_default())
+                };
+                let target = session.join(candidate);
+                match fs::OpenOptions::new().write(true).create_new(true).open(&target) {
+                    Ok(mut file) => {
+                        copy(&mut source, &mut file).map_err(|e| format!("Prepare share attachment: {}", e))?;
+                        out.push(target.to_string_lossy().to_string());
+                        break;
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => suffix += 1,
+                    Err(e) => return Err(format!("Create share attachment: {}", e)),
+                }
+            }
+        }
+        Ok(out)
+    })();
+    if result.is_err() { let _ = fs::remove_dir_all(&session); }
+    result
 }
 
 #[cfg(any(target_os = "android", target_os = "ios"))]
@@ -337,22 +411,7 @@ fn copy_attachments_to_share_cache(
     // the `share` and the `email` mode of the mailing wizard go through this one
     // function) left a full readable copy of every attachment behind forever.
     purge_stale_share_cache(&cache_dir, stamp);
-    let mut out = Vec::new();
-    for (idx, path_str) in attachments.iter().enumerate() {
-        let source = Path::new(path_str);
-        if !source.exists() {
-            return Err(format!("Attachment not found: {}", path_str));
-        }
-        let target = cache_dir.join(format!(
-            "{}-{}-{}",
-            stamp,
-            idx + 1,
-            safe_share_file_name(source, idx)
-        ));
-        fs::copy(source, &target).map_err(|e| format!("Prepare share attachment: {}", e))?;
-        out.push(target.to_string_lossy().to_string());
-    }
-    Ok(out)
+    stage_share_attachments(&cache_dir, attachments, stamp)
 }
 
 /// Open the native Android share sheet with a Skipi dispatch draft.
@@ -438,6 +497,11 @@ pub fn mobile_share_dispatch(
 
     rx.recv_timeout(Duration::from_secs(5))
         .map_err(|_| "Timed out while opening Android share sheet".to_string())?
+}
+
+#[cfg(any(test, target_os = "ios"))]
+fn ios_share_text(subject: &str, body: &str) -> String {
+    [subject.trim(), body.trim()].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join("\n\n")
 }
 
 // ---- BEGIN iOS system share ----
@@ -614,11 +678,12 @@ mod ios_share {
         view_controller: Id,
         source_view: Id,
         paths: &[String],
+        text: &str,
     ) -> Result<(), String> {
         if view_controller.is_null() {
             return Err("iOS webview has no view controller to present the share sheet on".to_string());
         }
-        if paths.is_empty() {
+        if paths.is_empty() && text.trim().is_empty() {
             return Err("Nothing to share".to_string());
         }
 
@@ -632,6 +697,13 @@ mod ios_share {
             unsafe {
                 send1(items, add, url);
             }
+        }
+
+        if !text.trim().is_empty() {
+            // NSString copies UTF-8 bytes; the array retains this autoreleased
+            // object before the closure ends. No Rust/CString pointer escapes.
+            let item = ns_string(text)?;
+            unsafe { send1(items, add, item); }
         }
 
         let allocated = unsafe { send(class("UIActivityViewController")?, sel("alloc")?) };
@@ -657,7 +729,8 @@ mod ios_share {
         // filled whenever the system gives us a popover controller at all (on iPhone
         // it hands back nil, and nothing below runs).
         let popover = unsafe { send(sheet, sel("popoverPresentationController")?) };
-        if !popover.is_null() && !source_view.is_null() {
+        if !popover.is_null() {
+            if source_view.is_null() { return Err("iOS share popover has no source view".into()); }
             unsafe {
                 send1(popover, sel("setSourceView:")?, source_view);
                 let bounds = send_rect_ret(source_view, sel("bounds")?);
@@ -694,14 +767,8 @@ mod ios_share {
 /// command stages them in the app cache — the SAME staging, dedup and bounded cleanup
 /// Android uses — and hands file URLs to UIKit.
 ///
-/// WHAT THIS BRANCH DELIBERATELY DOES NOT CARRY, so nobody reads a promise into it:
-/// `recipients`, `subject` and `body` are not passed to the sheet. UIActivityViewController
-/// takes activity items, not addressees; it pre-fills nobody, and the supported way to
-/// give Mail a subject is an activity-item source object, which would mean defining an
-/// Objective-C class at runtime. The packages screen — the only caller that reaches this
-/// on iOS — shares a package with no recipient and no body anyway. The mailing wizard,
-/// whose `mode: "email"` DOES promise named recipients, stays Android-only for exactly
-/// this reason (dist/index.html:5794 and :15651).
+/// UIKit receives real file URLs and subject/body as text. Recipients must be
+/// chosen in the target application; a text item is not a Mail subject header.
 #[cfg(target_os = "ios")]
 #[tauri::command]
 pub fn mobile_share_dispatch(
@@ -716,9 +783,9 @@ pub fn mobile_share_dispatch(
     use std::time::Duration;
     use tauri::Manager;
 
-    // Accepted for one signature across platforms, and knowingly unused here — see the
-    // doc comment above for what the iOS sheet can and cannot carry.
-    let _ = (&recipients, &subject, &body, &mode);
+    let _ = (&recipients, &mode);
+    let text = ios_share_text(&subject, &body);
+    if attachments.is_empty() && text.is_empty() { return Err("Nothing to share".into()); }
 
     let share_paths = copy_attachments_to_share_cache(window.app_handle(), &attachments)?;
     let (tx, rx) = mpsc::channel();
@@ -732,6 +799,7 @@ pub fn mobile_share_dispatch(
                 webview.view_controller() as ios_share::Id,
                 webview.inner() as ios_share::Id,
                 &share_paths,
+                &text,
             )
             .map(|_| "Share sheet opened".to_string());
             let _ = tx.send(result);
@@ -764,6 +832,89 @@ pub fn mobile_share_dispatch(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn share_fixture() -> PathBuf {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../scratchpad/193-native-share").join(format!("rust-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap(); root
+    }
+
+    #[test]
+    fn share_friendly_names_preserve_bytes_and_never_overwrite_collisions() {
+        let root=share_fixture(); let cache=root.join("cache");
+        let mut inputs=Vec::new();
+        for (index,name) in ["CV.pdf","CV.pdf","CV-2.pdf","Моряк.pdf"].iter().enumerate() {
+            let dir=root.join(index.to_string());fs::create_dir(&dir).unwrap();
+            let file=dir.join(name);fs::write(&file,format!("bytes-{index}")).unwrap();inputs.push(file.to_string_lossy().into_owned());
+        }
+        let paths=stage_share_attachments(&cache,&inputs,1_760_000_000_000).unwrap();
+        assert_eq!(Path::new(&paths[0]).file_name().unwrap(),"CV.pdf");
+        assert_eq!(Path::new(&paths[3]).file_name().unwrap(),"Моряк.pdf");
+        let unique:std::collections::HashSet<_>=paths.iter().collect();assert_eq!(unique.len(),4);
+        for (index,path) in paths.iter().enumerate(){assert_eq!(fs::read_to_string(path).unwrap(),format!("bytes-{index}"));}
+        let concurrent=std::thread::scope(|scope|{
+            let first=scope.spawn(||stage_share_attachments(&cache,&inputs,1_760_000_000_000).unwrap());
+            let second=scope.spawn(||stage_share_attachments(&cache,&inputs,1_760_000_000_000).unwrap());
+            (first.join().unwrap(),second.join().unwrap())
+        });
+        assert_ne!(Path::new(&concurrent.0[0]).parent(),Path::new(&concurrent.1[0]).parent());
+        assert_eq!(fs::read_to_string(&paths[0]).unwrap(),"bytes-0");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn share_invalid_or_partial_inputs_leave_no_partial_session() {
+        let root=share_fixture();let cache=root.join("cache");fs::create_dir(&cache).unwrap();
+        let source=root.join("CV.pdf");fs::write(&source,b"CV").unwrap();let good=source.to_string_lossy().into_owned();
+        fs::write(cache.join("unrelated"),b"keep").unwrap();
+        for bad in [root.join("missing"),root.clone()] {
+            assert!(stage_share_attachments(&cache,&[good.clone(),bad.to_string_lossy().into_owned()],123).is_err());
+            assert_eq!(fs::read_dir(&cache).unwrap().count(),1);
+        }
+        let mut copied=0;
+        let result=stage_share_attachments_with(&cache,&[good.clone(),good],123,|input,output|{
+            copied+=1; if copied==2 {return Err(std::io::Error::other("injected partial copy failure"));}
+            std::io::copy(input,output).map(|_|())
+        });
+        assert!(result.is_err()); assert_eq!(copied,2);
+        assert_eq!(fs::read_dir(&cache).unwrap().count(),1);
+        assert_eq!(fs::read(cache.join("unrelated")).unwrap(),b"keep");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn share_cleanup_only_recognises_owned_sessions_and_legacy_files() {
+        let root=share_fixture();let now=1_760_000_000_000;let old=now-SHARE_CACHE_RETENTION_MS;
+        let owned=root.join(format!("share-{old}-{}",uuid::Uuid::new_v4()));fs::create_dir(&owned).unwrap();fs::write(owned.join("CV.pdf"),b"old").unwrap();
+        let legacy=root.join(format!("{old}-1-cv.pdf"));fs::write(&legacy,b"old").unwrap();
+        let unrelated=root.join(format!("{old}-unrelated.pdf"));fs::write(&unrelated,b"keep").unwrap();
+        let foreign=root.join(format!("share-{old}-foreign"));fs::create_dir(&foreign).unwrap();
+        let current=root.join(format!("share-{now}-{}",uuid::Uuid::new_v4()));fs::create_dir(&current).unwrap();fs::write(current.join("CV.pdf"),b"current").unwrap();
+        purge_share_cache_entries(&root,now);
+        assert!(!owned.exists());assert!(!legacy.exists());assert!(unrelated.exists());assert!(foreign.exists());assert_eq!(fs::read(current.join("CV.pdf")).unwrap(),b"current");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn share_cleanup_and_staging_leave_symlink_targets_untouched() {
+        use std::os::unix::fs::symlink;
+        let root=share_fixture();let cache=root.join("cache");fs::create_dir(&cache).unwrap();let target=root.join("target");fs::create_dir(&target).unwrap();fs::write(target.join("keep"),b"keep").unwrap();
+        let name=format!("share-1-{}",uuid::Uuid::new_v4());symlink(&target,cache.join(&name)).unwrap();
+        let owned=cache.join(format!("share-1-{}",uuid::Uuid::new_v4()));fs::create_dir(&owned).unwrap();symlink(target.join("keep"),owned.join("link")).unwrap();
+        symlink(target.join("keep"),cache.join("1-1-cv.pdf")).unwrap();
+        purge_share_cache_entries(&cache,SHARE_CACHE_RETENTION_MS+2);
+        assert!(cache.join(&name).is_symlink());assert!(cache.join("1-1-cv.pdf").is_symlink());assert!(owned.join("link").is_symlink());assert_eq!(fs::read(target.join("keep")).unwrap(),b"keep");
+        assert!(stage_share_attachments(&cache,&[cache.join("1-1-cv.pdf").to_string_lossy().into_owned()],123).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn ios_share_text_keeps_subject_and_body_and_allows_body_only() {
+        assert_eq!(ios_share_text("Subject","Body"),"Subject\n\nBody");
+        assert_eq!(ios_share_text("","Diagnostic journal"),"Diagnostic journal");
+        assert_eq!(ios_share_text("Subject",""),"Subject");
+        assert!(ios_share_text(" \n", " ").is_empty());
+    }
 
     #[test]
     fn share_cache_cleanup_can_never_touch_the_share_it_precedes() {
@@ -800,6 +951,9 @@ mod tests {
             "passport.pdf",
             "-1-passport.pdf",
             "notastamp-1-cv.pdf",
+            "1760000000000-unrelated.pdf",
+            "1760000000000-0-cv.pdf",
+            "1760000000000-1-../cv.pdf",
             ".nomedia",
             "",
         ] {

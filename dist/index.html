@@ -5653,7 +5653,7 @@ function mobileDispatchChooseHtml(sendGate){
 function mobileDispatchMethodHtml(){
     var ru=getUiLang()==='ru';
     var h=mobileDispatchHeader(ru?'Как отправить?':'How do we send it?','');
-    h+=mobileDispatchChooseButton(false,ru?'Email письмо':'Email draft',ru?'Откроем готовое письмо.':'Open a ready email draft.',"mobileDispatchChooseMethod('email')",'@');
+    h+=mobileDispatchChooseButton(false,ru?'Email письмо':'Email draft',hostPlatform==='ios'?(ru?'Передадим текст и файлы; получателей выберите в приложении.':'Share text and files; choose recipients in the target app.'):(ru?'Откроем готовое письмо.':'Open a ready email draft.'),"mobileDispatchChooseMethod('email')",'@');
     h+=mobileDispatchChooseButton(false,ru?'Поделиться':'Share',ru?'WhatsApp, Telegram, почта и другие приложения.':'WhatsApp, Telegram, mail and other apps.',"mobileDispatchChooseMethod('share')",'↗');
     h+='<div class="mobile-wizard-actions"><button class="btn btn-outline" type="button" onclick="mobileDispatchBack()">'+mobileEsc(ru?'Назад':'Back')+'</button></div>';
     return h;
@@ -5785,9 +5785,10 @@ function mobileDispatchReviewHtml(sendGate,pkgs){
         });
         h+='</div>';
     }
+    if(hostPlatform==='ios')h+='<p class="mobile-card-sub">'+mobileEsc(ru?'iPhone передаст текст и вложения. Получателей выберите в приложении; тема передаётся как текст.':'iPhone shares the text and attachments. Choose recipients in the target app; the subject is included as text.')+'</p>';
     h+='<div class="mobile-wizard-actions">';
     h+='<button class="btn btn-outline" type="button" onclick="mobileDispatchBack()">'+mobileEsc(ru?'Назад':'Back')+'</button>';
-    h+='<button class="btn btn-accent" type="button" '+(sendGate.ok?'':'disabled ')+'onclick="mobileRunDispatchWizard()">'+mobileEsc(isShare?(ru?'Поделиться':'Share'):(ru?'Открыть письмо':'Open email'))+'</button>';
+    h+='<button class="btn btn-accent" type="button" '+(sendGate.ok?'':'disabled ')+'onclick="mobileRunDispatchWizard()">'+mobileEsc(hostPlatform==='ios'?(ru?'Выбрать приложение':'Choose app'):(isShare?(ru?'Поделиться':'Share'):(ru?'Открыть письмо':'Open email')))+'</button>';
     h+='</div>';
     return h;
 }
@@ -5801,6 +5802,11 @@ function mobileDispatchDoneHtml(){
     var h=mobileDispatchHeader(title,sub);
     h+='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(ru?'Что дальше?':'What next?')+'</div>';
     h+='<div class="mobile-card-sub">'+mobileEsc(isShare?(ru?'Если вы уже отправили сообщение, вернитесь на главный экран.':'If you have sent the message, return to the main screen.'):(ru?'Проверьте письмо в почтовом приложении и нажмите Send.':'Review the email in your mail app and press Send.'))+'</div>';
+    if(hostPlatform==='ios'){
+        h+='<p class="mobile-card-sub">'+mobileEsc(ru?'Получателей выберите в приложении. Тема включена в текст сообщения.':'Choose recipients in the target app. The subject is included in the message text.')+'</p>';
+        var selectedRecipients=mobileDispatchSelectedRecipients();
+        if(selectedRecipients.length)h+='<p class="mobile-card-sub" style="user-select:text;overflow-wrap:anywhere">'+mobileEsc(selectedRecipients.join(', '))+'</p>';
+    }
     if(!isShare)h+='<div class="mobile-card-sub">'+mobileEsc((ru?'Получателей: ':'Recipients: ')+mobileDispatchDoneRecipients)+'</div>';
     h+='</div>';
     h+='<button class="mobile-primary-action" type="button" onclick="mobileShow(\'home\')"><span class="mobile-action-icon">&#8962;</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(ru?'На главную':'Home')+'</span><span class="mobile-action-sub">'+mobileEsc(ru?'Вернуться в главное меню Скипи Моряк.':'Return to the Skipi Seafarer main menu.')+'</span></span></button>';
@@ -5823,7 +5829,7 @@ async function mobileRunDispatchWizard(){
             if(!dispatchPackageId){showToast(ru?'Выберите пакет документов':'Choose a document package','warn');return;}
             pkgId=dispatchPackageId;
         }
-        if(dispatchTab==='crewing_requests'&&!isShare){
+        if(dispatchTab==='crewing_requests'&&!isShare&&hostPlatform!=='ios'){
             var selected={};
             recipients.forEach(function(e){selected[String(e||'').toLowerCase()]=true;});
             (lastDispatchMailingRequests||[]).filter(function(r){return selected[String(r.reply_to||'').toLowerCase()];}).forEach(function(r){
@@ -5838,6 +5844,18 @@ async function mobileRunDispatchWizard(){
             redactedCv:dispatchCvMode==='redacted',
         });
         if(!attachments||!attachments.length){showToast(ru?'Не удалось подготовить вложения':'Could not prepare attachments','error');return;}
+        if(hostPlatform==='ios'){
+            await invoke('mobile_share_dispatch',{
+                recipients:[], subject:draft.subject, body:draft.body,
+                attachments:attachments, mode:'share',
+            });
+            showToast(ru?'Меню отправки открыто. Получателей выберите в приложении.':'Share sheet opened. Choose recipients in the target app.','success');
+            mobileDispatchDoneMode='share';
+            mobileDispatchDoneRecipients=0;
+            mobileDispatchStep='done';
+            renderMobileDispatch();
+            return;
+        }
         if(hostPlatform==='android'){
             await invoke('mobile_share_dispatch',{
                 recipients:recipients,
