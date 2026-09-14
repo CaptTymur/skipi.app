@@ -6488,10 +6488,11 @@ for(const lang of ['en','ru']){
 {
   section('193 diagnostics — visible errors survive reload, redact credentials and travel in prepared drafts');
   const app=bootApp();await efSettle();const s=app.sandbox;
-  const secrets=['Bearer SECRET_BEARER','password=SECRET_PASSWORD','"password":"SECRET_MULTI WORD VALUE"','Authorization: SECRET_AUTH','ska_SECRET_PARENT','skv_SECRET_DEVICE','https://user:SECRET_URL@host.test/path?token=SECRET_QUERY'];
+  const secrets=['Bearer SECRET_BEARER','password=SECRET_PASSWORD','"password":"SECRET_MULTI WORD VALUE"','Authorization: SECRET_AUTH','Authorization: Basic c3ludGhldGljOnNlY3JldA==','password="first secret\nsecond secret"','password="SECRET_ESCAPED\\" tail-secret"','ska_SECRET_PARENT','skv_SECRET_DEVICE','https://user:SECRET_URL@host.test/path?token=SECRET_QUERY'];
   for(const secret of secrets)s.logError('synthetic',secret);
   const saved=JSON.stringify(Array.from(app.lstore));const log=s.getErrorLog();
-  ok(!/SECRET_|WORD VALUE/.test(log)&&!/SECRET_|WORD VALUE/.test(saved),'193: credentials redacted before persistence and export');
+  ok(!/SECRET_|WORD VALUE|c3ludGhldGlj|second secret|tail-secret/.test(log)&&!/SECRET_|WORD VALUE|c3ludGhldGlj|second secret|tail-secret/.test(saved),'193: credentials redacted before persistence and export');
+  const extraMarker='inline193-'+Date.now();app.doc.getElementById('mv-code').parentNode={insertBefore(){}};s.smtpStatus(extraMarker+'-smtp','err');s.myVesselShowError(extraMarker+'-vessel');ok(s.getErrorLog().includes(extraMarker+'-smtp')&&s.getErrorLog().includes(extraMarker+'-vessel'),'193: SMTP and vessel inline errors join the local journal');
   const marker='visible193-'+Date.now();s.err(marker+'-strip');s.showToast(marker+'-toast','error');s.uiToast(marker+'-alert','error');s._lgError(marker+'-login');
   const panel=app.doc.createElement('section');panel.setAttribute('id','one-account-sync');app.doc.body.appendChild(panel);s.oneAccountSyncRender({state:'error',error:marker+'-sync',conflicts:[]},panel);
   for(const kind of ['strip','toast','alert','login','sync'])ok(s.getErrorLog().includes(marker+'-'+kind),'193: visible '+kind+' error captured');

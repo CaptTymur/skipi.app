@@ -2493,7 +2493,8 @@ function scrubLocalDiagnostic(value,limit){
         .replace(/Bearer\s+[A-Za-z0-9._~+\/=-]+/ig,'Bearer [redacted]')
         .replace(/\bsk[adv]_[A-Za-z0-9._~+\/=-]+/g,'[redacted]')
         .replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/ig,function(_,scheme){return scheme+'[redacted]@';})
-        .replace(/((?:password|passwd|authorization|access_token|refresh_token|api[_-]?key|token)[\s"']*[:=]\s*)(["'])(.*?)\2/ig,function(_,label){return label+'[redacted]';})
+        .replace(/((?:password|passwd|authorization|access_token|refresh_token|api[_-]?key|token)[\s"']*[:=]\s*)(["'])((?:\\[\s\S]|(?!\2)[\s\S])*)\2/ig,function(_,label){return label+'[redacted]';})
+        .replace(/(\bauthorization["'\s]*[:=]\s*)[^\r\n]+/ig,function(_,label){return label+'[redacted]';})
         .replace(/((?:password|passwd|authorization|access_token|refresh_token|api[_-]?key|token)["'\s:=]+)[^\s&"',;]+/ig,function(_,label){return label+'[redacted]';})
         .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig,'[email]')
         .slice(0,limit===undefined?2000:limit);
@@ -8694,6 +8695,7 @@ async function refreshSeafarerFramework(){
         }
         el.innerHTML=renderFrameworkPanel(frameworks,docs,{subjectLabel:subject});
     }catch(e){
+        logError('regulatory_framework',e);
         el.innerHTML='<div class="fw-panel"><div class="fw-panel-title">Applicable regulatory framework</div><div class="fw-placeholder">Error: '+e+'</div></div>';
     }
 }
@@ -9755,6 +9757,7 @@ async function refreshVesselFramework(){
         var docs=await invoke('get_vessel_required_docs',{vesselId:catId,sizeId:sizeId,tradeId:tradeId});
         el.innerHTML=renderFrameworkPanel(frameworks,docs,{subjectLabel:subject});
     }catch(e){
+        logError('regulatory_framework',e);
         el.innerHTML='<div class="fw-panel"><div class="fw-panel-title">Applicable regulatory framework</div><div class="fw-placeholder">Error: '+e+'</div></div>';
     }
 }
@@ -10153,6 +10156,7 @@ async function confirmAccountDelete(){
     var t=accountDeleteTexts();
     var errEl=document.getElementById('account-delete-error');
     function fail(msg){
+        if(msg)logError('account_delete',msg);
         var e2=document.getElementById('account-delete-error');
         if(e2){ e2.textContent=msg||''; e2.style.display=msg?'block':'none'; }
     }
@@ -10996,6 +11000,7 @@ function myVesselGo(stage){ myVessel.stage=stage; myVessel.error=''; myVesselRer
 function myVesselFocus(){ var i=document.getElementById('mv-code'); if(i){try{i.focus();}catch(e){}} }
 function myVesselClearError(){ myVessel.error=''; var e=document.querySelector('.mv-error'); if(e)e.remove(); }
 function myVesselShowError(msg){
+    if(msg)logError('my_vessel',msg);
     myVessel.error=msg;
     var box=document.getElementById('mv-code'); if(!box)return;
     var ex=document.querySelector('.mv-error'); if(ex){ex.textContent=msg;return;}
@@ -11051,7 +11056,7 @@ async function myVesselResolve(code){
 // PR D — accept orchestration. Crew linking only; never /api/devices, never
 // skipi-pair, no document/CV/vault sharing. On any provisioning/error path it
 // shows an honest blocked state — it never fakes a join.
-function myVesselBlock(msg){ myVessel.stage='blocked'; myVessel.error=msg||''; myVesselRerender(); }
+function myVesselBlock(msg){ if(msg)logError('my_vessel_blocked',msg);myVessel.stage='blocked'; myVessel.error=msg||''; myVesselRerender(); }
 function myVesselMembershipKey(uid){ return 'mv:membership:'+(uid||''); }
 function myVesselSaveMembership(mem){ try{ if(mem&&mem.vault_user_id) localStorage.setItem(myVesselMembershipKey(mem.vault_user_id), JSON.stringify(mem)); }catch(e){} }
 function myVesselClearMembership(){ var m=myVessel.membership; try{ if(m&&m.vault_user_id) localStorage.removeItem(myVesselMembershipKey(m.vault_user_id)); }catch(e){} myVessel.membership=null; }
@@ -12979,7 +12984,7 @@ async function hydrateWorkFormFiles(entryId){
     var host=document.getElementById('wh-files');
     if(!host)return;
     var files=[];
-    try{files=await invoke('get_work_files',{entryId:entryId})||[];}catch(e){host.innerHTML='Could not load supporting documents: '+esc(e);return;}
+    try{files=await invoke('get_work_files',{entryId:entryId})||[];}catch(e){logError('supporting_documents',e);host.innerHTML='Could not load supporting documents: '+esc(e);return;}
     var h='<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;">';
     h+='<div style="font-weight:600;color:var(--text);">Supporting documents</div>';
     h+='<button class="btn btn-outline btn-sm" onclick="attachWorkFile(\''+escAttr(entryId)+'\',true)">+ Attach</button>';
@@ -17335,6 +17340,7 @@ async function loadVaultIdentityKey(){
         renderVaultIdentityKey(false);
     }catch(e){
         vaultIdentityCache = null;
+        logError('vault_identity',e);
         if(userEl) userEl.textContent = tr('settings.identity_load_failed');
         if(keyEl) keyEl.textContent = String(e || 'Unknown error');
     }
@@ -17348,6 +17354,7 @@ async function loadIdentityTrustStatus(){
         var status=await invoke('get_identity_trust_status');
         host.innerHTML=identityTrustHtml(status,false);
     }catch(e){
+        logError('identity_trust',e);
         host.innerHTML='<div class="mobile-card" style="margin:12px 0;"><div class="mobile-card-title">Identity trust</div><div class="mobile-card-sub">Could not check duplicate status: '+esc(String(e||''))+'</div></div>';
     }
 }
@@ -17593,7 +17600,7 @@ async function spAccountRefreshStatus(){
             el.textContent='Not linked. Get a link code in your account at assistant.skipi.app (Linked devices) and enter it below.';
             if(row)row.style.display='flex';
         }
-    }catch(e){el.textContent='Device link status unavailable: '+e;}
+    }catch(e){logError('account_link_status',e);el.textContent='Device link status unavailable: '+e;}
 }
 async function spAccountLink(){
     var inp=document.getElementById('sp-acc-code');
@@ -17768,6 +17775,7 @@ async function spRemovePhoto(){
 // dance, which was fragile on snap Thunderbird and flat-out impossible on
 // Windows (mailto: cannot carry attachments).
 function smtpStatus(msg, kind){
+    if(kind==='err'&&msg)logError('smtp',msg);
     var el=document.getElementById('smtp-status');
     if(!el)return;
     var col='var(--text2)';
@@ -18710,7 +18718,7 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
             // so the deletion path has to live here, not only on the legacy tab.
             appSpecificSections: [ seafarerSection(), syncSection(), accountSection() ],
 
-            onError: function(err, context){ try{ console.warn('[unified-settings]', context, err); }catch(e){} }
+            onError: function(err, context){ try{ logError('settings:'+context,err); }catch(e){} }
         };
         return host;
     }
