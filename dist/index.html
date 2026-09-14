@@ -5909,7 +5909,10 @@ async function renderMobileCv(){
         h+='<div class="mobile-stat"><strong>'+mobileCompletenessPercent()+'%</strong><span>Profile</span></div>';
         h+='</div>';
         if(hostPlatform==='ios'){
-            // Share is Err under cfg(not(android)) and Downloads is the app container on iOS.
+            // Downloads is the app container on iOS, so an exported file would land
+            // where the user cannot reach it. (Share itself is no longer the reason:
+            // mobile_share_dispatch got an iOS branch on 14.09. Handing the export to
+            // that sheet instead of a folder is a separate card, not this line.)
             h+='<div class="mobile-cv-note">'+mobileEsc(ru?'Экспорт доступен на десктопе и Android.':'Export is available on desktop and Android.')+'</div>';
         }else{
             h+='<div class="mobile-actions" style="margin-bottom:10px;"><button class="btn btn-accent mobile-grow" type="button" onclick="mobileExportCv(\'pdf\')">Export .pdf</button><button class="btn btn-outline mobile-grow" type="button" onclick="mobileExportCv(\'docx\')">Export .docx</button></div>';
@@ -7261,7 +7264,7 @@ function mobilePackagesL10n(){
         share:ru?'Поделиться пакетом':'Share package',
         shareOpened:ru?'Меню отправки открыто':'Share sheet opened',
         shareEmpty:ru?'В этом пакете пока нет файлов':'This package has no files yet',
-        shareOnlyAndroid:ru?'Отправка пакета доступна на десктопе и Android.':'Sharing a package is available on desktop and Android.',
+        shareOnlyPhoneApp:ru?'Отправка пакета доступна в приложении на iPhone и Android.':'Sharing a package is available in the iPhone and Android app.',
         buildFailed:ru?'Не удалось собрать «Все документы»':'Could not build "All documents"',
         buildFailedWhy:ru?'Не читается файл документа:':'A document file cannot be read:',
         buildFailedNext:ru?'Откройте документ и приложите файл заново — после этого пакет соберётся целиком. Частичный архив программа не отдаёт.':'Open the document and attach the file again — the package is built in full after that. A partial archive is never handed over.',
@@ -7336,6 +7339,18 @@ function mobilePackageBuildFailureHtml(fail,L){
     h+='</div>';
     return h;
 }
+// ONE predicate for «this build can hand a file to a system share sheet», read by
+// all three gates below — the drawing, the call site and the «not here» card.
+// Three separate comparisons is exactly how a button ends up drawn on a platform
+// whose handler refuses it, and how a negative drill slips past a site it was
+// written for. NOT isNativeMobile(): that name means «a phone build», this one
+// means «mobile_share_dispatch has a branch here» — android via JNI
+// (shareSkipiDispatch) and ios via UIActivityViewController (mail_intent.rs).
+// Everything else — desktop, web-Моряк, any shell under 720px — has no sheet and
+// gets the translated line instead of a control that could only fail.
+function platformCanShareNatively(){
+    return hostPlatform==='android'||hostPlatform==='ios';
+}
 function mobilePackageCardHtml(p,L){
     var id=String((p&&p.id)||'');
     // The card shows ONLY what the product actually keeps: the title, the
@@ -7366,14 +7381,15 @@ function mobilePackageCardHtml(p,L){
     // control. The refusal itself lives in Rust (delete_package), because the
     // desktop list has a delete button this slice does not touch.
     if(!system)h+='<button class="btn btn-outline btn-red" type="button" data-qa="mobile-pkg-delete-'+escAttr(id)+'" onclick="mobileDeletePackage(\''+jsString(id)+'\')">'+mobileEsc(L.del)+'</button>';
-    // Android ONLY, and deliberately not isNativeMobile(): this screen also renders
-    // on iOS and on any shell under 720px (shouldUseMobileShell), while
-    // mobile_share_dispatch is Err under cfg(not(target_os = "android")). Drawing the
-    // button anywhere else would guarantee a failure and hand the user a raw English
-    // backend string — in a Russian interface too. The live mailing path gates the
-    // same way. What the user sees instead is one translated line, not silence:
-    // a card with nothing but Delete is the very defect this slice was opened for.
-    if(files>0&&hostPlatform==='android')h+='<button class="btn btn-accent" type="button" data-qa="mobile-pkg-share-'+escAttr(id)+'" onclick="mobileSharePackage(\''+jsString(id)+'\')">'+mobileEsc(L.share)+'</button>';
+    // Drawn where a system sheet really exists — android AND ios since 14.09, when
+    // mobile_share_dispatch got its UIActivityViewController branch. This screen also
+    // renders on any shell under 720px (shouldUseMobileShell), and there no sheet
+    // exists: drawing the button would guarantee a failure and hand the user a raw
+    // English backend string — in a Russian interface too. What is shown instead is
+    // one translated line, not silence: a card with nothing but Delete is the very
+    // defect this screen was opened for. The mailing wizard gates SEPARATELY and on
+    // purpose (mode:'email' promises pre-filled recipients the iOS sheet cannot give).
+    if(files>0&&platformCanShareNatively())h+='<button class="btn btn-accent" type="button" data-qa="mobile-pkg-share-'+escAttr(id)+'" onclick="mobileSharePackage(\''+jsString(id)+'\')">'+mobileEsc(L.share)+'</button>';
     h+='</div>';
     h+='</div>';
     return h;
@@ -7387,9 +7403,9 @@ async function mobileSharePackage(id){
     var L=mobilePackagesL10n();
     id=String(id||'');
     if(!id)return;
-    // Same gate at the call site, not only in the drawing: a stale handler must never
-    // reach the backend and echo its English error back at the user.
-    if(hostPlatform!=='android'){showToast(L.shareOnlyAndroid,'warn');return;}
+    // The SAME predicate at the call site, not only in the drawing: a stale handler
+    // must never reach the backend and echo its English error back at the user.
+    if(!platformCanShareNatively()){showToast(L.shareOnlyPhoneApp,'warn');return;}
     if(mobilePackagesBusy)return;
     mobilePackagesBusy=true;
     try{
@@ -7449,7 +7465,7 @@ async function renderMobilePackages(){
         h+='<div class="mobile-card" data-qa="mobile-pkg-empty"><div class="mobile-card-title">'+mobileEsc(L.empty)+'</div><div class="mobile-card-sub">'+mobileEsc(docs.length?L.emptyHint:L.needFiles)+'</div></div>';
     }else{
         pkgs.forEach(function(p){h+=mobilePackageCardHtml(p,L);});
-        if(hostPlatform!=='android')h+='<div class="mobile-card" data-qa="mobile-pkg-share-unavailable"><div class="mobile-card-sub">'+mobileEsc(L.shareOnlyAndroid)+'</div></div>';
+        if(!platformCanShareNatively())h+='<div class="mobile-card" data-qa="mobile-pkg-share-unavailable"><div class="mobile-card-sub">'+mobileEsc(L.shareOnlyPhoneApp)+'</div></div>';
     }
     h+='<div class="mobile-wizard-actions">';
     h+='<button class="btn btn-outline" type="button" data-qa="mobile-pkg-docs" onclick="mobileShow(\'docs\')">'+mobileEsc(L.openDocs)+'</button>';
