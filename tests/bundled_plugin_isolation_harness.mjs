@@ -2341,6 +2341,17 @@ const PKG_DOCS = [
   { id: 'd3', title: 'GMDSS', category: 'certificates', file_name: '' },
 ];
 
+// The automatic "All documents" package, as Rust actually hands it over: the
+// RESERVED id from packages.rs, a neutral title in the database (the phone draws
+// the localised caption itself) and `updated_on` — the time of the last
+// SUCCESSFUL build, which only the sidecar knows and the packages table does not.
+const PKG_SYSTEM_ID = 'skipi-all-documents';
+const pkgSystemRow = (fileCount, updatedOn) => ({
+  id: PKG_SYSTEM_ID, title: 'All documents', created_on: '2026-09-10 08:00:00',
+  expires_on: '2027-09-10T08:00:00', download_count: 0, download_limit: 999, password: null,
+  file_count: fileCount, updated_on: updatedOn || '2026-09-13T18:45:00Z', is_system: true,
+});
+
 // Boot the NATIVE mobile shell, then take over invoke() so the packages screen
 // runs against a controlled backend. init() has already settled by then, so the
 // recorded calls belong to the packages screen and nothing else.
@@ -2348,11 +2359,29 @@ async function pkgBoot(opts) {
   const o = opts || {};
   const app = installNavHistory(bootMobile({ seed: o.lang ? { 'skipi-ui-language': o.lang } : {} }));
   await settleVm();
+  // bootMobile always boots on 'android' (the mobile shell needs it). Production
+  // reads `hostPlatform` LIVE at render time, so setting it afterwards is exactly
+  // what an iOS build — or a desktop/web shell under 720px — looks like here.
+  if (o.platform) app.sandbox.hostPlatform = o.platform;
   const calls = [];
   let pkgs = (o.packages || []).slice();
+  const systemDocs = () => (app.sandbox.allDocs || []).filter((d) => d && d.file_name);
+  if (o.system) pkgs.push(pkgSystemRow(systemDocs().length || (o.docs || []).filter((d) => d && d.file_name).length, o.systemUpdatedOn));
   app.sandbox.invoke = async (cmd, args) => {
     calls.push([cmd, args]);
     if (cmd === 'get_packages') { if (o.getFails) throw new Error('No vault open'); return pkgs.slice(); }
+    // Modelled on the Rust command, including its refusal: with no uploaded file
+    // there is nothing to package and no system package is created.
+    if (cmd === 'ensure_all_documents_package') {
+      // The exact refusal packages.rs produces, marker and all — the screen has to
+      // parse it into the user's own language (UNREADABLE_ERROR_PREFIX / _ITEM_MARKER).
+      if (o.ensureFails) throw new Error('Cannot build the package — 1 document file(s) cannot be read:\n\u2022 Yellow Fever (yf.pdf)');
+      if (!systemDocs().length) throw new Error('No uploaded document files yet — there is nothing to package.');
+      if (!pkgs.some((p) => p.id === PKG_SYSTEM_ID)) pkgs.push(pkgSystemRow(systemDocs().length, o.systemUpdatedOn));
+      return PKG_SYSTEM_ID;
+    }
+    if (cmd === 'prepare_dispatch_attachments') { return ['/vault/_packages/' + String(args.packageId) + '.zip']; }
+    if (cmd === 'mobile_share_dispatch') { return 'Share sheet opened'; }
     if (cmd === 'create_package') {
       if (o.createFails) throw new Error('Cannot create package — 1 document(s) have no file');
       const id = 'pkg-new-' + (pkgs.length + 1);
@@ -2385,6 +2414,13 @@ async function pkgBoot(opts) {
   return app;
 }
 const pkgCalls = (app, cmd) => app.calls.filter(([c]) => c === cmd);
+
+// Rust source with its comments removed: block comments first, then line comments.
+// Order-of-call drills must read code, not the prose that describes the code —
+// a comment naming a function is not a call to it.
+const rustCode = (src) => String(src || '')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/\/\/.*$/gm, '');
 
 {
   section('mobile Packages (PKG1) — the grid icon opens the module, the dead-end toast is gone');
@@ -2419,29 +2455,40 @@ const pkgCalls = (app, cmd) => app.calls.filter(([c]) => c === cmd);
 }
 
 {
-  section('mobile Packages (PKG3) — list renders from get_packages as CARDS (title, created, files), no <table>');
+  section('mobile Packages (PKG3) — list renders from get_packages as CARDS (manual packages + exactly one system package), no <table>');
   try {
-    const app = await pkgBoot({ packages: [PKG_A, PKG_B], docs: PKG_DOCS });
+    // The vault has files, so Rust always returns the automatic package beside
+    // the manual ones: the list the user really sees is "manual + one system".
+    const app = await pkgBoot({ packages: [PKG_A, PKG_B], docs: PKG_DOCS, system: true });
     const { sandbox, doc } = app;
     sandbox.mobileShow('packages');
     await settleVm();
     const h = mobileHtml(doc);
+    const cards = (h.match(/data-qa="mobile-pkg-card"/g) || []).length;
+    const systemCards = (h.match(/data-qa-system="1"/g) || []).length;
     ok(pkgCalls(app, 'get_packages').length >= 1, 'the screen actually calls get_packages');
     ok(h.includes('Crewing set') && h.includes('Medical set'), 'both package titles are on screen');
     ok(h.includes('2026-09-01'), 'the creation date is shown (got a screen without it)');
     ok(/\b3\b/.test(h) && /\b1\b/.test(h), 'the per-package file counts are shown');
     ok(!h.includes('2027-09-01') && !h.includes('2026-08-03'), 'and NO expiry date is printed — see PKG12 for why');
     ok(!/<table/i.test(h) && !/pkg-table/.test(h), 'the mobile list is NOT the desktop <table class="pkg-table"> (phone-shaped cards only)');
-    ok((h.match(/data-qa="mobile-pkg-card"/g) || []).length === 2, 'exactly one card per package (got ' + (h.match(/data-qa="mobile-pkg-card"/g) || []).length + ')');
-    ok(h.includes('data-qa="mobile-pkg-delete-pkg-a"') && h.includes('data-qa="mobile-pkg-delete-pkg-b"'), 'each card carries its own delete control');
+    ok(cards === 3, 'exactly one card per package: 2 manual + 1 system (got ' + cards + ')');
+    ok(systemCards === 1, 'and exactly ONE of them is the system card (got ' + systemCards + ')');
+    ok(h.includes('data-qa="mobile-pkg-delete-pkg-a"') && h.includes('data-qa="mobile-pkg-delete-pkg-b"'), 'each MANUAL card carries its own delete control');
+    ok(!h.includes('data-qa="mobile-pkg-delete-' + PKG_SYSTEM_ID + '"'), 'the system card carries NO ordinary delete control (the refusal itself lives in Rust — see the desktop list, which this slice does not touch)');
+    ok(h.includes('All documents') || h.includes('Все документы'), 'the system card is captioned by its reserved id, not by the neutral database title');
+    ok(h.includes('All uploaded documents') || h.includes('Все загруженные документы'), 'and it states the SCOPE of what it contains, so the boundary is visible on screen and not only in a ledger');
     ok(h.includes('data-qa="mobile-pkg-create"'), 'the create entry point is on the list screen too');
   } catch (e) { ok(false, 'PKG3 crashed before it could assert: ' + e.message); }
 }
 
 {
-  section('mobile Packages (PKG4) — empty state: honest text + a create button, and NO silent auto-create');
+  section('mobile Packages (PKG4) — NO document with a file: empty state, no auto-create, no Share');
   try {
-    const app = await pkgBoot({ packages: [], docs: PKG_DOCS });
+    // Zero uploaded files is the one case where the automatic package does not
+    // exist at all: Rust refuses to create an empty promise, so the screen has
+    // to say so honestly and offer no way to share nothing.
+    const app = await pkgBoot({ packages: [], docs: [{ id: 'd3', title: 'GMDSS', category: 'certificates', file_name: '' }] });
     const { sandbox, doc } = app;
     sandbox.mobileShow('packages');
     await settleVm();
@@ -2451,7 +2498,34 @@ const pkgCalls = (app, cmd) => app.calls.filter(([c]) => c === cmd);
     ok(emptyText.length >= 40, 'the empty state carries readable prose, not a bare dash (got ' + emptyText.length + ' chars of text)');
     ok(h.includes('data-qa="mobile-pkg-create"'), 'the empty state offers the create button');
     ok(pkgCalls(app, 'create_package').length === 0, 'opening an empty Packages screen creates NOTHING behind the user (desktop auto-creates "All Documents"; the phone must not)');
+    ok(!/data-qa="mobile-pkg-share-/.test(h), 'and Share is not offered while there is nothing to share');
   } catch (e) { ok(false, 'PKG4 crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('mobile Packages (PKG4c) — documents but no manual package: the ONE system card, and still nothing created behind the user');
+  try {
+    const app = await pkgBoot({ packages: [], docs: PKG_DOCS, system: true });
+    const { sandbox, doc } = app;
+    sandbox.mobileShow('packages');
+    await settleVm();
+    let h = mobileHtml(doc);
+    ok(!h.includes('data-qa="mobile-pkg-empty"'), 'with the automatic package present the screen is no longer empty');
+    ok((h.match(/data-qa="mobile-pkg-card"/g) || []).length === 1, 'exactly one card is drawn (got ' + (h.match(/data-qa="mobile-pkg-card"/g) || []).length + ')');
+    ok((h.match(/data-qa-system="1"/g) || []).length === 1, 'and it is the system card');
+    ok(pkgCalls(app, 'create_package').length === 0, 'no package of the user is created behind them — the automatic one is a separate Rust command, not a second create_package');
+    ok(h.includes('data-qa="mobile-pkg-share-' + PKG_SYSTEM_ID + '"'), 'the system card offers Share');
+    // Reopening, re-rendering and double-tapping must not multiply it.
+    sandbox.mobileShow('home');
+    await settleVm();
+    sandbox.mobileShow('packages');
+    await settleVm();
+    await sandbox.renderMobilePackages();
+    await settleVm();
+    h = mobileHtml(doc);
+    ok((h.match(/data-qa-system="1"/g) || []).length === 1, 're-opening the screen still shows exactly ONE system card (got ' + (h.match(/data-qa-system="1"/g) || []).length + ')');
+    ok(pkgCalls(app, 'create_package').length === 0, 'and still nothing was created');
+  } catch (e) { ok(false, 'PKG4c crashed before it could assert: ' + e.message); }
 }
 
 {
@@ -2604,15 +2678,37 @@ const pkgCalls = (app, cmd) => app.calls.filter(([c]) => c === cmd);
 }
 
 {
-  section('mobile Packages (PKG9) — no invoke without a Rust command; no Share/Save/Email in THIS slice');
+  section('mobile Packages (PKG9) — every invoke is a real Rust command, and the ONLY outbound path is the native dispatch layer');
+  // Slice 1 (06.09) forbade a Share control here and said so in as many words:
+  // "sharing a package off the phone is slice 2". This IS slice 2 (owner 14.09,
+  // №321), so the two boundary assertions are replaced by positive ones that say
+  // what the outbound path must be. What protected the USER — no navigator.share,
+  // no save dialog, no silent extra attachment — is kept and extended, not dropped.
   const used = Array.from(new Set((PKG_CODE.match(/invoke\(\s*'([a-zA-Z0-9_]+)'/g) || []).map((s) => /'([a-zA-Z0-9_]+)'/.exec(s)[1]))).sort();
-  ok(JSON.stringify(used) === JSON.stringify(['create_package', 'delete_package', 'get_packages']),
-    'the mobile screen invokes exactly the three existing Rust commands (got ' + JSON.stringify(used) + ')');
-  const RUST = fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'commands', 'packages.rs'), 'utf8');
-  ok(used.every((c) => new RegExp('fn\\s+' + c + '\\s*\\(').test(RUST)), 'and each of them is a real #[tauri::command] in packages.rs');
+  ok(JSON.stringify(used) === JSON.stringify(['create_package', 'delete_package', 'ensure_all_documents_package', 'get_packages', 'mobile_share_dispatch', 'prepare_dispatch_attachments']),
+    'the mobile screen invokes exactly the six Rust commands this slice contracts for (got ' + JSON.stringify(used) + ')');
+  // The constant used to read packages.rs ALONE, and mobile_share_dispatch is
+  // declared in mail_intent.rs — a one-file read would have to be weakened into
+  // "some file somewhere" to stay green. It reads both files instead, and it now
+  // demands the #[tauri::command] attribute rather than any `fn` of that name.
+  const RUST = ['packages.rs', 'mail_intent.rs']
+    .map((f) => fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'commands', f), 'utf8')).join('\n');
+  ok(used.every((c) => new RegExp('#\\[(?:tauri::)?command[^\\]]*\\]\\s*(?:pub\\s+)?(?:async\\s+)?fn\\s+' + c + '\\s*\\(').test(RUST)),
+    'and each of them is a real #[tauri::command] in packages.rs or mail_intent.rs');
+  const shareFn = (() => {
+    const i = PKG_CODE.indexOf('async function mobileSharePackage(');
+    const j = PKG_CODE.indexOf('\n}', i);
+    return i >= 0 && j > i ? PKG_CODE.slice(i, j) : '';
+  })();
+  ok(shareFn.length > 0, 'mobileSharePackage() exists in the mobile packages block');
+  ok(/data-qa="mobile-pkg-share-/.test(PKG_CODE) && /mobileSharePackage\(/.test(PKG_CODE), 'the card draws a Share control wired to mobileSharePackage()');
+  ok(/prepare_dispatch_attachments/.test(shareFn) && /includeCv:\s*false/.test(shareFn) && /redactedCv:\s*false/.test(shareFn),
+    'Share asks for the package ONLY — includeCv:false, so no CV with personal data is attached behind the user');
+  ok(/mobile_share_dispatch/.test(shareFn) && /mode:\s*'share'/.test(shareFn) && /recipients:\s*\[\]/.test(shareFn),
+    "and hands it to the native share sheet with mode:'share' and no recipient — no mailing wizard, no profile, no address");
+  ok(/ensure_all_documents_package/.test(shareFn), 'and the automatic package is refreshed BEFORE anything is attached, so a stale archive is never handed over quietly');
   ok(!/export_package|open_email_with_attachment|dispatch_package|navigator\.share|saveDlg|dialog\.save/.test(PKG_CODE),
-    'slice 1 wires NO outbound path — sharing a package off the phone is slice 2 (Rust returns Err on android/ios today)');
-  ok(!/>\s*(Share|Поделиться|Save|Сохранить|Email|Отправить)\s*</.test(PKG_CODE), 'and no Share/Save/Email button is drawn on the mobile packages screen');
+    'the outbound path is that native layer and nothing else — no navigator.share, no save dialog, no desktop email command');
 }
 
 {
@@ -2701,6 +2797,266 @@ const pkgCalls = (app, cmd) => app.calls.filter(([c]) => c === cmd);
     ok(sent.length === shown, 'the number on screen equals the number of docIds actually sent (screen ' + shown + ', sent ' + sent.length + ')');
     ok(JSON.stringify(sent.slice().sort()) === '["d1","d4"]', 'and they are exactly the documents still ticked (got ' + JSON.stringify(sent) + ')');
   } catch (e) { ok(false, 'PKG13 crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('mobile Packages (PKG14) — Share from the card: one attachment, no recipient, and an OPEN menu is never reported as sent');
+  try {
+    const app = await pkgBoot({ packages: [PKG_A], docs: PKG_DOCS, system: true });
+    const { sandbox, doc } = app;
+    sandbox.mobileShow('packages');
+    await settleVm();
+    ok(mobileHtml(doc).includes('data-qa="mobile-pkg-share-pkg-a"'), 'a MANUAL package offers Share too, not only the automatic one');
+    await sandbox.mobileSharePackage(PKG_SYSTEM_ID);
+    await settleVm();
+    const ensure = pkgCalls(app, 'ensure_all_documents_package');
+    const prep = pkgCalls(app, 'prepare_dispatch_attachments');
+    const share = pkgCalls(app, 'mobile_share_dispatch');
+    ok(ensure.length === 1, 'sharing the automatic package refreshes it first (got ' + ensure.length + ' ensure calls)');
+    ok(prep.length === 1 && prep[0][1].packageId === PKG_SYSTEM_ID, 'attachments are prepared for THAT package (got ' + JSON.stringify(prep.length ? prep[0][1].packageId : null) + ')');
+    ok(prep[0][1].includeCv === false && prep[0][1].redactedCv === false, 'with includeCv false — a CV full of personal data is never added behind the user');
+    ok(share.length === 1, 'the native share sheet is opened exactly once (got ' + share.length + ')');
+    const arg = share.length ? share[0][1] : {};
+    ok(Array.isArray(arg.recipients) && arg.recipients.length === 0, 'with NO recipient — no wizard, no address book (got ' + JSON.stringify(arg.recipients) + ')');
+    ok(arg.mode === 'share', "and mode:'share' (got " + JSON.stringify(arg.mode) + ')');
+    ok(Array.isArray(arg.attachments) && arg.attachments.length === 1 && /skipi-all-documents\.zip$/.test(String(arg.attachments[0])),
+      'exactly ONE attachment leaves: the package ZIP and nothing else (got ' + JSON.stringify(arg.attachments) + ')');
+    ok(pkgCalls(app, 'delete_package').length === 0 && pkgCalls(app, 'create_package').length === 0, 'sharing neither deletes nor creates a package');
+    const last = app.toasts.length ? app.toasts[app.toasts.length - 1][0] : '';
+    ok(/open/i.test(last) && !/\bsent\b|delivered/i.test(last), 'the toast says the system menu OPENED — handing control to the system is not proof of delivery (got ' + JSON.stringify(last) + ')');
+    // A manual package must not drag the automatic rebuild along with it.
+    app.calls.length = 0;
+    await sandbox.mobileSharePackage('pkg-a');
+    await settleVm();
+    ok(pkgCalls(app, 'ensure_all_documents_package').length === 0, 'sharing a MANUAL package does not rebuild the automatic one');
+    const prep2 = pkgCalls(app, 'prepare_dispatch_attachments');
+    ok(prep2.length === 1 && prep2[0][1].packageId === 'pkg-a', 'and it shares exactly the package that was tapped');
+  } catch (e) { ok(false, 'PKG14 crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('mobile Packages (PKG14b) — RU copy, and a failed rebuild shares NOTHING rather than the previous archive');
+  try {
+    const app = await pkgBoot({ packages: [], docs: PKG_DOCS, system: true, lang: 'ru' });
+    const { sandbox } = app;
+    sandbox.mobileShow('packages');
+    await settleVm();
+    await sandbox.mobileSharePackage(PKG_SYSTEM_ID);
+    await settleVm();
+    const ruToast = app.toasts.length ? app.toasts[app.toasts.length - 1][0] : '';
+    ok(/[А-Яа-я]{4,}/.test(ruToast), 'the RU build reports in Russian (got ' + JSON.stringify(ruToast) + ')');
+    ok(!/Отправлено|Доставлено/i.test(ruToast), 'and it does not claim the package was sent (got ' + JSON.stringify(ruToast) + ')');
+  } catch (e) { ok(false, 'PKG14b RU half crashed: ' + e.message); }
+  try {
+    const app = await pkgBoot({ packages: [], docs: PKG_DOCS, system: true, ensureFails: true });
+    const { sandbox } = app;
+    sandbox.mobileShow('packages');
+    await settleVm();
+    app.toasts.length = 0;
+    await sandbox.mobileSharePackage(PKG_SYSTEM_ID);
+    await settleVm();
+    ok(pkgCalls(app, 'prepare_dispatch_attachments').length === 0, 'after a failed rebuild the PREVIOUS archive is never attached');
+    ok(pkgCalls(app, 'mobile_share_dispatch').length === 0, 'and no share sheet is opened at all');
+    const last = app.toasts.length ? app.toasts[app.toasts.length - 1][0] : '';
+    ok(/cannot be read/i.test(last), 'the exact backend reason is shown, not a paraphrase (got ' + JSON.stringify(last) + ')');
+  } catch (e) { ok(false, 'PKG14b failure half crashed: ' + e.message); }
+}
+
+{
+  section('mobile Packages (PKG15) — "Updated" is the last SUCCESSFUL build, printed as LOCAL date AND time');
+  try {
+    const app = await pkgBoot({ packages: [PKG_A], docs: PKG_DOCS, system: true, systemUpdatedOn: '2026-09-13T18:45:00Z' });
+    const { sandbox, doc } = app;
+    sandbox.mobileShow('packages');
+    await settleVm();
+    const h = mobileHtml(doc);
+    const local = (iso) => { const d = new Date(iso); const p = (n) => (n < 10 ? '0' : '') + n; return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()); };
+    const expected = local('2026-09-13T18:45:00Z');
+    ok(h.includes('Updated: ' + expected) || h.includes('Обновлён: ' + expected), 'the system card prints the build time as local date AND time (expected ' + expected + ')');
+    ok(!h.includes('2026-09-13T18:45:00Z'), 'the raw stored timestamp is not printed at the user');
+    ok(!h.includes('2026-09-10'), 'and the system card does NOT show its created_on — after a rebuild that row is the rebuild time, which is not what the user was promised');
+    // A package that has never been rebuilt has no stamp at all. It must say
+    // Created with its real recorded time — NOT "Updated: today", which is the
+    // "unknown time replaced by today" the owner forbade.
+    ok(h.includes('Created: ' + local('2026-09-01T10:11:12Z')) || h.includes('Создан: ' + local('2026-09-01T10:11:12Z')),
+      'a package with no build stamp says Created with its real recorded time (expected ' + local('2026-09-01T10:11:12Z') + ')');
+    const todayLocal = local(new Date().toISOString()).slice(0, 10);
+    ok(!h.includes('Updated: ' + todayLocal) && !h.includes('Обновлён: ' + todayLocal), 'and no card invents today as its update time');
+    // The timezone bug itself: created_on is naive UTC with no zone, and the old
+    // slice(0,10) printed those UTC characters as if they were local.
+    ok(typeof sandbox.mobilePackageDateTime === 'function', 'mobilePackageDateTime() exists');
+    ok(sandbox.mobilePackageDateTime('2026-09-01 23:30:00') === local('2026-09-01T23:30:00Z'),
+      'a naive stored timestamp is read as UTC and rendered LOCAL (expected ' + local('2026-09-01T23:30:00Z') + ', got ' + sandbox.mobilePackageDateTime('2026-09-01 23:30:00') + ')');
+    ok(/\d{2}:\d{2}$/.test(sandbox.mobilePackageDateTime('2026-09-01 10:11:12')), 'the mark carries a time, not only a date (got ' + sandbox.mobilePackageDateTime('2026-09-01 10:11:12') + ')');
+    ok(sandbox.mobilePackageDateTime('') === '' && sandbox.mobilePackageDate('') === '—', 'an empty timestamp stays an em dash rather than becoming a wrong date');
+  } catch (e) { ok(false, 'PKG15 crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('mobile Packages (PKG18) — the COMMIT ORDER itself, not just the helper that implements it');
+  // Д23 exists because publishing the archive AFTER the database transaction opens a
+  // window where get_packages already reports the new file_count while
+  // prepare_dispatch_attachments still hands over the OLD archive — «отправили старую
+  // незаметно». The Rust test for this calls build_package_zip_atomically directly, so
+  // it proves the helper and NOT the order of its call: swapping the two statements in
+  // ensure_all_documents_package_inner leaves the whole suite green. This reads the
+  // source and pins the order, which is the thing the decision was about.
+  const PKGRS = fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'commands', 'packages.rs'), 'utf8');
+  const fnStart = PKGRS.indexOf('fn ensure_all_documents_package_inner(');
+  const fnEnd = PKGRS.indexOf('\n}', fnStart);
+  const rawBody = fnStart >= 0 && fnEnd > fnStart ? PKGRS.slice(fnStart, fnEnd) : '';
+  ok(rawBody.length > 0, 'ensure_all_documents_package_inner is locatable in packages.rs');
+  // Index the CODE, not the prose — same convention as PKG_CODE and ENSURE_CODE in
+  // this file. Reading the raw body meant a single `build_package_zip_atomically(`
+  // inside a comment above tx.commit() satisfied the order check while the real
+  // call sat below it: the swap plus one comment passed the whole suite green, and
+  // the Rust tests never see this defect at all.
+  const body = rustCode(rawBody);
+  ok(!/\/\//.test(body) && !/\/\*/.test(body),
+    'and no comment form survives the strip — an unstripped comment must fail loudly here, never weaken the order check silently');
+  const iPublish = body.indexOf('build_package_zip_atomically(');
+  const iCommit = body.indexOf('tx.commit()');
+  const iStamp = body.indexOf('write_build_stamp(');
+  ok(iPublish > 0 && iCommit > 0 && iStamp > 0, 'it publishes the archive, commits a transaction and writes the stamp (got ' + [iPublish, iCommit, iStamp].join('/') + ')');
+  ok(iPublish < iCommit, 'the ATOMIC RENAME happens BEFORE the database transaction — otherwise a Share between COMMIT and rename carries the old archive under the new count');
+  ok(iCommit < iStamp, 'and the stamp is written last, so «Обновлён» can never run ahead of the bytes a recipient would get');
+  ok(/unchecked_transaction\(\)/.test(body), 'the rebuild is one transaction — no reader ever sees «the system package is gone»');
+}
+
+{
+  section('mobile Packages (PKG19) — get_packages really is the place the automatic package is kept current');
+  // Branch (a) of N13 — a desktop-first user whose vault never opens the phone screen —
+  // is closed by construction: the ensure lives inside get_packages. Construction with
+  // no assertion is a decision nobody can break loudly, so: delete the call and this
+  // goes red.
+  const PKGRS = fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'commands', 'packages.rs'), 'utf8');
+  const gStart = PKGRS.indexOf('pub fn get_packages(');
+  const gEnd = PKGRS.indexOf('\n}', gStart);
+  // Same hole, same fix: this doc comment explains WHY the ensure lives here, so a
+  // deleted call would still be "found" in the prose that describes it.
+  const gBody = rustCode(gStart >= 0 && gEnd > gStart ? PKGRS.slice(gStart, gEnd) : '');
+  ok(gBody.length > 0, 'get_packages is locatable');
+  ok(!/\/\//.test(gBody) && !/\/\*/.test(gBody), 'and its prose is stripped too, so a comment can never stand in for the call');
+  ok(/ensure_all_documents_package_inner\(/.test(gBody), 'get_packages refreshes the automatic package itself — every surface, including the frozen desktop list, goes through it');
+  ok(/let _ = ensure_all_documents_package_inner/.test(gBody), 'and a build failure there is deliberately NOT fatal: the packages the user already has must still render');
+  ok(/updated_on/.test(gBody) && /is_system/.test(gBody), 'it also derives updated_on and is_system, which the packages table does not hold');
+}
+
+{
+  section('mobile Packages (PKG20) — a vault with an unreadable file: NO package, and the reason named on screen');
+  // The fourth N13 branch. plan_entries refuses the whole build if any file cannot be
+  // read (a partial archive must never be handed over as «all documents»), and
+  // get_packages swallows that error — so on a FRESH vault the screen would otherwise
+  // be an empty Packages list with no reason at all.
+  try {
+    const app = await pkgBoot({ packages: [], docs: PKG_DOCS, ensureFails: true });
+    const { sandbox, doc } = app;
+    sandbox.mobileShow('packages');
+    await settleVm();
+    const h = mobileHtml(doc);
+    ok(pkgCalls(app, 'ensure_all_documents_package').length === 1, 'with files present and no automatic package, the screen asks the backend exactly once why');
+    ok(h.includes('data-qa="mobile-pkg-error"'), 'and renders an explicit failure card instead of an empty list');
+    const said = h.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+    ok(/Yellow Fever/.test(said), 'the failing DOCUMENT is named, so the user knows which one to fix (got ' + JSON.stringify(said.slice(0, 200)) + ')');
+    ok(!/Cannot build the package|document file\(s\) cannot be read/.test(said), 'but the raw English backend line is NOT printed at the user');
+    ok(said.length >= 60, 'the card carries a readable next step, not a bare dash');
+    ok(h.includes('data-qa="mobile-pkg-error-docs"'), 'and offers the way out — open Documents and attach the file again');
+    ok(!/data-qa="mobile-pkg-card"/.test(h), 'no package card is drawn: a partial «all documents» is never published');
+    ok(pkgCalls(app, 'create_package').length === 0, 'and nothing is created behind the user to paper over it');
+    // RU says it in Russian, still without the backend string.
+    const ru = await pkgBoot({ packages: [], docs: PKG_DOCS, ensureFails: true, lang: 'ru' });
+    ru.sandbox.mobileShow('packages');
+    await settleVm();
+    const ruSaid = mobileHtml(ru.doc).replace(/<[^>]*>/g, ' ');
+    ok(/[А-Яа-я]{4,}/.test(ruSaid) && /Yellow Fever/.test(ruSaid), 'RU: explained in Russian, document still named');
+    ok(!/Cannot build the package/.test(ruSaid), 'RU: and never the English backend line');
+    // A healthy vault must NOT pay for this: no extra ensure round-trip.
+    const ok2 = await pkgBoot({ packages: [PKG_A], docs: PKG_DOCS, system: true });
+    ok2.sandbox.mobileShow('packages');
+    await settleVm();
+    ok(pkgCalls(ok2, 'ensure_all_documents_package').length === 0, 'when the automatic package is already there the screen asks nothing extra');
+    ok(!mobileHtml(ok2.doc).includes('data-qa="mobile-pkg-error"'), 'and shows no failure card');
+  } catch (e) { ok(false, 'PKG20 crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('mobile Packages (PKG17) — Share is drawn ONLY where it can work: hostPlatform === android');
+  // The mobile Packages screen renders wherever shouldUseMobileShell() is true —
+  // android OR ios OR a viewport under 720px (dist:4244). But mobile_share_dispatch
+  // is Err under cfg(not(target_os = "android")) (mail_intent.rs), so on iOS, on a
+  // narrow desktop window and on web-Моряк the button would be drawn and would fail
+  // every single time, handing the user a raw English internal error — in a Russian
+  // interface too. isNativeMobile() (android || ios) is NOT the right gate here: it
+  // would leave the button on iOS, which is the build that goes to the App Store.
+  // The live mailing path already gates exactly this way (dist:5794).
+  try {
+    for (const platform of ['ios', 'unknown']) {
+      const app = await pkgBoot({ packages: [PKG_A], docs: PKG_DOCS, system: true, platform });
+      const { sandbox, doc } = app;
+      sandbox.mobileShow('packages');
+      await settleVm();
+      const h = mobileHtml(doc);
+      ok(h.includes('data-qa="mobile-pkg-card"'), 'the packages screen still renders on ' + platform + ' (the shell is shared)');
+      // Test the CONTROL, not the prefix: the explanation hook below is
+      // `mobile-pkg-share-unavailable`, so a bare prefix match would be
+      // satisfied by the very thing that replaces the button.
+      ok(!/onclick="mobileSharePackage\(/.test(h)
+        && !h.includes('data-qa="mobile-pkg-share-' + PKG_SYSTEM_ID + '"')
+        && !h.includes('data-qa="mobile-pkg-share-pkg-a"'),
+        'and NO Share control is drawn on ' + platform + ' — it could only fail there');
+      ok(h.includes('data-qa="mobile-pkg-share-unavailable"'), 'the screen says so in the interface language instead of staying silent (' + platform + ')');
+      const said = h.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+      ok(!/only available on Android in this build|Mobile share sheet/i.test(said), 'and never leaks the raw Rust error string (' + platform + ')');
+      // The delete control is unaffected: a manual package is still manageable there.
+      ok(h.includes('data-qa="mobile-pkg-delete-pkg-a"'), 'a manual package keeps its delete control on ' + platform);
+    }
+    // RU: the explanation is translated, not an English fallback.
+    const ru = await pkgBoot({ packages: [PKG_A], docs: PKG_DOCS, system: true, platform: 'ios', lang: 'ru' });
+    ru.sandbox.mobileShow('packages');
+    await settleVm();
+    const ruText = mobileHtml(ru.doc).replace(/<[^>]*>/g, ' ');
+    ok(/[А-Яа-я]{4,}/.test(ruText), 'the RU build explains it in Russian');
+    ok(!/only available on Android|Mobile share sheet/i.test(ruText), 'and not with the internal English string');
+    // …and on Android the button is exactly where the owner asked for it.
+    const android = await pkgBoot({ packages: [PKG_A], docs: PKG_DOCS, system: true });
+    android.sandbox.mobileShow('packages');
+    await settleVm();
+    const ah = mobileHtml(android.doc);
+    ok(android.sandbox.hostPlatform === 'android', 'the android case really is on android (so this drill is not vacuous)');
+    ok(ah.includes('data-qa="mobile-pkg-share-' + PKG_SYSTEM_ID + '"') && ah.includes('data-qa="mobile-pkg-share-pkg-a"'), 'on Android BOTH cards carry Share');
+    ok(!ah.includes('data-qa="mobile-pkg-share-unavailable"'), 'and the "not here" explanation is absent where sharing works');
+    // The refusal lives at the CALL SITE too, not only in the drawing: a stale
+    // handler must not reach the backend and echo its English error back.
+    const stale = await pkgBoot({ packages: [PKG_A], docs: PKG_DOCS, system: true, platform: 'ios' });
+    stale.sandbox.mobileShow('packages');
+    await settleVm();
+    await stale.sandbox.mobileSharePackage(PKG_SYSTEM_ID);
+    await settleVm();
+    ok(pkgCalls(stale, 'mobile_share_dispatch').length === 0, 'calling the handler directly on iOS never reaches mobile_share_dispatch');
+    ok(pkgCalls(stale, 'prepare_dispatch_attachments').length === 0, 'and prepares no attachments');
+    const toast = stale.toasts.length ? stale.toasts[stale.toasts.length - 1][0] : '';
+    ok(toast.length > 0 && !/only available on Android in this build|Mobile share sheet/i.test(toast), 'the user is told in product copy, never with the raw backend string (got ' + JSON.stringify(toast) + ')');
+  } catch (e) { ok(false, 'PKG17 crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('mobile Packages (PKG16) — the mailing wizard keeps its own default: the automatic package is not a chooser entry');
+  // ensureDispatchPackageChoice() takes the FIRST valid package as the default,
+  // and after every rebuild the automatic one is the newest row — leaving it in
+  // the chooser would silently change what goes to a recipient.
+  const VALID_SRC = (() => { const i = HTML.indexOf('function validDispatchPackages('); const j = HTML.indexOf('\n}', i); return i >= 0 && j > i ? HTML.slice(i, j) : ''; })();
+  ok(VALID_SRC.length > 0, 'validDispatchPackages() is locatable');
+  ok(/MOBILE_ALL_DOCS_PACKAGE_ID/.test(VALID_SRC), 'it excludes the reserved id from the manual package chooser');
+  ok(/isDispatchPackageExpired/.test(VALID_SRC), 'and it still filters out packages past their stored expiry, exactly as before');
+  const ENSURE_SRC = (() => { const i = HTML.indexOf('async function ensureAllDocumentsDispatchPackage('); const j = HTML.indexOf('\n}', i); return i >= 0 && j > i ? HTML.slice(i, j) : ''; })();
+  ok(ENSURE_SRC.length > 0, 'ensureAllDocumentsDispatchPackage() is locatable');
+  // Same convention as PKG_CODE: a comment that NAMES the old broken lookup is
+  // prose explaining why it went, not a wired call.
+  const ENSURE_CODE = ENSURE_SRC.split('\n').map((l) => l.replace(/^\s*\/\/.*$/, '')).join('\n');
+  ok(/invoke\('ensure_all_documents_package'\)/.test(ENSURE_CODE), 'the mailing "all documents" mode goes through the same single Rust source of truth');
+  ok(!/toLowerCase\(\)\s*===\s*'all documents'/i.test(ENSURE_CODE) && !/file_count/.test(ENSURE_CODE),
+    'and it no longer identifies the package by its localised title or by a file count — the two assumptions that handed a recipient a stale ZIP');
+  ok(!/create_package/.test(ENSURE_CODE), 'nor does it create a package of its own, which is what produced duplicates');
 }
 
 
