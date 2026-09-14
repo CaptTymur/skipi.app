@@ -614,9 +614,17 @@ pub fn ensure_profile_templates(
     conn: &rusqlite::Connection,
     vault_path: &std::path::Path,
 ) -> Result<usize, String> {
-    let _ = crate::commands::documents::normalize_known_custom_docs(conn);
-    let _ = crate::commands::documents::refresh_known_template_metadata(conn);
-    let _ = crate::commands::documents::prune_empty_catalog_only_docs(conn);
+    // Same authority boundary as get_documents: imported account metadata must
+    // survive profile reconciliation and reopening. Missing required templates
+    // are still created below; only destructive catalog rewrites are skipped.
+    if db::get_vault_info_value(conn, "sync_account_id")
+        .filter(|v| !v.is_empty())
+        .is_none()
+    {
+        let _ = crate::commands::documents::normalize_known_custom_docs(conn);
+        let _ = crate::commands::documents::refresh_known_template_metadata(conn);
+        let _ = crate::commands::documents::prune_empty_catalog_only_docs(conn);
+    }
     let g = |k: &str| db::get_vault_info_value(conn, k);
     if g("account_type").as_deref() != Some("seafarer") {
         return Ok(0);

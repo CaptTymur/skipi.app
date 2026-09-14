@@ -6466,6 +6466,26 @@ for(const lang of ['en','ru']){
   }
 }
 {
+  section('193 restore — delayed/background sync cannot upload while the first restore is being published');
+  const app=await efBoot({});const s=app.sandbox;const calls=[];let releaseRestore;
+  s.invoke=async(c)=>{calls.push(c);if(c==='get_account_sync_status')return {profile_open:false,logged_in:true,restore_context:'bound-restore'};if(c==='restore_account_profile')return await new Promise(r=>{releaseRestore=r;});return {};};
+  s.uiConfirm=async()=>true;s.loadVault=async()=>{};
+  const restore=s.restoreAccountProfile();await efSettle();
+  calls.length=0;await s.oneAccountSyncRun();
+  ok(calls.length===0,'193: an already queued timer/online/visibility sync is suspended during first restoration');
+  releaseRestore({outcome:'restored',vault:EF_REAL});await restore;
+  ok(s.accountRestoreBusy===false,'193: restore releases its UI busy state after completion');
+}
+{
+  section('193 restore — status request already in flight must not start an upload after restore begins');
+  const app=await efBoot({});const s=app.sandbox;const calls=[];let releaseStatus;
+  s.invoke=async(c)=>{calls.push(c);if(c==='get_account_sync_status')return await new Promise(r=>{releaseStatus=r;});return {};};
+  const sync=s.oneAccountSyncRun();await efSettle();s.accountRestoreBusy=true;
+  releaseStatus({enabled:true});await sync;
+  ok(!calls.includes('sync_account_now'),'193: a late status response cannot issue sync while restore is active');
+  s.accountRestoreBusy=false;
+}
+{
   section('remote install + offline persistence harness');
   await runRemoteInstallOfflineHarness();
 }

@@ -2636,6 +2636,7 @@ pub mod vault_sync {
                             "master",
                         );
                         d["data"]["template_id"] = json!(templates[0].id);
+                        assert!(templates[0].has_expiry, "fixture must differ from canonical expiry");
                         let entities = if scenario == "empty" {
                             vec![p]
                         } else if scenario == "partial" {
@@ -2698,6 +2699,10 @@ pub mod vault_sync {
                     let docs = db::get_all_docs(c).unwrap();
                     let imported = docs.iter().find(|d| d.id == "original-doc").unwrap();
                     let template = imported.template_id.clone().unwrap();
+                    assert_eq!(imported.notes.as_deref(),Some("preserved notes"),"profile reconciliation must preserve authoritative imported notes");
+                    assert_eq!(imported.title,"Same title");
+                    assert!(!imported.has_expiry, "imported expiry policy differs from canonical template");
+                    assert_eq!(imported.regulatory_basis.as_deref(),Some("custom basis"));
                     assert_eq!(
                         docs.iter()
                             .filter(|d| d.template_id.as_deref() == Some(&template))
@@ -2712,7 +2717,16 @@ pub mod vault_sync {
                         fs::read(local_file(c, &path, &e).unwrap()).unwrap(),
                         b"synthetic-pdf-bytes"
                     );
+                    drop(lock);
+                    drop(state.conn.lock().unwrap().take());
+                    let reopened = db::open_db(&path).unwrap();
+                    let c = &reopened;
                     super::super::super::profile::ensure_profile_templates(c, &path).unwrap();
+                    let after_docs=db::get_all_docs(c).unwrap();let after_import=after_docs.iter().find(|d|d.id=="original-doc").unwrap();
+                    assert_eq!(after_import.notes.as_deref(),Some("preserved notes"),"normal reopen must preserve imported notes");
+                    assert_eq!(after_import.title,"Same title");
+                    assert!(!after_import.has_expiry, "SQL reopen + template reconciliation preserves imported expiry policy");
+                    assert_eq!(after_import.regulatory_basis.as_deref(),Some("custom basis"));
                     assert_eq!(
                         ledger(c, "synthetic-account").unwrap(),
                         before,

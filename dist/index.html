@@ -1816,8 +1816,8 @@ function oneAccountSyncRender(status,target){
     el.querySelectorAll('[data-sync-action]').forEach(function(b){b.onclick=function(){var a=b.getAttribute('data-sync-action');if(a==='enable')oneAccountSyncEnable();else if(a==='retry')oneAccountSyncRun();else oneAccountSyncDisable();};});
 }
 async function oneAccountSyncRun(){
-    if(window.__SKIPI_WEBDESKTOP__||oneAccountSyncBusy)return;oneAccountSyncBusy=true;
-    try{var status=await invoke('get_account_sync_status');if(!status.enabled){oneAccountSyncRender(status);return;}oneAccountSyncRender(Object.assign({},status,{state:'syncing'}));oneAccountSyncRender(await invoke('sync_account_now'));await oneAccountSyncRefreshLists();}
+    if(window.__SKIPI_WEBDESKTOP__||oneAccountSyncBusy||(typeof accountRestoreBusy!=='undefined'&&accountRestoreBusy))return;oneAccountSyncBusy=true;
+    try{var status=await invoke('get_account_sync_status');if(typeof accountRestoreBusy!=='undefined'&&accountRestoreBusy)return;if(!status.enabled){oneAccountSyncRender(status);return;}oneAccountSyncRender(Object.assign({},status,{state:'syncing'}));oneAccountSyncRender(await invoke('sync_account_now'));await oneAccountSyncRefreshLists();}
     catch(e){oneAccountSyncRender(Object.assign({},oneAccountSyncLast||{},{state:'error',error:String(e)}));}
     finally{oneAccountSyncBusy=false;}
 }
@@ -16888,7 +16888,9 @@ async function restoreAccountProfile(){
     var ru=getUiLang()==='ru';accountRestoreBusy=true;
     try{
         var before=await invoke('get_account_sync_status');
-        if(before.profile_open!==false||before.logged_in!==true||!before.restore_context)throw new Error(ru?'Войдите в аккаунт и закройте текущий профиль.':'Sign in and close the current profile first.');
+        if(before.logged_in!==true)throw new Error(ru?'Войдите в аккаунт, чтобы подключить его данные.':'Sign in to connect your account data.');
+        if(before.profile_open!==false)throw new Error(ru?'Закройте текущий профиль перед загрузкой данных в новый профиль.':'Close the current profile before downloading data into a new profile.');
+        if(!before.restore_context)throw new Error(oneAccountSyncTexts().contextChanged);
         var consent=await uiConfirm(ru?'Загрузить профиль, морской стаж, фото и документы этого аккаунта в новый профиль на устройстве и включить синхронизацию? Существующие локальные профили останутся без изменений.':'Download this account’s profile, sea service, photo and documents into a new profile on this device and enable sync? Existing local profiles will remain unchanged.',{confirmLabel:ru?'Подключить данные аккаунта':'Connect account data',cancelLabel:ru?'Отмена':'Cancel'});
         if(consent!==true)return;
         var after=await invoke('get_account_sync_status');
