@@ -4252,7 +4252,7 @@ async function onType(v){
     // All other entity types are disabled in v0.4.11; no-op.
     showToast('This entity type is coming soon — only Seafarer is available right now.','info');
 }
-function showWelcome(){show('scr-welcome');hide('scr-setup');hide('scr-content');hide('ribbon');hide('left-panel');hide('tabs');hide('statusbar');var mb=document.getElementById('modules-bar');if(mb)mb.style.display='none';renderWelcomeRecent();renderMobileWelcome();}
+function showWelcome(){show('scr-welcome');hide('scr-setup');hide('scr-content');hide('ribbon');hide('left-panel');hide('tabs');hide('statusbar');var mb=document.getElementById('modules-bar');if(mb)mb.style.display='none';renderWelcomeRecent();renderMobileWelcome();renderWelcomeAccount();}
 
 function mobileViewportLikely(){return window.matchMedia&&window.matchMedia('(max-width: 720px)').matches;}
 function shouldUseMobileShell(){return hostPlatform==='android'||hostPlatform==='ios'||mobileViewportLikely();}
@@ -4827,10 +4827,10 @@ function renderMobileWelcome(){
     var h='<div class="mobile-hero">';
     h+='<h1>'+mobileEsc(tr('app.name'))+'</h1>';
     h+='<p>'+mobileEsc(ru?'Создайте или откройте профиль моряка на этом устройстве. Затем включите синхронизацию, чтобы подключить данные аккаунта. Перед заменой данных можно выбрать, какую версию сохранить.':'Create or open your seafarer profile on this device. Then enable sync to connect account data. Before replacing data, you can choose which version to keep.')+'</p>';
-    h+=appAccountControlsHtml();
+    h+=appAccountControlsHtml()+accountRestoreActionHtml();
     h+='<div class="mobile-stack">';
-    h+='<button class="mobile-primary-action" type="button" onclick="mobileCreateProfile()"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(ru?'Создать профиль':'Create mobile vault')+'</span><span class="mobile-action-sub">'+mobileEsc(ru?'Сначала выберите департамент, тип судна и должность.':'Choose department, vessel type and rank first.')+'</span></span></button>';
-    h+='<button class="btn btn-outline" onclick="mobileOpenExistingVault()">'+mobileEsc(ru?'Открыть существующий':'Open existing vault')+'</button>';
+    h+='<button class="mobile-primary-action" type="button" onclick="mobileCreateProfile()"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(ru?'Создать профиль':'Create profile')+'</span><span class="mobile-action-sub">'+mobileEsc(ru?'Сначала выберите департамент, тип судна и должность.':'Choose department, vessel type and rank first.')+'</span></span></button>';
+    h+='<button class="btn btn-outline" onclick="mobileOpenExistingVault()">'+mobileEsc(ru?'Открыть существующий профиль':'Open existing profile')+'</button>';
     h+='<button class="btn btn-outline" onclick="loadDemoVault()">'+mobileEsc(ru?'Открыть демо':'Open demo vault')+'</button>';
     h+='</div></div>';
     mobileMainHtml(h);
@@ -16881,6 +16881,40 @@ async function mobileSettingsDeleteVaultPath(path){
 // spLoad()/spSave() by sp-* element ids.
 function accountSyncSectionHtml(){
     return '<div class="settings-section"><h3>'+(getUiLang()==='ru'?'Синхронизация':'Sync')+'</h3><section id="one-account-sync" style="padding:12px 0;">'+(getUiLang()==='ru'?'Проверяю состояние…':'Checking status…')+'</section></div>';
+}
+var accountRestoreBusy=false;
+async function restoreAccountProfile(){
+    if(accountRestoreBusy||window.__SKIPI_WEBDESKTOP__)return;
+    var ru=getUiLang()==='ru';accountRestoreBusy=true;
+    try{
+        var before=await invoke('get_account_sync_status');
+        if(before.profile_open!==false||before.logged_in!==true||!before.restore_context)throw new Error(ru?'Войдите в аккаунт и закройте текущий профиль.':'Sign in and close the current profile first.');
+        var consent=await uiConfirm(ru?'Загрузить профиль, морской стаж, фото и документы этого аккаунта в новый профиль на устройстве и включить синхронизацию? Существующие локальные профили останутся без изменений.':'Download this account’s profile, sea service, photo and documents into a new profile on this device and enable sync? Existing local profiles will remain unchanged.',{confirmLabel:ru?'Подключить данные аккаунта':'Connect account data',cancelLabel:ru?'Отмена':'Cancel'});
+        if(consent!==true)return;
+        var after=await invoke('get_account_sync_status');
+        if(after.restore_context!==before.restore_context||after.profile_open!==false||after.logged_in!==true)throw new Error(oneAccountSyncTexts().contextChanged);
+        var result=await invoke('restore_account_profile',{consent:true,restoreContext:before.restore_context});
+        if(result.outcome==='empty'){
+            showToast(ru?'В аккаунте пока нет данных профиля. Создайте профиль на этом устройстве.':'This account has no profile data yet. Create a profile on this device.','info');
+            if(shouldUseMobileShell())await mobileCreateProfile();else await startSeafarerWizard();
+        }else if(result.outcome==='restored'){
+            await loadVault(result.vault);
+            showToast(ru?'Данные аккаунта загружены. Состояние доступно во вкладке «Синхронизация».':'Account data downloaded. Check its status in the Sync tab.','success');
+        }else throw new Error(ru?'Не удалось подтвердить результат восстановления.':'Could not verify the restoration result.');
+    }catch(e){logError('account_restore',e);showToast(String(e),'error');}
+    finally{accountRestoreBusy=false;}
+}
+function accountRestoreActionHtml(){
+    if(window.__SKIPI_WEBDESKTOP__)return '';
+    var ru=getUiLang()==='ru';
+    return '<button class="btn btn-accent" type="button" onclick="restoreAccountProfile()">'+(ru?'Подключить данные аккаунта':'Connect account data')+'</button><p class="section-desc">'+(ru?'Если вы уже пользовались этим аккаунтом, загрузите профиль и документы без повторного заполнения анкеты.':'If you have used this account before, download your profile and documents without filling in the form again.')+'</p>';
+}
+function renderWelcomeAccount(){
+    var welcome=document.getElementById('scr-welcome');if(!welcome)return;
+    var account=document.getElementById('welcome-account-controls');
+    if(!account){account=document.createElement('div');account.setAttribute('id','welcome-account-controls');account.style.cssText='max-width:520px;margin:20px auto;text-align:left;';welcome.appendChild(account);}
+    account.innerHTML=appAccountControlsHtml()+accountRestoreActionHtml();
+    refreshAppAccountControls();
 }
 function appAccountControlsHtml(){
     var ru=getUiLang()==='ru';

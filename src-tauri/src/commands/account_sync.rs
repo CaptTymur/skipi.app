@@ -1393,12 +1393,15 @@ pub mod vault_sync {
         pin: &Pin,
         e: &Value,
     ) -> Result<Option<Vec<u8>>, String> {
+        download_url(client,pin,e,format!("{}/blob?revision={}",endpoint(e),e["revision"]))
+    }
+    fn download_url(client:&reqwest::blocking::Client,pin:&Pin,e:&Value,url:String)->Result<Option<Vec<u8>>,String>{
         if e["blob"].is_null() {
             return Ok(None);
         }
         let (s, b) = read_response(
             client
-                .get(format!("{}/blob?revision={}", endpoint(e), e["revision"]))
+                .get(url)
                 .bearer_auth(&pin.token)
                 .send()
                 .map_err(|_| "Attachment download interrupted")?,
@@ -1613,6 +1616,9 @@ pub mod vault_sync {
         before: &str,
     ) -> Result<(), String> {
         let bytes = download(client, pin, remote)?;
+        apply_remote_bytes(state,pin,remote,before,bytes)
+    }
+    fn apply_remote_bytes(state:&AppState,pin:&Pin,remote:&Value,before:&str,bytes:Option<Vec<u8>>)->Result<(),String>{
         pinned(state, pin, |conn, root| {
             let all = scan(conn, root, &pin.account)?;
             let local = current_entity(&all, text(remote, "kind"), text(remote, "id"));
@@ -2139,6 +2145,227 @@ pub mod vault_sync {
         hash.update(parent.as_bytes());
         format!("{:x}", hash.finalize())
     }
+    fn restore_context(p: &super::super::app_login::PendingLogin, epoch: u64) -> String {
+        value_hash(&json!([
+            "skipi.restore-consent.v1",
+            p.token,
+            p.email,
+            p.account_id,
+            epoch
+        ]))
+    }
+    fn restore_session(
+        state: &AppState,
+        context: &str,
+    ) -> Result<(super::super::app_login::PendingLogin, u64), String> {
+        let path = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let pending = state
+            .login_pending
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if path.is_some() || conn.is_some() {
+            return Err("Close the current profile before restoring another account profile".into());
+        }
+        let pending = pending.as_ref().ok_or("Sign in first")?;
+        let epoch = state.sync_epoch.load(Ordering::SeqCst);
+        if context.is_empty() || restore_context(pending, epoch) != context {
+            return Err("Account changed. Confirm restoration again.".into());
+        }
+        Ok((pending.clone(), epoch))
+    }
+    // Only POST the explicit consent grant and GET account data. This path never
+    // queues or uploads a local entity. The real AppState stays untouched until
+    // every download and local application succeeds in a private staging state.
+    fn restore_from_account(
+        state: &AppState,
+        parent_dir: &Path,
+        consent: bool,
+        context: &str,
+        base: &str,
+    ) -> Result<Value, String> {
+        if !consent {
+            return Err("Explicit consent is required to restore account data".into());
+        }
+        let _single = state.sync_worker.lock().unwrap_or_else(|e| e.into_inner());
+        let (pending, epoch) = restore_session(state, context)?;
+        let client = client()?;
+        let device = uid();
+        let (code, grant) = http_json(
+            client
+                .post(format!("{base}/api/app/vault-token"))
+                .bearer_auth(&pending.token)
+                .json(&json!({"device_id":device,"consent_vault":true})),
+        )?;
+        if code != 200 {
+            return Err(status_error(code));
+        }
+        let account = text(&grant, "account_id").to_string();
+        let token = text(&grant, "token").to_string();
+        if grant["schema"] != 1
+            || text(&grant, "scope") != "seafarer-profile+vault"
+            || text(&grant, "device_id") != device
+            || account.is_empty()
+            || token.is_empty()
+            || pending.account_id.as_deref().is_some_and(|a| a != account)
+        {
+            return Err("Invalid account binding response".into());
+        }
+        let (code, body) = http_json(
+            client
+                .get(format!("{base}/api/vault/sync/manifest"))
+                .bearer_auth(&token),
+        )?;
+        if code != 200 {
+            return Err(status_error(code));
+        }
+        let (generation, remote) = validate_manifest(&body, &account)?;
+        restore_session(state, context)?;
+        if !remote
+            .values()
+            .any(|e| e["deleted"] != true && (text(e, "kind") != "profile" || !empty_profile(e)))
+        {
+            return Ok(json!({"outcome":"empty"}));
+        }
+        fs::create_dir_all(parent_dir).map_err(err)?;
+        let root = parent_dir.join(format!("account-{}", uid()));
+        fs::create_dir(&root).map_err(err)?; // exclusive ownership; never reuse a profile directory
+        let result = (|| {
+            let conn = db::open_db(&root).map_err(err)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).map_err(err)?;
+            }
+            identity::ensure_vault_identity(&conn, &root)?;
+            let vault = uid();
+            transaction(&conn, || {
+                for (k, v) in [
+                    ("account_type", "seafarer"),
+                    ("name", "Account profile"),
+                    ("skipi_user_token", pending.token.as_str()),
+                    ("skipi_user_email", pending.email.as_str()),
+                    ("skipi_user_login_at", pending.login_at.as_str()),
+                    ("sync_account_id", account.as_str()),
+                    ("sync_token", token.as_str()),
+                    (
+                        "sync_parent_hash",
+                        digest(pending.token.as_bytes()).as_str(),
+                    ),
+                    ("sync_vault_uuid", vault.as_str()),
+                    ("sync_device_id", device.as_str()),
+                    ("sync_enabled", "1"),
+                    ("sync_state", "syncing"),
+                ] {
+                    db::set_vault_info(&conn, k, v).map_err(err)?;
+                }
+                Ok(())
+            })?;
+            let staged = AppState {
+                conn: std::sync::Mutex::new(Some(conn)),
+                vault_path: std::sync::Mutex::new(Some(root.clone())),
+                login_pending: std::sync::Mutex::new(None),
+                sync_epoch: std::sync::atomic::AtomicU64::new(0),
+                sync_worker: std::sync::Mutex::new(()),
+            };
+            let pin = pin(&staged)?;
+            let mut entities: Vec<&Value> = remote.values().collect();
+            // Real account documents precede profile/framework reconciliation, so
+            // matching templates reuse remote IDs; parents precede evidence files.
+            entities.sort_by_key(|e| match text(e, "kind") {
+                "experience" => 0,
+                "experience_file" => 2,
+                "profile" => 3,
+                _ => 1,
+            });
+            for e in entities {
+                restore_session(state, context)?;
+                let before = pinned(&staged, &pin, |c, r| {
+                    Ok(content_hash(&current_entity(
+                        &scan(c, r, &account)?,
+                        text(e, "kind"),
+                        text(e, "id"),
+                    )))
+                })?;
+                let url = format!(
+                    "{base}/api/vault/sync/entities/{}/{}/blob?revision={}",
+                    text(e, "kind"),
+                    text(e, "id"),
+                    e["revision"]
+                );
+                let bytes = download_url(&client, &pin, e, url)?;
+                apply_remote_bytes(&staged, &pin, e, &before, bytes)?;
+            }
+            pinned(&staged, &pin, |c, _| {
+                let name = ["personal_first_name", "personal_surname"]
+                    .iter()
+                    .filter_map(|k| db::get_vault_info_value(c, k))
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                if !name.is_empty() {
+                    db::set_vault_info(c, "name", &name).map_err(err)?;
+                }
+                db::set_vault_info(c, "sync_generation", &generation.to_string()).map_err(err)?;
+                // Normal later synchronization may offer/upload legitimate local
+                // requirements. Initial restoration itself performed no uploads.
+                db::set_vault_info(c, "sync_state", "pending").map_err(err)
+            })?;
+            let info = {
+                let c = staged.conn.lock().unwrap();
+                db::get_vault_info(c.as_ref().unwrap()).map_err(err)?
+            };
+            let mut path = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
+            let mut conn = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+            let mut slot = state
+                .login_pending
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            if path.is_some()
+                || conn.is_some()
+                || state.sync_epoch.load(Ordering::SeqCst) != epoch
+                || slot.as_ref() != Some(&pending)
+            {
+                return Err(
+                    "Account or profile changed during restoration; retry with the current account"
+                        .into(),
+                );
+            }
+            *conn = staged.conn.lock().unwrap().take();
+            *path = Some(root.clone());
+            *slot = None;
+            state.sync_epoch.fetch_add(1, Ordering::SeqCst);
+            Ok(json!({"outcome":"restored","vault":info,"path":root.to_string_lossy()}))
+        })();
+        if result.is_err() {
+            let _ = fs::remove_dir_all(&root);
+        }
+        result
+    }
+    #[tauri::command]
+    pub async fn restore_account_profile(
+        app: tauri::AppHandle,
+        consent: bool,
+        restore_context: String,
+    ) -> Result<Value, String> {
+        tauri::async_runtime::spawn_blocking(move || {
+            let parent = app.path().app_data_dir().map_err(err)?.join("vaults");
+            let mut result = restore_from_account(
+                &app.state::<AppState>(),
+                &parent,
+                consent,
+                &restore_context,
+                &assistant_api_base(),
+            )?;
+            if let Some(path) = result["path"].as_str() {
+                crate::save_last_vault(path);
+            }
+            result.as_object_mut().unwrap().remove("path");
+            Ok(result)
+        })
+        .await
+        .map_err(err)?
+    }
     fn consent_status(state: &AppState) -> Result<Value, String> {
         let path = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
         let conn = state.conn.lock().unwrap_or_else(|e| e.into_inner());
@@ -2160,7 +2387,8 @@ pub mod vault_sync {
                 let pending = state.login_pending.lock().unwrap_or_else(|e| e.into_inner());
                 Ok(json!({"enabled":false,"state":"disabled","conflicts":[],
                     "profile_open":false,"logged_in":pending.is_some(),
-                    "account_email":pending.as_ref().map(|p|p.email.as_str()).unwrap_or("")}))
+                    "account_email":pending.as_ref().map(|p|p.email.as_str()).unwrap_or(""),
+                    "restore_context":pending.as_ref().map(|p|restore_context(p,state.sync_epoch.load(Ordering::SeqCst)))}))
             },
         }
     }
@@ -2300,6 +2528,262 @@ pub mod vault_sync {
             };
             (root, state)
         }
+        fn restore_fixture() -> (PathBuf, std::sync::Arc<AppState>, String) {
+            let (root, conn) = fixture();
+            drop(conn);
+            let pending = super::super::super::app_login::PendingLogin {
+                token: "synthetic-parent".into(),
+                email: "synthetic@example.invalid".into(),
+                login_at: "synthetic".into(),
+                account_id: Some("synthetic-account".into()),
+            };
+            let context = restore_context(&pending, 0);
+            (
+                root,
+                std::sync::Arc::new(AppState {
+                    conn: std::sync::Mutex::new(None),
+                    vault_path: std::sync::Mutex::new(None),
+                    login_pending: std::sync::Mutex::new(Some(pending)),
+                    sync_epoch: std::sync::atomic::AtomicU64::new(0),
+                    sync_worker: std::sync::Mutex::new(()),
+                }),
+                context,
+            )
+        }
+        fn restore_server(
+            state: std::sync::Arc<AppState>,
+            scenario: &'static str,
+        ) -> (
+            String,
+            std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+            std::sync::Arc<std::sync::atomic::AtomicBool>,
+            std::thread::JoinHandle<()>,
+        ) {
+            use std::io::Write;
+            use std::net::TcpListener;
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let base = format!("http://{}", listener.local_addr().unwrap());
+            let requests = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+            let seen = requests.clone();
+            let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let stopped = stop.clone();
+            let task = std::thread::spawn(move || {
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+                while !stopped.load(Ordering::SeqCst) && std::time::Instant::now() < deadline {
+                    let Ok((mut stream, _)) = listener.accept() else {
+                        std::thread::sleep(std::time::Duration::from_millis(5));
+                        continue;
+                    };
+                    stream
+                        .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+                        .unwrap();
+                    let mut input = Vec::new();
+                    let mut chunk = [0u8; 4096];
+                    loop {
+                        let n = stream.read(&mut chunk).unwrap();
+                        if n == 0 {
+                            break;
+                        }
+                        input.extend_from_slice(&chunk[..n]);
+                        if let Some(end) = input.windows(4).position(|w| w == b"\r\n\r\n") {
+                            let header = String::from_utf8_lossy(&input[..end]);
+                            let length = header
+                                .lines()
+                                .find_map(|l| {
+                                    l.to_ascii_lowercase()
+                                        .strip_prefix("content-length:")
+                                        .and_then(|n| n.trim().parse::<usize>().ok())
+                                })
+                                .unwrap_or(0);
+                            if input.len() >= end + 4 + length {
+                                break;
+                            }
+                        }
+                    }
+                    let header = String::from_utf8_lossy(&input);
+                    let first = header.lines().next().unwrap().to_string();
+                    seen.lock().unwrap().push(first.clone());
+                    // Any accidental entity PUT/DELETE is a hard test tripwire.
+                    assert!(
+                        first.starts_with("GET ") || first.starts_with("POST /api/app/vault-token "),
+                        "unexpected upload {first}"
+                    );
+                    let mut code = "200 OK";
+                    let bytes = if first.starts_with("POST ") {
+                        let start = input.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
+                        let body: Value = serde_json::from_slice(&input[start..]).unwrap();
+                        json!({"schema":1,"scope":"seafarer-profile+vault","device_id":body["device_id"],"account_id":if scenario=="foreign"{"foreign-account"}else{"synthetic-account"},"token":"synthetic-child"}).to_string().into_bytes()
+                    } else if first.contains("/manifest ") {
+                        if scenario == "race" {
+                            state.sync_epoch.fetch_add(1, Ordering::SeqCst);
+                        }
+                        let mut p = entity(
+                            "profile",
+                            "main",
+                            if scenario == "empty" {
+                                json!({})
+                            } else {
+                                json!({"personal_first_name":"Cloud193","personal_surname":"Preserve","stcw_level":"management","vessel_category":"oil_tanker","position":"master"})
+                            },
+                            Value::Null,
+                        );
+                        p["revision"] = json!(2);
+                        let mut d = wire_doc("original-doc", Some(b"synthetic-pdf-bytes"));
+                        let templates = crate::profiles::required_docs_for_profile(
+                            crate::profiles::StcwLevel::from_id("management").unwrap(),
+                            "oil_tanker",
+                            "master",
+                        );
+                        d["data"]["template_id"] = json!(templates[0].id);
+                        let entities = if scenario == "empty" {
+                            vec![p]
+                        } else if scenario == "partial" {
+                            vec![p, d, wire_doc("second-doc", Some(b"synthetic-pdf-bytes"))]
+                        } else {
+                            vec![p, d]
+                        };
+                        if scenario == "offline" {
+                            code = "503 Service Unavailable";
+                        }
+                        json!({"schema":1,"account_id":"synthetic-account","complete":scenario!="incomplete","generation":3,"entities":entities}).to_string().into_bytes()
+                    } else {
+                        if scenario == "late-race" {
+                            state.sync_epoch.fetch_add(1, Ordering::SeqCst);
+                        }
+                        if scenario == "corrupt" || (scenario == "partial" && first.contains("second-doc"))
+                        {
+                            b"wrong-blob".to_vec()
+                        } else {
+                            b"synthetic-pdf-bytes".to_vec()
+                        }
+                    };
+                    let response=format!("HTTP/1.1 {code}\r\nContent-Length: {}\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n",bytes.len());
+                    stream.write_all(response.as_bytes()).unwrap();
+                    stream.write_all(&bytes).unwrap();
+                }
+            });
+            (base, requests, stop, task)
+        }
+        #[test]
+        fn restore_http_is_pull_only_atomic_and_preserves_parked_login_on_failures() {
+            for scenario in [
+                "success",
+                "empty",
+                "incomplete",
+                "offline",
+                "foreign",
+                "corrupt",
+                "partial",
+                "race",
+                "late-race",
+            ] {
+                let (root, state, context) = restore_fixture();
+                let original = state.login_pending.lock().unwrap().clone();
+                let (base, requests, stop, task) = restore_server(state.clone(), scenario);
+                let result = restore_from_account(&state, &root.join("restores"), true, &context, &base);
+                stop.store(true, Ordering::SeqCst);
+                task.join().unwrap();
+                let seen = requests.lock().unwrap();
+                assert!(seen
+                    .iter()
+                    .all(|r| r.starts_with("GET ") || r.starts_with("POST /api/app/vault-token ")));
+                if scenario == "success" {
+                    assert_eq!(result.as_ref().unwrap()["outcome"], "restored");
+                    assert!(state.login_pending.lock().unwrap().is_none());
+                    let path = state.vault_path.lock().unwrap().clone().unwrap();
+                    assert!(path.starts_with(root.join("restores")));
+                    let lock = state.conn.lock().unwrap();
+                    let c = lock.as_ref().unwrap();
+                    let docs = db::get_all_docs(c).unwrap();
+                    let imported = docs.iter().find(|d| d.id == "original-doc").unwrap();
+                    let template = imported.template_id.clone().unwrap();
+                    assert_eq!(
+                        docs.iter()
+                            .filter(|d| d.template_id.as_deref() == Some(&template))
+                            .count(),
+                        1,
+                        "profile-last does not duplicate imported template"
+                    );
+                    let before = ledger(c, "synthetic-account").unwrap();
+                    assert_eq!(before["document:original-doc"]["baseline"]["revision"], 1);
+                    let e = scan(c, &path, "synthetic-account").unwrap()["document:original-doc"].clone();
+                    assert_eq!(
+                        fs::read(local_file(c, &path, &e).unwrap()).unwrap(),
+                        b"synthetic-pdf-bytes"
+                    );
+                    super::super::super::profile::ensure_profile_templates(c, &path).unwrap();
+                    assert_eq!(
+                        ledger(c, "synthetic-account").unwrap(),
+                        before,
+                        "normal reopen reconciliation retains imported revisions"
+                    );
+                    assert_eq!(
+                        db::get_all_docs(c)
+                            .unwrap()
+                            .iter()
+                            .filter(|d| d.template_id.as_deref() == Some(&template))
+                            .count(),
+                        1
+                    );
+                } else {
+                    if scenario == "empty" {
+                        assert_eq!(result.unwrap()["outcome"], "empty");
+                    } else {
+                        assert!(result.is_err(), "{scenario} is an error, never empty");
+                    }
+                    assert!(state.conn.lock().unwrap().is_none());
+                    assert!(state.vault_path.lock().unwrap().is_none());
+                    assert_eq!(*state.login_pending.lock().unwrap(), original);
+                    assert!(
+                        !root.join("restores").exists()
+                            || fs::read_dir(root.join("restores"))
+                                .unwrap()
+                                .next()
+                                .is_none(),
+                        "failed staging is removed"
+                    );
+                }
+                drop(seen);
+                drop(state);
+                fs::remove_dir_all(root).unwrap();
+            }
+        }
+        #[test]
+        fn restore_cancel_stale_context_and_existing_profile_do_not_start_http() {
+            let (root, state, context) = restore_fixture();
+            assert!(restore_from_account(
+                &state,
+                &root.join("restores"),
+                false,
+                &context,
+                "http://127.0.0.1:1"
+            )
+            .is_err());
+            assert!(restore_from_account(
+                &state,
+                &root.join("restores"),
+                true,
+                "stale",
+                "http://127.0.0.1:1"
+            )
+            .unwrap_err()
+            .contains("Account changed"));
+            *state.vault_path.lock().unwrap() = Some(root.clone());
+            assert!(restore_from_account(
+                &state,
+                &root.join("restores"),
+                true,
+                &context,
+                "http://127.0.0.1:1"
+            )
+            .unwrap_err()
+            .contains("Close the current profile"));
+            assert!(!root.join("restores").exists());
+            assert!(state.login_pending.lock().unwrap().is_some());
+            drop(state);
+            fs::remove_dir_all(root).unwrap();
+        }
         #[test]
         fn consent_status_is_read_only_and_requires_vault_and_login() {
             let (root, state) = consent_fixture();
@@ -2331,6 +2815,7 @@ pub mod vault_sync {
             let no_vault = consent_status(&state).unwrap();
             assert_eq!(no_vault["profile_open"], false);
             assert_eq!(no_vault["logged_in"], true, "parked login is still a signed-in account");
+            assert!(no_vault["restore_context"].as_str().is_some_and(|s|s.len()==64));
             assert!(!no_vault.to_string().contains("synthetic-parked-secret"));
             assert!(consent_status(&state).unwrap()["consent_context"].is_null());
             assert!(prepare_enable(&state, Some(context)).is_err());

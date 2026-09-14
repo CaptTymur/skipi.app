@@ -6439,6 +6439,33 @@ for(const lang of ['en','ru']){
   }
 }
 {
+  section('193 wide welcome — signed-in account controls remain visible before local profile creation');
+  const app=bootApp({platform:'linux'});await efSettle();const {sandbox:s,doc}=app;
+  s.showWelcome();
+  const account=doc.getElementById('welcome-account-controls');
+  ok(account&&account.innerHTML.includes('appLogoutToGate()'),'193 wide welcome contains the account sign-out control without static markup changes');
+}
+{
+  section('193 restore — signed-in account can download existing data without re-entering profile fields');
+  for(const lang of ['en','ru']){
+    const app=await efBoot({app_login_status:{logged_in:true,pending:true,email:'synthetic@example.invalid'}});const {sandbox:s,doc}=app;s.getUiLang=()=>lang;s.showWelcome();
+    ok(mobileHtml(doc).includes('restoreAccountProfile()'),'193 '+lang+': welcome exposes explicit account restore action');
+    ok(typeof s.restoreAccountProfile==='function','193 '+lang+': restore handler exists');
+    if(typeof s.restoreAccountProfile!=='function')continue;
+    for(const outcome of ['restored','empty','error','cancel','changed']){
+      const calls=[];let loaded=0,wizards=0,statusReads=0;
+      s.uiConfirm=async()=>outcome!=='cancel';s.loadVault=async()=>{loaded++;};s.mobileCreateProfile=async()=>{wizards++;};
+      s.invoke=async(c,args)=>{calls.push([c,args]);if(c==='get_account_sync_status')return {profile_open:false,logged_in:true,restore_context:outcome==='changed'&&statusReads++?'new-context':'synthetic-context'};if(c==='restore_account_profile'){if(outcome==='error')throw new Error('synthetic offline');return {outcome,vault:EF_REAL};}return {};};
+      await s.restoreAccountProfile();
+      ok(!calls.some(([c])=>c==='create_vault'||c==='create_profile_vault'||c==='enable_account_sync'),'193 '+lang+' '+outcome+': frontend never scaffolds a duplicate profile or bypasses restore consent');
+      if(outcome==='restored')ok(loaded===1&&wizards===0,'193: populated account restores directly without a wizard');
+      else if(outcome==='empty')ok(wizards===1&&loaded===0,'193: genuinely empty account offers normal profile setup');
+      else ok(loaded===0&&wizards===0,'193 '+outcome+': failure/cancel never masquerades as empty account or successful restore');
+      if(['cancel','changed'].includes(outcome))ok(!calls.some(([c])=>c==='restore_account_profile'),'193 '+outcome+': no restoration request without current explicit consent');
+    }
+  }
+}
+{
   section('remote install + offline persistence harness');
   await runRemoteInstallOfflineHarness();
 }

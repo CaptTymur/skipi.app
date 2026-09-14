@@ -235,6 +235,7 @@ pub fn run() {
             profile::get_profile_photo_data_url,
             // Skipi account profile sync (№96(б): explicit import/export only)
             account_sync::vault_sync::enable_account_sync,
+            account_sync::vault_sync::restore_account_profile,
             account_sync::vault_sync::disable_account_sync,
             account_sync::vault_sync::get_account_sync_status,
             account_sync::vault_sync::sync_account_now,
