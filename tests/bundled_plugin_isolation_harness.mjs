@@ -6425,12 +6425,17 @@ for(const lang of ['en','ru']){
   for(const action of ['logout','profile','login']){
     const app=bootApp({platform:'android',withSettings:true});await efSettle();const {sandbox:s,doc}=app;
     s.openUnifiedSettings('account-sync');await efSettle();s.history.calls.length=0;
-    s.invoke=async(c)=>c==='get_account_sync_status'?{enabled:false,profile_open:action==='login',logged_in:action!=='login',conflicts:[]}:null;
+    s.invoke=efInvoke({get_account_sync_status:{enabled:false,profile_open:action==='login',logged_in:action!=='login',conflicts:[]}});
+    const queued=[];s.history.back=function(){this.calls.push(['back']);queued.push(()=>{for(const fn of app.listeners.popstate||[])fn({state:null});});};
     if(action==='logout')await s.appLogoutToGate();else await s.oneAccountSyncEnable();
     ok(doc.getElementById('settings-root').innerHTML==='','193 '+action+': canonical close unmounts old settings content');
     ok(s.history.calls.filter(c=>c[0]==='back').length===1,'193 '+action+': exactly one owned settings history entry is consumed');
+    while(queued.length)queued.shift()();await efSettle();
+    ok(action==='login'?efGateShown(doc):action==='logout'?efForkShown(doc):doc.getElementById('scr-welcome').style.display!=='none','193 '+action+': delayed settings popstate preserves the destination screen');
     s.openUnifiedSettings('account-sync');await efSettle();
     ok(s.history.calls.filter(c=>c[0]==='pushState').length===1,'193 '+action+': reopening creates a fresh history entry');
+    s.history.back();queued.shift()();await efSettle();
+    ok(!doc.getElementById('skipi-settings-overlay').classList.contains('open')&&queued.length===0,'193 '+action+': one later Back closes the reopened settings without a second pop');
   }
 }
 {
