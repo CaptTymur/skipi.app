@@ -2359,6 +2359,10 @@ async function pkgBoot(opts) {
   const o = opts || {};
   const app = installNavHistory(bootMobile({ seed: o.lang ? { 'skipi-ui-language': o.lang } : {} }));
   await settleVm();
+  // bootMobile always boots on 'android' (the mobile shell needs it). Production
+  // reads `hostPlatform` LIVE at render time, so setting it afterwards is exactly
+  // what an iOS build — or a desktop/web shell under 720px — looks like here.
+  if (o.platform) app.sandbox.hostPlatform = o.platform;
   const calls = [];
   let pkgs = (o.packages || []).slice();
   const systemDocs = () => (app.sandbox.allDocs || []).filter((d) => d && d.file_name);
@@ -2369,7 +2373,9 @@ async function pkgBoot(opts) {
     // Modelled on the Rust command, including its refusal: with no uploaded file
     // there is nothing to package and no system package is created.
     if (cmd === 'ensure_all_documents_package') {
-      if (o.ensureFails) throw new Error('Cannot build the package — 1 document file(s) cannot be read');
+      // The exact refusal packages.rs produces, marker and all — the screen has to
+      // parse it into the user's own language (UNREADABLE_ERROR_PREFIX / _ITEM_MARKER).
+      if (o.ensureFails) throw new Error('Cannot build the package — 1 document file(s) cannot be read:\n\u2022 Yellow Fever (yf.pdf)');
       if (!systemDocs().length) throw new Error('No uploaded document files yet — there is nothing to package.');
       if (!pkgs.some((p) => p.id === PKG_SYSTEM_ID)) pkgs.push(pkgSystemRow(systemDocs().length, o.systemUpdatedOn));
       return PKG_SYSTEM_ID;
@@ -2877,6 +2883,142 @@ const pkgCalls = (app, cmd) => app.calls.filter(([c]) => c === cmd);
     ok(/\d{2}:\d{2}$/.test(sandbox.mobilePackageDateTime('2026-09-01 10:11:12')), 'the mark carries a time, not only a date (got ' + sandbox.mobilePackageDateTime('2026-09-01 10:11:12') + ')');
     ok(sandbox.mobilePackageDateTime('') === '' && sandbox.mobilePackageDate('') === '—', 'an empty timestamp stays an em dash rather than becoming a wrong date');
   } catch (e) { ok(false, 'PKG15 crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('mobile Packages (PKG18) — the COMMIT ORDER itself, not just the helper that implements it');
+  // Д23 exists because publishing the archive AFTER the database transaction opens a
+  // window where get_packages already reports the new file_count while
+  // prepare_dispatch_attachments still hands over the OLD archive — «отправили старую
+  // незаметно». The Rust test for this calls build_package_zip_atomically directly, so
+  // it proves the helper and NOT the order of its call: swapping the two statements in
+  // ensure_all_documents_package_inner leaves the whole suite green. This reads the
+  // source and pins the order, which is the thing the decision was about.
+  const PKGRS = fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'commands', 'packages.rs'), 'utf8');
+  const fnStart = PKGRS.indexOf('fn ensure_all_documents_package_inner(');
+  const fnEnd = PKGRS.indexOf('\n}', fnStart);
+  const body = fnStart >= 0 && fnEnd > fnStart ? PKGRS.slice(fnStart, fnEnd) : '';
+  ok(body.length > 0, 'ensure_all_documents_package_inner is locatable in packages.rs');
+  const iPublish = body.indexOf('build_package_zip_atomically(');
+  const iCommit = body.indexOf('tx.commit()');
+  const iStamp = body.indexOf('write_build_stamp(');
+  ok(iPublish > 0 && iCommit > 0 && iStamp > 0, 'it publishes the archive, commits a transaction and writes the stamp (got ' + [iPublish, iCommit, iStamp].join('/') + ')');
+  ok(iPublish < iCommit, 'the ATOMIC RENAME happens BEFORE the database transaction — otherwise a Share between COMMIT and rename carries the old archive under the new count');
+  ok(iCommit < iStamp, 'and the stamp is written last, so «Обновлён» can never run ahead of the bytes a recipient would get');
+  ok(/unchecked_transaction\(\)/.test(body), 'the rebuild is one transaction — no reader ever sees «the system package is gone»');
+}
+
+{
+  section('mobile Packages (PKG19) — get_packages really is the place the automatic package is kept current');
+  // Branch (a) of N13 — a desktop-first user whose vault never opens the phone screen —
+  // is closed by construction: the ensure lives inside get_packages. Construction with
+  // no assertion is a decision nobody can break loudly, so: delete the call and this
+  // goes red.
+  const PKGRS = fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'commands', 'packages.rs'), 'utf8');
+  const gStart = PKGRS.indexOf('pub fn get_packages(');
+  const gEnd = PKGRS.indexOf('\n}', gStart);
+  const gBody = gStart >= 0 && gEnd > gStart ? PKGRS.slice(gStart, gEnd) : '';
+  ok(gBody.length > 0, 'get_packages is locatable');
+  ok(/ensure_all_documents_package_inner\(/.test(gBody), 'get_packages refreshes the automatic package itself — every surface, including the frozen desktop list, goes through it');
+  ok(/let _ = ensure_all_documents_package_inner/.test(gBody), 'and a build failure there is deliberately NOT fatal: the packages the user already has must still render');
+  ok(/updated_on/.test(gBody) && /is_system/.test(gBody), 'it also derives updated_on and is_system, which the packages table does not hold');
+}
+
+{
+  section('mobile Packages (PKG20) — a vault with an unreadable file: NO package, and the reason named on screen');
+  // The fourth N13 branch. plan_entries refuses the whole build if any file cannot be
+  // read (a partial archive must never be handed over as «all documents»), and
+  // get_packages swallows that error — so on a FRESH vault the screen would otherwise
+  // be an empty Packages list with no reason at all.
+  try {
+    const app = await pkgBoot({ packages: [], docs: PKG_DOCS, ensureFails: true });
+    const { sandbox, doc } = app;
+    sandbox.mobileShow('packages');
+    await settleVm();
+    const h = mobileHtml(doc);
+    ok(pkgCalls(app, 'ensure_all_documents_package').length === 1, 'with files present and no automatic package, the screen asks the backend exactly once why');
+    ok(h.includes('data-qa="mobile-pkg-error"'), 'and renders an explicit failure card instead of an empty list');
+    const said = h.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+    ok(/Yellow Fever/.test(said), 'the failing DOCUMENT is named, so the user knows which one to fix (got ' + JSON.stringify(said.slice(0, 200)) + ')');
+    ok(!/Cannot build the package|document file\(s\) cannot be read/.test(said), 'but the raw English backend line is NOT printed at the user');
+    ok(said.length >= 60, 'the card carries a readable next step, not a bare dash');
+    ok(h.includes('data-qa="mobile-pkg-error-docs"'), 'and offers the way out — open Documents and attach the file again');
+    ok(!/data-qa="mobile-pkg-card"/.test(h), 'no package card is drawn: a partial «all documents» is never published');
+    ok(pkgCalls(app, 'create_package').length === 0, 'and nothing is created behind the user to paper over it');
+    // RU says it in Russian, still without the backend string.
+    const ru = await pkgBoot({ packages: [], docs: PKG_DOCS, ensureFails: true, lang: 'ru' });
+    ru.sandbox.mobileShow('packages');
+    await settleVm();
+    const ruSaid = mobileHtml(ru.doc).replace(/<[^>]*>/g, ' ');
+    ok(/[А-Яа-я]{4,}/.test(ruSaid) && /Yellow Fever/.test(ruSaid), 'RU: explained in Russian, document still named');
+    ok(!/Cannot build the package/.test(ruSaid), 'RU: and never the English backend line');
+    // A healthy vault must NOT pay for this: no extra ensure round-trip.
+    const ok2 = await pkgBoot({ packages: [PKG_A], docs: PKG_DOCS, system: true });
+    ok2.sandbox.mobileShow('packages');
+    await settleVm();
+    ok(pkgCalls(ok2, 'ensure_all_documents_package').length === 0, 'when the automatic package is already there the screen asks nothing extra');
+    ok(!mobileHtml(ok2.doc).includes('data-qa="mobile-pkg-error"'), 'and shows no failure card');
+  } catch (e) { ok(false, 'PKG20 crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('mobile Packages (PKG17) — Share is drawn ONLY where it can work: hostPlatform === android');
+  // The mobile Packages screen renders wherever shouldUseMobileShell() is true —
+  // android OR ios OR a viewport under 720px (dist:4244). But mobile_share_dispatch
+  // is Err under cfg(not(target_os = "android")) (mail_intent.rs), so on iOS, on a
+  // narrow desktop window and on web-Моряк the button would be drawn and would fail
+  // every single time, handing the user a raw English internal error — in a Russian
+  // interface too. isNativeMobile() (android || ios) is NOT the right gate here: it
+  // would leave the button on iOS, which is the build that goes to the App Store.
+  // The live mailing path already gates exactly this way (dist:5794).
+  try {
+    for (const platform of ['ios', 'unknown']) {
+      const app = await pkgBoot({ packages: [PKG_A], docs: PKG_DOCS, system: true, platform });
+      const { sandbox, doc } = app;
+      sandbox.mobileShow('packages');
+      await settleVm();
+      const h = mobileHtml(doc);
+      ok(h.includes('data-qa="mobile-pkg-card"'), 'the packages screen still renders on ' + platform + ' (the shell is shared)');
+      // Test the CONTROL, not the prefix: the explanation hook below is
+      // `mobile-pkg-share-unavailable`, so a bare prefix match would be
+      // satisfied by the very thing that replaces the button.
+      ok(!/onclick="mobileSharePackage\(/.test(h)
+        && !h.includes('data-qa="mobile-pkg-share-' + PKG_SYSTEM_ID + '"')
+        && !h.includes('data-qa="mobile-pkg-share-pkg-a"'),
+        'and NO Share control is drawn on ' + platform + ' — it could only fail there');
+      ok(h.includes('data-qa="mobile-pkg-share-unavailable"'), 'the screen says so in the interface language instead of staying silent (' + platform + ')');
+      const said = h.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+      ok(!/only available on Android in this build|Mobile share sheet/i.test(said), 'and never leaks the raw Rust error string (' + platform + ')');
+      // The delete control is unaffected: a manual package is still manageable there.
+      ok(h.includes('data-qa="mobile-pkg-delete-pkg-a"'), 'a manual package keeps its delete control on ' + platform);
+    }
+    // RU: the explanation is translated, not an English fallback.
+    const ru = await pkgBoot({ packages: [PKG_A], docs: PKG_DOCS, system: true, platform: 'ios', lang: 'ru' });
+    ru.sandbox.mobileShow('packages');
+    await settleVm();
+    const ruText = mobileHtml(ru.doc).replace(/<[^>]*>/g, ' ');
+    ok(/[А-Яа-я]{4,}/.test(ruText), 'the RU build explains it in Russian');
+    ok(!/only available on Android|Mobile share sheet/i.test(ruText), 'and not with the internal English string');
+    // …and on Android the button is exactly where the owner asked for it.
+    const android = await pkgBoot({ packages: [PKG_A], docs: PKG_DOCS, system: true });
+    android.sandbox.mobileShow('packages');
+    await settleVm();
+    const ah = mobileHtml(android.doc);
+    ok(android.sandbox.hostPlatform === 'android', 'the android case really is on android (so this drill is not vacuous)');
+    ok(ah.includes('data-qa="mobile-pkg-share-' + PKG_SYSTEM_ID + '"') && ah.includes('data-qa="mobile-pkg-share-pkg-a"'), 'on Android BOTH cards carry Share');
+    ok(!ah.includes('data-qa="mobile-pkg-share-unavailable"'), 'and the "not here" explanation is absent where sharing works');
+    // The refusal lives at the CALL SITE too, not only in the drawing: a stale
+    // handler must not reach the backend and echo its English error back.
+    const stale = await pkgBoot({ packages: [PKG_A], docs: PKG_DOCS, system: true, platform: 'ios' });
+    stale.sandbox.mobileShow('packages');
+    await settleVm();
+    await stale.sandbox.mobileSharePackage(PKG_SYSTEM_ID);
+    await settleVm();
+    ok(pkgCalls(stale, 'mobile_share_dispatch').length === 0, 'calling the handler directly on iOS never reaches mobile_share_dispatch');
+    ok(pkgCalls(stale, 'prepare_dispatch_attachments').length === 0, 'and prepares no attachments');
+    const toast = stale.toasts.length ? stale.toasts[stale.toasts.length - 1][0] : '';
+    ok(toast.length > 0 && !/only available on Android in this build|Mobile share sheet/i.test(toast), 'the user is told in product copy, never with the raw backend string (got ' + JSON.stringify(toast) + ')');
+  } catch (e) { ok(false, 'PKG17 crashed before it could assert: ' + e.message); }
 }
 
 {

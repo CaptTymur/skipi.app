@@ -39,6 +39,14 @@ const ALL_DOCS_EXPIRY_DAYS: i64 = 365;
 const ALL_DOCS_DOWNLOAD_LIMIT: i32 = 999;
 const PACKAGE_STAMP_SCHEMA: &str = "skipi.package-build.v1";
 
+/// Shape of the "a document file cannot be read" refusal. It is a CONTRACT, not
+/// prose: the mobile Packages screen matches this prefix to say the same thing in
+/// the user's own language and to name the documents, instead of printing an
+/// English backend string at a Russian reader. Changing either half without
+/// changing `mobilePackageBuildFailure` in dist/index.html breaks that.
+const UNREADABLE_ERROR_PREFIX: &str = "Cannot build the package — ";
+const UNREADABLE_ITEM_MARKER: &str = "\n• ";
+
 /// One file as it was actually written into the archive.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct PackageEntryStamp {
@@ -230,9 +238,11 @@ fn plan_entries(vault_path: &Path, docs: &[db::DocRecord]) -> Result<Vec<Planned
     }
     if !unreadable.is_empty() {
         return Err(format!(
-            "Cannot build the package — {} document file(s) cannot be read:\n• {}",
+            "{}{} document file(s) cannot be read:\n{}{}",
+            UNREADABLE_ERROR_PREFIX,
             unreadable.len(),
-            unreadable.join("\n• ")
+            UNREADABLE_ITEM_MARKER,
+            unreadable.join(UNREADABLE_ITEM_MARKER)
         ));
     }
     Ok(out)
@@ -848,6 +858,24 @@ pub fn export_package(
     Ok(())
 }
 
+/// The whole delete path in one testable place: the refusal, the archive, the
+/// stamp and the row. The command is only the State wrapper around it.
+fn delete_package_inner(
+    conn: &Connection,
+    vault_path: &Path,
+    package_id: &str,
+) -> Result<(), String> {
+    reject_system_package_deletion(package_id)?;
+    let zip_path = package_zip_path(vault_path, package_id);
+    if zip_path.exists() {
+        let _ = fs::remove_file(zip_path);
+    }
+    // The stamp dies with the archive: an orphan would report a successful
+    // build time for a package that no longer exists.
+    remove_build_stamp(vault_path, package_id);
+    db::delete_package(conn, package_id).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn delete_package(state: State<AppState>, package_id: String) -> Result<(), String> {
     reject_system_package_deletion(&package_id)?;
@@ -858,14 +886,7 @@ pub fn delete_package(state: State<AppState>, package_id: String) -> Result<(), 
     let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = conn_lock.as_ref().ok_or("No vault open")?;
 
-    let zip_path = package_zip_path(vault_path, &package_id);
-    if zip_path.exists() {
-        let _ = fs::remove_file(zip_path);
-    }
-    // The stamp dies with the archive: an orphan would report a successful
-    // build time for a package that no longer exists.
-    remove_build_stamp(vault_path, &package_id);
-    db::delete_package(conn, &package_id).map_err(|e| e.to_string())
+    delete_package_inner(conn, vault_path, &package_id)
 }
 
 #[tauri::command]
@@ -1951,6 +1972,102 @@ mod tests {
             read_build_stamp(&vault, ALL_DOCS_PACKAGE_ID).is_none(),
             "the sidecar dies with the archive"
         );
+        let _ = fs::remove_dir_all(&vault);
+    }
+
+    #[test]
+    fn the_unreadable_error_keeps_the_shape_the_ui_parses() {
+        // The mobile screen re-says this in the user's language and names the
+        // documents by splitting on the marker. Both halves are a contract.
+        let vault = temp_vault("errshape");
+        let conn = db::open_db(&vault).unwrap();
+        put_doc(&conn, &vault, "d1", "personal", "Passport", "passport.pdf", b"A");
+        put_doc(&conn, &vault, "d2", "medical", "Yellow Fever", "yf.pdf", b"B");
+        fs::remove_file(vault.join("medical").join("yf.pdf")).unwrap();
+        let err = ensure_all_documents_package_inner(&conn, &vault).unwrap_err();
+        // Pinned against the LITERALS dist/index.html matches on, not against the
+        // constants themselves — a test that compares a constant with itself stays
+        // green while the other side of the contract silently breaks.
+        assert!(
+            err.starts_with("Cannot build the package \u{2014} "),
+            "the prefix mobilePackageBuildFailure() looks for: {}",
+            err
+        );
+        assert_eq!(UNREADABLE_ERROR_PREFIX, "Cannot build the package \u{2014} ");
+        assert_eq!(UNREADABLE_ITEM_MARKER, "\n\u{2022} ");
+        let names: Vec<&str> = err.split("\n\u{2022} ").skip(1).collect();
+        assert_eq!(names.len(), 1, "one entry per unreadable document: {:?}", names);
+        assert!(names[0].starts_with("Yellow Fever"), "the document is named: {}", names[0]);
+        let _ = fs::remove_dir_all(&vault);
+    }
+
+    #[test]
+    fn a_fresh_vault_with_one_unreadable_file_gets_no_package_at_all() {
+        // The fourth N13 branch: on a brand-new vault there is no previous
+        // package to fall back on. A partial archive must never be handed over as
+        // "all documents", so nothing is created — which is why the screen has to
+        // say why instead of showing an empty Packages list.
+        let vault = temp_vault("freshfail");
+        let conn = db::open_db(&vault).unwrap();
+        put_doc(&conn, &vault, "d1", "personal", "Passport", "passport.pdf", b"A");
+        put_doc(&conn, &vault, "d2", "medical", "Yellow Fever", "yf.pdf", b"B");
+        fs::remove_file(vault.join("medical").join("yf.pdf")).unwrap();
+
+        let err = ensure_all_documents_package_inner(&conn, &vault).unwrap_err();
+        assert!(err.contains("Yellow Fever"), "got {}", err);
+        assert!(system_record(&conn).is_none(), "no package is created from a partial set");
+        assert!(!system_zip(&vault).exists(), "and no archive is published");
+        assert!(read_build_stamp(&vault, ALL_DOCS_PACKAGE_ID).is_none());
+        assert!(!packages_dir(&vault)
+            .join(format!("{}.zip.tmp", ALL_DOCS_PACKAGE_ID))
+            .exists(), "and no half-written temp file is left behind");
+
+        // Fix the cause and the package appears in full, first time.
+        fs::write(vault.join("medical").join("yf.pdf"), b"B").unwrap();
+        assert!(ensure_all_documents_package_inner(&conn, &vault).unwrap());
+        assert_eq!(system_record(&conn).unwrap().file_count, 2);
+        let _ = fs::remove_dir_all(&vault);
+    }
+
+    #[test]
+    fn deleting_a_package_takes_its_archive_and_its_stamp_with_it() {
+        let vault = temp_vault("delete");
+        let conn = db::open_db(&vault).unwrap();
+        put_doc(&conn, &vault, "d1", "personal", "Passport", "passport.pdf", b"A");
+        // A manual package, built through the same helpers the command uses.
+        let entries = plan_entries(&vault, &db::get_all_docs(&conn).unwrap()).unwrap();
+        build_package_zip_atomically(&vault, "manual-1", &entries).unwrap();
+        db::create_package(&conn, "manual-1", "Crewing set", "2027-01-01T00:00:00", 999, None)
+            .unwrap();
+        write_build_stamp(
+            &vault,
+            "manual-1",
+            &PackageBuildStamp {
+                schema: PACKAGE_STAMP_SCHEMA.to_string(),
+                built_at: iso8601_utc_now(),
+                vault_identity: vault_identity(&conn),
+                fingerprint: "x".to_string(),
+                entries: vec![],
+            },
+        )
+        .unwrap();
+        assert!(package_zip_path(&vault, "manual-1").exists());
+        assert!(package_stamp_path(&vault, "manual-1").exists());
+
+        delete_package_inner(&conn, &vault, "manual-1").unwrap();
+        assert!(!package_zip_path(&vault, "manual-1").exists(), "the archive is gone");
+        assert!(
+            !package_stamp_path(&vault, "manual-1").exists(),
+            "and the sidecar with it — an orphan would report a successful build time for a package that no longer exists"
+        );
+        assert!(db::get_all_packages(&conn).unwrap().iter().all(|p| p.id != "manual-1"));
+
+        // …and the reserved id is refused by the same path, archive untouched.
+        assert!(ensure_all_documents_package_inner(&conn, &vault).unwrap());
+        let err = delete_package_inner(&conn, &vault, ALL_DOCS_PACKAGE_ID).unwrap_err();
+        assert!(err.contains("cannot be deleted"), "got {}", err);
+        assert!(system_zip(&vault).exists(), "a refused delete removes nothing");
+        assert!(read_build_stamp(&vault, ALL_DOCS_PACKAGE_ID).is_some());
         let _ = fs::remove_dir_all(&vault);
     }
 

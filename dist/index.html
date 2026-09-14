@@ -7261,6 +7261,10 @@ function mobilePackagesL10n(){
         share:ru?'Поделиться пакетом':'Share package',
         shareOpened:ru?'Меню отправки открыто':'Share sheet opened',
         shareEmpty:ru?'В этом пакете пока нет файлов':'This package has no files yet',
+        shareOnlyAndroid:ru?'Отправка пакета доступна на десктопе и Android.':'Sharing a package is available on desktop and Android.',
+        buildFailed:ru?'Не удалось собрать «Все документы»':'Could not build "All documents"',
+        buildFailedWhy:ru?'Не читается файл документа:':'A document file cannot be read:',
+        buildFailedNext:ru?'Откройте документ и приложите файл заново — после этого пакет соберётся целиком. Частичный архив программа не отдаёт.':'Open the document and attach the file again — the package is built in full after that. A partial archive is never handed over.',
         shareSubject:ru?'Документы из Skipi':'Documents from Skipi',
         shareBody:ru?'Во вложении пакет документов.':'A document package is attached.',
         allDocsTitle:ru?'Все документы':'All documents',
@@ -7311,6 +7315,27 @@ function mobilePackageFilesLabel(n,ru){
     if(ru)return n+' '+(n===1?'файл':(n>=2&&n<=4?'файла':'файлов'));
     return n+' '+(n===1?'file':'files');
 }
+// The backend refuses a partial «All documents» by naming every file it could not
+// read (packages.rs, UNREADABLE_ERROR_PREFIX / UNREADABLE_ITEM_MARKER). That string
+// is English and internal; the document titles inside it are the user's own data.
+// So we keep the names and say the rest in the interface language — the raw backend
+// line never reaches the screen.
+function mobilePackageBuildFailure(err){
+    var raw=String((err&&err.message)||err||'');
+    if(raw.indexOf('Cannot build the package')<0)return null;
+    var names=raw.split('\n\u2022 ').slice(1).map(function(x){return String(x||'').trim();}).filter(Boolean);
+    return {names:names};
+}
+function mobilePackageBuildFailureHtml(fail,L){
+    var names=(fail&&fail.names&&fail.names.length)?fail.names:[];
+    var h='<div class="mobile-card" data-qa="mobile-pkg-error">';
+    h+='<div class="mobile-card-title">'+mobileEsc(L.buildFailed)+'</div>';
+    h+='<div class="mobile-card-sub">'+mobileEsc(L.buildFailedWhy+' '+(names.length?names.join(', '):'—'))+'</div>';
+    h+='<div class="mobile-card-sub">'+mobileEsc(L.buildFailedNext)+'</div>';
+    h+='<div class="mobile-wizard-actions"><button class="btn btn-outline" type="button" data-qa="mobile-pkg-error-docs" onclick="mobileShow(\'docs\')">'+mobileEsc(L.openDocs)+'</button></div>';
+    h+='</div>';
+    return h;
+}
 function mobilePackageCardHtml(p,L){
     var id=String((p&&p.id)||'');
     // The card shows ONLY what the product actually keeps: the title, the
@@ -7341,7 +7366,14 @@ function mobilePackageCardHtml(p,L){
     // control. The refusal itself lives in Rust (delete_package), because the
     // desktop list has a delete button this slice does not touch.
     if(!system)h+='<button class="btn btn-outline btn-red" type="button" data-qa="mobile-pkg-delete-'+escAttr(id)+'" onclick="mobileDeletePackage(\''+jsString(id)+'\')">'+mobileEsc(L.del)+'</button>';
-    if(files>0)h+='<button class="btn btn-accent" type="button" data-qa="mobile-pkg-share-'+escAttr(id)+'" onclick="mobileSharePackage(\''+jsString(id)+'\')">'+mobileEsc(L.share)+'</button>';
+    // Android ONLY, and deliberately not isNativeMobile(): this screen also renders
+    // on iOS and on any shell under 720px (shouldUseMobileShell), while
+    // mobile_share_dispatch is Err under cfg(not(target_os = "android")). Drawing the
+    // button anywhere else would guarantee a failure and hand the user a raw English
+    // backend string — in a Russian interface too. The live mailing path gates the
+    // same way. What the user sees instead is one translated line, not silence:
+    // a card with nothing but Delete is the very defect this slice was opened for.
+    if(files>0&&hostPlatform==='android')h+='<button class="btn btn-accent" type="button" data-qa="mobile-pkg-share-'+escAttr(id)+'" onclick="mobileSharePackage(\''+jsString(id)+'\')">'+mobileEsc(L.share)+'</button>';
     h+='</div>';
     h+='</div>';
     return h;
@@ -7355,6 +7387,9 @@ async function mobileSharePackage(id){
     var L=mobilePackagesL10n();
     id=String(id||'');
     if(!id)return;
+    // Same gate at the call site, not only in the drawing: a stale handler must never
+    // reach the backend and echo its English error back at the user.
+    if(hostPlatform!=='android'){showToast(L.shareOnlyAndroid,'warn');return;}
     if(mobilePackagesBusy)return;
     mobilePackagesBusy=true;
     try{
@@ -7370,7 +7405,8 @@ async function mobileSharePackage(id){
         // marked as sent, and nothing is deleted either way.
         showToast(L.shareOpened,'success');
     }catch(e){
-        showToast(''+e,'error');
+        var fail=mobilePackageBuildFailure(e);
+        showToast(fail?(L.buildFailed+': '+L.buildFailedWhy+' '+(fail.names.join(', ')||'—')):(''+e),'error');
         logError('mobile_share_package',e);
     }finally{
         mobilePackagesBusy=false;
@@ -7386,14 +7422,34 @@ async function renderMobilePackages(){
     try{pkgs=(await invoke('get_packages'))||[];}catch(e){failed=true;logError('mobile_get_packages',e);}
     if(mobileView!=='packages'||mobilePackagesStep!=='list')return;
     var docs=uploadedDocsForSharing();
+    // get_packages refreshes the automatic package in Rust and deliberately swallows a
+    // build failure so the list still renders. But if the vault HAS files and the
+    // automatic package is still absent, the build refused — on a fresh vault that
+    // would otherwise be an empty Packages screen with no reason given. Ask once, and
+    // name the document that cannot be read.
+    var buildFail=null;
+    if(!failed&&docs.length&&!pkgs.some(mobileIsSystemPackage)){
+        try{
+            await invoke('ensure_all_documents_package');
+            pkgs=(await invoke('get_packages'))||[];
+        }catch(e){
+            buildFail=mobilePackageBuildFailure(e);
+            if(!buildFail)logError('mobile_ensure_all_documents',e);
+        }
+        if(mobileView!=='packages'||mobilePackagesStep!=='list')return;
+    }
     var h='<div data-qa="seafarer-module-packages">';
     h+='<div class="mobile-card"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title">'+mobileEsc(L.title)+'</div><div class="mobile-card-sub">'+mobileEsc(L.sub)+'</div></div><span class="mobile-action-icon" style="width:38px;height:38px;font-size:18px;">'+L.icon+'</span></div></div>';
     if(failed){
         h+='<div class="mobile-card" data-qa="mobile-pkg-error"><div class="mobile-card-title">'+mobileEsc(L.failed)+'</div></div>';
+    }else if(buildFail){
+        h+=mobilePackageBuildFailureHtml(buildFail,L);
+        pkgs.forEach(function(p){h+=mobilePackageCardHtml(p,L);});
     }else if(!pkgs.length){
         h+='<div class="mobile-card" data-qa="mobile-pkg-empty"><div class="mobile-card-title">'+mobileEsc(L.empty)+'</div><div class="mobile-card-sub">'+mobileEsc(docs.length?L.emptyHint:L.needFiles)+'</div></div>';
     }else{
         pkgs.forEach(function(p){h+=mobilePackageCardHtml(p,L);});
+        if(hostPlatform!=='android')h+='<div class="mobile-card" data-qa="mobile-pkg-share-unavailable"><div class="mobile-card-sub">'+mobileEsc(L.shareOnlyAndroid)+'</div></div>';
     }
     h+='<div class="mobile-wizard-actions">';
     h+='<button class="btn btn-outline" type="button" data-qa="mobile-pkg-docs" onclick="mobileShow(\'docs\')">'+mobileEsc(L.openDocs)+'</button>';
