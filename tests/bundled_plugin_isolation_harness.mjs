@@ -2980,19 +2980,24 @@ const rustCode = (src) => String(src || '')
 }
 
 {
-  section('mobile Packages (PKG17) — Share is drawn ONLY where it can work: hostPlatform === android');
+  section('mobile Packages (PKG17) — Share is drawn where a system sheet really exists: android OR ios, and nowhere else');
   // The mobile Packages screen renders wherever shouldUseMobileShell() is true —
-  // android OR ios OR a viewport under 720px (dist:4244). But mobile_share_dispatch
-  // is Err under cfg(not(target_os = "android")) (mail_intent.rs), so on iOS, on a
-  // narrow desktop window and on web-Моряк the button would be drawn and would fail
-  // every single time, handing the user a raw English internal error — in a Russian
-  // interface too. isNativeMobile() (android || ios) is NOT the right gate here: it
-  // would leave the button on iOS, which is the build that goes to the App Store.
-  // The live mailing path already gates exactly this way (dist:5794).
+  // android OR ios OR any shell under 720px (dist:4244). Until 14.09
+  // mobile_share_dispatch was Err under cfg(not(target_os = "android")), so the control
+  // was drawn on Android alone and iOS got the translated "not here" card instead.
+  // That negative carried exactly ONE cancellation condition — «when the Rust command
+  // opens a real sheet on iOS» — and this card is that condition: mail_intent.rs now
+  // has a cfg(target_os = "ios") branch on UIActivityViewController. What did NOT
+  // change: a narrow desktop window and web-Моряк still have no system sheet, so there
+  // the control stays away and the line stays. The gate is now ONE predicate,
+  // platformCanShareNatively(), read at all three sites — the drawing, the call site
+  // and the "not here" card — so dropping it in any single place has to turn a drill red.
   try {
-    for (const platform of ['ios', 'unknown']) {
+    // (a) the shells that have no system sheet at all.
+    for (const platform of ['unknown', 'linux']) {
       const app = await pkgBoot({ packages: [PKG_A], docs: PKG_DOCS, system: true, platform });
       const { sandbox, doc } = app;
+      ok(sandbox.hostPlatform === platform, 'the ' + platform + ' case really is on ' + platform + ' (so this drill is not vacuous)');
       sandbox.mobileShow('packages');
       await settleVm();
       const h = mobileHtml(doc);
@@ -3006,18 +3011,50 @@ const rustCode = (src) => String(src || '')
         'and NO Share control is drawn on ' + platform + ' — it could only fail there');
       ok(h.includes('data-qa="mobile-pkg-share-unavailable"'), 'the screen says so in the interface language instead of staying silent (' + platform + ')');
       const said = h.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+      ok(/iPhone and Android app/.test(said), 'and the line names the two builds that DO have the sheet, not «desktop and Android» (' + platform + ')');
       ok(!/only available on Android in this build|Mobile share sheet/i.test(said), 'and never leaks the raw Rust error string (' + platform + ')');
       // The delete control is unaffected: a manual package is still manageable there.
       ok(h.includes('data-qa="mobile-pkg-delete-pkg-a"'), 'a manual package keeps its delete control on ' + platform);
     }
-    // RU: the explanation is translated, not an English fallback.
-    const ru = await pkgBoot({ packages: [PKG_A], docs: PKG_DOCS, system: true, platform: 'ios', lang: 'ru' });
+    // (b) iOS — the point of this card. NON-VACUITY first: pkgBoot() boots the mobile
+    // shell on android (its invoke map answers get_platform with 'android') and only
+    // then assigns hostPlatform, so without this line an "ios" case that is really
+    // android would draw the button and pass green. That is C3-2 from 14.09 verbatim.
+    const ios = await pkgBoot({ packages: [PKG_A], docs: PKG_DOCS, system: true, platform: 'ios' });
+    ok(ios.sandbox.hostPlatform === 'ios', 'the iOS case really is on iOS (so this drill is not vacuous)');
+    ios.sandbox.mobileShow('packages');
+    await settleVm();
+    const ih = mobileHtml(ios.doc);
+    ok(ih.includes('data-qa="mobile-pkg-share-' + PKG_SYSTEM_ID + '"') && ih.includes('data-qa="mobile-pkg-share-pkg-a"'),
+      'on iOS BOTH cards carry Share — the automatic package and a manual one');
+    ok(!ih.includes('data-qa="mobile-pkg-share-unavailable"'), 'and the «not here» card is gone from iOS, where the sheet now exists');
+    ok(/Share package/.test(ih.replace(/<[^>]*>/g, ' ')), 'the control carries the product caption');
+    // Drawing a button whose handler refuses is the same defect with the halves
+    // swapped, so the call site is exercised on iOS too, not only asserted in source.
+    await ios.sandbox.mobileSharePackage(PKG_SYSTEM_ID);
+    await settleVm();
+    const iosShare = pkgCalls(ios, 'mobile_share_dispatch');
+    ok(iosShare.length === 1, 'and tapping it on iOS reaches mobile_share_dispatch exactly once (got ' + iosShare.length + ')');
+    const iosArg = iosShare.length ? iosShare[0][1] : {};
+    ok(Array.isArray(iosArg.attachments) && iosArg.attachments.length === 1 && iosArg.mode === 'share' && Array.isArray(iosArg.recipients) && iosArg.recipients.length === 0,
+      "with the same contract Android already has — one ZIP, mode:'share', no recipient (got " + JSON.stringify(iosArg.attachments) + ')');
+    // (c) iOS RU — the caption is translated, and no internal English reaches it.
+    const iosRu = await pkgBoot({ packages: [PKG_A], docs: PKG_DOCS, system: true, platform: 'ios', lang: 'ru' });
+    ok(iosRu.sandbox.hostPlatform === 'ios', 'the iOS RU case really is on iOS (so this drill is not vacuous)');
+    iosRu.sandbox.mobileShow('packages');
+    await settleVm();
+    const iosRuText = mobileHtml(iosRu.doc).replace(/<[^>]*>/g, ' ');
+    ok(/Поделиться пакетом/.test(iosRuText), 'the RU build draws the Russian caption on iOS');
+    ok(!/Share package|only available on Android|Mobile share sheet/i.test(iosRuText), 'and no internal English string reaches the Russian interface');
+    // (d) RU on a shell with no sheet: the explanation is translated, not an English fallback.
+    const ru = await pkgBoot({ packages: [PKG_A], docs: PKG_DOCS, system: true, platform: 'unknown', lang: 'ru' });
     ru.sandbox.mobileShow('packages');
     await settleVm();
     const ruText = mobileHtml(ru.doc).replace(/<[^>]*>/g, ' ');
     ok(/[А-Яа-я]{4,}/.test(ruText), 'the RU build explains it in Russian');
+    ok(/на iPhone и Android/.test(ruText), 'and the Russian line names iPhone and Android, not «десктопе и Android»');
     ok(!/only available on Android|Mobile share sheet/i.test(ruText), 'and not with the internal English string');
-    // …and on Android the button is exactly where the owner asked for it.
+    // (e) …and on Android the button is exactly where the owner asked for it.
     const android = await pkgBoot({ packages: [PKG_A], docs: PKG_DOCS, system: true });
     android.sandbox.mobileShow('packages');
     await settleVm();
@@ -3025,18 +3062,119 @@ const rustCode = (src) => String(src || '')
     ok(android.sandbox.hostPlatform === 'android', 'the android case really is on android (so this drill is not vacuous)');
     ok(ah.includes('data-qa="mobile-pkg-share-' + PKG_SYSTEM_ID + '"') && ah.includes('data-qa="mobile-pkg-share-pkg-a"'), 'on Android BOTH cards carry Share');
     ok(!ah.includes('data-qa="mobile-pkg-share-unavailable"'), 'and the "not here" explanation is absent where sharing works');
-    // The refusal lives at the CALL SITE too, not only in the drawing: a stale
-    // handler must not reach the backend and echo its English error back.
-    const stale = await pkgBoot({ packages: [PKG_A], docs: PKG_DOCS, system: true, platform: 'ios' });
+    // (f) The refusal lives at the CALL SITE too, not only in the drawing — drilled on
+    // a shell that has no sheet, now that iOS has one: a stale handler must not reach
+    // the backend and echo its English error back.
+    const stale = await pkgBoot({ packages: [PKG_A], docs: PKG_DOCS, system: true, platform: 'unknown' });
+    ok(stale.sandbox.hostPlatform === 'unknown', 'the stale-handler case really is on a platform without a sheet (so this drill is not vacuous)');
     stale.sandbox.mobileShow('packages');
     await settleVm();
     await stale.sandbox.mobileSharePackage(PKG_SYSTEM_ID);
     await settleVm();
-    ok(pkgCalls(stale, 'mobile_share_dispatch').length === 0, 'calling the handler directly on iOS never reaches mobile_share_dispatch');
+    ok(pkgCalls(stale, 'mobile_share_dispatch').length === 0, 'calling the handler directly where there is no sheet never reaches mobile_share_dispatch');
     ok(pkgCalls(stale, 'prepare_dispatch_attachments').length === 0, 'and prepares no attachments');
     const toast = stale.toasts.length ? stale.toasts[stale.toasts.length - 1][0] : '';
     ok(toast.length > 0 && !/only available on Android in this build|Mobile share sheet/i.test(toast), 'the user is told in product copy, never with the raw backend string (got ' + JSON.stringify(toast) + ')');
+    ok(/iPhone and Android app/.test(toast), 'and that copy is the same honest line the screen shows (got ' + JSON.stringify(toast) + ')');
   } catch (e) { ok(false, 'PKG17 crashed before it could assert: ' + e.message); }
+}
+
+{
+  section('mobile Packages (PKG18) — ONE platform predicate feeds all three share gates, and the mailing wizard is NOT dragged along');
+  // Three independent `hostPlatform==='android'` comparisons is exactly how a slice
+  // ends up drawing a button on a platform whose call site refuses it. One named
+  // predicate is the whole point: a negative drill on any single site cannot slip
+  // past the other two.
+  const pkgFn = (name) => { const i = PKG_CODE.indexOf(name); const j = PKG_CODE.indexOf('\n}', i); return i >= 0 && j > i ? PKG_CODE.slice(i, j) : ''; };
+  const PRED = pkgFn('function platformCanShareNatively(');
+  ok(PRED.length > 0, 'platformCanShareNatively() exists in the mobile packages block');
+  ok((PKG_CODE.match(/function platformCanShareNatively\(/g) || []).length === 1, 'and it is declared exactly once — no second copy to drift');
+  ok(/hostPlatform==='android'/.test(PRED) && /hostPlatform==='ios'/.test(PRED), 'it answers for android AND ios — the two builds whose Rust really opens a system sheet');
+  const CARD_FN = pkgFn('function mobilePackageCardHtml(');
+  const SHARE_FN2 = pkgFn('async function mobileSharePackage(');
+  const LIST_FN = pkgFn('async function renderMobilePackages(');
+  ok(CARD_FN.length > 0 && SHARE_FN2.length > 0 && LIST_FN.length > 0, 'the three share gates are locatable (drawing / call site / «not here» card)');
+  ok(/platformCanShareNatively\(\)/.test(CARD_FN), 'the drawing gate reads the predicate');
+  ok(/platformCanShareNatively\(\)/.test(SHARE_FN2), 'the call site reads the predicate');
+  ok(/platformCanShareNatively\(\)/.test(LIST_FN), 'the «not here» card reads the predicate');
+  ok(!/hostPlatform\s*[!=]==\s*'android'/.test(CARD_FN + SHARE_FN2 + LIST_FN), 'and none of the three still compares hostPlatform to a literal of its own');
+  // PRESERVE, and deliberately so: the two mailing-wizard call sites of the SAME
+  // command stay android-only. mode:'email' promises the named recipients pre-filled,
+  // and UIActivityViewController pre-fills nobody (MFMailComposeViewController does,
+  // and MessageUI.framework is not linked in gen/apple/project.yml). RISKS №329 owns
+  // that fork; this card must not settle it as a side effect.
+  const WIZ = (() => { const i = HTML.indexOf('async function mobileRunDispatchWizard('); const j = HTML.indexOf('async function mobileOpenManualEmailDispatch(', i); return i >= 0 && j > i ? HTML.slice(i, j) : ''; })();
+  ok(WIZ.length > 0, 'mobileRunDispatchWizard() is locatable');
+  ok(/hostPlatform==='android'/.test(WIZ) && !/platformCanShareNatively/.test(WIZ), "the mailing wizard stays android-only (mode:'email' promises pre-filled recipients the iOS sheet cannot deliver)");
+  const APPLY = (() => { const i = HTML.indexOf('draftInfo.android_share_opened = true;'); return i >= 0 ? HTML.slice(Math.max(0, i - 900), i + 200) : ''; })();
+  ok(APPLY.length > 0 && /hostPlatform === 'android'/.test(APPLY) && !/platformCanShareNatively/.test(APPLY), 'and so does the Apply-by-email path in the jobs feed');
+  // A line that was true only while iOS had no sheet, and a comment that outlives the
+  // code it describes, are the next defect — not a detail. Both go in this commit.
+  ok(!/shareOnlyAndroid/.test(HTML), 'the shareOnlyAndroid key is gone — its name WAS the claim');
+  ok(!/Sharing a package is available on desktop and Android/.test(HTML) && !/Отправка пакета доступна на десктопе и Android/.test(HTML),
+    'and so is the line that told the user «desktop and Android»');
+  ok(HTML.includes('Sharing a package is available in the iPhone and Android app.') && HTML.includes('Отправка пакета доступна в приложении на iPhone и Android.'),
+    'the honest RU and EN lines are both present');
+  ok(!/Android ONLY, and deliberately not isNativeMobile/.test(HTML), 'the comment that called the gate Android-only is gone with it');
+  ok(!/mobile_share_dispatch is Err under cfg\(not\(target_os = "android"\)\)/.test(HTML), 'and so is the claim that the Rust command is Err off Android');
+  ok(!/Share is Err under cfg\(not\(android\)\)/.test(HTML), 'and the CV note no longer names share as the reason iOS has no Export — the app container is');
+}
+
+{
+  section('mobile Packages (PKG19) — the iOS branch of mobile_share_dispatch, read as SOURCE: the five ways this code fails');
+  // WHAT THIS SECTION IS, stated so nobody reads more into a green line than it holds:
+  // no harness in this home compiles Rust, and #[cfg(target_os = "ios")] is not even
+  // parsed by a desktop cargo check. These are SOURCE invariants against the five
+  // failure modes named in the card. They cannot prove a sheet opens. The only proof
+  // of that is a build for aarch64-apple-ios-sim and a screenshot of the sheet, and
+  // both are attached to the task card — not to this file.
+  const MAIL_RS = fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'commands', 'mail_intent.rs'), 'utf8');
+  const IOS_RAW = (() => { const i = MAIL_RS.indexOf('// ---- BEGIN iOS system share ----'); const j = MAIL_RS.indexOf('// ---- END iOS system share ----'); return i >= 0 && j > i ? MAIL_RS.slice(i, j) : ''; })();
+  ok(IOS_RAW.length > 0, 'the iOS system-share region is locatable in mail_intent.rs');
+  // The anchors are comments, so the region is FOUND raw and then READ with the prose
+  // removed. Drill D7 (14.09) is why: `#[link(name = "objc"` is named in the comment at
+  // the top of this region too, so deleting the real attribute left the old assertion
+  // green. Same rule the house wrote down on 12.09 — a comment naming a thing is not
+  // the thing — and rustCode() is the stripper the order-of-call drills already use.
+  const IOS = rustCode(IOS_RAW);
+  const RS_CODE = rustCode(MAIL_RS);
+  ok(IOS.length > 0 && IOS.length < IOS_RAW.length, 'and it is read with its prose stripped, not as prose (code ' + IOS.length + ' chars of ' + IOS_RAW.length + ')');
+  ok(/#\[cfg\(target_os = "ios"\)\]\s*#\[tauri::command\]\s*pub fn mobile_share_dispatch\(/.test(IOS),
+    'mobile_share_dispatch has a #[cfg(target_os = "ios")] branch of its own');
+  ok(/#\[cfg\(not\(any\(target_os = "android", target_os = "ios"\)\)\)\]/.test(RS_CODE),
+    'and the Err fallback now excludes BOTH mobile targets, so an iOS build cannot fall into it');
+  ok(!/#\[cfg\(not\(target_os = "android"\)\)\]\s*#\[tauri::command\]\s*pub fn mobile_share_dispatch\(/.test(RS_CODE),
+    'the old not(android) fallback signature is gone, not left behind next to the new one');
+  ok(/UIActivityViewController/.test(IOS), '(mechanism) it asks UIKit for UIActivityViewController');
+  ok(/view_controller\(\)/.test(IOS) && /with_webview/.test(IOS),
+    'presented on the webview own view controller, inside with_webview — the event loop runs that body on the main thread, and UIKit is not touched anywhere else');
+  // (2) fileURLWithPath, never URLWithString. The second opens a sheet too — and
+  // shares the PATH AS TEXT. No harness can see that; only a screenshot can.
+  ok(/fileURLWithPath:/.test(IOS), '(2) attachments go in as NSURL fileURLWithPath:');
+  ok(!/URLWithString/.test(IOS), '(2) and never as URLWithString, which would share the path as text instead of the file');
+  // (1) libobjc is NOT among the libraries the Xcode project links (only libapp.a and
+  // seven system frameworks), so without this the build dies on undefined _objc_msgSend.
+  ok(/#\[link\(name = "objc"/.test(IOS), '(1) libobjc is linked explicitly — it is NOT among the libraries the Xcode project links');
+  // (3) the reply is due when the sheet is SHOWN. Hanging it on the completion handler
+  // makes the command time out while the sheet is still open in the user hands.
+  ok(!/completionWithItemsHandler/.test(IOS),
+    '(3) no completion handler gates the reply — the command answers when the sheet is presented, not when the user picks something');
+  // (iPad) without a filled popover anchor UIActivityViewController does not open a
+  // popover, it kills the app at the moment of the tap.
+  ok(/popoverPresentationController/.test(IOS) && /setSourceView:/.test(IOS) && /setSourceRect:/.test(IOS),
+    '(iPad) the popover anchor is filled — sourceView AND sourceRect');
+  // The staging cache and its bounded cleanup are shared with Android, not re-invented:
+  // same dedup, same names, same retention window.
+  ok(/#\[cfg\(any\(target_os = "android", target_os = "ios"\)\)\]\s*fn copy_attachments_to_share_cache\(/.test(RS_CODE),
+    'the staging copy is shared with Android (same dedup and same names)');
+  ok(/#\[cfg\(any\(target_os = "android", target_os = "ios"\)\)\]\s*fn purge_stale_share_cache\(/.test(RS_CODE),
+    'and so is the bounded cleanup, so iOS does not leave readable copies behind forever');
+  ok(/copy_attachments_to_share_cache\(/.test(IOS), 'and the iOS branch actually calls it rather than handing over the vault paths');
+  // PRESERVE: the Android JNI path is byte-identical to the baseline this branched from.
+  const ANDROID = (() => { const i = MAIL_RS.indexOf('#[cfg(target_os = "android")]\n#[tauri::command]\npub fn mobile_share_dispatch('); const j = MAIL_RS.indexOf('\n}\n', i); return i >= 0 && j > i ? MAIL_RS.slice(i, j + 3) : ''; })();
+  ok(ANDROID.length > 0, 'the Android JNI branch is locatable');
+  ok(sha256Text(ANDROID) === '19850747be689c7a9f179468e38933d8d6c4cfd571d5d70c81d2ad1af23a72f8',
+    'and it is byte-identical to main 448f9e52 (sha ' + sha256Text(ANDROID).slice(0, 12) + ' vs pin 19850747be68)');
 }
 
 {

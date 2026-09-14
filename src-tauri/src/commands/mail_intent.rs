@@ -232,7 +232,7 @@ pub fn create_email_file(intent: MailIntent) -> Result<MailIntentResult, String>
     })
 }
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn safe_share_file_name(path: &Path, idx: usize) -> String {
     let original = path
         .file_name()
@@ -293,7 +293,7 @@ fn share_cache_entry_is_stale(name: &str, now_ms: u128, retention_ms: u128) -> b
 
 /// Bounded cleanup of the Share staging folder. Runs before new copies are
 /// staged; leaves anything it does not recognise alone.
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn purge_stale_share_cache(cache_dir: &Path, now_ms: u128) {
     let entries = match fs::read_dir(cache_dir) {
         Ok(e) => e,
@@ -315,7 +315,7 @@ fn purge_stale_share_cache(cache_dir: &Path, now_ms: u128) {
     }
 }
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn copy_attachments_to_share_cache(
     app: &tauri::AppHandle,
     attachments: &[String],
@@ -440,7 +440,315 @@ pub fn mobile_share_dispatch(
         .map_err(|_| "Timed out while opening Android share sheet".to_string())?
 }
 
-#[cfg(not(target_os = "android"))]
+// ---- BEGIN iOS system share ----
+//
+// The iOS half of `mobile_share_dispatch`: UIActivityViewController — AirDrop, Mail,
+// Messages, "Save to Files" — reached through the Objective-C runtime straight from
+// Rust.
+//
+// WHY BY HAND AND NOT THROUGH A CRATE, said out loud rather than implied: `objc2` is
+// already in the dependency graph transitively and would give type checking for every
+// call below. Adding it to Cargo.toml changes the file set of this change, and with it
+// the route the guard takes for this card. The cheaper path was chosen and its price is
+// paid right here — every message send below is hand-typed, nothing checks the
+// selectors, and the only thing that proves this code right is a run on the simulator.
+//
+// LINKING: the Xcode target links `libapp.a` and seven system frameworks; `libobjc` is
+// NOT one of them, so the `#[link(name = "objc", …)]` below is what keeps the build from
+// dying on an undefined `_objc_msgSend`. UIKit itself the target already links
+// (gen/apple/project.yml → `sdk: UIKit.framework`), so it needs no attribute here.
+//
+// ABI: the transmutes are correct on arm64, where every signature used below travels
+// through the ordinary C ABI — the CGRect return included, because four doubles are a
+// homogeneous float aggregate passed in v0..v3. On x86_64 struct and float returns go
+// through `objc_msgSend_stret` / `_fpret` instead, so this branch is built for
+// aarch64-apple-ios{,-sim} and run on an arm64 host, and nothing else.
+//
+// MEMORY: `alloc` + `init…` hands back an object we own (+1). That +1 goes to
+// `presentViewController:animated:completion:`, which keeps the sheet alive for as long
+// as it is on screen, and it is deliberately NOT released here: an over-release kills
+// the app at the moment of the tap just as reliably as leaking one controller per share
+// fails to. Everything else touched below (NSString, NSURL, NSMutableArray, the popover
+// controller) is autoreleased or owned by somebody else, and is likewise not released.
+//
+// THREADING: every line of this region runs inside `with_webview`, which the event loop
+// executes on the main thread. UIKit is not touched anywhere else.
+//
+// HOUSE PRECEDENT: this is NOT the first objc FFI in this app. `vault.rs` → `mod
+// ios_open_url` already reaches UIApplication the same way for the iOS branch of
+// `open_external_url`. The types and the `msg_send` shape below are deliberately the
+// same as there — declaring the same runtime symbol with a different pointer type in a
+// second module is exactly what `clashing_extern_declarations` is for.
+#[cfg(target_os = "ios")]
+mod ios_share {
+    use std::ffi::CString;
+    use std::os::raw::{c_char, c_void};
+
+    pub type Id = *mut c_void;
+    pub type Sel = *mut c_void;
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    pub struct CGPoint {
+        pub x: f64,
+        pub y: f64,
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    pub struct CGSize {
+        pub width: f64,
+        pub height: f64,
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    pub struct CGRect {
+        pub origin: CGPoint,
+        pub size: CGSize,
+    }
+
+    #[link(name = "objc", kind = "dylib")]
+    extern "C" {
+        fn objc_getClass(name: *const c_char) -> Id;
+        fn sel_registerName(name: *const c_char) -> Sel;
+        fn objc_msgSend();
+    }
+
+    fn msg_send_entry() -> unsafe extern "C" fn() {
+        objc_msgSend
+    }
+
+    /// A class by name, or a readable error instead of a null receiver that would
+    /// silently swallow every message sent to it afterwards.
+    fn class(name: &str) -> Result<Id, String> {
+        let c = CString::new(name).map_err(|_| format!("iOS class name: {}", name))?;
+        let cls = unsafe { objc_getClass(c.as_ptr()) };
+        if cls.is_null() {
+            return Err(format!("iOS runtime has no class {}", name));
+        }
+        Ok(cls)
+    }
+
+    /// A selector by name, checked for the same reason.
+    fn sel(name: &str) -> Result<Sel, String> {
+        let c = CString::new(name).map_err(|_| format!("iOS selector name: {}", name))?;
+        let s = unsafe { sel_registerName(c.as_ptr()) };
+        if s.is_null() {
+            return Err(format!("iOS runtime has no selector {}", name));
+        }
+        Ok(s)
+    }
+
+    unsafe fn send(obj: Id, s: Sel) -> Id {
+        let f: unsafe extern "C" fn(Id, Sel) -> Id = std::mem::transmute(msg_send_entry());
+        f(obj, s)
+    }
+
+    unsafe fn send1(obj: Id, s: Sel, a: Id) -> Id {
+        let f: unsafe extern "C" fn(Id, Sel, Id) -> Id = std::mem::transmute(msg_send_entry());
+        f(obj, s, a)
+    }
+
+    unsafe fn send2(obj: Id, s: Sel, a: Id, b: Id) -> Id {
+        let f: unsafe extern "C" fn(Id, Sel, Id, Id) -> Id = std::mem::transmute(msg_send_entry());
+        f(obj, s, a, b)
+    }
+
+    unsafe fn send_rect_ret(obj: Id, s: Sel) -> CGRect {
+        let f: unsafe extern "C" fn(Id, Sel) -> CGRect = std::mem::transmute(msg_send_entry());
+        f(obj, s)
+    }
+
+    unsafe fn send_rect(obj: Id, s: Sel, r: CGRect) {
+        let f: unsafe extern "C" fn(Id, Sel, CGRect) = std::mem::transmute(msg_send_entry());
+        f(obj, s, r)
+    }
+
+    unsafe fn send_uint(obj: Id, s: Sel, v: usize) {
+        let f: unsafe extern "C" fn(Id, Sel, usize) = std::mem::transmute(msg_send_entry());
+        f(obj, s, v)
+    }
+
+    unsafe fn send_present(obj: Id, s: Sel, a: Id, animated: bool, completion: Id) {
+        let f: unsafe extern "C" fn(Id, Sel, Id, bool, Id) = std::mem::transmute(msg_send_entry());
+        f(obj, s, a, animated, completion)
+    }
+
+    unsafe fn send1_cstr(obj: Id, s: Sel, a: *const c_char) -> Id {
+        let f: unsafe extern "C" fn(Id, Sel, *const c_char) -> Id =
+            std::mem::transmute(msg_send_entry());
+        f(obj, s, a)
+    }
+
+    fn ns_string(value: &str) -> Result<Id, String> {
+        let cls = class("NSString")?;
+        let selector = sel("stringWithUTF8String:")?;
+        let c = CString::new(value).map_err(|_| "iOS string has an interior NUL".to_string())?;
+        let out = unsafe { send1_cstr(cls, selector, c.as_ptr()) };
+        if out.is_null() {
+            return Err("iOS could not build an NSString".to_string());
+        }
+        Ok(out)
+    }
+
+    /// A FILE url. `fileURLWithPath:` is the whole point of this function: the
+    /// string-taking constructor produces a URL with no scheme, and the sheet then
+    /// hands the recipient the PATH AS TEXT — it opens, it looks right, nothing is
+    /// attached, and no harness in this repository can see the difference. Only a
+    /// screenshot can.
+    fn file_url(path: &str) -> Result<Id, String> {
+        let cls = class("NSURL")?;
+        let string = ns_string(path)?;
+        let selector = sel("fileURLWithPath:")?;
+        let url = unsafe { send1(cls, selector, string) };
+        if url.is_null() {
+            return Err(format!("iOS could not build a file URL for {}", path));
+        }
+        Ok(url)
+    }
+
+    /// Build the sheet over `paths` and present it on `view_controller`, anchored to
+    /// `source_view`. Runs on the main thread — see the THREADING note above.
+    pub fn present_share_sheet(
+        view_controller: Id,
+        source_view: Id,
+        paths: &[String],
+    ) -> Result<(), String> {
+        if view_controller.is_null() {
+            return Err("iOS webview has no view controller to present the share sheet on".to_string());
+        }
+        if paths.is_empty() {
+            return Err("Nothing to share".to_string());
+        }
+
+        let items = unsafe { send(class("NSMutableArray")?, sel("array")?) };
+        if items.is_null() {
+            return Err("iOS could not build the activity item list".to_string());
+        }
+        let add = sel("addObject:")?;
+        for path in paths {
+            let url = file_url(path)?;
+            unsafe {
+                send1(items, add, url);
+            }
+        }
+
+        let allocated = unsafe { send(class("UIActivityViewController")?, sel("alloc")?) };
+        if allocated.is_null() {
+            return Err("iOS could not allocate the share sheet".to_string());
+        }
+        // The +1 from alloc/init — see the MEMORY note at the top of this region. It is
+        // handed to the presenting controller below and never released here.
+        let sheet = unsafe {
+            send2(
+                allocated,
+                sel("initWithActivityItems:applicationActivities:")?,
+                items,
+                std::ptr::null_mut(),
+            )
+        };
+        if sheet.is_null() {
+            return Err("iOS could not build the share sheet".to_string());
+        }
+
+        // iPad: the sheet is a POPOVER there, and a popover with no anchor does not
+        // open — it takes the app down at the moment of the tap. So the anchor is
+        // filled whenever the system gives us a popover controller at all (on iPhone
+        // it hands back nil, and nothing below runs).
+        let popover = unsafe { send(sheet, sel("popoverPresentationController")?) };
+        if !popover.is_null() && !source_view.is_null() {
+            unsafe {
+                send1(popover, sel("setSourceView:")?, source_view);
+                let bounds = send_rect_ret(source_view, sel("bounds")?);
+                let anchor = CGRect {
+                    origin: CGPoint {
+                        x: bounds.origin.x + bounds.size.width / 2.0,
+                        y: bounds.origin.y + bounds.size.height / 2.0,
+                    },
+                    size: CGSize { width: 1.0, height: 1.0 },
+                };
+                send_rect(popover, sel("setSourceRect:")?, anchor);
+                // UIPopoverArrowDirectionUnknown (0): centred, with no arrow pointing
+                // at a rectangle the user never tapped.
+                send_uint(popover, sel("setPermittedArrowDirections:")?, 0);
+            }
+        }
+
+        unsafe {
+            send_present(
+                view_controller,
+                sel("presentViewController:animated:completion:")?,
+                sheet,
+                true,
+                std::ptr::null_mut(),
+            );
+        }
+        Ok(())
+    }
+}
+
+/// Open the native iOS share sheet with the prepared Skipi files.
+///
+/// The frontend prepares the CV/PDF/ZIP first (exactly as on Android), then this
+/// command stages them in the app cache — the SAME staging, dedup and bounded cleanup
+/// Android uses — and hands file URLs to UIKit.
+///
+/// WHAT THIS BRANCH DELIBERATELY DOES NOT CARRY, so nobody reads a promise into it:
+/// `recipients`, `subject` and `body` are not passed to the sheet. UIActivityViewController
+/// takes activity items, not addressees; it pre-fills nobody, and the supported way to
+/// give Mail a subject is an activity-item source object, which would mean defining an
+/// Objective-C class at runtime. The packages screen — the only caller that reaches this
+/// on iOS — shares a package with no recipient and no body anyway. The mailing wizard,
+/// whose `mode: "email"` DOES promise named recipients, stays Android-only for exactly
+/// this reason (dist/index.html:5794 and :15651).
+#[cfg(target_os = "ios")]
+#[tauri::command]
+pub fn mobile_share_dispatch(
+    window: tauri::WebviewWindow,
+    recipients: Vec<String>,
+    subject: String,
+    body: String,
+    attachments: Vec<String>,
+    mode: Option<String>,
+) -> Result<String, String> {
+    use std::sync::mpsc;
+    use std::time::Duration;
+    use tauri::Manager;
+
+    // Accepted for one signature across platforms, and knowingly unused here — see the
+    // doc comment above for what the iOS sheet can and cannot carry.
+    let _ = (&recipients, &subject, &body, &mode);
+
+    let share_paths = copy_attachments_to_share_cache(window.app_handle(), &attachments)?;
+    let (tx, rx) = mpsc::channel();
+
+    window
+        .with_webview(move |webview| {
+            // `view_controller()` is the webview's own controller and `inner()` is the
+            // WKWebView, which is a UIView and therefore a legal popover anchor. No
+            // keyWindow, no sharedApplication, nothing global.
+            let result = ios_share::present_share_sheet(
+                webview.view_controller() as ios_share::Id,
+                webview.inner() as ios_share::Id,
+                &share_paths,
+            )
+            .map(|_| "Share sheet opened".to_string());
+            let _ = tx.send(result);
+        })
+        .map_err(|e| e.to_string())?;
+
+    // The answer is due when the sheet is ON SCREEN, not when the user picks something.
+    // Waiting for the sheet to finish would time out while it is still open in the
+    // user's hands — and an open sheet is not proof of delivery anyway, which is why
+    // the screen says "opened" and marks nothing as sent. The five seconds are for the
+    // hop to the main thread, the same as on Android, not for the human.
+    rx.recv_timeout(Duration::from_secs(5))
+        .map_err(|_| "Timed out while opening the iOS share sheet".to_string())?
+}
+// ---- END iOS system share ----
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[tauri::command]
 pub fn mobile_share_dispatch(
     _window: tauri::WebviewWindow,
@@ -450,7 +758,7 @@ pub fn mobile_share_dispatch(
     _attachments: Vec<String>,
     _mode: Option<String>,
 ) -> Result<String, String> {
-    Err("Mobile share sheet is only available on Android in this build.".to_string())
+    Err("Mobile share sheet is only available in the iPhone and Android app.".to_string())
 }
 
 #[cfg(test)]
