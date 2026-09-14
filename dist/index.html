@@ -7762,7 +7762,6 @@ function renderMobileProfile(){
     }
     h+='<div class="mobile-stats"><div class="mobile-stat"><strong>'+st.total+'</strong><span>Total</span></div><div class="mobile-stat"><strong>'+st.uploaded+'</strong><span>Files</span></div><div class="mobile-stat"><strong>'+st.missing+'</strong><span>Missing</span></div></div>';
     h+='<button class="mobile-card" id="mobile-profile-completeness-card" type="button" onclick="mobileToggleProfileMissing()" aria-expanded="false" aria-controls="mobile-profile-missing" style="width:100%;text-align:left;color:inherit;"><span class="mobile-row"><span><span class="mobile-card-title" style="display:block;">'+mobileSetupText('Profile completeness','Полнота профиля')+'</span><span class="mobile-card-sub" style="display:block;">'+mobileSetupText('Show missing required documents','Показать недостающие обязательные документы')+'</span></span><span class="mobile-pill ok" id="mobile-profile-card-pct">'+pct+'</span></span></button><div class="mobile-card" id="mobile-profile-missing" hidden></div>';
-    h+='<section class="mobile-card" id="one-account-sync"></section>';
     h+='<div id="mobile-identity-trust"></div>';
     if(trustContributionEnabled()){
         h+='<button class="mobile-primary-action" type="button" data-qa="my-contribution-mobile-entry" onclick="mobileShow(\'contribution\')"><span class="mobile-action-icon">&#10003;</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(getUiLang()==='ru'?'Мой вклад':'My contribution')+'</span><span class="mobile-action-sub">'+mobileEsc(getUiLang()==='ru'?'Приватный прогресс по подтверждённым событиям.':'Private progress from confirmed events.')+'</span></span></button>';
@@ -7770,7 +7769,6 @@ function renderMobileProfile(){
     h+='<button class="mobile-primary-action" type="button" onclick="mobileShow(\'add\')"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">Add more documents</span><span class="mobile-action-sub">Scan or attach files from this phone.</span></span></button>';
     h+='<div class="mobile-card"><div class="mobile-card-title">Vault</div><div class="mobile-card-sub">Stored locally on this phone. Export a ZIP backup to open this profile on desktop.</div><div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-accent mobile-grow" onclick="mobileExportVaultBackup(true)">Export / share backup</button><button class="btn btn-outline mobile-grow" onclick="mobileOpenExistingVault()">Switch vault</button><button class="btn btn-outline mobile-grow" onclick="openSettings()">Settings</button></div><div class="mobile-actions" style="margin-top:8px;"><button class="btn btn-outline btn-red mobile-grow" onclick="mobileDeleteCurrentVault()">Delete this vault</button></div></div>';
     mobileMainHtml(h);
-    invoke('get_account_sync_status').then(oneAccountSyncRender).catch(function(e){oneAccountSyncRender({state:'error',error:String(e),conflicts:[]});});
     mobileRefreshProfileSummary();
     mobileRefreshIdentityTrust();
 }
@@ -16797,12 +16795,13 @@ function closeSettings(){
 function renderSettingsNav(){
     var h = '';
     if(isMobileMode()){
-        if(['vaults','seafarer','appearance','about'].indexOf(settingsTab)<0) settingsTab='vaults';
+        if(['vaults','seafarer','sync','appearance','about'].indexOf(settingsTab)<0) settingsTab='vaults';
         h += '<div class="settings-nav-title">'+tr('settings.nav_title')+'</div>';
         h += '<div class="settings-nav-item'+(settingsTab==='vaults'?' active':'')+'" onclick="openSettings(\'vaults\')"><span class="nav-icon">&#128451;</span> Vault</div>';
         if(isSeafarerVault()){
             h += '<div class="settings-nav-item'+(settingsTab==='seafarer'?' active':'')+'" onclick="openSettings(\'seafarer\')"><span class="nav-icon">&#128100;</span> Profile</div>';
         }
+        h += '<div class="settings-nav-item'+(settingsTab==='sync'?' active':'')+'" onclick="openSettings(\'sync\')"><span class="nav-icon">↻</span> '+(getUiLang()==='ru'?'Синхронизация':'Sync')+'</div>';
         h += '<div class="settings-nav-item'+(settingsTab==='appearance'?' active':'')+'" onclick="openSettings(\'appearance\')"><span class="nav-icon">&#127912;</span> Look</div>';
         h += '<div class="settings-nav-item'+(settingsTab==='about'?' active':'')+'" onclick="openSettings(\'about\')"><span class="nav-icon">&#9432;</span> About</div>';
         document.getElementById('settings-nav').innerHTML = h;
@@ -16814,6 +16813,7 @@ function renderSettingsNav(){
     if(isSeafarerVault()){
         h += '<div class="settings-nav-item'+(settingsTab==='seafarer'?' active':'')+'" onclick="openSettings(\'seafarer\')"><span class="nav-icon">&#128100;</span> '+tr('settings.seafarer_profile')+'</div>';
     }
+    h += '<div class="settings-nav-item'+(settingsTab==='sync'?' active':'')+'" onclick="openSettings(\'sync\')"><span class="nav-icon">↻</span> '+(getUiLang()==='ru'?'Синхронизация':'Sync')+'</div>';
     h += '<div class="settings-nav-item'+(settingsTab==='email'?' active':'')+'" onclick="openSettings(\'email\')"><span class="nav-icon">&#9993;</span> '+tr('settings.email')+'</div>';
     h += '<div class="settings-nav-item'+(settingsTab==='appearance'?' active':'')+'" onclick="openSettings(\'appearance\')"><span class="nav-icon">&#127912;</span> '+tr('settings.appearance')+'</div>';
     // AI Recognition tab intentionally hidden — users shouldn't see AI provider/key config yet.
@@ -16879,6 +16879,9 @@ async function mobileSettingsDeleteVaultPath(path){
 // (onclick/onchange/oninput), so the same string works wherever it is inserted
 // via innerHTML; population and save go through the existing global
 // spLoad()/spSave() by sp-* element ids.
+function accountSyncSectionHtml(){
+    return '<div class="settings-section"><h3>'+(getUiLang()==='ru'?'Синхронизация':'Sync')+'</h3><section id="one-account-sync" style="padding:12px 0;">'+(getUiLang()==='ru'?'Проверяю состояние…':'Checking status…')+'</section></div>';
+}
 function appAccountControlsHtml(){
     var ru=getUiLang()==='ru';
     return '<div class="setting-row" data-account-controls><div class="setting-info"><div class="setting-label">'+(ru?'Аккаунт Skipi':'Skipi Account')+'</div><div class="setting-desc" data-account-email>…</div></div><div class="setting-control"><button class="btn btn-outline btn-sm" type="button" data-account-logout onclick="appLogoutToGate()">'+(ru?'Выйти':'Sign out')+'</button></div></div>';
@@ -16930,7 +16933,6 @@ function seafarerProfileFormHtml(){
     // 2026-08-06 (25)): device pairing + explicit Import/Send. Both network
     // directions run ONLY from these buttons — never automatically.
     h += '<div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border);">';
-    h += '<section id="one-account-sync" style="padding:12px 0;"></section>';
     h += '<div style="font-weight:800;font-size:13px;">Manual profile transfer</div>';
     h += '<div class="section-desc" style="margin:4px 0 10px;">Import these details from — or send them to — your account at assistant.skipi.app. Each transfer happens only when you tap a button below and shows exactly which fields move. This manual transfer excludes photos; account sync above includes them.</div>';
     h += '<div id="sp-acc-status" style="font-size:12px;color:var(--text2);margin-bottom:8px;">Checking device link…</div>';
@@ -16951,6 +16953,8 @@ function seafarerProfileFormHtml(){
 function renderSettingsBody(){
     var cur = document.documentElement.getAttribute('data-theme')||'light';
     var h = '';
+
+    if(settingsTab === 'sync')h=accountSyncSectionHtml();
 
     if(settingsTab === 'general'){
         h += '<div class="settings-section"><h3>'+tr('settings.general')+'</h3><div class="section-desc">'+tr('settings.general_desc')+'</div>';
@@ -17186,7 +17190,12 @@ function renderSettingsBody(){
     }
 
     document.getElementById('settings-body').innerHTML = h;
-    if(settingsTab === 'seafarer'){ spLoad(); invoke('get_account_sync_status').then(oneAccountSyncRender).catch(function(e){oneAccountSyncRender({state:'error',error:String(e),conflicts:[]});}); }
+    if(settingsTab === 'sync'){
+        var body=document.getElementById('settings-body'),panel=body.querySelector('#one-account-sync');
+        var active=function(){return settingsTab==='sync'&&panel&&body.querySelector('#one-account-sync')===panel;};
+        invoke('get_account_sync_status').then(function(status){if(active())oneAccountSyncRender(status,panel);}).catch(function(e){if(active())oneAccountSyncRender({state:'error',error:String(e),conflicts:[]},panel);});
+    }
+    if(settingsTab === 'seafarer'){ spLoad(); }
     if(settingsTab === 'email'){ smtpLoad(); populateMailClientsHint(); }
     if(settingsTab === 'ai'){
         invoke('get_api_key').then(function(k){var el=document.getElementById('set-key');if(el)el.value=k;}).catch(function(){});
@@ -18496,7 +18505,8 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
         function tick(){
             _spEmbedTimer = null;
             var root = document.getElementById('settings-root');
-            var present = root && root.querySelector && root.querySelector('#sp-photo-box');
+            var profile = root && root.querySelector && root.querySelector('#sp-photo-box');
+            var present = profile || (root && root.querySelector && root.querySelector('#one-account-sync'));
             if(!present){
                 attempts += 1;
                 // ~2s at 50ms: the section was closed/navigated away — stop silently.
@@ -18515,11 +18525,11 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
                 var legacyBody = document.getElementById('settings-body');
                 var legacyOverlay = document.getElementById('settings-overlay');
                 var legacyOpen = !!(legacyOverlay && legacyOverlay.classList && legacyOverlay.classList.contains('open'));
-                if(!legacyOpen && legacyBody && legacyBody.innerHTML && legacyBody.innerHTML.indexOf('id="sp-') !== -1){
+                if(!legacyOpen && legacyBody && legacyBody.innerHTML && (legacyBody.innerHTML.indexOf('id="sp-') !== -1 || legacyBody.innerHTML.indexOf('id="one-account-sync"') !== -1)){
                     legacyBody.innerHTML = '';
                 }
             }catch(e){}
-            try{ spLoad(); }catch(err){ try{ logError('unified seafarer spLoad', err); }catch(e){} }
+            try{ if(profile)spLoad(); }catch(err){ try{ logError('unified seafarer spLoad', err); }catch(e){} }
             var panel = root.querySelector('#one-account-sync');
             function currentSyncPanel(){
                 var overlay = document.getElementById('skipi-settings-overlay');
@@ -18568,6 +18578,12 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
     // the main inline block (accountDeleteSectionHtml), so both shells show the same
     // block; only the label is computed locally, because buildHost() runs before
     // anything renders and must not reach outside this script.
+    function syncSection(){
+        return {id:'account-sync',order:210,label:getUiLang()==='ru'?'Синхронизация':'Sync',icon:'↻',renderHtml:function(){
+            scheduleSeafarerFormLoad();
+            return accountSyncSectionHtml();
+        }};
+    }
     function accountSection(){
         return {
             id: 'skipi-account',
@@ -18615,7 +18631,7 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
             // «Skipi account» carries the in-app account deletion (App Store
             // 5.1.1(v)); the gear opens THIS shell on desktop and mobile alike,
             // so the deletion path has to live here, not only on the legacy tab.
-            appSpecificSections: [ seafarerSection(), accountSection() ],
+            appSpecificSections: [ seafarerSection(), syncSection(), accountSection() ],
 
             onError: function(err, context){ try{ console.warn('[unified-settings]', context, err); }catch(e){} }
         };
@@ -18631,7 +18647,7 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
     // fail-closed fallbacks so a deep-link still lands on the right legacy tab
     // when the module is unavailable.
     function legacyTabForSection(sectionId){
-        return sectionId === 'seafarer-profile' ? 'seafarer' : undefined;
+        return sectionId === 'seafarer-profile' ? 'seafarer' : sectionId === 'account-sync' ? 'sync' : undefined;
     }
     window.openUnifiedSettings = function(initialSectionId){
         // Fail-closed if the module did not load.

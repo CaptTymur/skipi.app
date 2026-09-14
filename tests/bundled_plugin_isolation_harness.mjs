@@ -4675,10 +4675,10 @@ async function adSectionHtml(app, host, mode) {
   const legacy = String((app.doc.getElementById('settings-body') || {}).innerHTML || '');
   ok(legacy.includes('data-qa="settings-account"') && legacy.includes('data-qa="account-delete-open"'),
     'DEL1 (legacy fallback tab): the same account block is on the About tab');
-  ok(/\['vaults','seafarer','appearance','about'\]/.test(HTML),
-    'and «about» is one of the four tabs the MOBILE legacy nav offers, so the fallback is reachable on a phone too');
+  ok(/\['vaults','seafarer','sync','appearance','about'\]/.test(HTML),
+    'and «about» is one of the five tabs the MOBILE legacy nav offers, so the fallback is reachable on a phone too');
   // negatives
-  const noSection = HTML.replace('appSpecificSections: [ seafarerSection(), accountSection() ],', 'appSpecificSections: [ seafarerSection() ],');
+  const noSection = HTML.replace(/(appSpecificSections:\s*\[[^\]]*),\s*accountSection\(\)/, '$1');
   ok(noSection !== HTML, 'the negative mutation really unregistered the section');
   ok(!/accountSection\(\)\s*\]/.test(noSection),
     'NEGATIVE: dropping the account section from the unified adapter turns DEL1 red — that is 5.1.1(v) coming back');
@@ -6400,6 +6400,23 @@ for(const lang of ['en','ru']){
     const form=app.sandbox.seafarerProfileFormHtml();
     ok(form.includes('appLogoutToGate()'),'193 '+lang+': shared profile form offers sign-out');
     ok(form.includes(lang==='ru'?'Аккаунт':'Account'),'193 '+lang+': account label is localized');
+  }
+}
+
+{
+  section('193 owner follow-up — sync has a dedicated settings tab, never buried in Profile');
+  for(const lang of ['en','ru']){
+    for(const platform of ['android','linux']){
+      const app=bootApp({platform,withSettings:true});await efSettle();const {sandbox:s,doc}=app;s.getUiLang=()=>lang;
+      ok(!s.seafarerProfileFormHtml().includes('id="one-account-sync"'),'193 '+platform+' '+lang+': profile form has no duplicate sync panel');
+      s.openUnifiedSettings('account-sync');await efSettle();
+      const root=doc.getElementById('settings-root');const h=String(root?.innerHTML||'');
+      ok(h.includes('one-account-sync'),'193 '+platform+' '+lang+': dedicated unified Sync tab renders its panel without a vault');
+      s.renderSettingsNav();
+      ok(doc.getElementById('settings-nav').innerHTML.includes("openSettings('sync')"),'193 '+platform+' '+lang+': fallback menu also exposes Sync without a vault');
+      s.settingsTab='sync';s.renderSettingsBody();
+      ok(doc.getElementById('settings-body').innerHTML.includes('id="one-account-sync"'),'193 '+platform+' '+lang+': fallback Sync tab renders the same control');
+    }
   }
 }
 
