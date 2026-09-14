@@ -10319,6 +10319,16 @@ async function mobileCreateProfile(){
     showAccountFirst();
 }
 async function accountFirstSignIn(){
+    // №320: hand the ONE open history entry over to the gate instead of consuming
+    // it and pushing a fresh one. hideAccountFirst()'s history.back() is delivered
+    // ASYNCHRONOUSLY: it used to land AFTER entryForkSignIn() had already pushed
+    // {skipiEntryFork} and raised the gate, and the fork's popstate listener — which
+    // checks only its own flag, never whose entry popped — claimed that stray pop and
+    // called entryForkGateBack(), closing the gate the user had just asked for.
+    // The handoff leaves no back() and no second push on this path, so there is no
+    // ordering left to lose. Back is preserved: exactly one entry stays open and the
+    // fork listener owns it, so Android Back returns to the fork as before.
+    if(isNativeMobile()&&_afHistMark){ _afHistMark=false; _efHistMark=true; }
     hideAccountFirst();
     // The demo is not a session: close AND forget it first, or the login token would be
     // written into the demo vault that the next Demo tap wipes (same reason as

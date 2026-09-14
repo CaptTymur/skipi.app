@@ -227,6 +227,64 @@ ok(!/lg-back|entry-fork/.test(gateMarkup), 'G7: the gate static markup is untouc
 ok(!/id="mobile-entry-fork"/.test(html), 'G7: the fork has no static markup — rendered by JS (PRESERVE sha region)');
 ok(!/\b(free|бесплатн|PRO\b|\$\d)/i.test(fnBody(html, '_efTxt') || 'free'), 'G7: fork copy carries no free/PRO/price wording');
 
+// G8 (#320, 2026-09-14): the account-first Sign in door must not race its own
+// history entry against the gate's.
+//
+// Observed on dist 0.4.192, 3 runs of 3, deterministic (seq5-18 of the browser
+// receipt): hideAccountFirst() cleared _afHistMark and issued history.back();
+// history.back() is delivered ASYNCHRONOUSLY, so it landed AFTER entryForkSignIn()
+// had already pushed {skipiEntryFork} and raised the gate. The fork's popstate
+// listener only checks its own flag — never whose entry actually popped — so it
+// claimed the stray pop, cleared _efHistMark and called entryForkGateBack(),
+// closing the login gate the user had just asked for and dropping them back on
+// the fork. This is the entry screen Seafarer was already rejected over
+// (App Review 2.1(a)), so it is guarded mechanically.
+//
+// The contract is a HANDOFF, not a delay: on the native path the single open
+// entry is transferred from account-first to the gate, so there is no back() and
+// no second push left to order. Back still works — one entry, owned by the fork
+// listener.
+// ONE predicate, used by the positive check AND by both negative drills below, so
+// a drill can never pass against a laxer rule than the one guarding the product.
+//
+// It matches the WHOLE guarded statement, condition included. An earlier version
+// matched only the two assignments; the Supervisor showed (C3-2) that this let the
+// native-only guard be removed in two different ways with the suite still fully
+// green — the regex saw WHAT was assigned but never UNDER WHICH CONDITION. The
+// condition is the load-bearing part: without isNativeMobile() the handoff would
+// fire on web and desktop too, where entryForkSignIn() is never called, so nothing
+// would ever consume the adopted entry.
+//
+// Line comments are stripped first: the explanation above the fix necessarily
+// mentions hideAccountFirst(), and an index-of over raw source would match that
+// prose instead of the call. The contract is about the CODE.
+function afSignInBody(source) {
+  return (fnBody(source, 'accountFirstSignIn') || '').replace(/^\s*\/\/.*$/gm, '');
+}
+function nativeGuardedHandoff(source) {
+  return /if\s*\(\s*isNativeMobile\(\)\s*&&\s*_afHistMark\s*\)\s*\{\s*_afHistMark\s*=\s*false\s*;\s*_efHistMark\s*=\s*true\s*;?\s*\}/.exec(afSignInBody(source));
+}
+const afSignIn = afSignInBody(html);
+const handoff = nativeGuardedHandoff(html);
+ok(handoff !== null, 'G8 (#320): accountFirstSignIn hands its history entry to the gate under the native-only guard (if(isNativeMobile()&&_afHistMark){_afHistMark=false;_efHistMark=true;})');
+ok(handoff !== null && afSignIn.indexOf('hideAccountFirst()') > handoff.index, 'G8 (#320): the handoff happens BEFORE hideAccountFirst(), so no history.back() is ever issued on this path');
+
+// Negative drills for the assertion above, reproducing exactly the two mutations
+// that used to pass (Supervisor C3-2). These are pure in-memory string edits of a
+// copy: nothing is written to disk, no product byte changes and no side effect is
+// possible, so no stub is required. Each drill first asserts that it ACTUALLY
+// applied — a replace that silently matched nothing would otherwise make its
+// negative pass for the wrong reason, which is the same class of hole being closed.
+const GUARD_LITERAL = 'if(isNativeMobile()&&_afHistMark){';
+const drillE = html.replace(GUARD_LITERAL, 'if(_afHistMark){');
+ok(drillE !== html, 'G8 (#320) drill E applied: the native-only guard literal is present to be mutated');
+ok(nativeGuardedHandoff(drillE) === null, 'G8 (#320) NEGATIVE E: dropping isNativeMobile()&& — which would fire the handoff on web and desktop too — reddens the assertion above');
+const drillF = html.replace(GUARD_LITERAL, 'if(true){');
+ok(drillF !== html, 'G8 (#320) drill F applied: the native-only guard literal is present to be mutated');
+ok(nativeGuardedHandoff(drillF) === null, 'G8 (#320) NEGATIVE F: replacing the condition with if(true) reddens the assertion above');
+ok(/if\s*\(\s*!_afHistMark\s*\)\s*return\s*;/.test(fnBody(html, 'hideAccountFirst') || ''), 'G8 (#320): hideAccountFirst still early-returns on a cleared marker — this is what makes the handoff suppress the back()');
+ok(/if\s*\(\s*!_efHistMark\s*\)\s*\{/.test(fnBody(html, 'entryForkSignIn') || ''), 'G8 (#320): entryForkSignIn still guards its pushState, so the adopted entry is never doubled');
+
 if (fail) {
   console.error('login_gate_first_screen_harness: FAIL');
   process.exit(1);
