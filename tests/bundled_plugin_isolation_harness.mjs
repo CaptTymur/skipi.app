@@ -6492,6 +6492,7 @@ for(const lang of ['en','ru']){
   for(const secret of secrets)s.logError('synthetic',secret);
   const saved=JSON.stringify(Array.from(app.lstore));const log=s.getErrorLog();
   ok(!/SECRET_|WORD VALUE|c3ludGhldGlj|second secret|tail-secret/.test(log)&&!/SECRET_|WORD VALUE|c3ludGhldGlj|second secret|tail-secret/.test(saved),'193: credentials redacted before persistence and export');
+  let malformedFast=true;try{vm.runInContext('scrubLocalDiagnostic('+JSON.stringify('password="'+'\\'.repeat(50)+'x')+')',s,{timeout:250});}catch(e){malformedFast=false;}ok(malformedFast,'193: malformed quoted backslashes cannot hang the error renderer');
   const extraMarker='inline193-'+Date.now();app.doc.getElementById('mv-code').parentNode={insertBefore(){}};s.smtpStatus(extraMarker+'-smtp','err');s.myVesselShowError(extraMarker+'-vessel');ok(s.getErrorLog().includes(extraMarker+'-smtp')&&s.getErrorLog().includes(extraMarker+'-vessel'),'193: SMTP and vessel inline errors join the local journal');
   const marker='visible193-'+Date.now();s.err(marker+'-strip');s.showToast(marker+'-toast','error');s.uiToast(marker+'-alert','error');s._lgError(marker+'-login');
   const panel=app.doc.createElement('section');panel.setAttribute('id','one-account-sync');app.doc.body.appendChild(panel);s.oneAccountSyncRender({state:'error',error:marker+'-sync',conflicts:[]},panel);
