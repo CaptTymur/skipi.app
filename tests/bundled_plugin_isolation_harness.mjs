@@ -4675,10 +4675,10 @@ async function adSectionHtml(app, host, mode) {
   const legacy = String((app.doc.getElementById('settings-body') || {}).innerHTML || '');
   ok(legacy.includes('data-qa="settings-account"') && legacy.includes('data-qa="account-delete-open"'),
     'DEL1 (legacy fallback tab): the same account block is on the About tab');
-  ok(/\['vaults','seafarer','appearance','about'\]/.test(HTML),
-    'and «about» is one of the four tabs the MOBILE legacy nav offers, so the fallback is reachable on a phone too');
+  ok(/\['vaults','seafarer','sync','appearance','about'\]/.test(HTML),
+    'and «about» is one of the five tabs the MOBILE legacy nav offers, so the fallback is reachable on a phone too');
   // negatives
-  const noSection = HTML.replace('appSpecificSections: [ seafarerSection(), accountSection() ],', 'appSpecificSections: [ seafarerSection() ],');
+  const noSection = HTML.replace(/(appSpecificSections:\s*\[[^\]]*),\s*accountSection\(\)/, '$1');
   ok(noSection !== HTML, 'the negative mutation really unregistered the section');
   ok(!/accountSection\(\)\s*\]/.test(noSection),
     'NEGATIVE: dropping the account section from the unified adapter turns DEL1 red — that is 5.1.1(v) coming back');
@@ -6323,6 +6323,206 @@ for(const lang of ['en','ru']){
   }
 }
 
+// №335 clean-install regression: exercise the real successful login continuation,
+// prerequisite action and account surface; no device/network effects in this VM.
+{
+  section('193 account journey — clean sign-in always has a next step (RU/EN)');
+  for (const lang of ['en','ru']) {
+    try {
+      let signedIn=false;
+      const app=await efBoot({app_login:()=>{signedIn=true;return {};}, app_login_status:()=>({logged_in:signedIn,pending:signedIn,email:signedIn?'synthetic@example.invalid':''})},{seed:{'skipi-ui-lang':lang}});
+      const {sandbox:s,doc}=app;
+      s.getUiLang=()=>lang;
+      s.entryForkSignIn();
+      doc.getElementById('lg-email').value='synthetic@example.invalid';
+      doc.getElementById('lg-password').value='synthetic-only';
+      await s.doAppLogin(); await efSettle();
+      ok(!efGateShown(doc),'193 '+lang+': successful sign-in closes the gate');
+      ok(app.spies.showWelcome.length>0,'193 '+lang+': sign-in from fork opens create/open profile landing');
+      const h=mobileHtml(doc);
+      ok(h.includes('mobileCreateProfile()')&&h.includes('mobileOpenExistingVault()'),'193 '+lang+': both create and open profile actions are visible');
+      ok(h.includes('appLogoutToGate()'),'193 '+lang+': signed-in account has sign-out before a profile exists');
+      ok(!app.calls.some(([c])=>c==='enable_account_sync'||c==='sync_account_now'),'193 '+lang+': sign-in is not sync consent');
+    }catch(e){ok(false,'193 '+lang+' login journey: '+e.message);}
+  }
+}
+{
+  section('193 account journey — missing continuation and explicit local-profile choice');
+  const app=await efBoot({app_login:()=>({}),app_login_status:()=>({logged_in:true,pending:true,email:'synthetic@example.invalid'})});
+  const {sandbox:s,doc}=app;let welcome=0,create=0;
+  s.showWelcome=()=>{welcome++;};s.mobileCreateProfile=()=>{create++;};
+  s._loginGatePending=null;s._loginGateNext=null;
+  doc.getElementById('lg-email').value='synthetic@example.invalid';doc.getElementById('lg-password').value='synthetic-only';
+  await s.doAppLogin();ok(welcome===1,'193: successful sign-in without a saved continuation has reachable profile actions');
+  s.setTimeout=(f)=>{f();return 1;};welcome=0;
+  s.initNoVaultLanding(false);
+  ok(welcome===1&&create===0,'193: fresh login keeps create/open choice visible until the user chooses');
+}
+{
+  section('193 account journey — sign-out closes either settings shell and preserves profile data');
+  for(const profileOpen of [false,true]){
+    const app=await efBoot({});const {sandbox:s,doc}=app;const calls=[];
+    const unified=doc.createElement('div');unified.setAttribute('id','skipi-settings-overlay');doc.body.appendChild(unified);unified.classList.add('open');
+    doc.getElementById('settings-overlay').classList.add('open');
+    s.invoke=async(c)=>{calls.push(c);if(c==='get_current_vault_path')return profileOpen?'/synthetic/profile':null;if(c==='open_vault')return EF_REAL;if(c==='get_profile_status')return {};return {};};
+    await s.appLogoutToGate();
+    ok(calls.filter(c=>c==='app_logout').length===1,'193: one local logout for '+(profileOpen?'existing':'missing')+' profile');
+    ok(!calls.some(c=>/delete|create_vault/.test(c)),'193: logout never deletes or replaces vault/document data');
+    ok(!unified.classList.contains('open')&&!doc.getElementById('settings-overlay').classList.contains('open'),'193: both settings shells close at sign-out');
+    ok(efForkShown(doc),'193: signed-out shell is covered by native entry fork');
+  }
+}
+{
+  section('193 account journey — exact missing prerequisite, no consent side effects');
+  for (const lang of ['en','ru']) {
+    for (const profileOpen of [false,true]) {
+      try {
+        const app=await efBoot({}); const {sandbox:s,doc}=app; s.getUiLang=()=>lang;
+        let confirms=0, setup=0, gates=0; const calls=[];
+        s.uiConfirm=async()=>{confirms++;return true;};
+        s.showWelcome=()=>{setup++;}; s.showLoginGate=()=>{gates++;};
+        s.invoke=async(c)=>{calls.push(c);if(c==='get_account_sync_status')return {enabled:false,state:'disabled',profile_open:profileOpen,logged_in:!profileOpen,conflicts:[]};return {};};
+        const panel=doc.createElement('div');panel.setAttribute('id','one-account-sync');doc.body.appendChild(panel);
+        s.oneAccountSyncRender({enabled:false,state:'disabled',profile_open:profileOpen,logged_in:!profileOpen,conflicts:[]},panel);
+        const h=panel.innerHTML;
+        ok(h.includes(profileOpen?(lang==='ru'?'Войти':'Sign in'):(lang==='ru'?'Создать или открыть профиль':'Create or open profile')),'193 '+lang+': sync control names only missing '+(profileOpen?'login':'profile'));
+        await s.oneAccountSyncEnable();
+        ok(profileOpen?gates===1:setup===1,'193 '+lang+': sync prerequisite leads to '+(profileOpen?'login':'profile setup'));
+        ok(confirms===0&&!calls.includes('enable_account_sync')&&!calls.includes('sync_account_now'),'193 '+lang+': no consent dialog or sync before prerequisite');
+      }catch(e){ok(false,'193 '+lang+' prerequisite: '+e.message);}
+    }
+  }
+}
+{
+  section('193 account journey — account controls live beside the profile in both settings shells');
+  for(const lang of ['en','ru']){
+    const app=await efBoot({});app.sandbox.getUiLang=()=>lang;
+    const form=app.sandbox.seafarerProfileFormHtml();
+    ok(form.includes('appLogoutToGate()'),'193 '+lang+': shared profile form offers sign-out');
+    ok(form.includes(lang==='ru'?'Аккаунт':'Account'),'193 '+lang+': account label is localized');
+  }
+}
+
+{
+  section('193 owner follow-up — sync has a dedicated settings tab, never buried in Profile');
+  for(const lang of ['en','ru']){
+    for(const platform of ['android','linux']){
+      const app=bootApp({platform,withSettings:true});await efSettle();const {sandbox:s,doc}=app;s.getUiLang=()=>lang;
+      ok(!s.seafarerProfileFormHtml().includes('id="one-account-sync"'),'193 '+platform+' '+lang+': profile form has no duplicate sync panel');
+      s.openUnifiedSettings('account-sync');await efSettle();
+      const root=doc.getElementById('settings-root');const h=String(root?.innerHTML||'');
+      ok(h.includes('one-account-sync'),'193 '+platform+' '+lang+': dedicated unified Sync tab renders its panel without a vault');
+      s.renderSettingsNav();
+      ok(doc.getElementById('settings-nav').innerHTML.includes("openSettings('sync')"),'193 '+platform+' '+lang+': fallback menu also exposes Sync without a vault');
+      s.settingsTab='sync';s.renderSettingsBody();
+      ok(doc.getElementById('settings-body').innerHTML.includes('id="one-account-sync"'),'193 '+platform+' '+lang+': fallback Sync tab renders the same control');
+    }
+  }
+}
+
+{
+  section('193 account navigation — leaving unified settings consumes its owned history and unmounts');
+  for(const action of ['logout','profile','login']){
+    const app=bootApp({platform:'android',withSettings:true});await efSettle();const {sandbox:s,doc}=app;
+    s.openUnifiedSettings('account-sync');await efSettle();s.history.calls.length=0;
+    s.invoke=efInvoke({get_account_sync_status:{enabled:false,profile_open:action==='login',logged_in:action!=='login',conflicts:[]}});
+    const queued=[];s.history.back=function(){this.calls.push(['back']);queued.push(()=>{for(const fn of app.listeners.popstate||[])fn({state:null});});};
+    if(action==='logout')await s.appLogoutToGate();else await s.oneAccountSyncEnable();
+    ok(doc.getElementById('settings-root').innerHTML==='','193 '+action+': canonical close unmounts old settings content');
+    ok(s.history.calls.filter(c=>c[0]==='back').length===1,'193 '+action+': exactly one owned settings history entry is consumed');
+    while(queued.length)queued.shift()();await efSettle();
+    ok(action==='login'?efGateShown(doc):action==='logout'?efForkShown(doc):doc.getElementById('scr-welcome').style.display!=='none','193 '+action+': delayed settings popstate preserves the destination screen');
+    s.openUnifiedSettings('account-sync');await efSettle();
+    ok(s.history.calls.filter(c=>c[0]==='pushState').length===1,'193 '+action+': reopening creates a fresh history entry');
+    s.history.back();queued.shift()();await efSettle();
+    ok(!doc.getElementById('skipi-settings-overlay').classList.contains('open')&&queued.length===0,'193 '+action+': one later Back closes the reopened settings without a second pop');
+  }
+}
+{
+  section('193 wide welcome — signed-in account controls remain visible before local profile creation');
+  const app=bootApp({platform:'linux'});await efSettle();const {sandbox:s,doc}=app;
+  s.showWelcome();
+  const account=doc.getElementById('welcome-account-controls');
+  ok(account&&account.innerHTML.includes('appLogoutToGate()'),'193 wide welcome contains the account sign-out control without static markup changes');
+}
+{
+  section('193 restore — signed-in account can download existing data without re-entering profile fields');
+  for(const lang of ['en','ru']){
+    const app=await efBoot({app_login_status:{logged_in:true,pending:true,email:'synthetic@example.invalid'}});const {sandbox:s,doc}=app;s.getUiLang=()=>lang;s.showWelcome();
+    ok(mobileHtml(doc).includes('restoreAccountProfile()'),'193 '+lang+': welcome exposes explicit account restore action');
+    ok(typeof s.restoreAccountProfile==='function','193 '+lang+': restore handler exists');
+    if(typeof s.restoreAccountProfile!=='function')continue;
+    for(const outcome of ['restored','empty','error','cancel','changed']){
+      const calls=[];let loaded=0,wizards=0,statusReads=0;
+      s.uiConfirm=async()=>outcome!=='cancel';s.loadVault=async()=>{loaded++;};s.mobileCreateProfile=async()=>{wizards++;};
+      s.invoke=async(c,args)=>{calls.push([c,args]);if(c==='get_account_sync_status')return {profile_open:false,logged_in:true,restore_context:outcome==='changed'&&statusReads++?'new-context':'synthetic-context'};if(c==='restore_account_profile'){if(outcome==='error')throw new Error('synthetic offline');return {outcome,vault:EF_REAL};}return {};};
+      await s.restoreAccountProfile();
+      ok(!calls.some(([c])=>c==='create_vault'||c==='create_profile_vault'||c==='enable_account_sync'),'193 '+lang+' '+outcome+': frontend never scaffolds a duplicate profile or bypasses restore consent');
+      if(outcome==='restored')ok(loaded===1&&wizards===0,'193: populated account restores directly without a wizard');
+      else if(outcome==='empty')ok(wizards===1&&loaded===0,'193: genuinely empty account offers normal profile setup');
+      else ok(loaded===0&&wizards===0,'193 '+outcome+': failure/cancel never masquerades as empty account or successful restore');
+      if(['cancel','changed'].includes(outcome))ok(!calls.some(([c])=>c==='restore_account_profile'),'193 '+outcome+': no restoration request without current explicit consent');
+    }
+  }
+}
+{
+  section('193 restore — delayed/background sync cannot upload while the first restore is being published');
+  const app=await efBoot({});const s=app.sandbox;const calls=[];let releaseRestore;
+  s.invoke=async(c)=>{calls.push(c);if(c==='get_account_sync_status')return {profile_open:false,logged_in:true,restore_context:'bound-restore'};if(c==='restore_account_profile')return await new Promise(r=>{releaseRestore=r;});return {};};
+  s.uiConfirm=async()=>true;s.loadVault=async()=>{};
+  const restore=s.restoreAccountProfile();await efSettle();
+  calls.length=0;await s.oneAccountSyncRun();
+  ok(calls.length===0,'193: an already queued timer/online/visibility sync is suspended during first restoration');
+  releaseRestore({outcome:'restored',vault:EF_REAL});await restore;
+  ok(s.accountRestoreBusy===false,'193: restore releases its UI busy state after completion');
+}
+{
+  section('193 restore — status request already in flight must not start an upload after restore begins');
+  const app=await efBoot({});const s=app.sandbox;const calls=[];let releaseStatus;
+  s.invoke=async(c)=>{calls.push(c);if(c==='get_account_sync_status')return await new Promise(r=>{releaseStatus=r;});return {};};
+  const sync=s.oneAccountSyncRun();await efSettle();s.accountRestoreBusy=true;
+  releaseStatus({enabled:true});await sync;
+  ok(!calls.includes('sync_account_now'),'193: a late status response cannot issue sync while restore is active');
+  s.accountRestoreBusy=false;
+}
+{
+  section('193 diagnostics — visible errors survive reload, redact credentials and travel in prepared drafts');
+  const app=bootApp();await efSettle();const s=app.sandbox;
+  const secrets=['Bearer SECRET_BEARER','password=SECRET_PASSWORD','"password":"SECRET_MULTI WORD VALUE"','Authorization: SECRET_AUTH','Authorization: Basic c3ludGhldGljOnNlY3JldA==','password="first secret\nsecond secret"','password="SECRET_ESCAPED\\" tail-secret"','ska_SECRET_PARENT','skv_SECRET_DEVICE','https://user:SECRET_URL@host.test/path?token=SECRET_QUERY'];
+  for(const secret of secrets)s.logError('synthetic',secret);
+  const saved=JSON.stringify(Array.from(app.lstore));const log=s.getErrorLog();
+  ok(!/SECRET_|WORD VALUE|c3ludGhldGlj|second secret|tail-secret/.test(log)&&!/SECRET_|WORD VALUE|c3ludGhldGlj|second secret|tail-secret/.test(saved),'193: credentials redacted before persistence and export');
+  let malformedFast=true;try{vm.runInContext('scrubLocalDiagnostic('+JSON.stringify('password="'+'\\'.repeat(50)+'x')+')',s,{timeout:250});}catch(e){malformedFast=false;}ok(malformedFast,'193: malformed quoted backslashes cannot hang the error renderer');
+  const extraMarker='inline193-'+Date.now();app.doc.getElementById('mv-code').parentNode={insertBefore(){}};s.smtpStatus(extraMarker+'-smtp','err');s.myVesselShowError(extraMarker+'-vessel');ok(s.getErrorLog().includes(extraMarker+'-smtp')&&s.getErrorLog().includes(extraMarker+'-vessel'),'193: SMTP and vessel inline errors join the local journal');
+  const marker='visible193-'+Date.now();s.err(marker+'-strip');s.showToast(marker+'-toast','error');s.uiToast(marker+'-alert','error');s._lgError(marker+'-login');
+  const panel=app.doc.createElement('section');panel.setAttribute('id','one-account-sync');app.doc.body.appendChild(panel);s.oneAccountSyncRender({state:'error',error:marker+'-sync',conflicts:[]},panel);
+  for(const kind of ['strip','toast','alert','login','sync'])ok(s.getErrorLog().includes(marker+'-'+kind),'193: visible '+kind+' error captured');
+  const reload=bootApp({seed:Object.fromEntries(app.lstore)});await efSettle();ok(reload.sandbox.getErrorLog().includes(marker+'-sync'),'193: sanitized journal survives a fresh app VM');
+  for(let i=0;i<100;i++)s.logError('bounded','entry'+i+'Ж'.repeat(2000));
+  ok(Buffer.byteLength(s.getErrorLog(),'utf8')<=65536,'193: exported journal fits a bounded mobile payload');
+  ok(s.getErrorLog().includes('entry99'),'193: bounded export keeps most recent errors');
+  const calls=[];s.invoke=async(c,a)=>{calls.push([c,a]);return c==='get_app_version'?'0.4.193':c==='get_platform'?'linux':{};};
+  for(const mobile of [false,true]){calls.length=0;s.isMobileMode=()=>mobile;await s.reportIssue({askKind:false});const call=calls.find(([c])=>c===(mobile?'mobile_share_dispatch':'create_email_file'));const body=call&&(mobile?call[1].body:call[1].intent.body);ok(body&&body.includes('entry99')&&body.includes('diagnostic'),'193: '+(mobile?'mobile':'desktop')+' prepared draft payload carries diagnostic text in body');}
+  ok(!calls.some(([c])=>c==='record_app_diagnostic'),'193: explicit local journal export adds no diagnostic network call');
+  calls.length=0;await s.reportIssue({askKind:false,context:'Ж'.repeat(100000)+' password=SECRET_META',kind:'Ж'.repeat(100000)});const bounded=calls.find(([c])=>c==='mobile_share_dispatch')[1];ok(Buffer.byteLength(bounded.body,'utf8')<=65536&&!bounded.body.includes('SECRET_META'),'193: complete final report body incl huge metadata remains bounded and sanitized');
+  const count=s._errorLog.length;s.showToast('successful operation','success');s.uiToast('information only','info');ok(s._errorLog.length===count,'193: success and informational messages are not errors');
+  s.logError('first','repeated diagnostic');s.logError('toast','repeated diagnostic');ok(s._errorLog[s._errorLog.length-1].count===2,'193: duplicate same display error retains repeat count');s._errorLog[s._errorLog.length-1].last='2000-01-01T00:00:00Z';s.logError('later','repeated diagnostic');ok(s._errorLog[s._errorLog.length-1].count===1,'193: later repeat is a fresh diagnostic event');
+  const consoleLines=[];s.console={error:(...v)=>consoleLines.push(v.join(' '))};s.logError('password=SECRET_CONTEXT','Bearer SECRET_CONSOLE');ok(!consoleLines.join('').includes('SECRET_'),'193: console receives only sanitized diagnostics');
+  const seeded=bootApp({seed:{'skipi-error-journal-v1':JSON.stringify([{ts:'2026-09-14',ctx:'legacy',msg:'password=SECRET_LEGACY'}])}});await efSettle();ok(!seeded.sandbox.getErrorLog().includes('SECRET_')&&!seeded.lstore.get('skipi-error-journal-v1').includes('SECRET_'),'193: re-read legacy data is sanitized before reuse and persistence');
+
+  s.localStorage.setItem=()=>{throw Error('quota');};let safe=true;try{s.logError('quota','still visible');}catch(e){safe=false;}ok(safe&&s.getErrorLog().includes('still visible'),'193: quota failure does not suppress visible error or recurse');
+  const malformed=bootApp({seed:{'skipi-error-journal-v1':'{broken'}});await efSettle();ok(typeof malformed.sandbox.getErrorLog()==='string','193: malformed saved journal fails softly');
+}
+{
+  section('193 account copy and reset retain honest account state');
+  const app=bootApp();await efSettle();const s=app.sandbox;s.resetToWelcome();await efSettle();ok(!!app.doc.getElementById('welcome-account-controls'),'193: actual reset-to-welcome restores account controls');
+  s.invoke=async()=>({logged_in:true,email:null});await s.refreshAppAccountControls();ok(!Array.from(app.doc.querySelectorAll('[data-account-email]')).some(x=>x.textContent==='Not signed in'),'193: authenticated web session without email is still signed in');
+  await s.openForcedProfile(false);const note=app.doc.getElementById('forced-profile-overlay').querySelector('p');ok(note&&!note.textContent.includes('only inside')&&note.textContent.includes('synchronized'),'193: actual completion rendering never falsely excludes enabled cloud sync');s.getUiLang=()=> 'ru';await s.openForcedProfile(false);ok(note.textContent.includes('синхронизируются'),'193: actual RU completion rendering explains enabled sync');
+  ok(!s.accountSyncSectionHtml().includes('<h3>'),'193: dedicated Sync section does not repeat its shell heading');
+  const syncCss=HTML.match(/#one-account-sync \.btn \{([^}]+)\}/);ok(syncCss&&/min-height:44px/.test(syncCss[1])&&/white-space:normal/.test(syncCss[1]),'193: Sync buttons retain a44px touch target and wrap narrow labels');
+  ok(/#one-account-sync \{[^}]*overflow-wrap:anywhere/.test(HTML),'193: long account identifiers wrap in narrow Sync content');
+
+}
 {
   section('remote install + offline persistence harness');
   await runRemoteInstallOfflineHarness();
