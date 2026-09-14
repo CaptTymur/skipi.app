@@ -2415,6 +2415,13 @@ async function pkgBoot(opts) {
 }
 const pkgCalls = (app, cmd) => app.calls.filter(([c]) => c === cmd);
 
+// Rust source with its comments removed: block comments first, then line comments.
+// Order-of-call drills must read code, not the prose that describes the code —
+// a comment naming a function is not a call to it.
+const rustCode = (src) => String(src || '')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/\/\/.*$/gm, '');
+
 {
   section('mobile Packages (PKG1) — the grid icon opens the module, the dead-end toast is gone');
   ok(MODULE_TPL.includes('id="mobile-home-packages"'), 'Packages keeps its tile id in the module grid');
@@ -2897,8 +2904,16 @@ const pkgCalls = (app, cmd) => app.calls.filter(([c]) => c === cmd);
   const PKGRS = fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'commands', 'packages.rs'), 'utf8');
   const fnStart = PKGRS.indexOf('fn ensure_all_documents_package_inner(');
   const fnEnd = PKGRS.indexOf('\n}', fnStart);
-  const body = fnStart >= 0 && fnEnd > fnStart ? PKGRS.slice(fnStart, fnEnd) : '';
-  ok(body.length > 0, 'ensure_all_documents_package_inner is locatable in packages.rs');
+  const rawBody = fnStart >= 0 && fnEnd > fnStart ? PKGRS.slice(fnStart, fnEnd) : '';
+  ok(rawBody.length > 0, 'ensure_all_documents_package_inner is locatable in packages.rs');
+  // Index the CODE, not the prose — same convention as PKG_CODE and ENSURE_CODE in
+  // this file. Reading the raw body meant a single `build_package_zip_atomically(`
+  // inside a comment above tx.commit() satisfied the order check while the real
+  // call sat below it: the swap plus one comment passed the whole suite green, and
+  // the Rust tests never see this defect at all.
+  const body = rustCode(rawBody);
+  ok(!/\/\//.test(body) && !/\/\*/.test(body),
+    'and no comment form survives the strip — an unstripped comment must fail loudly here, never weaken the order check silently');
   const iPublish = body.indexOf('build_package_zip_atomically(');
   const iCommit = body.indexOf('tx.commit()');
   const iStamp = body.indexOf('write_build_stamp(');
@@ -2917,8 +2932,11 @@ const pkgCalls = (app, cmd) => app.calls.filter(([c]) => c === cmd);
   const PKGRS = fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'commands', 'packages.rs'), 'utf8');
   const gStart = PKGRS.indexOf('pub fn get_packages(');
   const gEnd = PKGRS.indexOf('\n}', gStart);
-  const gBody = gStart >= 0 && gEnd > gStart ? PKGRS.slice(gStart, gEnd) : '';
+  // Same hole, same fix: this doc comment explains WHY the ensure lives here, so a
+  // deleted call would still be "found" in the prose that describes it.
+  const gBody = rustCode(gStart >= 0 && gEnd > gStart ? PKGRS.slice(gStart, gEnd) : '');
   ok(gBody.length > 0, 'get_packages is locatable');
+  ok(!/\/\//.test(gBody) && !/\/\*/.test(gBody), 'and its prose is stripped too, so a comment can never stand in for the call');
   ok(/ensure_all_documents_package_inner\(/.test(gBody), 'get_packages refreshes the automatic package itself — every surface, including the frozen desktop list, goes through it');
   ok(/let _ = ensure_all_documents_package_inner/.test(gBody), 'and a build failure there is deliberately NOT fatal: the packages the user already has must still render');
   ok(/updated_on/.test(gBody) && /is_system/.test(gBody), 'it also derives updated_on and is_system, which the packages table does not hold');
