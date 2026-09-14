@@ -2145,6 +2145,8 @@ pub mod vault_sync {
         match conn.as_ref() {
             Some(conn) => {
                 let mut result = status(conn)?;
+                result["profile_open"] = json!(path.is_some());
+                result["logged_in"] = json!(super::super::app_login::stored_user_token(conn).is_some());
                 if let (Some(path), Some(parent)) =
                     (path.as_ref(), super::super::app_login::stored_user_token(conn))
                 {
@@ -2154,7 +2156,12 @@ pub mod vault_sync {
                 }
                 Ok(result)
             }
-            None => Ok(json!({"enabled":false,"state":"disabled","conflicts":[]})),
+            None => {
+                let pending = state.login_pending.lock().unwrap_or_else(|e| e.into_inner());
+                Ok(json!({"enabled":false,"state":"disabled","conflicts":[],
+                    "profile_open":false,"logged_in":pending.is_some(),
+                    "account_email":pending.as_ref().map(|p|p.email.as_str()).unwrap_or("")}))
+            },
         }
     }
     #[tauri::command]
@@ -2300,6 +2307,8 @@ pub mod vault_sync {
             let before = changes();
             let first = consent_status(&state).unwrap();
             assert_eq!(first, consent_status(&state).unwrap());
+            assert_eq!(first["profile_open"], true);
+            assert_eq!(first["logged_in"], true);
             let context = first["consent_context"].as_str().unwrap();
             assert_eq!(context.len(), 64);
             assert!(context.bytes().all(|b| b.is_ascii_hexdigit()));
@@ -2313,7 +2322,16 @@ pub mod vault_sync {
             assert!(consent_status(&state).unwrap()["consent_context"].is_null());
             assert!(prepare_enable(&state, Some(context)).is_err());
             assert_eq!(before, changes());
+            assert_eq!(consent_status(&state).unwrap()["logged_in"], false);
             *state.conn.lock().unwrap() = None;
+            *state.login_pending.lock().unwrap() = Some(super::super::super::app_login::PendingLogin {
+                token: "synthetic-parked-secret".into(), email: "synthetic@example.invalid".into(),
+                login_at: "synthetic".into(), account_id: Some("synthetic-account".into()),
+            });
+            let no_vault = consent_status(&state).unwrap();
+            assert_eq!(no_vault["profile_open"], false);
+            assert_eq!(no_vault["logged_in"], true, "parked login is still a signed-in account");
+            assert!(!no_vault.to_string().contains("synthetic-parked-secret"));
             assert!(consent_status(&state).unwrap()["consent_context"].is_null());
             assert!(prepare_enable(&state, Some(context)).is_err());
             drop(state);

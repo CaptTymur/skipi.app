@@ -1784,8 +1784,8 @@ function oneAccountMutation(command,args){
 
 function oneAccountSyncTexts(){
     var ru=typeof getUiLang==='function'&&getUiLang()==='ru';
-    return ru?{webTitle:'Данные аккаунта',webSaved:'Данные сохранены в этом аккаунте. Включите синхронизацию в приложениях.',webUnavailable:'Данные аккаунта недоступны',title:'Синхронизация аккаунта',contextMissing:'Откройте профиль и войдите в аккаунт перед включением синхронизации.',contextChanged:'Профиль или вход в аккаунт изменились. Подтвердите синхронизацию заново.',cancel:'Отмена',enable:'Включить синхронизацию',retry:'Синхронизировать сейчас',disable:'Выключить',local:'Оставить версию устройства',remote:'Использовать версию аккаунта',device:'На устройстве: ',account:'В аккаунте: ',consent:'Синхронизировать профиль, фото, морской стаж и все прикреплённые документы и сканы этого аккаунта с устройством? Перед заменой данных будут показаны существующие различия.',messages:{disabled:'Синхронизация выключена',pending:'Изменения ожидают синхронизации',syncing:'Синхронизация…',current:'Профиль, морской стаж и документы синхронизированы',conflict:'Выберите, какие изменения сохранить',error:'Синхронизация требует внимания'}}
-        :{webTitle:'Account data',webSaved:'Data is saved in this account. Enable sync in your apps.',webUnavailable:'Account data unavailable',title:'Account sync',contextMissing:'Open a profile and sign in before enabling sync.',contextChanged:'The profile or sign-in changed. Confirm synchronization again.',cancel:'Cancel',enable:'Enable account sync',retry:'Sync now',disable:'Turn off',local:'Keep this device version',remote:'Use account version',device:'This device: ',account:'Account: ',consent:'Sync this signed-in account’s profile, photo, sea service and all attached documents/scans with this device? Existing differences will be shown before either version is replaced.',messages:{disabled:'Sync is off',pending:'Changes are waiting to sync',syncing:'Synchronizing…',current:'Profile, sea service and documents are synchronized',conflict:'Choose which changes to keep',error:'Sync needs attention'}};
+    return ru?{webTitle:'Данные аккаунта',webSaved:'Данные сохранены в этом аккаунте. Включите синхронизацию в приложениях.',webUnavailable:'Данные аккаунта недоступны',title:'Синхронизация аккаунта',profileNeeded:'Создайте или откройте профиль моряка на этом устройстве. Затем можно подключить данные аккаунта с вашего согласия.',profileAction:'Создать или открыть профиль',loginNeeded:'Войдите в аккаунт для синхронизации этого профиля.',loginAction:'Войти',contextMissing:'Не удалось проверить состояние профиля. Откройте его снова.',contextChanged:'Профиль или вход в аккаунт изменились. Подтвердите синхронизацию заново.',cancel:'Отмена',enable:'Включить синхронизацию',retry:'Синхронизировать сейчас',disable:'Выключить',local:'Оставить версию устройства',remote:'Использовать версию аккаунта',device:'На устройстве: ',account:'В аккаунте: ',consent:'Синхронизировать профиль, фото, морской стаж и все прикреплённые документы и сканы этого аккаунта с устройством? Перед заменой данных будут показаны существующие различия.',messages:{disabled:'Синхронизация выключена',pending:'Изменения ожидают синхронизации',syncing:'Синхронизация…',current:'Профиль, морской стаж и документы синхронизированы',conflict:'Выберите, какие изменения сохранить',error:'Синхронизация требует внимания'}}
+        :{webTitle:'Account data',webSaved:'Data is saved in this account. Enable sync in your apps.',webUnavailable:'Account data unavailable',title:'Account sync',profileNeeded:'Create or open a seafarer profile on this device. You can then connect account data with your consent.',profileAction:'Create or open profile',loginNeeded:'Sign in to sync this profile.',loginAction:'Sign in',contextMissing:'Could not check profile status. Open the profile again.',contextChanged:'The profile or sign-in changed. Confirm synchronization again.',cancel:'Cancel',enable:'Enable account sync',retry:'Sync now',disable:'Turn off',local:'Keep this device version',remote:'Use account version',device:'This device: ',account:'Account: ',consent:'Sync this signed-in account’s profile, photo, sea service and all attached documents/scans with this device? Existing differences will be shown before either version is replaced.',messages:{disabled:'Sync is off',pending:'Changes are waiting to sync',syncing:'Synchronizing…',current:'Profile, sea service and documents are synchronized',conflict:'Choose which changes to keep',error:'Sync needs attention'}};
 }
 function oneAccountSyncRender(status,target){
     oneAccountSyncLast=status;
@@ -1797,6 +1797,12 @@ function oneAccountSyncRender(status,target){
     if(status.web_account===true||window.__SKIPI_WEBDESKTOP__){
         var message=status.web_account===true&&!status.error?t.webSaved:t.webUnavailable;
         el.innerHTML='<strong>'+esc(t.webTitle)+'</strong><div>'+esc(account)+'</div><div>'+esc(message)+'</div>'+(status.error?'<div>'+esc(status.error)+'</div>':'');
+        return;
+    }
+    if(status.profile_open===false||status.logged_in===false){
+        var needsProfile=status.profile_open===false;
+        el.innerHTML='<strong>'+esc(t.title)+'</strong><div>'+esc(account)+'</div><div>'+esc(needsProfile?t.profileNeeded:t.loginNeeded)+'</div><button type="button" data-sync-action="enable">'+esc(needsProfile?t.profileAction:t.loginAction)+'</button>';
+        var action=el.querySelector('[data-sync-action]');if(action)action.onclick=oneAccountSyncEnable;
         return;
     }
     var displayState=status.enabled===false?'disabled':status.state;
@@ -1828,6 +1834,22 @@ async function oneAccountSyncEnable(){
         var t=oneAccountSyncTexts();
         if(window.__SKIPI_WEBDESKTOP__)return;
         var before=await invoke('get_account_sync_status');
+        if(before&&before.profile_open===false){
+            closeSettings();
+            var overlay=document.getElementById('skipi-settings-overlay');if(overlay)overlay.classList.remove('open');
+            showWelcome();
+            return;
+        }
+        if(before&&before.logged_in===false){
+            _loginGateNext=async function(){
+                var path=await invoke('get_current_vault_path');
+                if(path)await loadVault(await invoke('open_vault',{path:path}));else showWelcome();
+            };
+            closeSettings();
+            var overlay=document.getElementById('skipi-settings-overlay');if(overlay)overlay.classList.remove('open');
+            showLoginGate();
+            return;
+        }
         var context=before&&before.consent_context;
         if(typeof context!=='string'||!context)throw new Error(t.contextMissing);
         var consent=await uiConfirm(t.consent,{confirmLabel:t.enable,cancelLabel:t.cancel});
@@ -3905,18 +3927,10 @@ async function init() {
 }
 // Startup landing when no vault could be opened (runs only once signed in).
 function initNoVaultLanding(hadVaultPath){
-    // No vault opened. On a mobile fresh install, lead the user directly into
-    // the seafarer profile wizard: department → vessel type → rank → profile
-    // fields. If a previous vault path existed but could not reopen, show the
-    // welcome screen so the user can select/move/import a vault explicitly.
-    if(!hadVaultPath && shouldUseMobileShell()){
-        showWelcome();
-        setTimeout(function(){mobileCreateProfile();},0);
-    }else{
-        showWelcome();
-    }
-    // No vault is open yet. Do not touch the jobs board here: network polling
-    // starts only after a seafarer vault is opened and "Ready for offers" is on.
+    // A signed-in account and a local profile are separate. Keep the create/open
+    // choice visible; login alone must not start a form or imply cloud consent.
+    showWelcome();
+    // Jobs polling still starts only after opening an opted-in seafarer profile.
 }
 
 // ========== Profile taxonomy (STCW levels, vessel tree, positions) ==========
@@ -4812,13 +4826,15 @@ function renderMobileWelcome(){
     mobileSetBottomNav(false);
     var h='<div class="mobile-hero">';
     h+='<h1>'+mobileEsc(tr('app.name'))+'</h1>';
-    h+='<p>'+mobileEsc(ru?'Создайте или откройте профиль моряка, затем добавляйте сертификаты камерой телефона или из файлов.':'Create or open your seafarer vault, then add certificates from your phone camera or files.')+'</p>';
+    h+='<p>'+mobileEsc(ru?'Создайте или откройте профиль моряка на этом устройстве. Затем включите синхронизацию, чтобы подключить данные аккаунта. Перед заменой данных можно выбрать, какую версию сохранить.':'Create or open your seafarer profile on this device. Then enable sync to connect account data. Before replacing data, you can choose which version to keep.')+'</p>';
+    h+=appAccountControlsHtml();
     h+='<div class="mobile-stack">';
     h+='<button class="mobile-primary-action" type="button" onclick="mobileCreateProfile()"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(ru?'Создать профиль':'Create mobile vault')+'</span><span class="mobile-action-sub">'+mobileEsc(ru?'Сначала выберите департамент, тип судна и должность.':'Choose department, vessel type and rank first.')+'</span></span></button>';
     h+='<button class="btn btn-outline" onclick="mobileOpenExistingVault()">'+mobileEsc(ru?'Открыть существующий':'Open existing vault')+'</button>';
     h+='<button class="btn btn-outline" onclick="loadDemoVault()">'+mobileEsc(ru?'Открыть демо':'Open demo vault')+'</button>';
     h+='</div></div>';
     mobileMainHtml(h);
+    refreshAppAccountControls();
 }
 async function mobileQuickCreateVault(){
     await mobileCreateProfile();
@@ -7754,7 +7770,7 @@ function renderMobileProfile(){
     h+='<button class="mobile-primary-action" type="button" onclick="mobileShow(\'add\')"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">Add more documents</span><span class="mobile-action-sub">Scan or attach files from this phone.</span></span></button>';
     h+='<div class="mobile-card"><div class="mobile-card-title">Vault</div><div class="mobile-card-sub">Stored locally on this phone. Export a ZIP backup to open this profile on desktop.</div><div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-accent mobile-grow" onclick="mobileExportVaultBackup(true)">Export / share backup</button><button class="btn btn-outline mobile-grow" onclick="mobileOpenExistingVault()">Switch vault</button><button class="btn btn-outline mobile-grow" onclick="openSettings()">Settings</button></div><div class="mobile-actions" style="margin-top:8px;"><button class="btn btn-outline btn-red mobile-grow" onclick="mobileDeleteCurrentVault()">Delete this vault</button></div></div>';
     mobileMainHtml(h);
-    invoke('get_account_sync_status').then(oneAccountSyncRender).catch(function(){});
+    invoke('get_account_sync_status').then(oneAccountSyncRender).catch(function(e){oneAccountSyncRender({state:'error',error:String(e),conflicts:[]});});
     mobileRefreshProfileSummary();
     mobileRefreshIdentityTrust();
 }
@@ -9866,6 +9882,7 @@ async function doAppLogin(){
         var next=_loginGateNext;_loginGateNext=null;
         if(resume){ await loadVault(resume); }
         else if(next){ await next(); }
+        else { showWelcome(); }
     }catch(e){
         _lgError(String(e||'Login failed'));
     }finally{
@@ -9900,6 +9917,8 @@ async function openRegisterPage(){
     return openExternalUrlSafe('https://assistant.skipi.app/register');
 }
 async function appLogoutToGate(){
+    closeSettings();
+    var settingsOverlay=document.getElementById('skipi-settings-overlay');if(settingsOverlay)settingsOverlay.classList.remove('open');
     try{ await invoke('app_logout'); }catch(e){}
     // Token is cleared. Logout MUST always end at the login gate, even if the
     // re-open below fails: hide the shell and raise the gate unconditionally
@@ -16772,7 +16791,7 @@ function openSettings(tab){
 }
 
 function closeSettings(){
-    document.getElementById('settings-overlay').classList.remove('open');
+    var overlay=document.getElementById('settings-overlay');if(overlay)overlay.classList.remove('open');
 }
 
 function renderSettingsNav(){
@@ -16860,8 +16879,19 @@ async function mobileSettingsDeleteVaultPath(path){
 // (onclick/onchange/oninput), so the same string works wherever it is inserted
 // via innerHTML; population and save go through the existing global
 // spLoad()/spSave() by sp-* element ids.
+function appAccountControlsHtml(){
+    var ru=getUiLang()==='ru';
+    return '<div class="setting-row" data-account-controls><div class="setting-info"><div class="setting-label">'+(ru?'Аккаунт Skipi':'Skipi Account')+'</div><div class="setting-desc" data-account-email>…</div></div><div class="setting-control"><button class="btn btn-outline btn-sm" type="button" data-account-logout onclick="appLogoutToGate()">'+(ru?'Выйти':'Sign out')+'</button></div></div>';
+}
+async function refreshAppAccountControls(){
+    try{
+        var status=await invoke('app_login_status');
+        document.querySelectorAll('[data-account-email]').forEach(function(el){el.textContent=status.email||(getUiLang()==='ru'?'Вход не выполнен':'Not signed in');});
+        document.querySelectorAll('[data-account-logout]').forEach(function(el){el.style.display=status.logged_in?'':'none';});
+    }catch(e){logError('account_status',e);}
+}
 function seafarerProfileFormHtml(){
-    var h = '';
+    var h = appAccountControlsHtml();
     h += '<div style="display:flex;gap:20px;align-items:flex-start;">';
     // Photo panel
     h += '<div style="flex:0 0 120px;">';
@@ -17147,9 +17177,6 @@ function renderSettingsBody(){
         h += '<div class="setting-control" style="font-size:13px;color:var(--text2);">Personal</div></div>';
         h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Updates</div><div class="setting-desc">Check for a newer version of '+tr('app.name')+'.</div></div>';
         h += '<div class="setting-control"><button class="btn btn-outline btn-sm" id="btn-check-update" onclick="checkForUpdate(false);this.textContent=\'Checking…\';this.disabled=true;">Check for updates</button></div></div>';
-        // Skipi account (hard login gate, №117): show logged-in email + Sign out.
-        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Skipi account</div><div class="setting-desc" id="about-account-email">…</div></div>';
-        h += '<div class="setting-control"><button class="btn btn-outline btn-sm" id="btn-app-logout" onclick="appLogoutToGate()">'+(getUiLang()==='ru'?'Выйти':'Sign out')+'</button></div></div>';
         h += '<div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-accent btn-sm" onclick="openFeedbackDialog(\'about\')">'+tr('feedback.manual_button')+'</button><button class="btn btn-outline btn-sm" onclick="reportIssue()">Сообщить о проблеме</button></div>';
         h += '</div>';
         // «Skipi account» — the in-app account deletion required by App Store
@@ -17159,7 +17186,7 @@ function renderSettingsBody(){
     }
 
     document.getElementById('settings-body').innerHTML = h;
-    if(settingsTab === 'seafarer'){ spLoad(); invoke('get_account_sync_status').then(oneAccountSyncRender).catch(function(){}); }
+    if(settingsTab === 'seafarer'){ spLoad(); invoke('get_account_sync_status').then(oneAccountSyncRender).catch(function(e){oneAccountSyncRender({state:'error',error:String(e),conflicts:[]});}); }
     if(settingsTab === 'email'){ smtpLoad(); populateMailClientsHint(); }
     if(settingsTab === 'ai'){
         invoke('get_api_key').then(function(k){var el=document.getElementById('set-key');if(el)el.value=k;}).catch(function(){});
@@ -17337,6 +17364,7 @@ async function spLoadPhoto(){
     }catch(e){box.innerHTML='No photo';logError('load profile photo',e);}
 }
 async function spLoad(){
+    refreshAppAccountControls();
     try{
         var data=await invoke('get_seafarer_personal');
         oneAccountCapture('profile',data,true);
@@ -18546,7 +18574,7 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
             order: 900,
             label: (getUiLang()==='ru' ? 'Аккаунт Skipi' : 'Skipi account'),
             icon: '⛓', // chains — the account link this screen can break
-            renderHtml: function(){ return accountDeleteSectionHtml(); }
+            renderHtml: function(){ setTimeout(refreshAppAccountControls,0);return appAccountControlsHtml()+accountDeleteSectionHtml(); }
         };
     }
 

@@ -6323,6 +6323,86 @@ for(const lang of ['en','ru']){
   }
 }
 
+// №335 clean-install regression: exercise the real successful login continuation,
+// prerequisite action and account surface; no device/network effects in this VM.
+{
+  section('193 account journey — clean sign-in always has a next step (RU/EN)');
+  for (const lang of ['en','ru']) {
+    try {
+      let signedIn=false;
+      const app=await efBoot({app_login:()=>{signedIn=true;return {};}, app_login_status:()=>({logged_in:signedIn,pending:signedIn,email:signedIn?'synthetic@example.invalid':''})},{seed:{'skipi-ui-lang':lang}});
+      const {sandbox:s,doc}=app;
+      s.getUiLang=()=>lang;
+      s.entryForkSignIn();
+      doc.getElementById('lg-email').value='synthetic@example.invalid';
+      doc.getElementById('lg-password').value='synthetic-only';
+      await s.doAppLogin(); await efSettle();
+      ok(!efGateShown(doc),'193 '+lang+': successful sign-in closes the gate');
+      ok(app.spies.showWelcome.length>0,'193 '+lang+': sign-in from fork opens create/open profile landing');
+      const h=mobileHtml(doc);
+      ok(h.includes('mobileCreateProfile()')&&h.includes('mobileOpenExistingVault()'),'193 '+lang+': both create and open profile actions are visible');
+      ok(h.includes('appLogoutToGate()'),'193 '+lang+': signed-in account has sign-out before a profile exists');
+      ok(!app.calls.some(([c])=>c==='enable_account_sync'||c==='sync_account_now'),'193 '+lang+': sign-in is not sync consent');
+    }catch(e){ok(false,'193 '+lang+' login journey: '+e.message);}
+  }
+}
+{
+  section('193 account journey — missing continuation and explicit local-profile choice');
+  const app=await efBoot({app_login:()=>({}),app_login_status:()=>({logged_in:true,pending:true,email:'synthetic@example.invalid'})});
+  const {sandbox:s,doc}=app;let welcome=0,create=0;
+  s.showWelcome=()=>{welcome++;};s.mobileCreateProfile=()=>{create++;};
+  s._loginGatePending=null;s._loginGateNext=null;
+  doc.getElementById('lg-email').value='synthetic@example.invalid';doc.getElementById('lg-password').value='synthetic-only';
+  await s.doAppLogin();ok(welcome===1,'193: successful sign-in without a saved continuation has reachable profile actions');
+  s.setTimeout=(f)=>{f();return 1;};welcome=0;
+  s.initNoVaultLanding(false);
+  ok(welcome===1&&create===0,'193: fresh login keeps create/open choice visible until the user chooses');
+}
+{
+  section('193 account journey — sign-out closes either settings shell and preserves profile data');
+  for(const profileOpen of [false,true]){
+    const app=await efBoot({});const {sandbox:s,doc}=app;const calls=[];
+    const unified=doc.createElement('div');unified.setAttribute('id','skipi-settings-overlay');doc.body.appendChild(unified);unified.classList.add('open');
+    doc.getElementById('settings-overlay').classList.add('open');
+    s.invoke=async(c)=>{calls.push(c);if(c==='get_current_vault_path')return profileOpen?'/synthetic/profile':null;if(c==='open_vault')return EF_REAL;if(c==='get_profile_status')return {};return {};};
+    await s.appLogoutToGate();
+    ok(calls.filter(c=>c==='app_logout').length===1,'193: one local logout for '+(profileOpen?'existing':'missing')+' profile');
+    ok(!calls.some(c=>/delete|create_vault/.test(c)),'193: logout never deletes or replaces vault/document data');
+    ok(!unified.classList.contains('open')&&!doc.getElementById('settings-overlay').classList.contains('open'),'193: both settings shells close at sign-out');
+    ok(efForkShown(doc),'193: signed-out shell is covered by native entry fork');
+  }
+}
+{
+  section('193 account journey — exact missing prerequisite, no consent side effects');
+  for (const lang of ['en','ru']) {
+    for (const profileOpen of [false,true]) {
+      try {
+        const app=await efBoot({}); const {sandbox:s,doc}=app; s.getUiLang=()=>lang;
+        let confirms=0, setup=0, gates=0; const calls=[];
+        s.uiConfirm=async()=>{confirms++;return true;};
+        s.showWelcome=()=>{setup++;}; s.showLoginGate=()=>{gates++;};
+        s.invoke=async(c)=>{calls.push(c);if(c==='get_account_sync_status')return {enabled:false,state:'disabled',profile_open:profileOpen,logged_in:!profileOpen,conflicts:[]};return {};};
+        const panel=doc.createElement('div');panel.setAttribute('id','one-account-sync');doc.body.appendChild(panel);
+        s.oneAccountSyncRender({enabled:false,state:'disabled',profile_open:profileOpen,logged_in:!profileOpen,conflicts:[]},panel);
+        const h=panel.innerHTML;
+        ok(h.includes(profileOpen?(lang==='ru'?'Войти':'Sign in'):(lang==='ru'?'Создать или открыть профиль':'Create or open profile')),'193 '+lang+': sync control names only missing '+(profileOpen?'login':'profile'));
+        await s.oneAccountSyncEnable();
+        ok(profileOpen?gates===1:setup===1,'193 '+lang+': sync prerequisite leads to '+(profileOpen?'login':'profile setup'));
+        ok(confirms===0&&!calls.includes('enable_account_sync')&&!calls.includes('sync_account_now'),'193 '+lang+': no consent dialog or sync before prerequisite');
+      }catch(e){ok(false,'193 '+lang+' prerequisite: '+e.message);}
+    }
+  }
+}
+{
+  section('193 account journey — account controls live beside the profile in both settings shells');
+  for(const lang of ['en','ru']){
+    const app=await efBoot({});app.sandbox.getUiLang=()=>lang;
+    const form=app.sandbox.seafarerProfileFormHtml();
+    ok(form.includes('appLogoutToGate()'),'193 '+lang+': shared profile form offers sign-out');
+    ok(form.includes(lang==='ru'?'Аккаунт':'Account'),'193 '+lang+': account label is localized');
+  }
+}
+
 {
   section('remote install + offline persistence harness');
   await runRemoteInstallOfflineHarness();
