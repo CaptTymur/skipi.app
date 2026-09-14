@@ -6421,6 +6421,19 @@ for(const lang of ['en','ru']){
 }
 
 {
+  section('193 account navigation — leaving unified settings consumes its owned history and unmounts');
+  for(const action of ['logout','profile','login']){
+    const app=bootApp({platform:'android',withSettings:true});await efSettle();const {sandbox:s,doc}=app;
+    s.openUnifiedSettings('account-sync');await efSettle();s.history.calls.length=0;
+    s.invoke=async(c)=>c==='get_account_sync_status'?{enabled:false,profile_open:action==='login',logged_in:action!=='login',conflicts:[]}:null;
+    if(action==='logout')await s.appLogoutToGate();else await s.oneAccountSyncEnable();
+    ok(doc.getElementById('settings-root').innerHTML==='','193 '+action+': canonical close unmounts old settings content');
+    ok(s.history.calls.filter(c=>c[0]==='back').length===1,'193 '+action+': exactly one owned settings history entry is consumed');
+    s.openUnifiedSettings('account-sync');await efSettle();
+    ok(s.history.calls.filter(c=>c[0]==='pushState').length===1,'193 '+action+': reopening creates a fresh history entry');
+  }
+}
+{
   section('remote install + offline persistence harness');
   await runRemoteInstallOfflineHarness();
 }
