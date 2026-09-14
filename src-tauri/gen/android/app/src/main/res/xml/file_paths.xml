@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider grants are scoped to the two staging folders Skipi actually hands
+  out, and to nothing else. `cache-path path="."` used to expose the whole app
+  cache tree, so any future "share the vault file directly, without a copy"
+  shortcut would have been grantable by accident. The only two callers of
+  `app_cache_dir()` in the tree are the Share staging copy (skipi-share,
+  commands/mail_intent.rs) and the document preview copy (skipi-preview,
+  commands/documents.rs); both keep working, nothing else is reachable.
+-->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
   <external-path name="my_images" path="." />
-  <cache-path name="my_cache_images" path="." />
+  <cache-path name="skipi_share" path="skipi-share/" />
+  <cache-path name="skipi_preview" path="skipi-preview/" />
 </paths>

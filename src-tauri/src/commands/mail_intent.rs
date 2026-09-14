@@ -256,6 +256,65 @@ fn safe_share_file_name(path: &Path, idx: usize) -> String {
     }
 }
 
+/// How long a staged Share copy may stay in `app_cache/skipi-share` before the
+/// NEXT share removes it.
+///
+/// LIMIT, stated rather than dressed up: Android gives no "the recipient has
+/// read it" signal back. `shareSkipiDispatch` grants read access with
+/// `FLAG_GRANT_READ_URI_PERMISSION` and no `FLAG_GRANT_PERSISTABLE_URI_PERMISSION`,
+/// so nothing ever tells us the file was opened. Any retention window is
+/// therefore a guess; this one is deliberately far longer than a hand-off takes,
+/// and it is checked BEFORE the new copies are staged, so the files of the
+/// CURRENT share can never fall inside it.
+const SHARE_CACHE_RETENTION_MS: u128 = 24 * 60 * 60 * 1000;
+
+/// The millisecond stamp a staged copy carries in its name
+/// (`<stamp>-<index>-<safe name>`). Anything else is not ours to delete.
+#[allow(dead_code)]
+fn share_cache_stamp(name: &str) -> Option<u128> {
+    let head = name.split('-').next()?;
+    if head.is_empty() || !head.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    head.parse::<u128>().ok()
+}
+
+/// A staged copy is removable only when its own stamp is at least a whole
+/// retention window older than the stamp of the share being prepared right now.
+/// Files written by the current call carry `now_ms` itself, so they can never
+/// satisfy this — the cleanup physically cannot touch the session it precedes.
+#[allow(dead_code)]
+fn share_cache_entry_is_stale(name: &str, now_ms: u128, retention_ms: u128) -> bool {
+    match share_cache_stamp(name) {
+        Some(stamp) => stamp.saturating_add(retention_ms) <= now_ms,
+        None => false,
+    }
+}
+
+/// Bounded cleanup of the Share staging folder. Runs before new copies are
+/// staged; leaves anything it does not recognise alone.
+#[cfg(target_os = "android")]
+fn purge_stale_share_cache(cache_dir: &Path, now_ms: u128) {
+    let entries = match fs::read_dir(cache_dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = match name.to_str() {
+            Some(n) => n,
+            None => continue,
+        };
+        if !share_cache_entry_is_stale(name, now_ms, SHARE_CACHE_RETENTION_MS) {
+            continue;
+        }
+        if entry.file_type().map(|t| t.is_dir()).unwrap_or(true) {
+            continue;
+        }
+        let _ = fs::remove_file(entry.path());
+    }
+}
+
 #[cfg(target_os = "android")]
 fn copy_attachments_to_share_cache(
     app: &tauri::AppHandle,
@@ -274,6 +333,10 @@ fn copy_attachments_to_share_cache(
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
+    // Until this slice the folder was only ever written to: every Share (both
+    // the `share` and the `email` mode of the mailing wizard go through this one
+    // function) left a full readable copy of every attachment behind forever.
+    purge_stale_share_cache(&cache_dir, stamp);
     let mut out = Vec::new();
     for (idx, path_str) in attachments.iter().enumerate() {
         let source = Path::new(path_str);
@@ -393,6 +456,54 @@ pub fn mobile_share_dispatch(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn share_cache_cleanup_can_never_touch_the_share_it_precedes() {
+        // The files of the current call carry `now` itself as their stamp, and
+        // the cleanup runs BEFORE they are written. Both facts together are why
+        // the window cannot reach the session being prepared.
+        let now: u128 = 1_760_000_000_000;
+        for idx in 0..3u128 {
+            let name = format!("{}-{}-passport.pdf", now, idx + 1);
+            assert!(
+                !share_cache_entry_is_stale(&name, now, SHARE_CACHE_RETENTION_MS),
+                "{} must survive",
+                name
+            );
+        }
+        // …and so does anything staged inside the window.
+        let recent = format!("{}-1-cv.pdf", now - SHARE_CACHE_RETENTION_MS + 1);
+        assert!(!share_cache_entry_is_stale(&recent, now, SHARE_CACHE_RETENTION_MS));
+    }
+
+    #[test]
+    fn share_cache_cleanup_removes_only_entries_past_the_window() {
+        let now: u128 = 1_760_000_000_000;
+        let old = format!("{}-1-passport.pdf", now - SHARE_CACHE_RETENTION_MS);
+        let older = format!("{}-2-sb.pdf", now - 10 * SHARE_CACHE_RETENTION_MS);
+        assert!(share_cache_entry_is_stale(&old, now, SHARE_CACHE_RETENTION_MS));
+        assert!(share_cache_entry_is_stale(&older, now, SHARE_CACHE_RETENTION_MS));
+    }
+
+    #[test]
+    fn share_cache_cleanup_leaves_anything_it_does_not_recognise_alone() {
+        let now: u128 = 1_760_000_000_000;
+        for name in [
+            "passport.pdf",
+            "-1-passport.pdf",
+            "notastamp-1-cv.pdf",
+            ".nomedia",
+            "",
+        ] {
+            assert_eq!(share_cache_stamp(name), None, "{}", name);
+            assert!(
+                !share_cache_entry_is_stale(name, now, SHARE_CACHE_RETENTION_MS),
+                "{} is not ours to delete",
+                name
+            );
+        }
+        assert_eq!(share_cache_stamp("1760000000000-1-cv.pdf"), Some(1_760_000_000_000));
+    }
 
     #[test]
     fn word_attachment_mime_is_case_insensitive() {

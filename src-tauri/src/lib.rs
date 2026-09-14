@@ -192,6 +192,7 @@ pub fn run() {
             ai::update_field_statuses,
             // Packages & dispatch
             packages::create_package,
+            packages::ensure_all_documents_package,
             packages::get_packages,
             packages::export_package,
             packages::dispatch_package,

@@ -7256,7 +7256,15 @@ function mobilePackagesL10n(){
         openDocs:ru?'Открыть документы':'Open documents',
         create:ru?'Создать пакет':'Create package',
         created:ru?'Создан':'Created',
+        updated:ru?'Обновлён':'Updated',
         del:ru?'Удалить':'Delete',
+        share:ru?'Поделиться пакетом':'Share package',
+        shareOpened:ru?'Меню отправки открыто':'Share sheet opened',
+        shareEmpty:ru?'В этом пакете пока нет файлов':'This package has no files yet',
+        shareSubject:ru?'Документы из Skipi':'Documents from Skipi',
+        shareBody:ru?'Во вложении пакет документов.':'A document package is attached.',
+        allDocsTitle:ru?'Все документы':'All documents',
+        allDocsSub:ru?'Все загруженные документы':'All uploaded documents',
         confirmDel:ru?'Удалить этот пакет? Сами документы останутся в хранилище.':'Delete this package? The documents themselves stay in the vault.',
         titleLabel:ru?'Название':'Title',
         defaultTitle:ru?'Пакет документов':'Document package',
@@ -7268,9 +7276,35 @@ function mobilePackagesL10n(){
         noneSelected:ru?'Отметьте хотя бы один документ':'Tick at least one document'
     };
 }
-function mobilePackageDate(v){
+// `created_on` is stored as naive UTC with no zone at all (db.rs), and the old
+// slice(0,10) printed those UTC characters as if they were local — which is a
+// whole day out for a seafarer in the wrong half of the world at the wrong hour.
+// Parse explicitly as UTC when no zone is given (the build stamp carries one),
+// then render the LOCAL date AND time the owner asked for.
+function mobilePackageDateTime(v){
     var s=String(v||'').trim();
-    return s?s.slice(0,10):'—';
+    if(!s)return '';
+    var iso=s.replace(' ','T');
+    if(!/(Z|[+-]\d\d:?\d\d)$/.test(iso))iso+='Z';
+    var d=new Date(iso);
+    if(isNaN(d.getTime()))return s.slice(0,10);
+    function pad(n){return (n<10?'0':'')+n;}
+    return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes());
+}
+function mobilePackageDate(v){
+    var s=mobilePackageDateTime(v);
+    return s?s:'—';
+}
+// The automatic package carries a RESERVED id (packages.rs). The caption is
+// drawn here, from that id, and the row in SQLite keeps a neutral title — so
+// switching RU/EN renames nothing in the database and the frozen desktop list
+// never disagrees with the phone.
+var MOBILE_ALL_DOCS_PACKAGE_ID='skipi-all-documents';
+function mobileIsSystemPackage(p){
+    return !!(p&&(String(p.id||'')===MOBILE_ALL_DOCS_PACKAGE_ID||p.is_system===true));
+}
+function mobilePackageTitle(p,L){
+    return mobileIsSystemPackage(p)?L.allDocsTitle:String((p&&p.title)||'');
 }
 function mobilePackageFilesLabel(n,ru){
     n=Number(n||0);
@@ -7286,14 +7320,61 @@ function mobilePackageCardHtml(p,L){
     // check or a counter bump, and the 365 days are hard-wired with no field
     // in the UI. Printing a validity date would promise a guarantee the
     // product does not have (Supervisor audit 06.09, finding Т1).
-    var h='<div class="mobile-card" data-qa="mobile-pkg-card">';
+    var system=mobileIsSystemPackage(p);
+    var files=Number((p&&p.file_count)||0);
+    // «Обновлён» is the time of the last SUCCESSFUL build and exists only once a
+    // build has written its stamp beside the archive. A package carried over
+    // from an older vault has no stamp: it keeps saying «Создан» with the real
+    // recorded time instead of passing an unknown time off as today. The mtime
+    // of the ZIP is deliberately NOT used — vault export/import rewrites it to
+    // the moment of unpacking, which is exactly that forbidden substitution.
+    var updated=String((p&&p.updated_on)||'').trim();
+    var stamp=updated?(L.updated+': '+mobilePackageDate(updated)):(L.created+': '+mobilePackageDate(p.created_on));
+    var h='<div class="mobile-card" data-qa="mobile-pkg-card"'+(system?' data-qa-system="1"':'')+'>';
     h+='<div class="mobile-row"><div style="min-width:0;">';
-    h+='<div class="mobile-card-title">'+mobileEsc(p.title)+'</div>';
-    h+='<div class="mobile-card-sub">'+mobileEsc(L.created+': '+mobilePackageDate(p.created_on))+'</div>';
-    h+='</div><span class="mobile-pill ok">'+mobileEsc(mobilePackageFilesLabel(p.file_count,L.ru))+'</span></div>';
-    h+='<div class="mobile-wizard-actions"><button class="btn btn-outline btn-red" type="button" data-qa="mobile-pkg-delete-'+escAttr(id)+'" onclick="mobileDeletePackage(\''+jsString(id)+'\')">'+mobileEsc(L.del)+'</button></div>';
+    h+='<div class="mobile-card-title">'+mobileEsc(mobilePackageTitle(p,L))+'</div>';
+    if(system)h+='<div class="mobile-card-sub" data-qa="mobile-pkg-scope">'+mobileEsc(L.allDocsSub)+'</div>';
+    h+='<div class="mobile-card-sub">'+mobileEsc(stamp)+'</div>';
+    h+='</div><span class="mobile-pill ok">'+mobileEsc(mobilePackageFilesLabel(files,L.ru))+'</span></div>';
+    h+='<div class="mobile-wizard-actions">';
+    // The automatic package is kept by Skipi, so it carries no ordinary delete
+    // control. The refusal itself lives in Rust (delete_package), because the
+    // desktop list has a delete button this slice does not touch.
+    if(!system)h+='<button class="btn btn-outline btn-red" type="button" data-qa="mobile-pkg-delete-'+escAttr(id)+'" onclick="mobileDeletePackage(\''+jsString(id)+'\')">'+mobileEsc(L.del)+'</button>';
+    if(files>0)h+='<button class="btn btn-accent" type="button" data-qa="mobile-pkg-share-'+escAttr(id)+'" onclick="mobileSharePackage(\''+jsString(id)+'\')">'+mobileEsc(L.share)+'</button>';
+    h+='</div>';
     h+='</div>';
     return h;
+}
+// Share straight from the card: the existing native lower layer of «Рассылки»
+// (prepare_dispatch_attachments → mobile_share_dispatch mode:'share'), with NO
+// wizard, NO CV, NO profile and NO recipient. include_cv is false on purpose —
+// with a package id and include_cv false the Rust command returns exactly
+// [_packages/<id>.zip], so nothing is attached that the user did not ask for.
+async function mobileSharePackage(id){
+    var L=mobilePackagesL10n();
+    id=String(id||'');
+    if(!id)return;
+    if(mobilePackagesBusy)return;
+    mobilePackagesBusy=true;
+    try{
+        // The automatic package is brought up to date BEFORE anything is
+        // attached, and a failure is shown instead of quietly handing over the
+        // previous archive.
+        if(id===MOBILE_ALL_DOCS_PACKAGE_ID)await invoke('ensure_all_documents_package');
+        var attachments=await invoke('prepare_dispatch_attachments',{packageId:id,includeCv:false,redactedCv:false});
+        if(!attachments||!attachments.length){showToast(L.shareEmpty,'warn');return;}
+        await invoke('mobile_share_dispatch',{recipients:[],subject:L.shareSubject,body:L.shareBody,attachments:attachments,mode:'share'});
+        // Handing control to the system is not proof of delivery: the user can
+        // still close the sheet. So the toast says the menu opened — nothing is
+        // marked as sent, and nothing is deleted either way.
+        showToast(L.shareOpened,'success');
+    }catch(e){
+        showToast(''+e,'error');
+        logError('mobile_share_package',e);
+    }finally{
+        mobilePackagesBusy=false;
+    }
 }
 async function renderMobilePackages(){
     if(mobilePackagesStep==='create')return mobileRenderPackagesPicker();
@@ -15775,7 +15856,11 @@ function isDispatchPackageExpired(p){
     return isFinite(t)&&t<new Date().getTime();
 }
 function validDispatchPackages(pkgs){
-    return (pkgs||[]).filter(function(p){return !isDispatchPackageExpired(p);});
+    // The automatic package is reached through the «all uploaded documents»
+    // mode, not through the manual package chooser. Leaving it in the chooser
+    // would quietly make it the wizard's DEFAULT selection (after every rebuild
+    // it is the newest row) and change what actually goes to a recipient.
+    return (pkgs||[]).filter(function(p){return !isDispatchPackageExpired(p)&&String((p&&p.id)||'')!==MOBILE_ALL_DOCS_PACKAGE_ID;});
 }
 function ensureDispatchPackageChoice(pkgs){
     var valid=validDispatchPackages(pkgs);
@@ -15796,12 +15881,11 @@ async function ensureAllDocumentsDispatchPackage(gate){
     gate=gate||await dispatchSendableGate();
     var docs=(gate.docs||uploadedDocsForSharing()||[]).filter(function(d){return d&&d.file_name&&d.id;});
     if(!docs.length)throw new Error(getUiLang()==='ru'?'Нет загруженных документов для пакета':'No uploaded documents to package');
-    var ids=docs.map(function(d){return d.id;});
-    var existing=validDispatchPackages(gate.packages||[]).find(function(p){
-        return String(p.title||'').toLowerCase()==='all documents'&&Number(p.file_count||0)===ids.length;
-    });
-    if(existing)return existing.id;
-    return await invoke('create_package',{title:'All Documents',docIds:ids,expiryDays:365,downloadLimit:999});
+    // One source of truth, in Rust: a reserved id, a content fingerprint and an
+    // atomic rebuild. The lookup this replaces matched on the localised title
+    // AND file_count, so replacing a file without changing the count handed the
+    // recipient the PREVIOUS ZIP — and when it missed, it created a duplicate.
+    return await invoke('ensure_all_documents_package');
 }
 async function resolveDispatchPackageId(gate){
     captureDispatchContent();
