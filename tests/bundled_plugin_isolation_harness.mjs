@@ -6486,6 +6486,42 @@ for(const lang of ['en','ru']){
   s.accountRestoreBusy=false;
 }
 {
+  section('193 diagnostics — visible errors survive reload, redact credentials and travel in prepared drafts');
+  const app=bootApp();await efSettle();const s=app.sandbox;
+  const secrets=['Bearer SECRET_BEARER','password=SECRET_PASSWORD','"password":"SECRET_MULTI WORD VALUE"','Authorization: SECRET_AUTH','ska_SECRET_PARENT','skv_SECRET_DEVICE','https://user:SECRET_URL@host.test/path?token=SECRET_QUERY'];
+  for(const secret of secrets)s.logError('synthetic',secret);
+  const saved=JSON.stringify(Array.from(app.lstore));const log=s.getErrorLog();
+  ok(!/SECRET_|WORD VALUE/.test(log)&&!/SECRET_|WORD VALUE/.test(saved),'193: credentials redacted before persistence and export');
+  const marker='visible193-'+Date.now();s.err(marker+'-strip');s.showToast(marker+'-toast','error');s.uiToast(marker+'-alert','error');s._lgError(marker+'-login');
+  const panel=app.doc.createElement('section');panel.setAttribute('id','one-account-sync');app.doc.body.appendChild(panel);s.oneAccountSyncRender({state:'error',error:marker+'-sync',conflicts:[]},panel);
+  for(const kind of ['strip','toast','alert','login','sync'])ok(s.getErrorLog().includes(marker+'-'+kind),'193: visible '+kind+' error captured');
+  const reload=bootApp({seed:Object.fromEntries(app.lstore)});await efSettle();ok(reload.sandbox.getErrorLog().includes(marker+'-sync'),'193: sanitized journal survives a fresh app VM');
+  for(let i=0;i<100;i++)s.logError('bounded','entry'+i+'Ж'.repeat(2000));
+  ok(Buffer.byteLength(s.getErrorLog(),'utf8')<=65536,'193: exported journal fits a bounded mobile payload');
+  ok(s.getErrorLog().includes('entry99'),'193: bounded export keeps most recent errors');
+  const calls=[];s.invoke=async(c,a)=>{calls.push([c,a]);return c==='get_app_version'?'0.4.193':c==='get_platform'?'linux':{};};
+  for(const mobile of [false,true]){calls.length=0;s.isMobileMode=()=>mobile;await s.reportIssue({askKind:false});const call=calls.find(([c])=>c===(mobile?'mobile_share_dispatch':'create_email_file'));const body=call&&(mobile?call[1].body:call[1].intent.body);ok(body&&body.includes('entry99')&&body.includes('diagnostic'),'193: '+(mobile?'mobile':'desktop')+' prepared draft payload carries diagnostic text in body');}
+  ok(!calls.some(([c])=>c==='record_app_diagnostic'),'193: explicit local journal export adds no diagnostic network call');
+  calls.length=0;await s.reportIssue({askKind:false,context:'Ж'.repeat(100000)+' password=SECRET_META',kind:'Ж'.repeat(100000)});const bounded=calls.find(([c])=>c==='mobile_share_dispatch')[1];ok(Buffer.byteLength(bounded.body,'utf8')<=65536&&!bounded.body.includes('SECRET_META'),'193: complete final report body incl huge metadata remains bounded and sanitized');
+  const count=s._errorLog.length;s.showToast('successful operation','success');s.uiToast('information only','info');ok(s._errorLog.length===count,'193: success and informational messages are not errors');
+  s.logError('first','repeated diagnostic');s.logError('toast','repeated diagnostic');ok(s._errorLog[s._errorLog.length-1].count===2,'193: duplicate same display error retains repeat count');s._errorLog[s._errorLog.length-1].last='2000-01-01T00:00:00Z';s.logError('later','repeated diagnostic');ok(s._errorLog[s._errorLog.length-1].count===1,'193: later repeat is a fresh diagnostic event');
+  const consoleLines=[];s.console={error:(...v)=>consoleLines.push(v.join(' '))};s.logError('password=SECRET_CONTEXT','Bearer SECRET_CONSOLE');ok(!consoleLines.join('').includes('SECRET_'),'193: console receives only sanitized diagnostics');
+  const seeded=bootApp({seed:{'skipi-error-journal-v1':JSON.stringify([{ts:'2026-09-14',ctx:'legacy',msg:'password=SECRET_LEGACY'}])}});await efSettle();ok(!seeded.sandbox.getErrorLog().includes('SECRET_')&&!seeded.lstore.get('skipi-error-journal-v1').includes('SECRET_'),'193: re-read legacy data is sanitized before reuse and persistence');
+
+  s.localStorage.setItem=()=>{throw Error('quota');};let safe=true;try{s.logError('quota','still visible');}catch(e){safe=false;}ok(safe&&s.getErrorLog().includes('still visible'),'193: quota failure does not suppress visible error or recurse');
+  const malformed=bootApp({seed:{'skipi-error-journal-v1':'{broken'}});await efSettle();ok(typeof malformed.sandbox.getErrorLog()==='string','193: malformed saved journal fails softly');
+}
+{
+  section('193 account copy and reset retain honest account state');
+  const app=bootApp();await efSettle();const s=app.sandbox;s.resetToWelcome();await efSettle();ok(!!app.doc.getElementById('welcome-account-controls'),'193: actual reset-to-welcome restores account controls');
+  s.invoke=async()=>({logged_in:true,email:null});await s.refreshAppAccountControls();ok(!Array.from(app.doc.querySelectorAll('[data-account-email]')).some(x=>x.textContent==='Not signed in'),'193: authenticated web session without email is still signed in');
+  await s.openForcedProfile(false);const note=app.doc.getElementById('forced-profile-overlay').querySelector('p');ok(note&&!note.textContent.includes('only inside')&&note.textContent.includes('synchronized'),'193: actual completion rendering never falsely excludes enabled cloud sync');s.getUiLang=()=> 'ru';await s.openForcedProfile(false);ok(note.textContent.includes('синхронизируются'),'193: actual RU completion rendering explains enabled sync');
+  ok(!s.accountSyncSectionHtml().includes('<h3>'),'193: dedicated Sync section does not repeat its shell heading');
+  const syncCss=HTML.match(/#one-account-sync \.btn \{([^}]+)\}/);ok(syncCss&&/min-height:44px/.test(syncCss[1])&&/white-space:normal/.test(syncCss[1]),'193: Sync buttons retain a44px touch target and wrap narrow labels');
+  ok(/#one-account-sync \{[^}]*overflow-wrap:anywhere/.test(HTML),'193: long account identifiers wrap in narrow Sync content');
+
+}
+{
   section('remote install + offline persistence harness');
   await runRemoteInstallOfflineHarness();
 }

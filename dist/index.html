@@ -96,7 +96,7 @@ var UI_STRINGS={
 	        'app.name':'Skipi Seafarer',
 	        'nav.files':'Documents','nav.experience':'Experience','nav.dashboard':'Dashboard','nav.cv':'CV','nav.packages':'Packages','nav.dispatch':'Mailings','nav.jobs':'Jobs','nav.information':'Information','nav.vessels':'Vessel DB','nav.myvessel':'My Vessel',
 	        'title.files':'Documents','title.experience':'Sea Service','title.dashboard':'Dashboard','title.cv':'CV','title.packages':'Packages','title.dispatch':'Mailings','title.jobs':'Jobs','title.information':'Information','title.vessels':'Vessel DB','title.myvessel':'My Vessel','title.settings':'Settings',
-	        'welcome.subtitle':'Skipi - United Seafarers','welcome.create':'Create Seafarer Vault','welcome.open':'Open Existing Vault','welcome.hint':'New vault folders are named clearly, for example Skipi Seafarer - Tymur Rudov. When opening a vault, select that named folder.','welcome.demo_prefix':'Just exploring?','welcome.demo':'Load demo seafarer',
+	        'welcome.subtitle':'Skipi - United Seafarers','welcome.create':'Create profile','welcome.open':'Open existing profile','welcome.hint':'Create a new profile on this device, or open a profile you have saved locally.','welcome.demo_prefix':'Just exploring?','welcome.demo':'Load demo seafarer',
 	        'settings.general':'General','settings.general_desc':'Basic application settings.','settings.language':'Language','settings.language_desc':'Interface language.','settings.autovault':'Auto-open last vault','settings.autovault_desc':'Automatically open the last used vault on startup.',
 	        'settings.nav_title':'Settings','settings.vaults':'Vaults','settings.seafarer_profile':'Seafarer Profile','settings.email':'Email sending','settings.appearance':'Appearance','settings.about_group':'About','settings.about':'About Skipi Seafarer',
 	        'common.settings':'Settings','common.vault':'Vault','common.switch_vault':'Switch vault','jobs.languages':'Languages',
@@ -123,7 +123,7 @@ var UI_STRINGS={
 	        'app.name':'Скипи Моряк',
 	        'nav.files':'Документы','nav.experience':'Опыт работы','nav.dashboard':'Панель','nav.cv':'CV','nav.packages':'Пакеты','nav.dispatch':'Рассылки','nav.jobs':'Вакансии','nav.information':'Информация','nav.vessels':'База судов','nav.myvessel':'Моё судно',
 	        'title.files':'Документы','title.experience':'Морской опыт','title.dashboard':'Панель','title.cv':'CV','title.packages':'Пакеты','title.dispatch':'Рассылки','title.jobs':'Вакансии','title.information':'Информация','title.vessels':'База судов','title.myvessel':'Моё судно','title.settings':'Настройки',
-	        'welcome.subtitle':'Skipi - United Seafarers','welcome.create':'Создать профиль моряка','welcome.open':'Открыть существующий профиль','welcome.hint':'Новые папки профиля называются понятно, например Скипи Моряк - Tymur Rudov. При открытии выбирайте именно эту папку.','welcome.demo_prefix':'Просто посмотреть?','welcome.demo':'Открыть демо-профиль',
+	        'welcome.subtitle':'Skipi - United Seafarers','welcome.create':'Создать профиль моряка','welcome.open':'Открыть существующий профиль','welcome.hint':'Создайте новый профиль на устройстве или откройте сохранённый локальный профиль.','welcome.demo_prefix':'Просто посмотреть?','welcome.demo':'Открыть демо-профиль',
 	        'settings.general':'Общие','settings.general_desc':'Основные настройки приложения.','settings.language':'Язык','settings.language_desc':'Язык интерфейса.','settings.autovault':'Открывать последний профиль','settings.autovault_desc':'Автоматически открывать последний использованный профиль при запуске.',
 	        'settings.nav_title':'Настройки','settings.vaults':'Профили','settings.seafarer_profile':'Профиль моряка','settings.email':'Отправка email','settings.appearance':'Внешний вид','settings.about_group':'О приложении','settings.about':'О Скипи Моряк',
 	        'common.settings':'Настройки','common.vault':'Профиль','common.switch_vault':'Сменить профиль','jobs.languages':'Языки',
@@ -777,6 +777,11 @@ body.mobile-mode .desktop-stack-label { display:none; }
 .skipi-settings-panel > #settings-root { flex:1; min-width:0; height:100%; }
 body.mobile-mode .skipi-settings-overlay.open { align-items:stretch; justify-content:stretch; padding:0; overflow:hidden; }
 body.mobile-mode .skipi-settings-panel { width:100vw; height:100dvh; max-width:none; max-height:none; border-radius:0; border:0; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); }
+
+
+#one-account-sync { min-width:0; overflow-wrap:anywhere; line-height:1.5; }
+#one-account-sync .btn { min-height:44px; white-space:normal; max-width:100%; margin:8px 6px 0 0; }
+#one-account-sync pre { overflow-wrap:anywhere; word-break:break-word; max-width:100%; }
 
 /* @skipi/assistant overlay + mount panel — same overlay chrome as Settings.
    The module owns its internal layout/CSS (scoped to .skipi-assistant) and reads
@@ -1788,6 +1793,7 @@ function oneAccountSyncTexts(){
         :{webTitle:'Account data',webSaved:'Data is saved in this account. Enable sync in your apps.',webUnavailable:'Account data unavailable',title:'Account sync',profileNeeded:'Create or open a seafarer profile on this device. You can then connect account data with your consent.',profileAction:'Create or open profile',loginNeeded:'Sign in to sync this profile.',loginAction:'Sign in',contextMissing:'Could not check profile status. Open the profile again.',contextChanged:'The profile or sign-in changed. Confirm synchronization again.',cancel:'Cancel',enable:'Enable account sync',retry:'Sync now',disable:'Turn off',local:'Keep this device version',remote:'Use account version',device:'This device: ',account:'Account: ',consent:'Sync this signed-in account’s profile, photo, sea service and all attached documents/scans with this device? Existing differences will be shown before either version is replaced.',messages:{disabled:'Sync is off',pending:'Changes are waiting to sync',syncing:'Synchronizing…',current:'Profile, sea service and documents are synchronized',conflict:'Choose which changes to keep',error:'Sync needs attention'}};
 }
 function oneAccountSyncRender(status,target){
+    if(status&&status.error)logError('account_sync',status.error);
     oneAccountSyncLast=status;
     var root=document.getElementById('settings-root'),overlay=document.getElementById('skipi-settings-overlay');
     var el=target||(overlay&&overlay.classList.contains('open')&&root&&root.querySelector('#one-account-sync'))||document.getElementById('one-account-sync');if(!el)return;
@@ -1801,17 +1807,17 @@ function oneAccountSyncRender(status,target){
     }
     if(status.profile_open===false||status.logged_in===false){
         var needsProfile=status.profile_open===false;
-        el.innerHTML='<strong>'+esc(t.title)+'</strong><div>'+esc(account)+'</div><div>'+esc(needsProfile?t.profileNeeded:t.loginNeeded)+'</div><button type="button" data-sync-action="enable">'+esc(needsProfile?t.profileAction:t.loginAction)+'</button>';
+        el.innerHTML='<strong>'+esc(t.title)+'</strong><div>'+esc(account)+'</div><div>'+esc(needsProfile?t.profileNeeded:t.loginNeeded)+'</div><button class="btn btn-outline" type="button" data-sync-action="enable">'+esc(needsProfile?t.profileAction:t.loginAction)+'</button>';
         var action=el.querySelector('[data-sync-action]');if(action)action.onclick=oneAccountSyncEnable;
         return;
     }
     var displayState=status.enabled===false?'disabled':status.state;
-    el.innerHTML='<strong>'+esc(t.title)+'</strong><div>'+esc(account)+'</div><div>'+esc(t.messages[displayState]||displayState)+'</div>'+(status.error?'<div>'+esc(status.error)+'</div>':'')+(status.enabled?'<button type="button" data-sync-action="retry">'+esc(t.retry)+'</button> <button type="button" data-sync-action="disable">'+esc(t.disable)+'</button>':'<button type="button" data-sync-action="enable">'+esc(t.enable)+'</button>');
+    el.innerHTML='<strong>'+esc(t.title)+'</strong><div>'+esc(account)+'</div><div>'+esc(t.messages[displayState]||displayState)+'</div>'+(status.error?'<div>'+esc(status.error)+'</div>':'')+(status.enabled?'<button class="btn btn-outline" type="button" data-sync-action="retry">'+esc(t.retry)+'</button> <button class="btn btn-outline" type="button" data-sync-action="disable">'+esc(t.disable)+'</button>':'<button class="btn btn-outline" type="button" data-sync-action="enable">'+esc(t.enable)+'</button>');
     (status.enabled===true?status.conflicts||[]:[]).forEach(function(c){
         var row=document.createElement('div');row.style.marginTop='12px';
         var label=document.createElement('div');label.textContent=c.kind+' · '+c.id;row.appendChild(label);
         var preview=document.createElement('pre');preview.style.whiteSpace='pre-wrap';preview.textContent=t.device+JSON.stringify(c.local)+'\n'+t.account+JSON.stringify(c.remote);row.appendChild(preview);
-        ['local','remote'].forEach(function(choice){var button=document.createElement('button');button.type='button';button.textContent=choice==='local'?t.local:t.remote;button.onclick=function(){oneAccountSyncResolve(c.kind,c.id,choice,c.revision);};row.appendChild(button);});el.appendChild(row);
+        ['local','remote'].forEach(function(choice){var button=document.createElement('button');button.type='button';button.className='btn btn-outline';button.textContent=choice==='local'?t.local:t.remote;button.onclick=function(){oneAccountSyncResolve(c.kind,c.id,choice,c.revision);};row.appendChild(button);});el.appendChild(row);
     });
     el.querySelectorAll('[data-sync-action]').forEach(function(b){b.onclick=function(){var a=b.getAttribute('data-sync-action');if(a==='enable')oneAccountSyncEnable();else if(a==='retry')oneAccountSyncRun();else oneAccountSyncDisable();};});
 }
@@ -1956,11 +1962,12 @@ function canonicalRank(r) {
     if (!r) return r;
     return RANK_ALIASES[r] || r;
 }
-function err(m) { var e=document.getElementById('err'); e.textContent=m; e.style.display='block'; }
+function err(m) { if(m)logError('error_strip',m);var e=document.getElementById('err'); e.textContent=m; e.style.display='block'; }
 
 /* ── Toast notification system ── */
 var _toastContainer=null;
 function showToast(msg,type){
+    if(type!=='success'&&type!=='info'&&msg)logError('toast',msg);
     if(!_toastContainer){_toastContainer=document.createElement('div');_toastContainer.className='skipi-toast-container';document.body.appendChild(_toastContainer);}
     var t=document.createElement('div');
     var bg=type==='error'?'var(--red)':type==='success'?'var(--green)':'var(--yellow)';
@@ -2480,15 +2487,38 @@ function installContextMenuGuard(){
 }
 installContextMenuGuard();
 
-/* ── Local error log (kept in memory, exportable from Settings) ── */
-var _errorLog=[];
-function logError(context,err){
-    var entry={ts:new Date().toISOString(),ctx:context,msg:String(err)};
-    _errorLog.push(entry);
-    if(_errorLog.length>500)_errorLog.shift();
-    console.error('[Skipi]',context,err);
+/* ── Bounded local diagnostics: never sent until the user prepares a report. ── */
+function scrubLocalDiagnostic(value,limit){
+    return String(value==null?'':value)
+        .replace(/Bearer\s+[A-Za-z0-9._~+\/=-]+/ig,'Bearer [redacted]')
+        .replace(/\bsk[adv]_[A-Za-z0-9._~+\/=-]+/g,'[redacted]')
+        .replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/ig,function(_,scheme){return scheme+'[redacted]@';})
+        .replace(/((?:password|passwd|authorization|access_token|refresh_token|api[_-]?key|token)[\s"']*[:=]\s*)(["'])(.*?)\2/ig,function(_,label){return label+'[redacted]';})
+        .replace(/((?:password|passwd|authorization|access_token|refresh_token|api[_-]?key|token)["'\s:=]+)[^\s&"',;]+/ig,function(_,label){return label+'[redacted]';})
+        .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig,'[email]')
+        .slice(0,limit===undefined?2000:limit);
 }
-function getErrorLog(){return _errorLog.map(function(e){return e.ts+' ['+e.ctx+'] '+e.msg;}).join('\n');}
+function readErrorJournal(){
+    try{var rows=JSON.parse(localStorage.getItem('skipi-error-journal-v1')||'[]');if(!Array.isArray(rows))return [];
+        return rows.slice(-128).filter(function(e){return e&&typeof e.msg==='string';}).map(function(e){return {ts:scrubLocalDiagnostic(e.ts),last:scrubLocalDiagnostic(e.last||e.ts),ctx:scrubLocalDiagnostic(e.ctx),msg:scrubLocalDiagnostic(e.msg),count:Math.max(1,Math.min(9999,Number(e.count)||1))};});
+    }catch(e){return [];}
+}
+var _errorLog=readErrorJournal();
+function trimErrorJournal(){while(_errorLog.length>128||JSON.stringify(_errorLog).length>12000)_errorLog.shift();}
+trimErrorJournal();
+try{localStorage.setItem('skipi-error-journal-v1',JSON.stringify(_errorLog));}catch(e){}
+function logError(context,err){
+    var now=new Date().toISOString(),message=scrubLocalDiagnostic(err),previous=_errorLog[_errorLog.length-1];
+    if(previous&&previous.msg===message&&Date.parse(now)-Date.parse(previous.last)<2000){previous.last=now;previous.count=Math.min(9999,previous.count+1);}
+    else _errorLog.push({ts:now,last:now,ctx:scrubLocalDiagnostic(context),msg:message,count:1});
+    trimErrorJournal();
+    try{localStorage.setItem('skipi-error-journal-v1',JSON.stringify(_errorLog));}catch(e){}
+    try{console.error('[Skipi]',scrubLocalDiagnostic(context),message);}catch(e){}
+}
+function getErrorLog(){
+    var text=_errorLog.map(function(e){return e.ts+' ['+e.ctx+'] '+e.msg+(e.count>1?' (x'+e.count+', last '+e.last+')':'');}).join('\n');
+    return text?'[Recent diagnostics; older entries omitted when full]\n'+text.slice(-11900):'';
+}
 
 /* ── Safe invoke wrapper ── */
 async function safeInvoke(cmd,args,opts){
@@ -9460,6 +9490,7 @@ async function populateVesselTypeSelect(el,current,placeholder){
     el.innerHTML=html;
 }
 async function openForcedProfile(forceOpen){
+    var profileOverlay=document.getElementById('forced-profile-overlay'),note=profileOverlay&&profileOverlay.querySelector('p');if(note)note.textContent=getUiLang()==='ru'?'Эти данные используются в разделах «Работа» и «Рассылки», хранятся в вашем профиле и синхронизируются, когда включена синхронизация аккаунта. Фото необязательно; этот шаг можно пропустить.':'These details power Jobs and Mailings. They are stored in your profile and synchronized when account sync is enabled. Photo is optional; you can skip this step for now.';
     // If already complete, don't force (unless forceOpen=true).
     try{
         var data=await invoke('get_seafarer_personal');
@@ -9847,6 +9878,7 @@ function _lgApplyI18n(){
     set('lg-register',t.register);
 }
 function _lgError(msg){
+    if(msg)logError('login',msg);
     var e=document.getElementById('lg-err');
     if(e){e.textContent=msg||'';e.style.display=msg?'block':'none';}
 }
@@ -16880,7 +16912,7 @@ async function mobileSettingsDeleteVaultPath(path){
 // via innerHTML; population and save go through the existing global
 // spLoad()/spSave() by sp-* element ids.
 function accountSyncSectionHtml(){
-    return '<div class="settings-section"><h3>'+(getUiLang()==='ru'?'Синхронизация':'Sync')+'</h3><section id="one-account-sync" style="padding:12px 0;">'+(getUiLang()==='ru'?'Проверяю состояние…':'Checking status…')+'</section></div>';
+    return '<div class="settings-section"><section id="one-account-sync" style="padding:12px 0;">'+(getUiLang()==='ru'?'Проверяю состояние…':'Checking status…')+'</section></div>';
 }
 var accountRestoreBusy=false;
 async function restoreAccountProfile(){
@@ -16925,7 +16957,7 @@ function appAccountControlsHtml(){
 async function refreshAppAccountControls(){
     try{
         var status=await invoke('app_login_status');
-        document.querySelectorAll('[data-account-email]').forEach(function(el){el.textContent=status.email||(getUiLang()==='ru'?'Вход не выполнен':'Not signed in');});
+        document.querySelectorAll('[data-account-email]').forEach(function(el){el.textContent=status.email||(status.logged_in===true?(getUiLang()==='ru'?'Вход выполнен':'Signed in'):(getUiLang()==='ru'?'Вход не выполнен':'Not signed in'));});
         document.querySelectorAll('[data-account-logout]').forEach(function(el){el.style.display=status.logged_in?'':'none';});
     }catch(e){logError('account_status',e);}
 }
@@ -17865,6 +17897,7 @@ async function reportIssue(options){
             if(picked&&picked.trim())kind=picked.trim();
         }catch(e){}
     }
+    kind=scrubLocalDiagnostic(kind,160);
     var moduleName='(unknown)';
     try{
         moduleName=(typeof isMobileMode==='function'&&isMobileMode())?(mobileView||'(unknown)'):(currentView||'(unknown)');
@@ -17873,7 +17906,7 @@ async function reportIssue(options){
         'Hello,',
         '',
         'Feedback type: '+kind,
-        'Context: '+(options.context||'manual'),
+        'Context: '+scrubLocalDiagnostic(options.context||'manual',500),
         '',
         'What happened:',
         '(describe the issue)',
@@ -17887,12 +17920,18 @@ async function reportIssue(options){
         '',
         '',
         '--- auto ---',
-        'Skipi version: '+version,
-        'Platform: '+platform,
-        'Current module: '+moduleName,
-        'Timestamp: '+new Date().toISOString()
+        'Skipi version: '+scrubLocalDiagnostic(version,128),
+        'Platform: '+scrubLocalDiagnostic(platform,128),
+        'Current module: '+scrubLocalDiagnostic(moduleName,128),
+        'Timestamp: '+new Date().toISOString(),
+        '',
+        '--- Local diagnostics (sanitized) ---',
+        getErrorLog()||'(No errors recorded.)'
     ].join('\n');
-    var subject='[Skipi] '+kind;
+    body=scrubLocalDiagnostic(body,60000);
+    // At most12000 UTF-16 units (<=48KiB UTF-8), including metadata and marker.
+    if(body.length>12000)body=body.slice(0,500)+'\n[Earlier diagnostics truncated]\n'+body.slice(-11400);
+    var subject='[Skipi] '+scrubLocalDiagnostic(kind,160);
     if(typeof isMobileMode==='function'&&isMobileMode()){
         try{
             await invoke('mobile_share_dispatch',{
@@ -17914,7 +17953,7 @@ async function reportIssue(options){
             subject:subject,
             body:body,
             attachments:[],
-            purpose:'feedback_'+kind.replace(/[^A-Za-z0-9]+/g,'_')
+            purpose:'feedback_'+kind.slice(0,80).replace(/[^A-Za-z0-9]+/g,'_')
         }});
         showToast('Feedback draft saved: '+(res&&res.eml_path?res.eml_path:'~/Downloads/Skipi/Outbox'), 'success');
     }catch(e){
@@ -17927,6 +17966,7 @@ async function reportIssue(options){
 // Multiple toasts stack. Auto-dismisses after 5s (errors) or 3s (info).
 function uiToast(msg, kind){
     kind = kind || 'error';
+    if(kind==='error'&&msg)logError('alert',msg);
     var host = document.getElementById('skipi-toast-host');
     if(!host){
         host = document.createElement('div');
@@ -18016,6 +18056,7 @@ function resetToWelcome(){
     hide('scr-content');hide('ribbon');hide('left-panel');hide('tabs');hide('statusbar');hide('scr-setup');
     var mb=document.getElementById('modules-bar');if(mb)mb.style.display='none';
     show('scr-welcome');
+    renderWelcomeAccount();
     updateTitlebar();
 }
 
