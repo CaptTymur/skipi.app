@@ -2893,6 +2893,28 @@ const rustCode = (src) => String(src || '')
 }
 
 {
+  section('0.4.193 iOS Mailings carries prepared files and text without claiming delivery');
+  ok(HTML.includes("hostPlatform==='ios'?(ru?'Выбрать приложение':'Choose app')"), 'iOS review action names its chooser rather than promising an email draft');
+  const start=HTML.indexOf('async function mobileRunDispatchWizard(');
+  const end=HTML.indexOf('async function mobileOpenManualEmailDispatch(',start);
+  for(const rejected of [false,true]) {
+    const calls=[], notices=[];
+    const context=vm.createContext({hostPlatform:'ios',dispatchTab:'crewing_requests',mobileDispatchManualTrack:'email',dispatchDocMode:'none',dispatchCvMode:'full',mobileDispatchStep:'review',mobileDispatchDoneRecipients:0,lastDispatchMailingRequests:[{id:'request-193',reply_to:'synthetic@example.invalid'}],
+      getUiLang:()=> 'en',mobileCaptureDispatchWizardInputs(){},dispatchSendableGate:async()=>({ok:true}),mobileDispatchSelectedRecipients:()=>['synthetic@example.invalid'],buildDispatchDraft:async()=>({subject:'CV subject',body:'CV body'}),
+      showToast:(message,type)=>notices.push({message,type}),logError(){},renderMobileDispatch(){},navigator:{share(){throw Error('text-only web share must never run');}},
+      invoke:async(command,args)=>{calls.push({command,args}); if(command==='prepare_dispatch_attachments')return ['/owned/CV.pdf','/owned/Certificates.zip']; if(command==='mobile_share_dispatch'&&rejected)throw Error('cancelled');return 'Share sheet opened';}
+    });
+    vm.runInContext(HTML.slice(start,end),context);await context.mobileRunDispatchWizard();
+    const share=calls.find(c=>c.command==='mobile_share_dispatch');
+    ok(share&&JSON.stringify(share.args.attachments)===JSON.stringify(['/owned/CV.pdf','/owned/Certificates.zip']),'iOS invokes native share with all real prepared attachments');
+    ok(share&&share.args.subject==='CV subject'&&share.args.body==='CV body','iOS native request retains subject and body');
+    ok(!calls.some(c=>c.command==='mailing_request_send_click'),'opening iOS chooser records no recipient or send click');
+    ok(rejected?context.mobileDispatchStep==='review':context.mobileDispatchStep==='done'&&context.mobileDispatchDoneMode==='share'&&context.mobileDispatchDoneRecipients===0,'cancellation stays at review; opened chooser is not an email or recipient count');
+    ok(!notices.some(n=>n.type==='success'&&/Email prepared/.test(n.message)),'no false prepared-email claim');
+  }
+}
+
+{
   section('mobile Packages (PKG18) — the COMMIT ORDER itself, not just the helper that implements it');
   // Д23 exists because publishing the archive AFTER the database transaction opens a
   // window where get_packages already reports the new file_count while
@@ -3080,7 +3102,7 @@ const rustCode = (src) => String(src || '')
 }
 
 {
-  section('mobile Packages (PKG18) — ONE platform predicate feeds all three share gates, and the mailing wizard is NOT dragged along');
+  section('mobile Packages (PKG18) — ONE platform predicate feeds all three share gates, and the mailing wizard has its own explicit iOS content path');
   // Three independent `hostPlatform==='android'` comparisons is exactly how a slice
   // ends up drawing a button on a platform whose call site refuses it. One named
   // predicate is the whole point: a negative drill on any single site cannot slip
@@ -3098,14 +3120,11 @@ const rustCode = (src) => String(src || '')
   ok(/platformCanShareNatively\(\)/.test(SHARE_FN2), 'the call site reads the predicate');
   ok(/platformCanShareNatively\(\)/.test(LIST_FN), 'the «not here» card reads the predicate');
   ok(!/hostPlatform\s*[!=]==\s*'android'/.test(CARD_FN + SHARE_FN2 + LIST_FN), 'and none of the three still compares hostPlatform to a literal of its own');
-  // PRESERVE, and deliberately so: the two mailing-wizard call sites of the SAME
-  // command stay android-only. mode:'email' promises the named recipients pre-filled,
-  // and UIActivityViewController pre-fills nobody (MFMailComposeViewController does,
-  // and MessageUI.framework is not linked in gen/apple/project.yml). RISKS №329 owns
-  // that fork; this card must not settle it as a side effect.
+  // Dated slice boundary PKG18 is retired by owner 14.09 R329 / 0.4.193.
+  // Replacement: native iOS files+text with no recipient-prefill promise; VM cases above.
   const WIZ = (() => { const i = HTML.indexOf('async function mobileRunDispatchWizard('); const j = HTML.indexOf('async function mobileOpenManualEmailDispatch(', i); return i >= 0 && j > i ? HTML.slice(i, j) : ''; })();
   ok(WIZ.length > 0, 'mobileRunDispatchWizard() is locatable');
-  ok(/hostPlatform==='android'/.test(WIZ) && !/platformCanShareNatively/.test(WIZ), "the mailing wizard stays android-only (mode:'email' promises pre-filled recipients the iOS sheet cannot deliver)");
+  ok(/hostPlatform==='android'/.test(WIZ) && /hostPlatform==='ios'/.test(WIZ), "mailing wizard explicitly routes both native platforms, preserving their different recipient semantics");
   const APPLY = (() => { const i = HTML.indexOf('draftInfo.android_share_opened = true;'); return i >= 0 ? HTML.slice(Math.max(0, i - 900), i + 200) : ''; })();
   ok(APPLY.length > 0 && /hostPlatform === 'android'/.test(APPLY) && !/platformCanShareNatively/.test(APPLY), 'and so does the Apply-by-email path in the jobs feed');
   // A line that was true only while iOS had no sheet, and a comment that outlives the
@@ -3170,6 +3189,9 @@ const rustCode = (src) => String(src || '')
   ok(/#\[cfg\(any\(target_os = "android", target_os = "ios"\)\)\]\s*fn purge_stale_share_cache\(/.test(RS_CODE),
     'and so is the bounded cleanup, so iOS does not leave readable copies behind forever');
   ok(/copy_attachments_to_share_cache\(/.test(IOS), 'and the iOS branch actually calls it rather than handing over the vault paths');
+  ok(/let item = ns_string\(text\)/.test(IOS) && /send1\(items, add, item\)/.test(IOS), 'iOS passes the draft as an NSString activity item in addition to file URLs');
+  ok(/paths.is_empty\(\) && text.trim\(\).is_empty\(\)/.test(IOS), 'iOS permits diagnostic body-only sharing and rejects only truly empty item lists');
+  ok(/source_view.is_null\(\).*return Err/.test(IOS), 'iPad missing source view refuses presentation instead of opening an unanchored popover');
   // PRESERVE: the Android JNI path is byte-identical to the baseline this branched from.
   const ANDROID = (() => { const i = MAIL_RS.indexOf('#[cfg(target_os = "android")]\n#[tauri::command]\npub fn mobile_share_dispatch('); const j = MAIL_RS.indexOf('\n}\n', i); return i >= 0 && j > i ? MAIL_RS.slice(i, j + 3) : ''; })();
   ok(ANDROID.length > 0, 'the Android JNI branch is locatable');
