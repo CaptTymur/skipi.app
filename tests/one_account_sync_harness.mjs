@@ -1,14 +1,16 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+const NOTICE='seafarer-sync-2026-09-15-v1';
 const html=fs.readFileSync(new URL('../dist/index.html',import.meta.url),'utf8');
 const code=html.match(/\/\/ ONE ACCOUNT SYNC BEGIN([\s\S]*?)\/\/ ONE ACCOUNT SYNC END/)?.[1];
 assert.ok(code,'native shared sync UI must exist');
 const calls=[];let timer;
-const ctx={console, document:{getElementById:()=>null,addEventListener:()=>{},visibilityState:'visible'},window:{addEventListener:()=>{}},setTimeout:f=>{timer=f;return 1},clearTimeout:()=>{},invoke:async(name,args)=>{calls.push([name,args]);return {enabled:true,account_id:'7',state:'current',consent_context:'synthetic-context',conflicts:[]}},escapeHtml:s=>String(s),showToast:()=>{},confirm:async()=>false,uiConfirm:async()=>true};
+const ctx={console,getUiLang:()=>'en',esc:v=>String(v), document:{getElementById:()=>null,addEventListener:()=>{},visibilityState:'visible'},window:{addEventListener:()=>{}},setTimeout:f=>{timer=f;return 1},clearTimeout:()=>{},invoke:async(name,args)=>{calls.push([name,args]);return {consent_notice_version:NOTICE,enabled:true,account_id:'7',state:'current',consent_context:'synthetic-context',conflicts:[]}},escapeHtml:s=>String(s),showToast:()=>{},confirm:async()=>false,uiConfirm:async()=>true};
 vm.createContext(ctx);vm.runInContext(code,ctx);
 await ctx.oneAccountSyncEnable();
-const enabled=calls.find(c=>c[0]==='enable_account_sync');assert.ok(enabled);assert.equal(enabled[1].consent,true);assert.equal(enabled[1].consentContext,'synthetic-context');
+const enabled=calls.find(c=>c[0]==='enable_account_sync');assert.ok(enabled);assert.equal(enabled[1].consent,true);assert.equal(enabled[1].consentContext,'synthetic-context');assert.equal(enabled[1].consentNotice.notice_version,NOTICE);assert.equal(enabled[1].consentNotice.health,true);assert.equal(enabled[1].consentNotice.sync,true);
 assert.ok(calls.some(c=>c[0]==='sync_account_now'),'enable performs actual synchronization');
 calls.length=0;
 ctx.oneAccountSyncSchedule();ctx.oneAccountSyncSchedule();await timer();
@@ -63,7 +65,7 @@ function mountedSyncSettings(){
     const legacy={innerHTML:'<input id="sp-old">'};
     const overlay={classList:{contains:()=>shown}};
     const doc={addEventListener:()=>{},createElement:()=>panel(),getElementById:id=>({'settings-root':currentRoot,'skipi-settings-overlay':overlay,'settings-body':legacy,'settings-overlay':{classList:{contains:()=>false}},'one-account-sync':competing}[id]||null)};
-    const sandbox={document:doc,window:{addEventListener:()=>{}},console,Promise,setTimeout:f=>{scheduled.push(f);return scheduled.length;},clearTimeout:()=>{},spLoad:()=>{loads++;},logError:()=>{},invoke:name=>new Promise((resolve,reject)=>{requests.push({name,resolve,reject});})};
+    const sandbox={getUiLang:()=>'en',esc:v=>String(v),document:doc,window:{addEventListener:()=>{}},console,Promise,setTimeout:f=>{scheduled.push(f);return scheduled.length;},clearTimeout:()=>{},spLoad:()=>{loads++;},logError:()=>{},invoke:name=>new Promise((resolve,reject)=>{requests.push({name,resolve,reject});})};
     vm.createContext(sandbox);vm.runInContext(code,sandbox);vm.runInContext(scheduleCode,sandbox);
     return {sandbox,active,competing,root,legacy,requests,scheduled,loads:()=>loads,close:()=>{shown=false;},replace:()=>{livePanel=panel();return livePanel;},replaceRoot:()=>{currentRoot={isConnected:true,querySelector:root.querySelector};}};
 }
@@ -93,7 +95,7 @@ for(const language of ['en','ru']){
     s.sandbox.oneAccountSyncRender({enabled:true,state:'conflict',conflicts:[{kind:'profile',id:'main',local:{name:'local'},remote:{name:'remote'},revision:1}]},s.active);
     const row=s.active.children[0];assert.equal(row.children[2].textContent,language==='ru'?'Оставить версию устройства':'Keep this device version');assert.equal(row.children[3].textContent,language==='ru'?'Использовать версию аккаунта':'Use account version');assert.ok(row.children[1].textContent.startsWith(language==='ru'?'На устройстве: ':'This device: '));
     s.sandbox.oneAccountSyncRender({state:'error',error:'raw server error <retry>',conflicts:[]},s.active);assert.ok(s.active.html.includes(language==='ru'?'Синхронизация требует внимания':'Sync needs attention'));assert.ok(s.active.html.includes('raw server error &lt;retry&gt;'));
-    s.sandbox.invoke=async()=>({consent_context:'synthetic-context'});let consent;s.sandbox.uiConfirm=async message=>{consent=message;return false;};s.sandbox.confirm=message=>{consent=message;return false;};await s.sandbox.oneAccountSyncEnable();assert.ok(consent.startsWith(language==='ru'?'Синхронизировать профиль':'Sync this signed-in'));assert.equal(s.requests.length,1,'declined real consent never enables sync');
+    s.sandbox.invoke=async()=>({consent_notice_version:NOTICE,consent_context:'synthetic-context'});let consent;s.sandbox.uiConfirm=async message=>{consent=message;return false;};s.sandbox.confirm=message=>{consent=message;return false;};await s.sandbox.oneAccountSyncEnable();assert.ok(consent.includes(s.sandbox.accountSyncNotice[language].title));assert.equal(s.requests.length,1,'declined real consent never enables sync');
 }
 mounted=mountedSyncSettings();mounted.root.querySelector=()=>null;mounted.sandbox.scheduleSeafarerFormLoad();let ticks=0;while(mounted.scheduled.length){mounted.scheduled.shift()();assert.ok(++ticks<=42,'post-mount polling stays bounded');}assert.equal(mounted.requests.length,0,'unmounted form never requests sync');
 console.log('sync control RU/EN, explicit consent, errors and bounded mount wait PASS');
@@ -121,7 +123,7 @@ for(const outcome of [false,'reject',null,'yes',1,true]){
     const s=mountedSyncSettings(),sent=[];let decide,rejectDecision;
     s.sandbox.confirm=async()=>false; // exact former Promise-truthiness trap
     s.sandbox.uiConfirm=()=>new Promise((resolve,reject)=>{decide=resolve;rejectDecision=reject;});
-    s.sandbox.invoke=async(name,args)=>{sent.push([name,args]);return {enabled:true,state:'current',consent_context:'synthetic-context',conflicts:[]};};
+    s.sandbox.invoke=async(name,args)=>{sent.push([name,args]);return {consent_notice_version:NOTICE,enabled:true,state:'current',consent_context:'synthetic-context',conflicts:[]};};
     const operation=s.sandbox.oneAccountSyncEnable();await flush();
     assert.equal(sent.filter(c=>c[0]!=='get_account_sync_status').length,0,'pending asynchronous consent makes ZERO mutating calls');
     if(outcome==='reject')rejectDecision(new Error('synthetic consent unavailable'));else decide(outcome);
@@ -141,11 +143,17 @@ assert.ok(dialogCode.includes("box.querySelector('#uic-cancel').onclick"));
 for(const language of ['en','ru'])for(const accept of [false,true]){
     const s=mountedSyncSettings(),sent=[],overlays=[];s.sandbox.getUiLang=()=>language;
     s.sandbox.esc=v=>String(v);s.sandbox.document.body={appendChild:el=>overlays.push(el),removeChild:el=>{const i=overlays.indexOf(el);assert.ok(i>=0);overlays.splice(i,1);}};
-    s.sandbox.document.createElement=()=>({style:{},children:[],appendChild(el){this.children.push(el);},set innerHTML(v){this.html=v;this.controls={'#uic-ok':{},'#uic-cancel':{}};},querySelector(selector){return this.controls[selector];}});
-    s.sandbox.invoke=async(name,args)=>{sent.push([name,args]);return {enabled:true,state:'current',consent_context:'synthetic-context',conflicts:[]};};
+    s.sandbox.document.createElement=()=>({style:{},children:[],setAttribute(){},appendChild(el){this.children.push(el);el.parentNode=this;},insertBefore(el){this.children.push(el);el.parentNode=this;},set innerHTML(v){this.html=v;const buttons={style:{}};this.controls={'#uic-ok':{style:{},parentNode:buttons},'#uic-cancel':{style:{},parentNode:buttons}};},querySelector(selector){return this.controls[selector];}});
+    s.sandbox.invoke=async(name,args)=>{sent.push([name,args]);return {consent_notice_version:NOTICE,enabled:true,state:'current',consent_context:'synthetic-context',conflicts:[]};};
     vm.runInContext(dialogCode,s.sandbox);const operation=s.sandbox.oneAccountSyncEnable();await flush();
     assert.equal(overlays.length,1,'actual uiConfirm creates one visible DOM dialog');assert.equal(sent.filter(c=>c[0]!=='get_account_sync_status').length,0);
-    const box=overlays[0].children[0];assert.ok(box.html.includes(language==='ru'?'Отмена':'Cancel'));assert.ok(box.html.includes(language==='ru'?'Включить синхронизацию':'Enable account sync'));
+    const box=overlays[0].children[0],notice=s.sandbox.accountSyncNotice[language];assert.ok(box.html.includes(notice.cancel));assert.ok(box.html.includes(notice.accept_enable));
+    const checks=box.children.map(label=>label.children[0]);assert.equal(checks.length,2);assert.ok(checks.every(input=>input.checked===false));
+    assert.equal(box.querySelector('#uic-ok').disabled,true);box.querySelector('#uic-ok').onclick();assert.equal(overlays.length,1,'programmatic click cannot bypass unchecked consent');
+    checks[0].checked=true;checks[0].onchange();assert.equal(box.querySelector('#uic-ok').disabled,true,'health choice independently required');
+    if(accept){checks[1].checked=true;checks[1].onchange();assert.equal(box.querySelector('#uic-ok').disabled,false);}
+    const canonical=[notice.title,...notice.paragraphs,notice.sync_label,notice.health_label,notice.privacy_label+': '+s.sandbox.accountSyncNotice.privacy_url].join('\n\n');
+    assert.equal(createHash('sha256').update(canonical).digest('hex'),notice.notice_sha256,'displayed exact notice matches shared hash');
     box.querySelector(accept?'#uic-ok':'#uic-cancel').onclick();await operation;
     assert.equal(overlays.length,0,'actual decision removes dialog');assert.equal(sent.filter(c=>c[0]==='enable_account_sync').length,accept?1:0);assert.equal(sent.filter(c=>c[0]==='sync_account_now').length,accept?1:0);
 }
@@ -155,7 +163,7 @@ console.log('deferred strict consent and actual DOM dialog RU/EN cancellation/af
 for(const change of ['path','epoch','parent']){
     const s=mountedSyncSettings(),sent=[];let decide,context='original-'+change;
     s.sandbox.uiConfirm=()=>new Promise(resolve=>{decide=resolve;});
-    s.sandbox.invoke=async(name,args)=>{sent.push([name,args]);return {consent_context:context};};
+    s.sandbox.invoke=async(name,args)=>{sent.push([name,args]);return {consent_notice_version:NOTICE,consent_context:context};};
     s.sandbox.oneAccountSyncLast={consent_context:'stale-rendered-context'};
     const operation=s.sandbox.oneAccountSyncEnable();await flush();
     assert.deepEqual(sent.map(c=>c[0]),['get_account_sync_status']);
@@ -166,7 +174,7 @@ for(const change of ['path','epoch','parent']){
 for(const context of [undefined,null,'']){
     const s=mountedSyncSettings(),sent=[];let dialogs=0;
     s.sandbox.uiConfirm=async()=>{dialogs++;return true;};
-    s.sandbox.invoke=async(name,args)=>{sent.push([name,args]);return {consent_context:context};};
+    s.sandbox.invoke=async(name,args)=>{sent.push([name,args]);return {consent_notice_version:NOTICE,consent_context:context};};
     await s.sandbox.oneAccountSyncEnable();
     assert.equal(dialogs,0,'missing context cannot request usable consent');
     assert.deepEqual(sent.map(c=>c[0]),['get_account_sync_status']);
@@ -176,7 +184,7 @@ console.log('authoritative consent context capture and pending account/vault cha
 // A backend freshness rejection after the UI reread must never start sync.
 {
     const s=mountedSyncSettings(),sent=[];s.sandbox.uiConfirm=async()=>true;
-    s.sandbox.invoke=async(name,args)=>{sent.push([name,args]);if(name==='enable_account_sync')throw new Error('Vault or login changed during consent');return {consent_context:'synthetic-context'};};
+    s.sandbox.invoke=async(name,args)=>{sent.push([name,args]);if(name==='enable_account_sync')throw new Error('Vault or login changed during consent');return {consent_notice_version:NOTICE,consent_context:'synthetic-context'};};
     await s.sandbox.oneAccountSyncEnable();
     assert.deepEqual(sent.map(c=>c[0]),['get_account_sync_status','get_account_sync_status','enable_account_sync']);
     assert.ok(s.active.html.includes('Vault or login changed during consent'));

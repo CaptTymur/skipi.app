@@ -291,7 +291,11 @@ fn profile_auth_error(status: u16, body: &str) -> Option<String> {
                 .to_string(),
         ),
         403 => {
-            if body.contains("token_revoked") {
+            if body.contains("consent_required") {
+                Some("Current sync and health consent is required. Open the Sync tab to continue.".into())
+            } else if body.contains("sync_withdrawn") {
+                Some("Sync consent was withdrawn. Resume it in your account before enabling this device.".into())
+            } else if body.contains("token_revoked") {
                 Some(
                     "This device link was revoked in your Skipi account. Get a new link \
                      code at assistant.skipi.app and link this device again."
@@ -470,8 +474,8 @@ pub fn preview_account_profile_import(state: State<AppState>) -> Result<Value, S
     let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = lock.as_ref().ok_or("No vault open")?;
     require_seafarer_vault(conn)?;
+    let client = vault_sync::manual_client(conn)?;
     let token = stored_device_token(conn)?;
-    let client = http_client()?;
     let remote = fetch_account_profile(&assistant_api_base(), &client, &token)?;
     let remote_obj = remote
         .as_object()
@@ -531,12 +535,12 @@ pub fn send_account_profile(state: State<AppState>) -> Result<Value, String> {
     let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = lock.as_ref().ok_or("No vault open")?;
     require_seafarer_vault(conn)?;
+    let client = vault_sync::manual_client(conn)?;
     let token = stored_device_token(conn)?;
     let fields = export_profile_fields(conn);
     if fields.is_empty() {
         return Err("Nothing to send — the seafarer profile in this vault is empty".to_string());
     }
-    let client = http_client()?;
     push_account_profile(&assistant_api_base(), &client, &token, &fields)?;
     Ok(json!({"sent": fields.len()}))
 }
@@ -677,6 +681,60 @@ pub mod vault_sync {
     fn deleted(kind: &str, id: &str) -> Value {
         json!({"kind":kind,"id":id,"revision":0,"deleted":true,"data":null,"blob":null})
     }
+    const CONSENT_VERSION: &str = "seafarer-sync-2026-09-15-v1";
+    const CONSENT_SCOPE: &str = "profile-photo-sea-service-documents";
+    fn consent_hash(language: &str) -> Option<&'static str> {
+        match language {
+            "ru" => Some("a23f120d81b360ca11717893e48997d56ca86c42a5e6665a241005772d87551b"),
+            "en" => Some("7dad3c8d6f3472b4fe8f8b712eeb722e055f1b2334c6d3b8631f067df028b1b8"),
+            _ => None,
+        }
+    }
+    fn validate_consent(notice: Option<&Value>) -> Result<&Value, String> {
+        let n = notice.ok_or("Current sync and health consent is required")?;
+        if text(n,"notice_version") != CONSENT_VERSION || text(n,"scope") != CONSENT_SCOPE
+            || n["sync"] != true || n["health"] != true
+            || consent_hash(text(n,"language")) != Some(text(n,"notice_sha256")) {
+            return Err("Current sync and health consent is required".into());
+        }
+        Ok(n)
+    }
+    fn validate_receipt(receipt: &Value, account: &str, device: &str, notice: Option<&Value>) -> Result<(),String> {
+        validate_consent(Some(receipt))?;
+        if !valid_id(text(receipt,"id")) || account.is_empty() || device.is_empty()
+            || text(receipt,"account_id") != account || text(receipt,"device_id") != device
+            || chrono::DateTime::parse_from_rfc3339(text(receipt,"accepted_at")).map(|t|t.offset().local_minus_utc()!=0).unwrap_or(true)
+            || notice.is_some_and(|n| ["notice_version","notice_sha256","language","scope","sync","health"].iter().any(|key| n[*key] != receipt[*key])) {
+            return Err("Invalid account consent receipt; synchronization remains off".into());
+        }
+        Ok(())
+    }
+    fn has_current_consent(conn: &Connection) -> bool {
+        let receipt = db::get_vault_info_value(conn,"sync_consent_receipt")
+            .and_then(|s| serde_json::from_str::<Value>(&s).ok()).unwrap_or(Value::Null);
+        validate_receipt(&receipt,
+            &db::get_vault_info_value(conn,"sync_account_id").unwrap_or_default(),
+            &db::get_vault_info_value(conn,"sync_device_id").unwrap_or_default(), None).is_ok()
+    }
+    pub(super) fn manual_client(conn: &Connection) -> Result<reqwest::blocking::Client,String> {
+        require_bound(conn).map_err(|_| "Current sync and health consent is required. Open the Sync tab to continue.")?;
+        let receipt: Value = serde_json::from_str(&db::get_vault_info_value(conn,"sync_consent_receipt").unwrap_or_default()).map_err(err)?;
+        let mut headers = reqwest::header::HeaderMap::new();
+        for (name,key) in [("x-skipi-consent-receipt","id"),("x-skipi-device-id","device_id")] {
+            headers.insert(name, reqwest::header::HeaderValue::from_str(text(&receipt,key)).map_err(err)?);
+        }
+        reqwest::blocking::Client::builder().default_headers(headers)
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(std::time::Duration::from_secs(15)).connect_timeout(std::time::Duration::from_secs(4))
+            .build().map_err(err)
+    }
+    fn consent_response_error(code: u16, body: &Value) -> String {
+        match text(body,"error") {
+            "sync_withdrawn" => "Sync consent was withdrawn. Resume it in your account before enabling this device.".into(),
+            "consent_required" | "current_consent_required" => "Current sync and health consent is required. Review the notice and try again.".into(),
+            _ => status_error(code),
+        }
+    }
     fn require_bound(conn: &Connection) -> Result<(String, String, String), String> {
         if db::get_vault_info_value(conn, "sync_enabled").as_deref() != Some("1") {
             return Err("Synchronization is disabled".into());
@@ -692,6 +750,7 @@ pub mod vault_sync {
         {
             return Err("Account session changed. Enable synchronization again.".into());
         }
+        if !has_current_consent(conn) { return Err("Current sync and health consent is required".into()); }
         Ok((a, t, p))
     }
     pub fn invalidate(state: &AppState) {
@@ -2137,6 +2196,8 @@ pub mod vault_sync {
     fn consent_context(path: &Path, epoch: u64, parent: &str) -> String {
         let mut hash = Sha256::new();
         hash.update(b"skipi.native.sync-consent.v1\0");
+        hash.update(CONSENT_VERSION.as_bytes());
+        hash.update(CONSENT_SCOPE.as_bytes());
         let path = path.as_os_str().as_encoded_bytes();
         hash.update((path.len() as u64).to_le_bytes());
         hash.update(path);
@@ -2147,7 +2208,7 @@ pub mod vault_sync {
     }
     fn restore_context(p: &super::super::app_login::PendingLogin, epoch: u64) -> String {
         value_hash(&json!([
-            "skipi.restore-consent.v1",
+            "skipi.restore-consent.v1", CONSENT_VERSION, CONSENT_SCOPE,
             p.token,
             p.email,
             p.account_id,
@@ -2181,12 +2242,14 @@ pub mod vault_sync {
         state: &AppState,
         parent_dir: &Path,
         consent: bool,
+        consent_notice: Option<&Value>,
         context: &str,
         base: &str,
     ) -> Result<Value, String> {
         if !consent {
             return Err("Explicit consent is required to restore account data".into());
         }
+        let notice = validate_consent(consent_notice)?;
         let _single = state.sync_worker.lock().unwrap_or_else(|e| e.into_inner());
         let (pending, epoch) = restore_session(state, context)?;
         let client = client()?;
@@ -2195,10 +2258,10 @@ pub mod vault_sync {
             client
                 .post(format!("{base}/api/app/vault-token"))
                 .bearer_auth(&pending.token)
-                .json(&json!({"device_id":device,"consent_vault":true})),
+                .json(&json!({"device_id":device,"consent_vault":true,"consent":notice})),
         )?;
         if code != 200 {
-            return Err(status_error(code));
+            return Err(consent_response_error(code, &grant));
         }
         let account = text(&grant, "account_id").to_string();
         let token = text(&grant, "token").to_string();
@@ -2211,6 +2274,8 @@ pub mod vault_sync {
         {
             return Err("Invalid account binding response".into());
         }
+        validate_receipt(&grant["consent_receipt"], &account, &device, Some(notice))?;
+        restore_session(state, context)?;
         let (code, body) = http_json(
             client
                 .get(format!("{base}/api/vault/sync/manifest"))
@@ -2248,6 +2313,7 @@ pub mod vault_sync {
                     ("skipi_user_login_at", pending.login_at.as_str()),
                     ("sync_account_id", account.as_str()),
                     ("sync_token", token.as_str()),
+                    ("sync_consent_receipt", grant["consent_receipt"].to_string().as_str()),
                     (
                         "sync_parent_hash",
                         digest(pending.token.as_bytes()).as_str(),
@@ -2347,6 +2413,7 @@ pub mod vault_sync {
         app: tauri::AppHandle,
         consent: bool,
         restore_context: String,
+        consent_notice: Option<Value>,
     ) -> Result<Value, String> {
         tauri::async_runtime::spawn_blocking(move || {
             let parent = app.path().app_data_dir().map_err(err)?.join("vaults");
@@ -2354,6 +2421,7 @@ pub mod vault_sync {
                 &app.state::<AppState>(),
                 &parent,
                 consent,
+                consent_notice.as_ref(),
                 &restore_context,
                 &assistant_api_base(),
             )?;
@@ -2372,6 +2440,8 @@ pub mod vault_sync {
         match conn.as_ref() {
             Some(conn) => {
                 let mut result = status(conn)?;
+                result["consent_notice_version"] = json!(CONSENT_VERSION);
+                result["consent_required"] = json!(db::get_vault_info_value(conn,"sync_enabled").as_deref()==Some("1") && !has_current_consent(conn));
                 result["profile_open"] = json!(path.is_some());
                 result["logged_in"] = json!(super::super::app_login::stored_user_token(conn).is_some());
                 if let (Some(path), Some(parent)) =
@@ -2386,7 +2456,7 @@ pub mod vault_sync {
             None => {
                 let pending = state.login_pending.lock().unwrap_or_else(|e| e.into_inner());
                 Ok(json!({"enabled":false,"state":"disabled","conflicts":[],
-                    "profile_open":false,"logged_in":pending.is_some(),
+                    "profile_open":false,"logged_in":pending.is_some(),"consent_notice_version":CONSENT_VERSION,
                     "account_email":pending.as_ref().map(|p|p.email.as_str()).unwrap_or(""),
                     "restore_context":pending.as_ref().map(|p|restore_context(p,state.sync_epoch.load(Ordering::SeqCst)))}))
             },
@@ -2426,18 +2496,25 @@ pub mod vault_sync {
         app: tauri::AppHandle,
         consent: bool,
         consent_context: Option<String>,
+        consent_notice: Option<Value>,
     ) -> Result<Value, String> {
         if !consent {
             return Err("Explicit consent is required to synchronize profile, sea service and all attached files".into());
         }
+        validate_consent(consent_notice.as_ref())?;
         tauri::async_runtime::spawn_blocking(move||{
             let state=app.state::<AppState>();let _single=state.sync_worker.lock().unwrap_or_else(|e|e.into_inner());
             let(path,vault,epoch,parent,device)=prepare_enable(&state,consent_context.as_deref())?;
-            let(s,v)=http_json(client()?.post(api("/api/app/vault-token")).bearer_auth(&parent).json(&json!({"device_id":device,"consent_vault":true})))?;if s!=200{return Err(status_error(s))}let account=text(&v,"account_id");let token=text(&v,"token");if v["schema"]!=1||text(&v,"scope")!="seafarer-profile+vault"||text(&v,"device_id")!=device||account.is_empty()||token.is_empty(){return Err("Invalid account binding response".into())}
+            let notice=validate_consent(consent_notice.as_ref())?;
+            let(s,v)=http_json(client()?.post(api("/api/app/vault-token")).bearer_auth(&parent).json(&json!({"device_id":device,"consent_vault":true,"consent":notice})))?;
+            if s!=200{return Err(consent_response_error(s,&v))}
+            let account=text(&v,"account_id");let token=text(&v,"token");
+            if v["schema"]!=1||text(&v,"scope")!="seafarer-profile+vault"||text(&v,"device_id")!=device||account.is_empty()||token.is_empty(){return Err("Invalid account binding response".into())}
+            validate_receipt(&v["consent_receipt"],account,&device,Some(notice))?;
             let path_lock=state.vault_path.lock().unwrap_or_else(|e|e.into_inner());let conn=state.conn.lock().unwrap_or_else(|e|e.into_inner());let conn=conn.as_ref().ok_or("Vault closed")?;
             if path_lock.as_ref()!=Some(&path)||state.sync_epoch.load(Ordering::SeqCst)!=epoch||db::get_vault_info_value(conn,"sync_vault_uuid").as_deref()!=Some(&vault)||super::super::app_login::stored_user_token(conn).as_deref()!=Some(&parent){return Err("Vault or login changed during consent".into())}
             if let Some(bound)=db::get_vault_info_value(conn,"sync_account_id").filter(|s|!s.is_empty()){if bound!=account{return Err("This local profile belongs to another sync account. Open or create a separate profile.".into())}}
-            let parent_hash=digest(parent.as_bytes());transaction(conn,||{for(k,val)in [("sync_account_id",account),("sync_token",token),("sync_enabled","1"),("sync_parent_hash",parent_hash.as_str()),("sync_state","pending")]{db::set_vault_info(conn,k,val).map_err(err)?;}status(conn)})
+            let parent_hash=digest(parent.as_bytes());transaction(conn,||{for(k,val)in [("sync_account_id",account),("sync_token",token),("sync_consent_receipt",v["consent_receipt"].to_string().as_str()),("sync_enabled","1"),("sync_parent_hash",parent_hash.as_str()),("sync_state","pending")]{db::set_vault_info(conn,k,val).map_err(err)?;}status(conn)})
         }).await.map_err(err)?
     }
     #[tauri::command]
@@ -2613,7 +2690,8 @@ pub mod vault_sync {
                     let bytes = if first.starts_with("POST ") {
                         let start = input.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
                         let body: Value = serde_json::from_slice(&input[start..]).unwrap();
-                        json!({"schema":1,"scope":"seafarer-profile+vault","device_id":body["device_id"],"account_id":if scenario=="foreign"{"foreign-account"}else{"synthetic-account"},"token":"synthetic-child"}).to_string().into_bytes()
+                        assert_eq!(body["consent"],current_notice());
+                        json!({"consent_receipt":if scenario=="missing-receipt"{Value::Null}else{test_receipt("synthetic-account",body["device_id"].as_str().unwrap())},"schema":1,"scope":"seafarer-profile+vault","device_id":body["device_id"],"account_id":if scenario=="foreign"{"foreign-account"}else{"synthetic-account"},"token":"synthetic-child"}).to_string().into_bytes()
                     } else if first.contains("/manifest ") {
                         if scenario == "race" {
                             state.sync_epoch.fetch_add(1, Ordering::SeqCst);
@@ -2674,6 +2752,7 @@ pub mod vault_sync {
                 "incomplete",
                 "offline",
                 "foreign",
+                "missing-receipt",
                 "corrupt",
                 "partial",
                 "race",
@@ -2682,13 +2761,14 @@ pub mod vault_sync {
                 let (root, state, context) = restore_fixture();
                 let original = state.login_pending.lock().unwrap().clone();
                 let (base, requests, stop, task) = restore_server(state.clone(), scenario);
-                let result = restore_from_account(&state, &root.join("restores"), true, &context, &base);
+                let result = restore_from_account(&state, &root.join("restores"), true, Some(&current_notice()), &context, &base);
                 stop.store(true, Ordering::SeqCst);
                 task.join().unwrap();
                 let seen = requests.lock().unwrap();
                 assert!(seen
                     .iter()
                     .all(|r| r.starts_with("GET ") || r.starts_with("POST /api/app/vault-token ")));
+                if scenario == "missing-receipt" { assert_eq!(seen.len(),1,"no protected GET before valid receipt"); }
                 if scenario == "success" {
                     assert_eq!(result.as_ref().unwrap()["outcome"], "restored");
                     assert!(state.login_pending.lock().unwrap().is_none());
@@ -2770,6 +2850,7 @@ pub mod vault_sync {
                 &state,
                 &root.join("restores"),
                 false,
+                Some(&current_notice()),
                 &context,
                 "http://127.0.0.1:1"
             )
@@ -2778,6 +2859,7 @@ pub mod vault_sync {
                 &state,
                 &root.join("restores"),
                 true,
+                Some(&current_notice()),
                 "stale",
                 "http://127.0.0.1:1"
             )
@@ -2788,6 +2870,7 @@ pub mod vault_sync {
                 &state,
                 &root.join("restores"),
                 true,
+                Some(&current_notice()),
                 &context,
                 "http://127.0.0.1:1"
             )
@@ -3050,11 +3133,52 @@ pub mod vault_sync {
             drop(conn);
             fs::remove_dir_all(root).unwrap();
         }
+        #[test]
+        fn legacy_enabled_boolean_cannot_pin_cloud_transfer() {
+            let (root, state) = consent_fixture();
+            { let lock=state.conn.lock().unwrap();let c=lock.as_ref().unwrap();
+              for(k,v)in[("sync_enabled","1"),("sync_account_id","public-A"),("sync_token","legacy-child")]{db::set_vault_info(c,k,v).unwrap();}
+              db::set_vault_info(c,"sync_parent_hash",&digest(b"synthetic-parent-consent")).unwrap(); }
+            // pin is the real run_sync entry gate; no client/socket is created.
+            assert!(pin(&state).is_err(), "oldboolean must not authorize any protected HTTP");
+            assert_eq!(consent_status(&state).unwrap()["enabled"],false);
+            drop(state);fs::remove_dir_all(root).unwrap();
+        }
+        fn current_notice() -> Value {
+            json!({"notice_version":CONSENT_VERSION,"notice_sha256":consent_hash("en").unwrap(),"language":"en","scope":CONSENT_SCOPE,"sync":true,"health":true})
+        }
+        fn test_receipt(account: &str, device: &str) -> Value {
+            let mut v=current_notice();v["id"]=json!("receipt193");v["account_id"]=json!(account);v["device_id"]=json!(device);v["accepted_at"]=json!("2026-09-15T00:00:00Z");v
+        }
+        fn grant_fixture_consent(c: &Connection, account: &str) {
+            db::set_vault_info(c,"sync_device_id","synthetic-device").unwrap();
+            db::set_vault_info(c,"sync_consent_receipt",&test_receipt(account,"synthetic-device").to_string()).unwrap();
+        }
+        #[test]
+        fn current_consent_receipt_rejects_every_binding_mutation_before_http() {
+            let (root,state,_) = bound_fixture();
+            for (key,value) in [("notice_version",json!("old")),("notice_sha256",json!("bad")),("scope",json!("other")),("account_id",json!("foreign")),("device_id",json!("foreign")),("health",json!(false)),("sync",json!(false)),("accepted_at",json!("bad")),("id",json!(""))] {
+                {let c=state.conn.lock().unwrap();let c=c.as_ref().unwrap();let mut receipt=test_receipt("public-A","synthetic-device");receipt[key]=value;db::set_vault_info(c,"sync_consent_receipt",&receipt.to_string()).unwrap();assert!(manual_client(c).is_err(),"legacy manual gate rejects {key}");}
+                assert!(pin(&state).is_err(),"background gate rejects {key}");
+                assert_eq!(consent_status(&state).unwrap()["consent_required"],true);
+            }
+            drop(state);fs::remove_dir_all(root).unwrap();
+        }
+        #[test]
+        fn consent_missing_or_partial_cannot_start_restore_http() {
+            let (root,state,context)=restore_fixture();
+            let mut partial=current_notice();partial["health"]=json!(false);
+            for notice in [None,Some(&partial)] {
+                assert!(restore_from_account(&state,&root.join("restores"),true,notice,&context,"http://127.0.0.1:1").unwrap_err().contains("Current sync and health consent"));
+            }
+            assert!(!root.join("restores").exists());assert!(state.login_pending.lock().unwrap().is_some());
+            drop(state);fs::remove_dir_all(root).unwrap();
+        }
         fn bound_fixture() -> (PathBuf, AppState, Pin) {
             let (root, state) = consent_fixture();
             { let lock = state.conn.lock().unwrap(); let conn = lock.as_ref().unwrap();
               for (k, v) in [("sync_enabled", "1"), ("sync_account_id", "public-A"), ("sync_token", "synthetic-child")] { db::set_vault_info(conn, k, v).unwrap(); }
-              db::set_vault_info(conn, "sync_parent_hash", &digest(b"synthetic-parent-consent")).unwrap(); }
+              db::set_vault_info(conn, "sync_parent_hash", &digest(b"synthetic-parent-consent")).unwrap(); grant_fixture_consent(conn,"public-A"); }
             let pin = pin(&state).unwrap();
             (root, state, pin)
         }
@@ -3180,6 +3304,7 @@ pub mod vault_sync {
                 db::set_vault_info(&conn, k, v).unwrap();
             }
             db::set_vault_info(&conn, "sync_parent_hash", &digest(b"synthetic-parent")).unwrap();
+            grant_fixture_consent(&conn,"public-A");
             let state = AppState {
                 conn: std::sync::Mutex::new(Some(conn)),
                 vault_path: std::sync::Mutex::new(Some(root.clone())),
@@ -3364,6 +3489,19 @@ pub mod vault_sync {
             fn cleanup(dir: PathBuf, conn: Connection) {
                 drop(conn);
                 let _ = fs::remove_dir_all(dir);
+            }
+
+            #[test]
+            fn legacy_manual_transport_carries_current_bound_receipt() {
+                let (root,state,_)=super::bound_fixture();
+                let client={let lock=state.conn.lock().unwrap();super::super::manual_client(lock.as_ref().unwrap()).unwrap()};
+                let (base,received)=mock_server("HTTP/1.1 200 OK",r#"{"profile":{}}"#);
+                fetch_account_profile(&base,&client,"skd_synthetic").unwrap();
+                let raw=received.recv_timeout(std::time::Duration::from_secs(2)).unwrap().to_lowercase();
+                assert!(raw.contains("x-skipi-consent-receipt: receipt193\r\n"));
+                assert!(raw.contains("x-skipi-device-id: synthetic-device\r\n"));
+                assert!(raw.contains("authorization: bearer skd_synthetic\r\n"));
+                drop(state);fs::remove_dir_all(root).unwrap();
             }
 
             /// One-shot local HTTP mock: answers a single request with the given
