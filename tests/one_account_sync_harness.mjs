@@ -245,3 +245,14 @@ for(const language of ['en','ru'])for(const scenario of ['empty-duplicates','abs
     mobile.mobileDocsFilter='all';assert.equal((mobile.mobileDocsBodyHtml().match(/data-doc=/g)||[]).length,rows.length,'All still lists every stored row');
 }
 console.log('actual mobile Documents caller counts missing templates and explains absent/unknown RU/EN PASS');
+
+// A server-invalidated receipt exposes the next action and stops automatic retry.
+for(const language of ['ru','en'])for(const withdrawn of [false,true]){
+    const s=mountedSyncSettings();s.sandbox.getUiLang=()=>language;
+    const status={enabled:false,state:'disabled',consent_required:true,error:withdrawn?'Sync consent was withdrawn. Resume it in your account before enabling this device.':'Current sync and health consent is required.',conflicts:[]};
+    s.sandbox.oneAccountSyncRender(status,s.active);
+    assert.ok(s.active.html.includes('data-sync-action="enable"'));assert.ok(!s.active.html.includes('data-sync-action="retry"'));
+    assert.ok(s.active.html.includes(withdrawn?(language==='ru'?'возобновите синхронизацию в аккаунте':'Resume sync in your account'):(language==='ru'?'подтвердите оба согласия':'confirm both choices')));
+    const sent=[];s.sandbox.invoke=async(name)=>{sent.push(name);return status;};await s.sandbox.oneAccountSyncRun();assert.deepEqual(sent,['get_account_sync_status'],'invalidated receipt never repeats protected HTTP');
+}
+console.log('server-invalidated consent exposes reconsent/resume and stops automatic retry RU/EN PASS');

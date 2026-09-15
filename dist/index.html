@@ -1823,7 +1823,10 @@ function oneAccountSyncRender(status,target){
         return;
     }
     var displayState=status.enabled===false?'disabled':status.state;
-    if(status.consent_required===true)status=Object.assign({},status,{error:getUiLang()==='ru'?'Чтобы продолжить синхронизацию, прочитайте новое уведомление и подтвердите оба согласия. До этого данные остаются на устройстве.':'To continue sync, read the updated notice and confirm both choices. Until then, data stays on this device.'});
+    if(status.consent_required===true){
+        var withdrawn=String(status.error||'').includes('Sync consent was withdrawn.');
+        status=Object.assign({},status,{error:withdrawn?(getUiLang()==='ru'?'Согласие отозвано. Сначала возобновите синхронизацию в аккаунте, затем включите её на этом устройстве.':'Consent was withdrawn. Resume sync in your account, then enable it on this device.'):(getUiLang()==='ru'?'Чтобы продолжить синхронизацию, прочитайте новое уведомление и подтвердите оба согласия. До этого новые изменения остаются на устройстве.':'To continue sync, read the updated notice and confirm both choices. Until then, new changes stay on this device.')});
+    }
     el.innerHTML='<strong>'+esc(t.title)+'</strong><div>'+esc(account)+'</div><div>'+esc(t.messages[displayState]||displayState)+'</div>'+(status.error?'<div>'+esc(status.error)+'</div>':'')+(status.enabled?'<button class="btn btn-outline" type="button" data-sync-action="retry">'+esc(t.retry)+'</button> <button class="btn btn-outline" type="button" data-sync-action="disable">'+esc(t.disable)+'</button>':'<button class="btn btn-outline" type="button" data-sync-action="enable">'+esc(t.enable)+'</button>');
     (status.enabled===true?status.conflicts||[]:[]).forEach(function(c){
         var row=document.createElement('div');row.style.marginTop='12px';

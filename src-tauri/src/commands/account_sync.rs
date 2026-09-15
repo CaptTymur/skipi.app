@@ -842,7 +842,10 @@ pub mod vault_sync {
                 .map_err(|_| "Network unavailable. Local changes are retained.")?,
             MAX_JSON,
         )?;
-        let v = serde_json::from_slice(&b).map_err(|_| "Invalid server response")?;
+        let v: Value = serde_json::from_slice(&b).map_err(|_| "Invalid server response")?;
+        if s == 403 && ["consent_required","current_consent_required","sync_withdrawn"].contains(&text(&v,"error")) {
+            return Err(consent_response_error(s,&v));
+        }
         Ok((s, v))
     }
     fn status_error(s: u16) -> String {
@@ -1950,6 +1953,16 @@ pub mod vault_sync {
         }
         Ok(false)
     }
+    fn record_sync_error(state: &AppState, pin: &Pin, message: &str) -> Result<(),String> {
+        pinned(state,pin,|conn,_| {
+            db::set_vault_info(conn,"sync_state","error").map_err(err)?;
+            db::set_vault_info(conn,"sync_error",message).map_err(err)?;
+            if message.starts_with("Current sync and health consent is required") || message.starts_with("Sync consent was withdrawn.") {
+                db::set_vault_info(conn,"sync_consent_receipt","").map_err(err)?;
+            }
+            Ok(())
+        })
+    }
     fn run_sync(state: &AppState) -> Result<Value, String> {
         let _single = state.sync_worker.lock().unwrap_or_else(|e| e.into_inner());
         let pin = pin(state)?;
@@ -2175,10 +2188,7 @@ pub mod vault_sync {
             Ok(result)
         })();
         if let Err(e) = &result {
-            let _ = pinned(state, &pin, |conn, _| {
-                db::set_vault_info(conn, "sync_state", "error").map_err(err)?;
-                db::set_vault_info(conn, "sync_error", e).map_err(err)
-            });
+            let _ = record_sync_error(state,&pin,e);
         }
         result
     }
@@ -3491,6 +3501,22 @@ pub mod vault_sync {
                 let _ = fs::remove_dir_all(dir);
             }
 
+            #[test]
+            fn authoritative_consent_rejection_stops_retry_and_exposes_next_step() {
+                for error in ["consent_required","current_consent_required","sync_withdrawn"] {
+                    let (root,state,pin)=super::bound_fixture();
+                    let body: &'static str = match error {"consent_required"=>r#"{"error":"consent_required"}"#,"current_consent_required"=>r#"{"error":"current_consent_required"}"#,_=>r#"{"error":"sync_withdrawn"}"#};
+                    let (base,received)=mock_server("HTTP/1.1 403 Forbidden",body);
+                    let message=super::super::http_json(http_client().unwrap().get(&base)).unwrap_err();
+                    received.recv_timeout(std::time::Duration::from_secs(2)).unwrap();
+                    super::super::record_sync_error(&state,&pin,&message).unwrap();
+                    let status=super::super::consent_status(&state).unwrap();
+                    assert_eq!(status["enabled"],false);assert_eq!(status["consent_required"],true);
+                    assert!(super::super::pin(&state).is_err(),"next automatic attempt stops before HTTP");
+                    assert!(message.contains(if error=="sync_withdrawn"{"Resume it in your account"}else{"Review the notice"}));
+                    drop(state);fs::remove_dir_all(root).unwrap();
+                }
+            }
             #[test]
             fn legacy_manual_transport_carries_current_bound_receipt() {
                 let (root,state,_)=super::bound_fixture();
