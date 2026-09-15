@@ -10,7 +10,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Skipi Seafarer · Stack SKIPI-2026.08-R1",
+        "title": "Skipi Seafarer \u00b7 Stack SKIPI-2026.08-R1",
         "width": 1100,
         "height": 750,
         "resizable": true,
@@ -35,7 +35,7 @@
     "targets": "all",
     "createUpdaterArtifacts": true,
     "publisher": "Tymur Rudov",
-    "copyright": "Copyright © 2026 Tymur Rudov. MIT licensed client.",
+    "copyright": "Copyright \u00a9 2026 Tymur Rudov. MIT licensed client.",
     "category": "Productivity",
     "shortDescription": "United Seafarers - maritime document management",
     "longDescription": "Skipi - United Seafarers. Skipi Seafarer is a local-first document vault for seafarers and ship managers. Store certificates, track expiry dates, build shareable packages, and keep all data on your computer.",
@@ -48,6 +48,12 @@
     ],
     "macOS": {
       "minimumSystemVersion": "10.15"
+    },
+    "android": {
+      "versionCode": 4194
+    },
+    "iOS": {
+      "bundleVersion": "4194"
     }
   }
 }
