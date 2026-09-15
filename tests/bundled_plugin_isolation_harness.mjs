@@ -6477,9 +6477,10 @@ for(const lang of ['en','ru']){
     for(const outcome of ['restored','empty','error','cancel','changed']){
       const calls=[];let loaded=0,wizards=0,statusReads=0;
       s.uiConfirm=async()=>outcome!=='cancel';s.loadVault=async()=>{loaded++;};s.mobileCreateProfile=async()=>{wizards++;};
-      s.invoke=async(c,args)=>{calls.push([c,args]);if(c==='get_account_sync_status')return {profile_open:false,logged_in:true,restore_context:outcome==='changed'&&statusReads++?'new-context':'synthetic-context'};if(c==='restore_account_profile'){if(outcome==='error')throw new Error('synthetic offline');return {outcome,vault:EF_REAL};}return {};};
+      s.invoke=async(c,args)=>{calls.push([c,args]);if(c==='get_account_sync_status')return {consent_notice_version:s.accountSyncNotice.version,profile_open:false,logged_in:true,restore_context:outcome==='changed'&&statusReads++?'new-context':'synthetic-context'};if(c==='restore_account_profile'){if(outcome==='error')throw new Error('synthetic offline');return {outcome,vault:EF_REAL};}return {};};
       await s.restoreAccountProfile();
       ok(!calls.some(([c])=>c==='create_vault'||c==='create_profile_vault'||c==='enable_account_sync'),'193 '+lang+' '+outcome+': frontend never scaffolds a duplicate profile or bypasses restore consent');
+      const request=calls.find(([c])=>c==='restore_account_profile');if(request)ok(request[1].consentNotice.health===true&&request[1].consentNotice.sync===true&&request[1].consentNotice.notice_version===s.accountSyncNotice.version&&request[1].consentNotice.notice_sha256===s.accountSyncNotice[lang].notice_sha256,'193 '+lang+': actual restore caller sends both choices and exact displayed notice binding');
       if(outcome==='restored')ok(loaded===1&&wizards===0,'193: populated account restores directly without a wizard');
       else if(outcome==='empty')ok(wizards===1&&loaded===0,'193: genuinely empty account offers normal profile setup');
       else ok(loaded===0&&wizards===0,'193 '+outcome+': failure/cancel never masquerades as empty account or successful restore');
@@ -6490,7 +6491,7 @@ for(const lang of ['en','ru']){
 {
   section('193 restore — delayed/background sync cannot upload while the first restore is being published');
   const app=await efBoot({});const s=app.sandbox;const calls=[];let releaseRestore;
-  s.invoke=async(c)=>{calls.push(c);if(c==='get_account_sync_status')return {profile_open:false,logged_in:true,restore_context:'bound-restore'};if(c==='restore_account_profile')return await new Promise(r=>{releaseRestore=r;});return {};};
+  s.invoke=async(c)=>{calls.push(c);if(c==='get_account_sync_status')return {consent_notice_version:s.accountSyncNotice.version,profile_open:false,logged_in:true,restore_context:'bound-restore'};if(c==='restore_account_profile')return await new Promise(r=>{releaseRestore=r;});return {};};
   s.uiConfirm=async()=>true;s.loadVault=async()=>{};
   const restore=s.restoreAccountProfile();await efSettle();
   calls.length=0;await s.oneAccountSyncRun();

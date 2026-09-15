@@ -1787,10 +1787,21 @@ function oneAccountMutation(command,args){
     return null;
 }
 
+var accountSyncNotice={"version":"seafarer-sync-2026-09-15-v1","privacy_url":"https://skipi.app/privacy.html","ru":{"title":"Синхронизация через аккаунт Skipi","paragraphs":["SKIPI LTD будет передавать и хранить весь профиль для синхронизации между вашими устройствами и восстановления: личные и профессиональные данные, документы личности, контакты близких, ожидаемую зарплату, фото, документы и сканы, опыт работы и вложения. В состав могут входить медицинские сертификаты и другие сведения о вашем здоровье. Отдельные файлы здесь не выбираются.","Синхронизация добровольна. Без согласия можно продолжить локальную работу. Файлы на сервере зашифрованы, но сервер может их расшифровать; метаданные хранятся в базе данных.","Прежние версии удаляются по истечении 30 дней. Приложение не восстанавливает резервные копии старше 30 дней. Провайдер обычно удаляет такую копию в следующие 24 часа, но точный срок не гарантирован; до удаления она доступна оператору.","Отозвать согласие на синхронизацию можно в аккаунте кнопкой «Отключить на всех устройствах»: передачи остановятся, история восстановления будет удалена. Текущие профиль и документы других функций аккаунта сохранятся. Для удаления серверных данных используйте «Удалить аккаунт». Локальная пауза останавливает только это устройство."],"sync_label":"Я согласен на передачу и хранение указанных моих данных SKIPI LTD для синхронизации и восстановления через мой аккаунт.","health_label":"Я явно согласен на передачу и хранение SKIPI LTD моих медицинских сертификатов и других сведений о моём здоровье, если они входят в этот профиль, для синхронизации и восстановления.","privacy_label":"Как обрабатываются данные","accept_enable":"Согласиться и включить","accept_restore":"Согласиться и восстановить","cancel":"Продолжить без синхронизации","notice_sha256":"a23f120d81b360ca11717893e48997d56ca86c42a5e6665a241005772d87551b"},"en":{"title":"Sync with your Skipi account","paragraphs":["SKIPI LTD will transfer and store your whole profile to sync between your devices and restore your data: personal and professional details, identity document details, next-of-kin contacts, salary expectations, photo, documents and scans, work history and attachments. This may include medical certificates and other information about your health. Individual files cannot be selected here.","Sync is optional. You can continue using local features without consent. Files are encrypted on the server, but the server can decrypt them; metadata is stored in a database.","Previous versions are deleted after 30 days. The app does not restore backups older than 30 days. The provider typically deletes an expired backup within the next 24 hours, but the exact time is not guaranteed; operators can access it until deletion.","You can withdraw sync consent in your account using “Turn off on all devices”: transfers stop and recovery history is deleted. Your current profile and documents used by other account features remain. Use “Delete account” to erase server-held data. A local pause stops only this device."],"sync_label":"I agree to SKIPI LTD transferring and storing my listed data to sync and restore it through my account.","health_label":"I explicitly consent to SKIPI LTD transferring and storing my medical certificates and other information about my health, if included in this profile, for sync and restoration.","privacy_label":"How your data is processed","accept_enable":"Agree and enable","accept_restore":"Agree and restore","cancel":"Continue without sync","notice_sha256":"7dad3c8d6f3472b4fe8f8b712eeb722e055f1b2334c6d3b8631f067df028b1b8"}};
+async function oneAccountSyncRequestConsent(mode,status){
+    var language=getUiLang()==='ru'?'ru':'en',n=accountSyncNotice[language];
+    if(!status||status.consent_notice_version!==accountSyncNotice.version)throw new Error(oneAccountSyncTexts().contextChanged);
+    var html='<strong>'+esc(n.title)+'</strong><p>'+esc(status.account_email||'')+'</p>';
+    n.paragraphs.forEach(function(p){html+='<p>'+esc(p)+'</p>';});
+    html+='<p><a href="#" onclick="openExternalUrlSafe(accountSyncNotice.privacy_url);return false;">'+esc(n.privacy_label)+'</a></p>';
+    var accepted=await uiConfirm(html,{allowHtml:true,confirmLabel:mode==='restore'?n.accept_restore:n.accept_enable,cancelLabel:n.cancel,requiredChecks:[n.sync_label,n.health_label]});
+    if(accepted!==true)return null;
+    return {notice_version:accountSyncNotice.version,notice_sha256:n.notice_sha256,language:language,scope:'profile-photo-sea-service-documents',sync:true,health:true};
+}
 function oneAccountSyncTexts(){
     var ru=typeof getUiLang==='function'&&getUiLang()==='ru';
-    return ru?{webTitle:'Данные аккаунта',webSaved:'Данные сохранены в этом аккаунте. Включите синхронизацию в приложениях.',webUnavailable:'Данные аккаунта недоступны',title:'Синхронизация аккаунта',profileNeeded:'Создайте или откройте профиль моряка на этом устройстве. Затем можно подключить данные аккаунта с вашего согласия.',profileAction:'Создать или открыть профиль',loginNeeded:'Войдите в аккаунт для синхронизации этого профиля.',loginAction:'Войти',contextMissing:'Не удалось проверить состояние профиля. Откройте его снова.',contextChanged:'Профиль или вход в аккаунт изменились. Подтвердите синхронизацию заново.',cancel:'Отмена',enable:'Включить синхронизацию',retry:'Синхронизировать сейчас',disable:'Выключить',local:'Оставить версию устройства',remote:'Использовать версию аккаунта',device:'На устройстве: ',account:'В аккаунте: ',consent:'Синхронизировать профиль, фото, морской стаж и все прикреплённые документы и сканы этого аккаунта с устройством? Перед заменой данных будут показаны существующие различия.',messages:{disabled:'Синхронизация выключена',pending:'Изменения ожидают синхронизации',syncing:'Синхронизация…',current:'Профиль, морской стаж и документы синхронизированы',conflict:'Выберите, какие изменения сохранить',error:'Синхронизация требует внимания'}}
-        :{webTitle:'Account data',webSaved:'Data is saved in this account. Enable sync in your apps.',webUnavailable:'Account data unavailable',title:'Account sync',profileNeeded:'Create or open a seafarer profile on this device. You can then connect account data with your consent.',profileAction:'Create or open profile',loginNeeded:'Sign in to sync this profile.',loginAction:'Sign in',contextMissing:'Could not check profile status. Open the profile again.',contextChanged:'The profile or sign-in changed. Confirm synchronization again.',cancel:'Cancel',enable:'Enable account sync',retry:'Sync now',disable:'Turn off',local:'Keep this device version',remote:'Use account version',device:'This device: ',account:'Account: ',consent:'Sync this signed-in account’s profile, photo, sea service and all attached documents/scans with this device? Existing differences will be shown before either version is replaced.',messages:{disabled:'Sync is off',pending:'Changes are waiting to sync',syncing:'Synchronizing…',current:'Profile, sea service and documents are synchronized',conflict:'Choose which changes to keep',error:'Sync needs attention'}};
+    return ru?{webTitle:'Данные аккаунта',webSaved:'Данные сохранены в этом аккаунте. Включите синхронизацию в приложениях.',webUnavailable:'Данные аккаунта недоступны',title:'Синхронизация аккаунта',profileNeeded:'Создайте или откройте профиль моряка на этом устройстве. Затем можно подключить данные аккаунта с вашего согласия.',profileAction:'Создать или открыть профиль',loginNeeded:'Войдите в аккаунт для синхронизации этого профиля.',loginAction:'Войти',contextMissing:'Не удалось проверить состояние профиля. Откройте его снова.',contextChanged:'Профиль или вход в аккаунт изменились. Подтвердите синхронизацию заново.',cancel:'Отмена',enable:'Включить синхронизацию',retry:'Синхронизировать сейчас',disable:'Пауза на этом устройстве',local:'Оставить версию устройства',remote:'Использовать версию аккаунта',device:'На устройстве: ',account:'В аккаунте: ',consent:'Синхронизировать профиль, фото, морской стаж и все прикреплённые документы и сканы этого аккаунта с устройством? Перед заменой данных будут показаны существующие различия.',messages:{disabled:'Синхронизация выключена',pending:'Изменения ожидают синхронизации',syncing:'Синхронизация…',current:'Профиль, морской стаж и документы синхронизированы',conflict:'Выберите, какие изменения сохранить',error:'Синхронизация требует внимания'}}
+        :{webTitle:'Account data',webSaved:'Data is saved in this account. Enable sync in your apps.',webUnavailable:'Account data unavailable',title:'Account sync',profileNeeded:'Create or open a seafarer profile on this device. You can then connect account data with your consent.',profileAction:'Create or open profile',loginNeeded:'Sign in to sync this profile.',loginAction:'Sign in',contextMissing:'Could not check profile status. Open the profile again.',contextChanged:'The profile or sign-in changed. Confirm synchronization again.',cancel:'Cancel',enable:'Enable account sync',retry:'Sync now',disable:'Pause on this device',local:'Keep this device version',remote:'Use account version',device:'This device: ',account:'Account: ',consent:'Sync this signed-in account’s profile, photo, sea service and all attached documents/scans with this device? Existing differences will be shown before either version is replaced.',messages:{disabled:'Sync is off',pending:'Changes are waiting to sync',syncing:'Synchronizing…',current:'Profile, sea service and documents are synchronized',conflict:'Choose which changes to keep',error:'Sync needs attention'}};
 }
 function oneAccountSyncRender(status,target){
     if(status&&status.error)logError('account_sync',status.error);
@@ -1812,6 +1823,10 @@ function oneAccountSyncRender(status,target){
         return;
     }
     var displayState=status.enabled===false?'disabled':status.state;
+    if(status.consent_required===true){
+        var withdrawn=String(status.error||'').includes('Sync consent was withdrawn.');
+        status=Object.assign({},status,{error:withdrawn?(getUiLang()==='ru'?'Согласие отозвано. Сначала возобновите синхронизацию в аккаунте, затем включите её на этом устройстве.':'Consent was withdrawn. Resume sync in your account, then enable it on this device.'):(getUiLang()==='ru'?'Чтобы продолжить синхронизацию, прочитайте новое уведомление и подтвердите оба согласия. До этого новые изменения остаются на устройстве.':'To continue sync, read the updated notice and confirm both choices. Until then, new changes stay on this device.')});
+    }
     el.innerHTML='<strong>'+esc(t.title)+'</strong><div>'+esc(account)+'</div><div>'+esc(t.messages[displayState]||displayState)+'</div>'+(status.error?'<div>'+esc(status.error)+'</div>':'')+(status.enabled?'<button class="btn btn-outline" type="button" data-sync-action="retry">'+esc(t.retry)+'</button> <button class="btn btn-outline" type="button" data-sync-action="disable">'+esc(t.disable)+'</button>':'<button class="btn btn-outline" type="button" data-sync-action="enable">'+esc(t.enable)+'</button>');
     (status.enabled===true?status.conflicts||[]:[]).forEach(function(c){
         var row=document.createElement('div');row.style.marginTop='12px';
@@ -1858,11 +1873,11 @@ async function oneAccountSyncEnable(){
         }
         var context=before&&before.consent_context;
         if(typeof context!=='string'||!context)throw new Error(t.contextMissing);
-        var consent=await uiConfirm(t.consent,{confirmLabel:t.enable,cancelLabel:t.cancel});
-        if(consent!==true)return;
+        var consent=await oneAccountSyncRequestConsent('enable',before);
+        if(!consent)return;
         var after=await invoke('get_account_sync_status');
-        if(!after||after.consent_context!==context)throw new Error(t.contextChanged);
-        oneAccountSyncRender(await invoke('enable_account_sync',{consent:true,consentContext:context}));
+        if(!after||after.consent_context!==context||after.consent_notice_version!==consent.notice_version)throw new Error(t.contextChanged);
+        oneAccountSyncRender(await invoke('enable_account_sync',{consent:true,consentContext:context,consentNotice:consent}));
         await oneAccountSyncRun();
     }catch(e){oneAccountSyncRender({state:'error',error:String(e),conflicts:[]});}
 }
@@ -16946,11 +16961,11 @@ async function restoreAccountProfile(){
         if(before.logged_in!==true)throw new Error(ru?'Войдите в аккаунт, чтобы подключить его данные.':'Sign in to connect your account data.');
         if(before.profile_open!==false)throw new Error(ru?'Закройте текущий профиль перед загрузкой данных в новый профиль.':'Close the current profile before downloading data into a new profile.');
         if(!before.restore_context)throw new Error(oneAccountSyncTexts().contextChanged);
-        var consent=await uiConfirm(ru?'Загрузить профиль, морской стаж, фото и документы этого аккаунта в новый профиль на устройстве и включить синхронизацию? Существующие локальные профили останутся без изменений.':'Download this account’s profile, sea service, photo and documents into a new profile on this device and enable sync? Existing local profiles will remain unchanged.',{confirmLabel:ru?'Подключить данные аккаунта':'Connect account data',cancelLabel:ru?'Отмена':'Cancel'});
-        if(consent!==true)return;
+        var consent=await oneAccountSyncRequestConsent('restore',before);
+        if(!consent)return;
         var after=await invoke('get_account_sync_status');
-        if(after.restore_context!==before.restore_context||after.profile_open!==false||after.logged_in!==true)throw new Error(oneAccountSyncTexts().contextChanged);
-        var result=await invoke('restore_account_profile',{consent:true,restoreContext:before.restore_context});
+        if(after.restore_context!==before.restore_context||after.profile_open!==false||after.logged_in!==true||after.consent_notice_version!==consent.notice_version)throw new Error(oneAccountSyncTexts().contextChanged);
+        var result=await invoke('restore_account_profile',{consent:true,restoreContext:before.restore_context,consentNotice:consent});
         if(result.outcome==='empty'){
             showToast(ru?'В аккаунте пока нет данных профиля. Создайте профиль на этом устройстве.':'This account has no profile data yet. Create a profile on this device.','info');
             if(shouldUseMobileShell())await mobileCreateProfile();else await startSeafarerWizard();
@@ -17670,7 +17685,7 @@ async function spAccountImport(){
         spAccOpenModal('Import from account',
             'These '+changes.length+' fields will be overwritten in this vault with your account values (current &rarr; account). Empty account fields never touch local data. The photo is not imported.',
             rows,'Import '+changes.length+' field'+(changes.length===1?'':'s'),'spAccountImportApply()');
-    }catch(e){showToast('Import error: '+e,'error');logError('account import',e);}
+    }catch(e){if(String(e).includes('Current sync and health consent')){await oneAccountSyncEnable();return;}showToast('Import error: '+e,'error');logError('account import',e);}
 }
 async function spAccountImportApply(){
     spAccCloseModal();
@@ -17712,7 +17727,7 @@ async function spAccountSendApply(){
         var res=await invoke('send_account_profile');
         var n=(res&&res.sent)||0;
         showToast('Sent '+n+' field'+(n===1?'':'s')+' to your account','success');
-    }catch(e){showToast('Send error: '+e,'error');logError('account send apply',e);}
+    }catch(e){if(String(e).includes('Current sync and health consent')){await oneAccountSyncEnable();return;}showToast('Send error: '+e,'error');logError('account send apply',e);}
 }
 function spUploadPhotoMobile(){
     // Android/iOS pickers give a content:// URI with no filesystem path, so the
@@ -18030,7 +18045,20 @@ function uiConfirm(msg, opts){
             '<button class="btn btn-outline btn-sm" id="uic-cancel">'+esc(opts.cancelLabel||'Cancel')+'</button>'+
             '<button class="btn btn-accent btn-sm" id="uic-ok" style="'+okStyle+'">'+esc(opts.confirmLabel||'OK')+'</button></div>';
         ov.appendChild(box);document.body.appendChild(ov);
-        var done=function(v){document.body.removeChild(ov);resolve(v);};
+        var required=[];
+        if(Array.isArray(opts.requiredChecks)&&opts.requiredChecks.length){
+            box.style.width='100%';box.style.boxSizing='border-box';box.style.minWidth='0';
+            var buttons=box.querySelector('#uic-ok').parentNode;buttons.style.flexWrap='wrap';
+            opts.requiredChecks.forEach(function(text){
+                var label=document.createElement('label');label.style.cssText='display:flex;align-items:flex-start;gap:10px;line-height:1.5;margin:14px 0;overflow-wrap:anywhere;';
+                var input=document.createElement('input');input.type='checkbox';input.checked=false;input.setAttribute('data-sync-consent-check','1');input.style.cssText='flex:0 0 auto;width:20px;height:20px;margin-top:2px;';
+                var span=document.createElement('span');span.textContent=text;span.style.minWidth='0';label.appendChild(input);label.appendChild(span);box.insertBefore(label,buttons);required.push(input);
+            });
+            var refresh=function(){box.querySelector('#uic-ok').disabled=!required.every(function(input){return input.checked===true;});};
+            required.forEach(function(input){input.onchange=refresh;});refresh();
+            box.querySelector('#uic-ok').style.minHeight='44px';box.querySelector('#uic-cancel').style.minHeight='44px';
+        }
+        var done=function(v){if(v&&required.some(function(input){return input.checked!==true;}))return;document.body.removeChild(ov);resolve(v);};
         box.querySelector('#uic-cancel').onclick=function(){done(false);};
         box.querySelector('#uic-ok').onclick=function(){done(true);};
         ov.onclick=function(e){if(e.target===ov)done(false);};
