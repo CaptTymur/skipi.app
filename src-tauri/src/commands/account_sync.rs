@@ -834,6 +834,15 @@ pub mod vault_sync {
         if bytes.len() > limit {
             return Err("Server response exceeds supported limit".into());
         }
+        // Consent may be revoked between manifest and attachment download.
+        // Classify only the explicit server consent errors, for JSON and blobs.
+        if status == 403 {
+            if let Ok(body) = serde_json::from_slice::<Value>(&bytes) {
+                if ["consent_required","current_consent_required","sync_withdrawn"].contains(&text(&body,"error")) {
+                    return Err(consent_response_error(status,&body));
+                }
+            }
+        }
         Ok((status, bytes))
     }
     fn http_json(req: reqwest::blocking::RequestBuilder) -> Result<(u16, Value), String> {
@@ -843,9 +852,6 @@ pub mod vault_sync {
             MAX_JSON,
         )?;
         let v: Value = serde_json::from_slice(&b).map_err(|_| "Invalid server response")?;
-        if s == 403 && ["consent_required","current_consent_required","sync_withdrawn"].contains(&text(&v,"error")) {
-            return Err(consent_response_error(s,&v));
-        }
         Ok((s, v))
     }
     fn status_error(s: u16) -> String {
@@ -3503,11 +3509,14 @@ pub mod vault_sync {
 
             #[test]
             fn authoritative_consent_rejection_stops_retry_and_exposes_next_step() {
-                for error in ["consent_required","current_consent_required","sync_withdrawn"] {
+                for error in ["consent_required","current_consent_required","sync_withdrawn"] { for blob in [false,true] {
                     let (root,state,pin)=super::bound_fixture();
                     let body: &'static str = match error {"consent_required"=>r#"{"error":"consent_required"}"#,"current_consent_required"=>r#"{"error":"current_consent_required"}"#,_=>r#"{"error":"sync_withdrawn"}"#};
                     let (base,received)=mock_server("HTTP/1.1 403 Forbidden",body);
-                    let message=super::super::http_json(http_client().unwrap().get(&base)).unwrap_err();
+                    let client=http_client().unwrap();
+                    let message=if blob {
+                        super::super::download_url(&client,&pin,&super::wire_doc("consent-blob",Some(b"synthetic")),base).unwrap_err()
+                    } else {super::super::http_json(client.get(&base)).unwrap_err()};
                     received.recv_timeout(std::time::Duration::from_secs(2)).unwrap();
                     super::super::record_sync_error(&state,&pin,&message).unwrap();
                     let status=super::super::consent_status(&state).unwrap();
@@ -3515,7 +3524,7 @@ pub mod vault_sync {
                     assert!(super::super::pin(&state).is_err(),"next automatic attempt stops before HTTP");
                     assert!(message.contains(if error=="sync_withdrawn"{"Resume it in your account"}else{"Review the notice"}));
                     drop(state);fs::remove_dir_all(root).unwrap();
-                }
+                }}
             }
             #[test]
             fn legacy_manual_transport_carries_current_bound_receipt() {
