@@ -4,6 +4,7 @@
 //! Privacy: the desktop app sends only the broad filter parameters in the
 //! query string; the server never sees the seafarer's identity.
 
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 
 use crate::api;
@@ -276,7 +277,7 @@ pub fn fetch_published_profiles(
         .connect_timeout(std::time::Duration::from_secs(4))
         .build()
         .map_err(|e| e.to_string())?;
-    let parsed: PublishedProfileListResp = api::get_json(&client, &path)?;
+    let parsed: PublishedProfileListResp = get_json_for_response_path(&client, &path)?;
     Ok(parsed.items)
 }
 
@@ -522,4 +523,545 @@ fn urlencoding(s: &str) -> String {
             }
         })
         .collect()
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// P2/S4b — the seafarer answers a published matching profile WITH A BUTTON.
+//
+// The whole chain lives in Rust on purpose, and each of the three reasons was
+// measured before a line was written:
+//
+//  1. THE WEBVIEW HAS ITS OWN BASE LIST WITH A SILENT FALLBACK, AND IT DOES NOT
+//     CHECK THE METHOD. `apiFetch` (dist/index.html) walks
+//     [override, api.skipi.app, api-ru.skipi.app] and its `catch` branch
+//     continues to the next base for ANY method — `shouldRetryApiResponse`
+//     guards only the status-code branch and only for GET/HEAD/OPTIONS. A POST
+//     that throws on the stand would therefore be retried against PRODUCTION,
+//     carrying a seafarer's CV with it. Nothing about the response path may go
+//     through that function.
+//  2. THE STAND ADDRESS IS A COMPILE-TIME FACT AND ONLY RUST CAN SEE IT.
+//     `option_env!` is resolved when the binary is built; on Android there is no
+//     process environment to read and no way to hand the WebView a runtime one.
+//  3. THE SESSION AND THE RESPONSE MUST AGREE ON ONE HOST. The bearer is minted
+//     by `/api/me/session` and spent on `/api/published-profiles/.../responses`.
+//     Splitting them between the WebView and Rust would mint a token on
+//     production and spend it on the stand — two hosts, zero working paths.
+//
+// The access token never enters JavaScript and the Ed25519 private key never
+// leaves the vault: the signature is produced here, over bytes this file builds
+// itself, and only the acknowledgement crosses back.
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// `vault_info` key prefix for the response id of ONE profile. In the vault's
+/// SQLite database, so it survives the process — see `ensure_profile_response_id`.
+const RESPONSE_ID_KEY_PREFIX: &str = "profile_response_id:";
+
+/// Read from the server (`app/self_session_service.py:32`). A payload that does
+/// not carry exactly this schema is not a self-session challenge and is not signed.
+const SELF_SESSION_SCHEMA: &str = "skipi.identity.self_session.v1";
+const SELF_SESSION_AUDIENCE: &str = "skipi-server";
+
+/// The exact key set of `_challenge_payload_to_sign`
+/// (`app/self_session_service.py:119-128`). The signer refuses anything else —
+/// see `sign_self_session_challenge` for why that matters.
+const SELF_SESSION_PAYLOAD_KEYS: [&str; 7] = [
+    "audience",
+    "challenge_id",
+    "created_at",
+    "nonce",
+    "public_seafarer_id",
+    "schema",
+    "vault_user_id",
+];
+
+/// Stable error token for the tombstone case. NOT the server's own words: the
+/// 409 body says "event already accepted with different content", which is
+/// wrong about what happened (the agency deleted the intake), and repeating it
+/// verbatim would hand a seafarer a sentence that misdescribes his own action.
+/// The UI matches this token and says its own localised sentence.
+pub(crate) const RESPONSE_NO_LONGER_ACCEPTED: &str = "RESPONSE_NO_LONGER_ACCEPTED";
+
+/// The stand address of a SERVICE BUILD, or nothing at all.
+///
+/// Compile-time (`option_env!`), inside `#[cfg(debug_assertions)]`, validated by
+/// the same eight predicates the already-accepted `SKIPI_SYNC_TEST_BASE`
+/// resolver uses (`commands/account_sync.rs:93-100`) — scheme, host, port,
+/// username, password, path, query, fragment. A second mechanism is not
+/// invented here and the host list has no wildcard.
+///
+/// Unlike that resolver this one does NOT also read `std::env::var`: a runtime
+/// override would be a second way in that the harness cannot see and that the
+/// phone cannot set anyway.
+///
+/// In a release build the `#[cfg]` block is not compiled and this is `None`, so
+/// every caller below compiles down to today's `api::` path.
+fn jobs_test_api_base() -> Option<String> {
+    #[cfg(debug_assertions)]
+    {
+        if let Some(raw) = option_env!("SKIPI_JOBS_TEST_BASE") {
+            if let Ok(url) = reqwest::Url::parse(raw.trim()) {
+                if url.scheme() == "http"
+                    && matches!(url.host_str(), Some("127.0.0.1" | "10.0.2.2"))
+                    && url.port().is_some()
+                    && url.username().is_empty()
+                    && url.password().is_none()
+                    && url.path() == "/"
+                    && url.query().is_none()
+                    && url.fragment().is_none()
+                {
+                    return Some(raw.trim().trim_end_matches('/').to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Every base this slice's requests may use, and NOTHING beyond them.
+///
+/// When a stand is compiled in, the returned list is EXACTLY ONE base and the
+/// production hosts are not in it at all. That is the difference between this
+/// and `api::api_bases()`, which answers a loopback override with
+/// `[stand, api.skipi.app, api-ru.skipi.app]` — on that list a stand that is
+/// down is not an error, it is a production write.
+fn response_bases() -> Vec<String> {
+    if let Some(stand) = jobs_test_api_base() {
+        return vec![stand];
+    }
+    api::api_bases()
+}
+
+/// Which host the response path will actually talk to, and whether that is a
+/// stand. The UI renders a line from this in a service build, so the screenshot
+/// of a visual acceptance records WHICH server the app was speaking to.
+#[derive(Debug, Clone, Serialize)]
+pub struct JobsResponseEndpoint {
+    pub base: String,
+    pub stand: bool,
+}
+
+#[tauri::command]
+pub fn jobs_response_endpoint() -> JobsResponseEndpoint {
+    match jobs_test_api_base() {
+        Some(stand) => JobsResponseEndpoint {
+            base: stand,
+            stand: true,
+        },
+        None => JobsResponseEndpoint {
+            base: response_bases()
+                .first()
+                .cloned()
+                .unwrap_or_else(|| "unknown".to_string()),
+            stand: false,
+        },
+    }
+}
+
+/// The GET side of the same rule as the POST side: when a stand is compiled in,
+/// the published-profiles list is read from THAT host and from nowhere else, and
+/// a failure there is a failure. With no stand this is byte-for-byte today's
+/// `api::get_json` — the release build cannot tell the difference.
+fn get_json_for_response_path<T>(
+    client: &reqwest::blocking::Client,
+    path: &str,
+) -> Result<T, String>
+where
+    T: serde::de::DeserializeOwned,
+{
+    if jobs_test_api_base().is_some() {
+        let answer = send_on_response_bases(client, false, path, None, None)?;
+        if !(200..300).contains(&answer.status) {
+            return Err(format!("server returned {}: {}", answer.status, answer.body));
+        }
+        return serde_json::from_str(&answer.body).map_err(|e| format!("bad JSON: {e}"));
+    }
+    api::get_json(client, path)
+}
+
+struct HttpAnswer {
+    status: u16,
+    body: String,
+}
+
+/// One request over `response_bases()`. A transport error moves to the next
+/// base ONLY IF THERE IS ONE; with a stand compiled in there is not, so the
+/// error is returned as an error and nothing is asked again anywhere else.
+///
+/// An HTTP answer — any status — ends the walk. A 4xx/5xx from the stand is the
+/// stand's answer, not a reason to ask a different host the same question.
+fn send_on_response_bases(
+    client: &reqwest::blocking::Client,
+    method_post: bool,
+    path: &str,
+    body: Option<&serde_json::Value>,
+    bearer: Option<&str>,
+) -> Result<HttpAnswer, String> {
+    let bases = response_bases();
+    let mut last_err = String::from("API unavailable");
+    for (idx, base) in bases.iter().enumerate() {
+        let url = format!("{}{}", base.trim_end_matches('/'), path);
+        let mut req = if method_post {
+            match body {
+                Some(json) => client.post(&url).json(json),
+                None => client.post(&url),
+            }
+        } else {
+            client.get(&url)
+        };
+        req = req.header(reqwest::header::ACCEPT, "application/json");
+        if let Some(token) = bearer {
+            req = req.header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"));
+        }
+        match req.send() {
+            Ok(resp) => {
+                let status = resp.status().as_u16();
+                let text = resp.text().unwrap_or_default();
+                return Ok(HttpAnswer {
+                    status,
+                    body: text,
+                });
+            }
+            Err(e) => {
+                last_err = format!("network: {e}");
+                if idx + 1 < bases.len() {
+                    continue;
+                }
+            }
+        }
+    }
+    Err(last_err)
+}
+
+/// `json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)`
+/// — the server's `canonical_payload_bytes` (`app/trust_service.py:155-158`),
+/// byte for byte, because a signature over anything else is simply invalid.
+///
+/// Only the flat all-string object of a self-session challenge is representable
+/// here, and that is deliberate: it removes number formatting from the problem
+/// entirely instead of hoping Rust and Python agree on it.
+fn canonical_self_session_bytes(fields: &[(String, String)]) -> Vec<u8> {
+    let mut sorted: Vec<&(String, String)> = fields.iter().collect();
+    sorted.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut out = String::from("{");
+    for (idx, (key, value)) in sorted.iter().enumerate() {
+        if idx > 0 {
+            out.push(',');
+        }
+        out.push_str(&json_ascii_string(key));
+        out.push(':');
+        out.push_str(&json_ascii_string(value));
+    }
+    out.push('}');
+    out.into_bytes()
+}
+
+/// A JSON string literal the way `ensure_ascii=True` writes one: every
+/// non-ASCII code point becomes `\uXXXX` (a surrogate pair above the BMP),
+/// `/` is NOT escaped, and control characters use their short forms.
+fn json_ascii_string(value: &str) -> String {
+    let mut out = String::from("\"");
+    for ch in value.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\u{8}' => out.push_str("\\b"),
+            '\u{c}' => out.push_str("\\f"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c if (c as u32) < 0x7f => out.push(c),
+            c => {
+                let mut buf = [0u16; 2];
+                for unit in c.encode_utf16(&mut buf) {
+                    out.push_str(&format!("\\u{:04x}", unit));
+                }
+            }
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// Sign ONE self-session challenge with the vault's Ed25519 identity key.
+///
+/// NOT A SIGNING ORACLE, and the checks below are what makes that true rather
+/// than a hope. A command that signed whatever JSON it was handed would let any
+/// script in the WebView mint a signature over arbitrary bytes with the key
+/// that IS the seafarer's identity. So:
+///
+///   * the payload must be an object whose key set is EXACTLY the seven keys of
+///     the server's `_challenge_payload_to_sign`, every value a string;
+///   * `schema` and `audience` must be the self-session constants;
+///   * `vault_user_id` must be THIS vault's own — derived here from the key,
+///     never taken from the caller.
+///
+/// A payload that fails any of these is refused, not signed. The private key
+/// does not leave the vault and no part of it is returned.
+#[tauri::command]
+pub fn sign_self_session_challenge(
+    state: tauri::State<crate::AppState>,
+    payload: serde_json::Value,
+) -> Result<String, String> {
+    use ed25519_dalek::Signer;
+    let vault = {
+        let guard = state
+            .vault_path
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        guard.as_ref().cloned().ok_or("No vault open")?
+    };
+    let signing = crate::identity::vault_signing_key(&vault)?;
+    let own_user_id = crate::identity::user_id_for_pubkey(&signing.verifying_key().to_bytes());
+
+    let object = payload
+        .as_object()
+        .ok_or("self-session payload must be a JSON object")?;
+    let mut fields: Vec<(String, String)> = Vec::new();
+    for (key, value) in object {
+        let text = value
+            .as_str()
+            .ok_or_else(|| format!("self-session payload field '{key}' must be a string"))?;
+        fields.push((key.clone(), text.to_string()));
+    }
+    let mut present: Vec<&str> = fields.iter().map(|(k, _)| k.as_str()).collect();
+    present.sort_unstable();
+    if present != SELF_SESSION_PAYLOAD_KEYS {
+        return Err("not a self-session challenge payload".to_string());
+    }
+    let field = |name: &str| -> String {
+        fields
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.clone())
+            .unwrap_or_default()
+    };
+    if field("schema") != SELF_SESSION_SCHEMA || field("audience") != SELF_SESSION_AUDIENCE {
+        return Err("not a self-session challenge payload".to_string());
+    }
+    if field("vault_user_id") != own_user_id {
+        return Err("challenge belongs to a different vault identity".to_string());
+    }
+
+    let message = canonical_self_session_bytes(&fields);
+    let signature = signing.sign(&message);
+    Ok(base64::engine::general_purpose::STANDARD.encode(signature.to_bytes()))
+}
+
+/// The response id for ONE profile, created once and then returned unchanged.
+///
+/// It lives in the vault's `vault_info` table — the vault's own SQLite file on
+/// disk — so a retry after the app was killed, or after the phone was
+/// restarted, sends THE SAME id and the server recognises the retry as the same
+/// response rather than storing a second one. `localStorage` would not do: it is
+/// the WebView's, cleared with app data, and the vault can move between devices
+/// while the response it already sent cannot.
+///
+/// An ASCII-safe hyphenated UUID, because the server puts this value into a
+/// MIME boundary (`app/profile_response_service.py`).
+#[tauri::command]
+pub fn ensure_profile_response_id(
+    state: tauri::State<crate::AppState>,
+    profile_id: String,
+) -> Result<String, String> {
+    let profile_id = profile_id.trim();
+    if profile_id.is_empty() {
+        return Err("profile id is required".to_string());
+    }
+    let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = lock.as_ref().ok_or("No vault open")?;
+    let key = format!("{RESPONSE_ID_KEY_PREFIX}{profile_id}");
+    if let Some(existing) = crate::db::get_vault_info_value(conn, &key) {
+        let existing = existing.trim().to_string();
+        if !existing.is_empty() {
+            return Ok(existing);
+        }
+    }
+    let fresh = uuid::Uuid::new_v4().to_string();
+    crate::db::set_vault_info(conn, &key, &fresh).map_err(|e| e.to_string())?;
+    Ok(fresh)
+}
+
+/// Deliver ONE response to ONE published matching profile.
+///
+/// Success is the SERVER'S acknowledgement and nothing earlier. This function
+/// returns `Ok` only when the body it read back says `delivered: true` AND
+/// names an `intake_id` — the row an agency will open. A 2xx with any other body
+/// is a failure here, because the one thing a client must not do on this surface
+/// is tell a seafarer his CV arrived when it did not.
+///
+/// 201 (first time) and 200 (a replay of the same `response_id`) are BOTH
+/// success and neither is distinguished: the acknowledgement is read from the
+/// body, so a legitimate retry cannot be shown as a failure.
+///
+/// `published_version` is NOT sent. The server's `ProfileResponseSubmit` is
+/// `extra="forbid"` and has no such field (`app/schemas.py:487-519`): it copies
+/// the version out of the frozen snapshot itself, and a client-declared version
+/// would be a claim about a row the client cannot see. It comes BACK in the
+/// acknowledgement, and that is what the UI shows.
+#[tauri::command]
+pub fn submit_profile_response(
+    state: tauri::State<crate::AppState>,
+    profile_id: String,
+    response_id: String,
+    cv_path: String,
+    cv_content_type: Option<String>,
+    message: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let profile_id = profile_id.trim().to_string();
+    let response_id = response_id.trim().to_string();
+    if profile_id.is_empty() || response_id.is_empty() {
+        return Err("profile id and response id are required".to_string());
+    }
+
+    // Identity and contact are read from the vault, never accepted from the
+    // caller: a response is delivered as the seafarer whose key signs for it.
+    let (vault_user_id, public_seafarer_id, contact) = {
+        let vault = {
+            let guard = state
+                .vault_path
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            guard.as_ref().cloned().ok_or("No vault open")?
+        };
+        let signing = crate::identity::vault_signing_key(&vault)?;
+        let user_id = crate::identity::user_id_for_pubkey(&signing.verifying_key().to_bytes());
+        let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = lock.as_ref().ok_or("No vault open")?;
+        let public_id = crate::db::get_vault_info_value(conn, "skipi_public_seafarer_id")
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .ok_or("this vault has no public seafarer id yet")?;
+        let contact = crate::db::get_vault_info_value(conn, "personal_email")
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .ok_or("add an e-mail to your profile before responding")?;
+        (user_id, public_id, contact)
+    };
+
+    let cv_bytes = std::fs::read(&cv_path).map_err(|e| format!("could not read the CV: {e}"))?;
+    if cv_bytes.is_empty() {
+        return Err("the generated CV is empty".to_string());
+    }
+    let cv_base64 = base64::engine::general_purpose::STANDARD.encode(&cv_bytes);
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(45))
+        .connect_timeout(std::time::Duration::from_secs(6))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let bearer = mint_self_session(&state, &client, &vault_user_id, &public_seafarer_id)?;
+
+    let mut body = serde_json::json!({
+        "response_id": response_id,
+        "contact": contact,
+        "cv_content_type": cv_content_type
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("application/pdf"),
+        "cv_base64": cv_base64,
+    });
+    if let Some(text) = message.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        body["message"] = serde_json::Value::String(text.to_string());
+    }
+
+    let answer = send_on_response_bases(
+        &client,
+        true,
+        &format!("/api/published-profiles/{}/responses", urlencoding(&profile_id)),
+        Some(&body),
+        Some(&bearer),
+    )?;
+
+    // The tombstone case, and the ONE place the server's own words are dropped
+    // on purpose: its 409 says the content differs, when what happened is that
+    // the agency deleted the intake this response was delivered into.
+    if answer.status == 409 {
+        return Err(RESPONSE_NO_LONGER_ACCEPTED.to_string());
+    }
+    if !(200..300).contains(&answer.status) {
+        return Err(format!("server returned {}: {}", answer.status, answer.body));
+    }
+    let ack: serde_json::Value = serde_json::from_str(&answer.body)
+        .map_err(|e| format!("the server's acknowledgement did not parse: {e}"))?;
+    if ack.get("delivered").and_then(serde_json::Value::as_bool) != Some(true) {
+        return Err("the server did not confirm the response was stored".to_string());
+    }
+    let intake_id = ack
+        .get("intake_id")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    if intake_id.is_none() {
+        return Err("the server did not confirm the response was stored".to_string());
+    }
+    Ok(ack)
+}
+
+/// Challenge → sign → session, all on ONE host, and the token never leaves Rust.
+fn mint_self_session(
+    state: &tauri::State<crate::AppState>,
+    client: &reqwest::blocking::Client,
+    vault_user_id: &str,
+    public_seafarer_id: &str,
+) -> Result<String, String> {
+    let challenge_req = serde_json::json!({
+        "vault_user_id": vault_user_id,
+        "public_seafarer_id": public_seafarer_id,
+        "client": { "app": "seafarer", "surface": "profile_response" },
+    });
+    let challenge_answer = send_on_response_bases(
+        client,
+        true,
+        "/api/me/session/challenge",
+        Some(&challenge_req),
+        None,
+    )?;
+    if !(200..300).contains(&challenge_answer.status) {
+        return Err(format!(
+            "session challenge returned {}: {}",
+            challenge_answer.status, challenge_answer.body
+        ));
+    }
+    let challenge: serde_json::Value = serde_json::from_str(&challenge_answer.body)
+        .map_err(|e| format!("bad challenge JSON: {e}"))?;
+    let challenge_id = challenge
+        .get("challenge_id")
+        .and_then(serde_json::Value::as_str)
+        .ok_or("the challenge carried no challenge_id")?
+        .to_string();
+    let payload_to_sign = challenge
+        .get("payload_to_sign")
+        .cloned()
+        .ok_or("the challenge carried no payload_to_sign")?;
+
+    // The same narrow signer the command exposes — one implementation, so the
+    // checks that make it not-an-oracle cannot hold on one path and not the other.
+    let signature_b64 = sign_self_session_challenge(state.clone(), payload_to_sign)?;
+
+    let session_req = serde_json::json!({
+        "challenge_id": challenge_id,
+        "vault_user_id": vault_user_id,
+        "public_seafarer_id": public_seafarer_id,
+        "signature_b64": signature_b64,
+    });
+    let session_answer =
+        send_on_response_bases(client, true, "/api/me/session", Some(&session_req), None)?;
+    if !(200..300).contains(&session_answer.status) {
+        return Err(format!(
+            "self session returned {}: {}",
+            session_answer.status, session_answer.body
+        ));
+    }
+    let session: serde_json::Value = serde_json::from_str(&session_answer.body)
+        .map_err(|e| format!("bad session JSON: {e}"))?;
+    session
+        .get("access_token")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| "the session carried no access token".to_string())
 }

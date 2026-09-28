@@ -73,6 +73,17 @@ const ROOT = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(ROOT, 'dist/index.html'), 'utf8');
 const jobsRs = fs.readFileSync(path.join(ROOT, 'src-tauri/src/commands/jobs.rs'), 'utf8');
 const libRs = fs.readFileSync(path.join(ROOT, 'src-tauri/src/lib.rs'), 'utf8');
+const cargoToml = fs.readFileSync(path.join(ROOT, 'src-tauri/Cargo.toml'), 'utf8');
+// Every .rs file of the crate, so "exactly once in src-tauri/src" is a claim
+// about the crate and not about one file that happens to be open.
+const allRustSrc = (function walk(dir, acc) {
+  for (const name of fs.readdirSync(dir)) {
+    const full = path.join(dir, name);
+    if (fs.statSync(full).isDirectory()) walk(full, acc);
+    else if (name.endsWith('.rs')) acc.push([full, fs.readFileSync(full, 'utf8')]);
+  }
+  return acc;
+})(path.join(ROOT, 'src-tauri/src'), []);
 
 let pass = 0;
 let fail = 0;
@@ -128,8 +139,33 @@ function rustFnBody(src, name) {
   return null;
 }
 
+// Line comments are not code paths. A gate is asserted over code, so the prose
+// that explains WHY the gate exists cannot fail the assertion that enforces it.
+function withoutLineComments(src) {
+  return String(src || '').split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+}
+
 function countOf(haystack, needle) {
   return (haystack.split(needle).length - 1);
+}
+
+// The brace-matched block that OPENS at the first `{` at or after `marker`.
+// Used where a claim is positional — "this token is inside that block" — because
+// a substring search over the whole file answers a different question.
+function blockAfter(src, marker) {
+  const at = src.indexOf(marker);
+  if (at < 0) return null;
+  const open = src.indexOf('{', at + marker.length - 1);
+  if (open < 0) return null;
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}') {
+      depth--;
+      if (depth === 0) return src.slice(open + 1, i);
+    }
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------- DOM shim --
@@ -368,10 +404,39 @@ const WORK_HISTORY = [
   { vessel_name: 'MV Harness', position: 'Third Officer', sign_on: '2022-01-01', sign_off: '2022-08-01' },
 ];
 
+// STANDS IN FOR `vault_info`, AND THE FACT THAT IT OUTLIVES `boot()` IS THE TEST.
+// The harness rebuilds localStorage on every boot, so a response id kept there
+// would look stable inside one run and be gone after a restart — the exact
+// difference this map exists to expose. Keyed by profile id, like the real
+// `profile_response_id:<profile_id>` rows.
+const VAULT_RESPONSE_IDS = new Map();
+let vaultIdCounter = 0;
+
 function makeInvoke(state) {
   return async (cmd, args) => {
     state.calls.push([cmd, args]);
     switch (cmd) {
+      case 'jobs_response_endpoint':
+        return state.endpoint;
+      case 'ensure_profile_response_id': {
+        if (state.responseIdThrows) throw new Error('No vault open');
+        const pid = String((args && args.profileId) || '');
+        // Exactly what the Rust command does: return the stored id, and only
+        // mint one when there is none.
+        if (!VAULT_RESPONSE_IDS.has(pid)) {
+          vaultIdCounter += 1;
+          VAULT_RESPONSE_IDS.set(pid, `11111111-2222-4333-8444-00000000000${vaultIdCounter}`);
+        }
+        return VAULT_RESPONSE_IDS.get(pid);
+      }
+      case 'get_downloads_dir': return '/tmp/jobs-harness-downloads';
+      case 'export_redacted_cv_pdf':
+        if (state.cvThrows) throw new Error('vault locked');
+        return {};
+      case 'submit_profile_response':
+        state.submits.push((args && { ...args, cvBase64: undefined }) || {});
+        if (state.submitThrows) throw new Error(state.submitThrows);
+        return state.submitAck;
       case 'get_seafarer_personal': return JSON.parse(JSON.stringify(state.personal));
       case 'set_seafarer_personal':
         Object.assign(state.personal, (args && args.fields) || {});
@@ -410,6 +475,14 @@ function boot(opts = {}) {
     documents: opts.documents === undefined ? DOCUMENTS : opts.documents,
     documentsThrow: !!opts.documentsThrow,
     profilesThrow: !!opts.profilesThrow,
+    submits: [],
+    endpoint: opts.endpoint === undefined ? { base: 'https://api.skipi.app', stand: false } : opts.endpoint,
+    submitAck: opts.submitAck === undefined
+      ? { delivered: true, response_id: 'r', profile_id: 'p', crewing_id: 'c', published_version: 7, intake_id: 'intake-0001', content_sha256: 'abc', created_at: '2026-09-28T00:00:00Z' }
+      : opts.submitAck,
+    submitThrows: opts.submitThrows || '',
+    cvThrows: !!opts.cvThrows,
+    responseIdThrows: !!opts.responseIdThrows,
   };
   const document = new FakeDocument(html);
   const store = new Map([
@@ -484,7 +557,19 @@ function boot(opts = {}) {
   const feedHost = document.createElement('div');
   feedHost.setAttribute('id', 'jobs-feed');
 
-  return { sandbox, document, store, state, profilesHost, feedHost };
+  // Same reason as the two hosts above: the shim keeps innerHTML as a string and
+  // does not build children from it, so the nodes the respond flow writes into
+  // are pre-created here exactly as a browser would already have them.
+  const respondNodes = new Map();
+  for (const pid of (opts.respondFor || [])) {
+    const status = document.createElement('div');
+    status.setAttribute('id', 'jobs-respond-status-' + pid);
+    const btn = document.createElement('button');
+    btn.setAttribute('id', 'jobs-respond-btn-' + pid);
+    respondNodes.set(pid, { status, btn });
+  }
+
+  return { sandbox, document, store, state, profilesHost, feedHost, respondNodes };
 }
 
 async function settle(turns = 80) {
@@ -507,6 +592,29 @@ async function renderJobsScreen(opts = {}) {
     error,
     screenHtml: screen ? screen.innerHTML : '',
     sectionHtml: booted.profilesHost.innerHTML,
+  };
+}
+
+// Runs the REAL respond handler of the real inline scripts and returns the
+// status line it left on screen, plus every invoke it made.
+async function runRespond(opts = {}) {
+  const pid = opts.profileId || PROFILE_MATCH.profile_id;
+  const booted = boot({ ...opts, respondFor: [pid] });
+  let error = null;
+  try {
+    await booted.sandbox.jobsRespondToProfile(pid);
+  } catch (e) {
+    error = e;
+  }
+  await settle();
+  const nodes = booted.respondNodes.get(pid);
+  return {
+    ...booted,
+    error,
+    statusHtml: nodes ? nodes.status.innerHTML : '',
+    statusState: nodes ? nodes.status.getAttribute('data-respond-state') : null,
+    buttonDisabled: nodes ? nodes.btn.disabled : null,
+    submits: booted.state.submits,
   };
 }
 
@@ -784,6 +892,332 @@ for (const [lang, marker] of [['en', /[A-Za-z]/], ['ru', /[Ѐ-ӿ]/]]) {
   ok(e.sectionHtml.length > 0 && marker.test(e.sectionHtml),
     `L6 (${lang}) a failing surface renders a localised message instead of nothing`);
 }
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// P2/S4b — the response, and the stand address of a service build.
+//
+// MEASUREMENT BOUNDARY OF THIS HALF, stated before the assertions so no line
+// below is read as more than it is: these are SOURCE contracts over Rust text
+// plus DOM-shimmed runs of the real inline scripts. Nothing here compiles the
+// crate, so "the compile-time base reaches the binary" is NOT proven here — it
+// is proven on the built `.so`. Nothing here reaches the network either, so
+// "the response goes only to the stand" is proven as the ABSENCE OF ANY PATH to
+// another host in the code that builds the request, not by watching packets.
+// ════════════════════════════════════════════════════════════════════════════
+
+section('T. the stand address of a service build (DECISIONS (855))');
+
+const standResolver = blockAfter(jobsRs, 'fn jobs_test_api_base()');
+ok(standResolver !== null, 'T0 jobs.rs declares a jobs_test_api_base() resolver');
+
+// (1) The resolver is inside `#[cfg(debug_assertions)]` — POSITIONALLY, not by
+// the attribute existing somewhere in the file.
+const cfgBlock = standResolver && blockAfter(standResolver, '#[cfg(debug_assertions)]');
+ok(cfgBlock !== null, 'T1 the resolver carries a #[cfg(debug_assertions)] block');
+ok(cfgBlock !== null && cfgBlock.includes('option_env!("SKIPI_JOBS_TEST_BASE")'),
+  'T1b the compile-time lookup is INSIDE that cfg block (a release build does not compile it)');
+
+// P5: positional release-cleanliness, because a substring search cannot tell
+// "inside the cfg block" from "next to it".
+const optionEnvHits = allRustSrc
+  .map(([f, src]) => [f, countOf(src, 'option_env!("SKIPI_JOBS_TEST_BASE")')])
+  .filter(([, n]) => n > 0);
+const optionEnvTotal = optionEnvHits.reduce((a, [, n]) => a + n, 0);
+ok(optionEnvTotal === 1,
+  `T2 option_env!("SKIPI_JOBS_TEST_BASE") occurs exactly once in src-tauri/src (found ${optionEnvTotal} in ${optionEnvHits.map(([f]) => path.basename(f)).join(',') || 'nothing'})`);
+
+// The hook is only out of the release build while `[profile.release]` leaves
+// debug-assertions at its default false. One line in Cargo.toml would ship it,
+// so the absence of that line is asserted rather than assumed.
+const releaseProfile = blockAfter(cargoToml.replace(/\r/g, ''), '[profile.release]');
+ok(!/\[profile\.release\]/.test(cargoToml) || !/debug[-_]assertions\s*=\s*true/.test(String(releaseProfile || cargoToml)),
+  'T3 Cargo.toml has no [profile.release] that turns debug-assertions on (the hook stays out of the release build)');
+
+// (2) The host list is exact and nothing is read from the runtime environment.
+if (cfgBlock) {
+  ok(cfgBlock.includes('"127.0.0.1" | "10.0.2.2"'),
+    'T4 the host list is exactly {127.0.0.1, 10.0.2.2}');
+  ok(!/[*]|starts_with|contains|ends_with/.test(cfgBlock),
+    'T5 the host check has no wildcard and no prefix/substring match');
+  ok(!cfgBlock.includes('std::env::var') && !cfgBlock.includes('env::var'),
+    'T6 the stand address is compile-time only — nothing is read from the process environment');
+  // All EIGHT predicates of the already-accepted exemplar
+  // (commands/account_sync.rs:93-100). The card said seven; the named range
+  // holds eight, and the source is the authority.
+  [
+    ['scheme() == "http"', 'scheme is http'],
+    ['port().is_some()', 'a port is mandatory'],
+    ['username().is_empty()', 'no username'],
+    ['password().is_none()', 'no password'],
+    ['path() == "/"', 'no path'],
+    ['query().is_none()', 'no query'],
+    ['fragment().is_none()', 'no fragment'],
+  ].forEach(([needle, what]) => {
+    ok(cfgBlock.includes(needle), `T7 the exemplar's predicate is repeated: ${what}`);
+  });
+}
+
+// (3) In the stand branch there is no production host, under any of its names.
+const standBranch = blockAfter(
+  String(blockAfter(jobsRs, 'fn response_bases()') || ''),
+  'if let Some(stand) = jobs_test_api_base()'
+);
+ok(standBranch !== null, 'T8 response_bases() has a stand branch');
+['api_bases()', 'PRIMARY_API', 'RU_API', 'api.skipi.app', 'api-ru.skipi.app'].forEach((needle) => {
+  ok(standBranch !== null && !standBranch.includes(needle),
+    `T9 the stand branch does not mention ${needle}`);
+});
+ok(standBranch !== null && /return\s+vec!\[\s*stand\s*\]/.test(standBranch),
+  'T10 with a stand compiled in the base list is EXACTLY ONE base — the production hosts are not in it to fall back to');
+
+// (4) The POST of the response has no path to a production base when the stand
+// fails. Enumerated, because "it does not" is only worth what the enumeration
+// covers: every helper in api.rs that walks api_bases() is named here, and the
+// response path must call none of them.
+const submitBody = rustFnBody(jobsRs, 'submit_profile_response');
+const mintBody = rustFnBody(jobsRs, 'mint_self_session');
+const senderBody = rustFnBody(jobsRs, 'send_on_response_bases');
+ok(submitBody !== null && mintBody !== null && senderBody !== null,
+  'T11 the response path (submit_profile_response, mint_self_session, send_on_response_bases) is present');
+['api::get_json', 'api::post_json', 'api::post_empty', 'api::post_json_empty', 'api::api_bases', 'api_bases()']
+  .forEach((needle) => {
+    ok(submitBody !== null && !submitBody.includes(needle),
+      `T12 submit_profile_response does not call ${needle} (every one of them walks api_bases())`);
+    ok(mintBody !== null && !mintBody.includes(needle),
+      `T13 mint_self_session does not call ${needle}`);
+  });
+ok(senderBody !== null && countOf(senderBody, 'response_bases()') === 1,
+  'T14 the one sender of this path takes its bases from response_bases() and from nowhere else');
+ok(senderBody !== null && /if idx \+ 1 < bases\.len\(\)/.test(senderBody),
+  'T15 a transport error moves on only while another base exists — with a stand there is none, so the error is returned');
+ok(senderBody !== null && !/retryable|is_server_error/.test(senderBody),
+  'T16 an HTTP answer ends the walk: a stand 4xx/5xx is not re-asked of a different host');
+
+// The GET side obeys the same rule, and the release build keeps today's path.
+const getBranch = blockAfter(
+  String(rustFnBody(jobsRs, 'get_json_for_response_path') || ''),
+  'if jobs_test_api_base().is_some()'
+);
+ok(getBranch !== null, 'T17 the published-profiles GET has a stand branch of its own');
+ok(getBranch !== null && !/api_bases|PRIMARY_API|RU_API|api\.skipi\.app/.test(getBranch),
+  'T18 the GET stand branch mentions no production host either');
+ok(String(rustFnBody(jobsRs, 'get_json_for_response_path') || '').includes('api::get_json'),
+  'T19 with no stand the GET is today\'s api::get_json — the release build cannot tell the difference');
+
+section('A. the self-session signature: a narrow signer, not an oracle');
+
+ok(/#\[tauri::command\]\s*pub fn sign_self_session_challenge/.test(jobsRs),
+  'A1 jobs.rs defines the sign_self_session_challenge command');
+ok(/jobs::sign_self_session_challenge/.test(libRs),
+  'A2 lib.rs registers it (the dist invoke is no longer dead)');
+const signBody = rustFnBody(jobsRs, 'sign_self_session_challenge');
+ok(signBody !== null, 'A3 signer body found');
+if (signBody) {
+  ok(signBody.includes('crate::identity::vault_signing_key'),
+    'A4 it signs with the vault\'s Ed25519 IDENTITY key — the key the server verifies against, not the X25519 messaging key');
+  ok(signBody.includes('SELF_SESSION_PAYLOAD_KEYS'),
+    'A5 the payload key set must be exactly the server\'s seven — an arbitrary object is not signed');
+  ok(signBody.includes('SELF_SESSION_SCHEMA') && signBody.includes('SELF_SESSION_AUDIENCE'),
+    'A6 schema and audience are checked, so another schema\'s bytes cannot be signed here');
+  ok(/field\("vault_user_id"\) != own_user_id/.test(signBody),
+    'A7 the challenge must name THIS vault\'s identity, derived from the key and never taken from the caller');
+  ok(!/unwrap_or|unwrap\(\)/.test(signBody.replace(/unwrap_or_else\(\|e\| e\.into_inner\(\)\)/g, '')
+       .replace(/\.unwrap_or_default\(\)/g, '')),
+    'A8 the signer has no fallback that turns a refusal into a signature');
+  ok(!/to_bytes\(\)\s*\)\s*;?\s*$/.test(signBody.split('\n').filter((l) => /secret|private/i.test(l)).join('\n') || 'x'),
+    'A9 no secret-key material is returned');
+}
+const canonBody = rustFnBody(jobsRs, 'canonical_self_session_bytes');
+ok(canonBody !== null && /sort_by/.test(canonBody),
+  'A10 the signed bytes sort the keys (the server signs json.dumps(sort_keys=True))');
+ok(canonBody !== null && canonBody.includes("push(',')") && canonBody.includes("push(':')"),
+  'A11 the signed bytes use the compact separators (",", ":")');
+const asciiBody = rustFnBody(jobsRs, 'json_ascii_string');
+ok(asciiBody !== null && /encode_utf16/.test(asciiBody) && /\\\\u\{:04x\}/.test(asciiBody),
+  'A12 non-ASCII is escaped \\uXXXX, as ensure_ascii=True writes it');
+
+section('B. the button lives in the existing section, and the warning comes BEFORE it');
+
+const respondHtmlBody = fnBody(html, 'jobsProfileRespondHtml');
+ok(respondHtmlBody !== null, 'B1 jobsProfileRespondHtml() found');
+ok(String(fnBody(html, 'jobsProfilesSectionHtml') || '').includes('jobsProfileRespondHtml('),
+  'B2 the respond block is rendered by the EXISTING profiles section — not a new screen');
+
+const withBtn = await renderJobsScreen({ profiles: [PROFILE_MATCH] });
+const irrevAt = withBtn.sectionHtml.indexOf('data-qa="jobs-respond-irreversible"');
+const btnAt = withBtn.sectionHtml.indexOf('data-qa="jobs-respond-btn"');
+ok(irrevAt >= 0, 'B3 the "cannot be withdrawn" line is on the rendered screen');
+ok(btnAt >= 0, 'B4 the respond button is on the rendered screen');
+ok(irrevAt >= 0 && btnAt >= 0 && irrevAt < btnAt,
+  'B5 it is rendered BEFORE the button — read while the choice is still open, not as a toast afterwards');
+ok(withBtn.sectionHtml.includes('jobsRespondToProfile('),
+  'B6 the button is wired to the respond handler');
+
+for (const [lang, needle] of [['en', 'cannot be withdrawn'], ['ru', 'Отозвать отклик нельзя']]) {
+  const r = await renderJobsScreen({ profiles: [PROFILE_MATCH], lang });
+  ok(r.sectionHtml.includes(needle), `B7 (${lang}) the irreversibility sentence is localised on the rendered screen`);
+}
+['jobs.profiles.respond', 'jobs.profiles.respond_irreversible', 'jobs.profiles.respond_sending',
+ 'jobs.profiles.respond_ok', 'jobs.profiles.respond_failed', 'jobs.profiles.respond_gone',
+ 'jobs.profiles.respond_ack_version', 'jobs.profiles.respond_stand'].forEach((k) => {
+  ok(enBlock.includes(`'${k}'`), `B8 tr() carries ${k} in EN`);
+  ok(ruBlock.includes(`'${k}'`), `B9 tr() carries ${k} in RU`);
+});
+if (respondHtmlBody) {
+  ok(respondHtmlBody.includes('tr('), 'B10 the respond block uses the tr() dictionary mechanism');
+  ok(respondHtmlBody.includes('getUiLang('), 'B11 the respond block also uses the inline getUiLang() mechanism');
+}
+
+// The service build says which host it spoke to, so a screenshot records it.
+const standScreen = await renderJobsScreen({ profiles: [PROFILE_MATCH], endpoint: { base: 'http://127.0.0.1:8099', stand: true } });
+ok(standScreen.sectionHtml.includes('http://127.0.0.1:8099'),
+  'B12 a service build prints the base it is talking to, inside the respond block');
+const prodScreen = await renderJobsScreen({ profiles: [PROFILE_MATCH], endpoint: { base: 'https://api.skipi.app', stand: false } });
+ok(!prodScreen.sectionHtml.includes('jobs-respond-stand'),
+  'B13 a build with no stand prints no stand line');
+
+section('C. success is the SERVER\'S answer — and both halves of it');
+
+// The sandbox `fetch` answers {ok:true,status:200,json:()=>({})} by default, so
+// a check on `resp.ok` would be green over nothing. This path never touches
+// fetch at all, and that is asserted; what it does check is the acknowledgement.
+const respondBody = fnBody(html, 'jobsRespondToProfile');
+ok(respondBody !== null, 'C0 jobsRespondToProfile() found');
+ok(respondBody !== null && !/\bapiFetch\(/.test(respondBody) && !/(?<![A-Za-z_])fetch\(/.test(respondBody),
+  'C1 the respond path calls neither fetch nor apiFetch — apiFetch\'s transport-error branch retries ANY method against api.skipi.app');
+
+const okRun = await runRespond({});
+ok(okRun.statusState === 'ok', `C2 a server acknowledgement with delivered:true and an intake_id is success (state=${okRun.statusState})`);
+ok(/received your response/i.test(okRun.statusHtml), 'C3 and the success sentence is what is shown');
+
+const noDelivered = await runRespond({ submitAck: { response_id: 'r', intake_id: 'intake-1', published_version: 7 } });
+ok(noDelivered.statusState === 'error',
+  `C4 a 2xx body WITHOUT delivered is not success (state=${noDelivered.statusState})`);
+ok(!/received your response/i.test(noDelivered.statusHtml),
+  'C5 and not one word of success is on screen');
+
+const falseDelivered = await runRespond({ submitAck: { delivered: false, intake_id: 'intake-1' } });
+ok(falseDelivered.statusState === 'error', 'C6 delivered:false is not success');
+
+const noIntake = await runRespond({ submitAck: { delivered: true, published_version: 7 } });
+ok(noIntake.statusState === 'error',
+  `C7 delivered:true with NO intake_id is not success — the id names the row an agency will open (state=${noIntake.statusState})`);
+ok(!/received your response/i.test(noIntake.statusHtml), 'C8 and no success word is shown for it');
+
+const thrown = await runRespond({ submitThrows: 'server returned 503: response could not be stored, retry' });
+ok(thrown.statusState === 'error', 'C9 an exception is a refusal');
+ok(/NOT delivered/.test(thrown.statusHtml), 'C10 the refusal is shown as a WORD of refusal, not a bare code');
+ok(!/received your response/i.test(thrown.statusHtml), 'C11 an exception leaves ZERO words of success on screen');
+ok(thrown.buttonDisabled === false, 'C12 a retryable refusal re-enables the button — the retry is the same response id');
+
+for (const [lang, needle] of [['en', 'NOT delivered'], ['ru', 'НЕ доставлен']]) {
+  const r = await runRespond({ lang, submitThrows: 'boom' });
+  ok(r.statusHtml.includes(needle), `C13 (${lang}) the refusal is localised`);
+}
+
+// 201 the first time, 200 on a replay — BOTH success. A client that demanded
+// 201 would show a legitimate retry as a failure, so the status code is not
+// consulted anywhere on this path.
+ok(respondBody !== null && !/\b201\b/.test(withoutLineComments(respondBody)),
+  'C14 the client does not gate success on status 201 (the server answers 200 on a replay of the same response id)');
+ok(submitBody !== null && !/\b201\b/.test(withoutLineComments(submitBody)),
+  'C15 nor does the Rust half — success is read from the body, so 201 and 200 are the same answer');
+ok(submitBody !== null && /\(200\.\.300\)\.contains/.test(submitBody),
+  'C16 the Rust half accepts the whole 2xx range and then demands the acknowledgement');
+ok(submitBody !== null && /"delivered"/.test(submitBody) && /"intake_id"/.test(submitBody),
+  'C17 the Rust half refuses a 2xx that does not confirm storage — two independent refusals, client and Rust');
+
+section('C. the tombstone: our own sentence, never the server\'s wrong one');
+
+const gone = await runRespond({ submitThrows: 'RESPONSE_NO_LONGER_ACCEPTED' });
+ok(gone.statusState === 'gone', `C18 a 409 tombstone has its own state (got ${gone.statusState})`);
+ok(/no longer accepted/i.test(gone.statusHtml), 'C19 and its own sentence');
+ok(!/already accepted with different content/i.test(gone.statusHtml),
+  'C20 the server\'s own 409 wording is NOT repeated — it says the content differed, which is not what happened');
+ok(!/[Ee]vent already/.test(html),
+  'C21 that sentence is nowhere in the client at all');
+ok(gone.buttonDisabled === true,
+  'C22 a tombstone does not re-enable the button: an endless retry cannot succeed and must not be offered');
+ok(submitBody !== null && /answer\.status == 409/.test(submitBody) && /RESPONSE_NO_LONGER_ACCEPTED/.test(submitBody),
+  'C23 the Rust half maps 409 to a token and drops the server body, so the wrong sentence cannot leak through');
+
+section('E. the response id survives a restart, and a retry is the SAME response');
+
+ok(/#\[tauri::command\]\s*pub fn ensure_profile_response_id/.test(jobsRs),
+  'E1 jobs.rs owns the response id');
+ok(/jobs::ensure_profile_response_id/.test(libRs), 'E2 lib.rs registers it');
+const ensureBody = rustFnBody(jobsRs, 'ensure_profile_response_id');
+ok(ensureBody !== null && ensureBody.includes('crate::db::get_vault_info_value')
+   && ensureBody.includes('crate::db::set_vault_info'),
+  'E3 it is stored in the vault\'s vault_info table — a file on disk, which is why it survives the process');
+ok(ensureBody !== null && ensureBody.includes('uuid::Uuid::new_v4'),
+  'E4 the id is a hyphenated UUID: ASCII-safe, because the server puts it in a MIME boundary');
+ok(respondBody !== null && !/localStorage/.test(respondBody),
+  'E5 the client does not keep the id in localStorage — that is the WebView\'s, cleared with app data');
+ok(respondBody !== null && /invoke\('ensure_profile_response_id'/.test(respondBody),
+  'E6 the client asks the vault for the id instead of minting one');
+ok(respondBody !== null && !/randomUUID|Math\.random/.test(respondBody),
+  'E7 the client mints no id of its own, so a retry cannot become a second response');
+
+// The double boot. VAULT_RESPONSE_IDS outlives boot() exactly as the vault file
+// outlives the process; localStorage does not, which is the whole point.
+VAULT_RESPONSE_IDS.clear();
+const firstBoot = await runRespond({ submitThrows: 'network: connection reset' });
+const secondBoot = await runRespond({});
+const idFirst = String((firstBoot.submits[0] || {}).responseId || '');
+const idSecond = String((secondBoot.submits[0] || {}).responseId || '');
+ok(idFirst.length > 0 && idSecond.length > 0,
+  `E8 both attempts put a response id in the request (${idFirst || 'none'} / ${idSecond || 'none'})`);
+ok(idFirst === idSecond,
+  `E9 after a RESTART the retry carries THE SAME id in the request — one response, not two (${idFirst} vs ${idSecond})`);
+ok(/^[\x20-\x7e]+$/.test(idSecond) && !/[^A-Za-z0-9-]/.test(idSecond),
+  `E10 the id is ASCII-safe and MIME-boundary-safe (${idSecond})`);
+
+// And twice inside ONE boot, which is the broken-connection retry.
+const twice = boot({ profiles: [PROFILE_MATCH], respondFor: [PROFILE_MATCH.profile_id], submitThrows: 'network: reset' });
+{
+  const nodes = twice.respondNodes.get(PROFILE_MATCH.profile_id);
+  await twice.sandbox.jobsRespondToProfile(PROFILE_MATCH.profile_id);
+  await settle();
+  twice.state.submitThrows = '';
+  nodes.btn.disabled = false;
+  await twice.sandbox.jobsRespondToProfile(PROFILE_MATCH.profile_id);
+  await settle();
+  const ids = twice.state.submits.map((x) => String(x.responseId || ''));
+  ok(ids.length === 2, `E11 two attempts were made in one session (got ${ids.length})`);
+  ok(ids.length === 2 && ids[0] === ids[1], `E12 and both carried the same response id (${ids.join(' vs ')})`);
+}
+
+section('P. the version is SHOWN from the acknowledgement, and never SENT');
+
+const sent = (okRun.submits[0] || {});
+ok(Object.keys(sent).length > 0, 'P1 a submission was made');
+['publishedVersion', 'published_version', 'version'].forEach((k) => {
+  ok(!(k in sent), `P2 the request carries no ${k} — the server's ProfileResponseSubmit is extra="forbid" and would answer 422`);
+});
+ok(submitBody !== null && !/"published_version"/.test(submitBody),
+  'P3 the Rust body has no published_version key either');
+const bodyBlock = submitBody && blockAfter(submitBody, 'let mut body = serde_json::json!(');
+ok(submitBody !== null && /"response_id"/.test(submitBody) && /"contact"/.test(submitBody)
+   && /"cv_content_type"/.test(submitBody) && /"cv_base64"/.test(submitBody),
+  'P4 the request carries exactly the fields the server\'s schema declares');
+ok(/published_version/.test(respondBody || ''),
+  'P5 the client reads published_version FROM the acknowledgement');
+ok(/delivered against published version 7|доставлен для опубликованной версии 7/.test(okRun.statusHtml),
+  `P6 and shows it on screen after a confirmed delivery (${okRun.statusHtml.replace(/<[^>]+>/g, '').slice(0, 90)})`);
+const ruOk = await runRespond({ lang: 'ru' });
+ok(/доставлен для опубликованной версии 7/.test(ruOk.statusHtml), 'P7 in RU as well');
+
+// Contact and identity are the vault's, not the caller's: a client that could
+// name the contact could deliver a CV under someone else's address.
+ok(submitBody !== null && /get_vault_info_value\(conn, "personal_email"\)/.test(submitBody),
+  'P8 the contact is read from the vault, not accepted as an argument');
+ok(submitBody !== null && /get_vault_info_value\(conn, "skipi_public_seafarer_id"\)/.test(submitBody),
+  'P9 the seafarer identity the response is delivered as is the vault\'s own');
+ok(submitBody !== null && /vault_signing_key/.test(submitBody),
+  'P10 and it is the key in the vault that proves it');
+
 
 console.log('');
 if (fail > 0) {
