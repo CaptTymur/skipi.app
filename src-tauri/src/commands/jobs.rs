@@ -138,9 +138,66 @@ pub struct RecentVesselReview {
     pub min_reviews: i64,
 }
 
+/// One open-ended requirement a crewing attached to a published profile.
+/// Free-form and crewing-authored: Skipi Seafarer cannot verify it from the
+/// vault, so the UI shows it as "unknown", never as met.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PublishedProfileRequirement {
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+/// One published crewing matching profile, as `GET /api/published-profiles`
+/// returns it. Criteria only — the agency's commercial context (customer,
+/// vessel name, embarkation date, places, deadline) and the profile's internal
+/// name are not on that surface, and there is nothing here to hold them.
+///
+/// EVERY CRITERION IS `Option`, AND THAT IS THE POINT. The neighbouring
+/// `PublicVacancy` above declares `rank: String` and `vessel_type: String`:
+/// one row with a null rank there makes serde fail the WHOLE list, and the
+/// seafarer's Jobs tab goes empty with no explanation. A missing criterion
+/// must arrive here as a value this client can refuse for that one row —
+/// which is exactly what "unknown is not a match" requires — and not as a
+/// parse error that takes every other row down with it.
+///
+/// `profile_id` is the exception and stays required: it is the row's
+/// identity, not a criterion, and the server's own schema declares it `str`.
+/// A row without one could not be rendered, keyed or deduplicated anyway.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PublishedProfile {
+    pub profile_id: String,
+    #[serde(default)]
+    pub crewing_id: Option<String>,
+    /// The profile version AS AT PUBLICATION, read from the frozen snapshot.
+    /// Its absence means the row is not snapshot-backed; the UI drops it
+    /// rather than showing criteria whose provenance it cannot name.
+    #[serde(default)]
+    pub published_version: Option<i64>,
+    #[serde(default)]
+    pub rank: Option<String>,
+    #[serde(default)]
+    pub vessel_type: Option<String>,
+    #[serde(default)]
+    pub mandatory_certs: Vec<String>,
+    #[serde(default)]
+    pub extra_requirements: Vec<PublishedProfileRequirement>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct VacancyListResp {
     items: Vec<PublicVacancy>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct PublishedProfileListResp {
+    #[serde(default)]
+    items: Vec<PublishedProfile>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -175,6 +232,51 @@ pub fn fetch_jobs(
         .build()
         .map_err(|e| e.to_string())?;
     let parsed: VacancyListResp = api::get_json(&client, &path)?;
+    Ok(parsed.items)
+}
+
+/// Published crewing matching profiles that fit this seafarer.
+///
+/// A SEPARATE SURFACE FROM `fetch_jobs` ABOVE, ON PURPOSE. Both sides of the
+/// product hold `/api/vacancies` to concrete vessel offers — the server drops
+/// rows without a `vessel_imo`, and this client filters again on a valid
+/// 7-digit one in five places. A matching profile is not an offer on a vessel
+/// and has no IMO, so putting profiles into that feed had exactly two
+/// available outcomes, weakening the IMO filter or inventing an IMO, and both
+/// are forbidden outright. The profiles get their own route; the seafarer
+/// still sees them inside the Jobs module he already has, as a section of it.
+///
+/// THE FOURTH UNKNOWN, AT ITS NATIVE CALL SITE. `fetch_jobs` appends a filter
+/// to the query string only when the string is non-empty, and a list route
+/// that answers an absent filter by not filtering hands a seafarer with a
+/// half-filled profile EVERY published row there is — the direct inversion of
+/// the rule, visible on the first screen. So an empty rank or vessel type is
+/// refused HERE, before the request exists, and the refusal is an empty list
+/// rather than a fall-through. The server refuses the same way; two
+/// independent refusals is the intent, not a duplication to be tidied away.
+#[tauri::command]
+pub fn fetch_published_profiles(
+    rank: Option<String>,
+    vessel_type: Option<String>,
+) -> Result<Vec<PublishedProfile>, String> {
+    let rank = rank.unwrap_or_default();
+    let rank = rank.trim();
+    let vessel_type = vessel_type.unwrap_or_default();
+    let vessel_type = vessel_type.trim();
+    if rank.is_empty() || vessel_type.is_empty() {
+        return Ok(Vec::new());
+    }
+    let path = format!(
+        "/api/published-profiles?limit=50&rank={}&vessel_type={}",
+        urlencoding(rank),
+        urlencoding(vessel_type)
+    );
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .connect_timeout(std::time::Duration::from_secs(4))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let parsed: PublishedProfileListResp = api::get_json(&client, &path)?;
     Ok(parsed.items)
 }
 

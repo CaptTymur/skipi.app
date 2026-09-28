@@ -279,6 +279,7 @@ pub fn run() {
             email::send_email_smtp,
             // Public jobs board
             jobs::fetch_jobs,
+            jobs::fetch_published_profiles,
             jobs::fetch_mailing_requests,
             jobs::fetch_vessel_projection,
             jobs::fetch_recent_vessel_reviews,

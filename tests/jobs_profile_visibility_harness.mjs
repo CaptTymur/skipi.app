@@ -589,7 +589,7 @@ ok(renderMobileJobsBody !== null && /loadJobsProfiles\(/.test(renderMobileJobsBo
 
 // The set of call sites is named, not assumed: a sixth one appearing without a
 // readiness check is the way this rule quietly stops holding.
-const loaderCallSites = countOf(html, 'loadJobsProfiles(') - countOf(html, 'function loadJobsProfiles(') - countOf(html, 'async function loadJobsProfiles(');
+const loaderCallSites = countOf(html, 'loadJobsProfiles(') - countOf(html, 'function loadJobsProfiles(');
 ok(loaderCallSites === 2,
   `D6 the section is loaded from exactly two call sites, desktop and mobile (found ${loaderCallSites})`);
 
@@ -673,7 +673,7 @@ section('V. the criteria shown are the ones that were PUBLISHED, not live values
 const uSnap = await renderJobsScreen({ profiles: [PROFILE_NO_VERSION, PROFILE_MATCH] });
 ok(!uSnap.sectionHtml.includes(PROFILE_NO_VERSION.profile_id),
   'V10 a row with no published version is not snapshot-backed and is not shown');
-ok(/\b7\b/.test(uSnap.sectionHtml),
+ok(uSnap.sectionHtml.includes('data-profile-version="7"'),
   'V11 the published version of the criteria is on screen (they belong to a publication, not to the live row)');
 
 section('V. U3 — readiness off OR unset: the section is not shown at all');
