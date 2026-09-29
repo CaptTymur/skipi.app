@@ -100,6 +100,14 @@ function ok(cond, msg) {
   }
 }
 
+// "This markup makes no AFFIRMATIVE claim of X" — every occurrence of the word
+// must be part of the one negative phrase that is allowed to contain it. A bare
+// `!/x/i` cannot express that: it reads "not x" as "x".
+function claimsOnly(markup, wordRe, allowedPhrase) {
+  const stripped = String(markup || '').split(allowedPhrase).join(' ');
+  return !wordRe.test(stripped);
+}
+
 function section(title) {
   console.log('\n# ' + title);
 }
@@ -430,6 +438,16 @@ const PROFILE_LOWERCASE_JUR = {
   crewing_jurisdiction: 'gr',
 };
 
+// SYNTHETIC, and said so: a name of nothing but whitespace. The live server has
+// never sent one, but `crewing_name` is a free-form string a crewing writes
+// itself through `PATCH /api/crewings/{id}/profile`, so " " is reachable by a
+// counterparty rather than by an accident. A blank is not a name.
+const PROFILE_BLANK_NAME = {
+  ...PROFILE_MATCH,
+  profile_id: 'prof-blankname-0008',
+  crewing_name: '   ',
+};
+
 // THE OLD SERVER, which is the one the pilot is running until the other half of
 // this contract is deployed: the three fields simply are not in the answer.
 // This row is not a hypothetical — it is today's production shape.
@@ -731,7 +749,18 @@ async function renderJobsScreen(opts = {}) {
 // status line it left on screen, plus every invoke it made.
 async function runRespond(opts = {}) {
   const pid = opts.profileId || PROFILE_MATCH.profile_id;
-  const booted = boot({ ...opts, respondFor: [pid] });
+  const booted = boot({ profiles: [PROFILE_MATCH], ...opts, respondFor: [pid] });
+  // THE SCREEN IS RENDERED BEFORE THE HANDLER RUNS, and that is not decoration.
+  // In the product the only way to reach `jobsRespondToProfile` is a button
+  // `jobsProfilesSectionHtml` drew, and drawing it is what records the profiles
+  // in `jobsProfilesLastRender`. Calling the handler over a screen that was
+  // never rendered measured a state no seafarer can be in — and from V7 on it
+  // measures the wrong thing outright, because the handler now REFUSES when it
+  // cannot find the profile it is about to speak for.
+  try {
+    await booted.sandbox.showJobs();
+  } catch (e) { /* what a failed render does to the respond path is section V's claim, not this one */ }
+  await settle();
   let error = null;
   try {
     await booted.sandbox.jobsRespondToProfile(pid);
@@ -1626,6 +1655,10 @@ ok(/^[\x20-\x7e]+$/.test(idSecond) && !/[^A-Za-z0-9-]/.test(idSecond),
 const twice = boot({ profiles: [PROFILE_MATCH], respondFor: [PROFILE_MATCH.profile_id], submitThrows: 'network: reset' });
 {
   const nodes = twice.respondNodes.get(PROFILE_MATCH.profile_id);
+  // Same reason as in runRespond above: the section is rendered first, because
+  // that is what puts this profile where the handler looks for its recipient.
+  await twice.sandbox.showJobs();
+  await settle();
   await twice.sandbox.jobsRespondToProfile(PROFILE_MATCH.profile_id);
   await settle();
   twice.state.submitThrows = '';
@@ -2341,9 +2374,19 @@ const trialEn = await renderJobsScreen({ profiles: [PROFILE_OTHER_AGENCY], lang:
 const trialRu = await renderJobsScreen({ profiles: [PROFILE_OTHER_AGENCY], lang: 'ru' });
 ok(/trial/i.test(trialEn.sectionHtml), 'W10 (en) a trial publisher is said to be on trial');
 ok(/пробн/i.test(trialRu.sectionHtml), 'W10b (ru) and so it is in Russian');
-ok(!/verified/i.test(trialEn.sectionHtml),
-  'W11 (en) and it is NOT called verified — that word belongs to a different state');
-ok(!/проверен/i.test(trialRu.sectionHtml), 'W11b (ru) same');
+// THIS PROBE WAS NAIVE AND IS NOW PRECISE, and the change is declared rather
+// than quietly made. `!/verified/i` reads the HONEST NEGATIVE sentence V7 puts
+// on this badge ("name not verified by Skipi") as an affirmative claim of
+// verification, so it would have gone red over text that says the opposite of
+// what it was written to forbid. What it was defending is that the trial card
+// makes no AFFIRMATIVE claim, and that is what is asserted now: every
+// occurrence of the word must be part of the negative phrase, so an affirmative
+// "Verified by Skipi" still fails it. Calibrated in section Z below on both a
+// string that must fire and one that must not.
+ok(claimsOnly(trialEn.sectionHtml, /verified/i, 'not verified by Skipi'),
+  'W11 (en) and it makes NO affirmative claim of verification — every "verified" on it is part of the negative sentence');
+ok(claimsOnly(trialRu.sectionHtml, /проверен/i, 'не проверено Skipi'),
+  'W11b (ru) same');
 ok(/verified/i.test(agencyEn.sectionHtml) && /проверен/i.test(agencyRu.sectionHtml),
   'W12 while an active agency IS called verified — the two states are told apart');
 
@@ -2578,6 +2621,246 @@ ok((liveOld.sectionHtml.match(/not available/gi) || []).length === 2,
   'Y11 and BOTH rows say so honestly, rather than one of them showing an id');
 ok(!UUID_RE.test(visibleText(liveOld.sectionHtml)),
   'Y12 with still no id printed anywhere');
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// Z — P2/V7. The owner, 2026-09-30, two sentences and nothing else:
+//
+//   «Без названия агентства отклик блокировать, причину показать рядом.
+//    Для пробного агентства явно указывать, что название не проверено Skipi.»
+//
+// TWO BEHAVIOURS, AND THEY ARE NOT THE SAME KIND OF CLAIM.
+//
+//  1. NO NAME, NO RESPONSE. The server the pilot runs TODAY answers without
+//     `crewing_name` — section W renders that very answer — and until V7 that
+//     answer still produced a working "Respond with Skipi" button: an
+//     irreversible delivery of a CV and a contact to a counterparty this app
+//     could not name. The refusal must therefore be REAL, not a grey button.
+//     `disabled` in the markup is asserted, but it is the weaker half and never
+//     the whole claim: the strong one RUNS THE CODE THE BUTTON'S OWN `onclick`
+//     ATTRIBUTE CARRIES and counts the submissions that followed.
+//  2. THE TRIAL BADGE SPEAKS ABOUT THE NAME. It said "Publisher on a trial
+//     period", which is a statement about WHEN the agency published — not about
+//     whether anyone checked what it calls itself. The seafarer reads that name
+//     as identification, so the badge has to say plainly that Skipi has not
+//     verified it. Same agency line, same badge, no third element and no third
+//     vocabulary.
+//
+// NOT TOUCHED, deliberately: the `active` wording (a separate decision), the
+// server's own trust vocabulary, the vacancy block, and the route that issues
+// trial tokens — an explicit owner prohibition of 2026-09-30, not an omission.
+//
+// MEASUREMENT BOUNDARY, stated rather than implied: a DOM-shimmed run of the
+// real inline scripts of `dist/index.html`. No browser, no layout, no network.
+// Whether the longer badge wraps badly on a 360 px phone is NOT measured by any
+// assertion below and is reported as unmeasured.
+// ════════════════════════════════════════════════════════════════════════════
+
+section('Z. a trial publisher is told to be unverified BY NAME, not by period');
+
+// The text INSIDE the badge, so "it is said in the badge that already exists"
+// is a claim about that element and not about the card somewhere.
+function badgeTextOf(markup) {
+  const m = /<span class="[^"]*job-trust-badge[^"]*"[^>]*>([\s\S]*?)<\/span>/.exec(String(markup || ''));
+  return m ? m[1] : null;
+}
+ok(badgeTextOf('<span class="job-trust-badge warn">Trial publisher</span>') === 'Trial publisher',
+  'Z0 CALIBRATION — the badge-text probe reads the words out of a badge it is given');
+ok(badgeTextOf('<div>Crewing: someone, no badge at all</div>') === null,
+  'Z0b CALIBRATION — and returns null where there is no badge, so an empty claim cannot pass');
+ok(!claimsOnly('<b>Verified by Skipi</b>', /verified/i, 'not verified by Skipi'),
+  'Z0c CALIBRATION — claimsOnly still FIRES on an affirmative "Verified by Skipi"');
+ok(claimsOnly('<b>name not verified by Skipi</b>', /verified/i, 'not verified by Skipi'),
+  'Z0d CALIBRATION — and does not fire on the honest negative sentence');
+
+const zTrialEn = await renderJobsScreen({ profiles: [PROFILE_OTHER_AGENCY], lang: 'en' });
+const zTrialRu = await renderJobsScreen({ profiles: [PROFILE_OTHER_AGENCY], lang: 'ru' });
+const zActiveEn = await renderJobsScreen({ profiles: [PROFILE_MATCH], lang: 'en' });
+const zActiveRu = await renderJobsScreen({ profiles: [PROFILE_MATCH], lang: 'ru' });
+
+const zTrialBadgeEn = badgeTextOf(zTrialEn.sectionHtml);
+const zTrialBadgeRu = badgeTextOf(zTrialRu.sectionHtml);
+ok(zTrialBadgeEn !== null && zTrialBadgeRu !== null, 'Z1 the trial card still carries the badge it already had');
+ok(/\bname\b/i.test(String(zTrialBadgeEn)) && /not verified by Skipi/i.test(String(zTrialBadgeEn)),
+  `Z2 (en) the badge says the NAME is not verified by Skipi (got "${zTrialBadgeEn}")`);
+ok(/названи/i.test(String(zTrialBadgeRu)) && /не проверено Skipi/i.test(String(zTrialBadgeRu)),
+  `Z2b (ru) and says it in Russian (got "${zTrialBadgeRu}")`);
+ok(!/[Ѐ-ӿ]/.test(String(zTrialBadgeEn)), 'Z2c the EN badge carries no Cyrillic — both locales are real, not one');
+
+// It is about the NAME, and the seafarer is not left to infer that from a date.
+// The period wording is kept (nothing the owner asked to keep was dropped), but
+// it is no longer the ONLY thing the badge says.
+ok(/trial/i.test(String(zTrialBadgeEn)) && /пробн/i.test(String(zTrialBadgeRu)),
+  'Z3 the trial state is still named — the period fact is not lost, only no longer alone');
+
+// SAME LINE, SAME BADGE, NO THIRD ELEMENT. The statement lives inside the badge
+// of the agency block that was already there.
+const zTrialCrewingEn = blockAfter(zTrialEn.sectionHtml, 'data-qa="jobs-profile-crewing"');
+ok(zTrialEn.sectionHtml.indexOf('data-qa="jobs-profile-crewing"') >= 0,
+  'Z4 the agency block is the same block as before');
+ok((zTrialEn.sectionHtml.match(/job-trust-badge/g) || []).length === 1,
+  'Z4b exactly ONE badge on the card — no second mark was invented beside it');
+ok(!/data-qa="jobs-(?:trust|agency|name)-/.test(zTrialEn.sectionHtml),
+  'Z4c and no new agency element was added under a new data-qa name');
+
+// The green case is a separate owner decision and is untouched by this one.
+ok(badgeTextOf(zActiveEn.sectionHtml) === 'Verified by Skipi',
+  `Z5 the ACTIVE agency's badge is left exactly as it was, word for word (got "${badgeTextOf(zActiveEn.sectionHtml)}")`);
+ok(badgeTextOf(zActiveRu.sectionHtml) === 'Крюинг проверен Skipi',
+  `Z5b and in RU too (got "${badgeTextOf(zActiveRu.sectionHtml)}")`);
+ok(String(badgeClassOf(zTrialEn.sectionHtml)).includes('warn')
+   && badgeClassOf(zActiveEn.sectionHtml) === 'job-trust-badge',
+  'Z6 the two colours are still the two colours — this change is about words, not about the pill');
+ok(claimsOnly(zTrialEn.sectionHtml, /verified/i, 'not verified by Skipi')
+   && claimsOnly(zTrialRu.sectionHtml, /проверен/i, 'не проверено Skipi'),
+  'Z7 and the trial card still makes no affirmative claim of verification anywhere on it');
+
+section('Z. no name of the recipient — the response does not leave');
+
+// Two ways the name can be missing, and the second is reachable by a
+// counterparty rather than by an accident.
+const NO_NAME_CASES = [
+  ["today's pilot server sends no agency keys at all", PROFILE_NO_AGENCY_FIELDS],
+  ['a crewing wrote a name of nothing but spaces', PROFILE_BLANK_NAME],
+];
+
+for (const [why, profile] of NO_NAME_CASES) {
+  for (const lang of ['en', 'ru']) {
+    const r = await renderJobsScreen({ profiles: [profile], lang });
+    const tag = `${lang}, ${why}`;
+
+    // THE CARD STAYS. Hiding the profile would take a real opportunity off the
+    // seafarer's screen to solve a problem that is ours, not his.
+    ok(!r.error && r.sectionHtml.includes('Second Officer') && r.sectionHtml.includes('Bulk Carrier'),
+      `Z10 (${tag}) the profile is still ON SCREEN — a missing name does not delete the opportunity`);
+    ok(r.sectionHtml.includes('data-qa="jobs-profile-crewing"'),
+      `Z10b (${tag}) and the agency line is still drawn, saying what it can`);
+
+    // The button is rendered and dead.
+    const btnTag = /<button[^>]*data-qa="jobs-respond-btn"[^>]*>/.exec(r.sectionHtml);
+    ok(btnTag !== null, `Z11 (${tag}) the respond button is still rendered, so the refusal is read where the action was`);
+    ok(btnTag !== null && /\sdisabled(\s|>|=)/.test(btnTag[0]),
+      `Z11b (${tag}) and it is disabled in the markup`);
+
+    // THE REASON IS BESIDE THE BUTTON — literally the next element, not
+    // somewhere else on the card. "Next to it" is asserted as adjacency.
+    ok(r.sectionHtml.includes('</button><div data-qa="jobs-respond-blocked"'),
+      `Z12 (${tag}) the reason is the element IMMEDIATELY after the button — read at the place of refusal`);
+
+    const blocked = blockAfter(r.sectionHtml, 'data-qa="jobs-respond-blocked"');
+    ok(blocked !== null, `Z12b (${tag}) the reason block is readable`);
+    if (lang === 'en') {
+      ok(/cannot be sent/i.test(String(blocked)) && /cannot name the agency/i.test(String(blocked)),
+        `Z13 (en, ${why}) the reason is a sentence: it cannot be sent, because the app cannot name the agency`);
+      ok(!/[Ѐ-ӿ]/.test(String(blocked)), `Z13b (en, ${why}) in English, with no Cyrillic in it`);
+    } else {
+      ok(/отправить нельзя/i.test(String(blocked)) && /не может назвать агентство/i.test(String(blocked)),
+        `Z13 (ru, ${why}) и по-русски — отправить нельзя, приложение не может назвать агентство`);
+    }
+
+    // The thing the owner refused in V5c must not creep back in as a substitute.
+    ok(!UUID_RE.test(visibleText(r.sectionHtml)),
+      `Z14 (${tag}) and no id is printed in place of the name it does not have`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// THE REFUSAL IS REAL. This does not call a function of the harness's choosing:
+// it reads the `onclick` attribute off the rendered button and executes exactly
+// that source in the page's own context. A refusal that is only `disabled` in
+// the markup passes every assertion above and fails every one below.
+// ---------------------------------------------------------------------------
+async function clickRespondButton(opts = {}) {
+  const profile = opts.profile || PROFILE_MATCH;
+  const pid = String(profile.profile_id);
+  const rendered = await renderJobsScreen({ profiles: [profile], lang: opts.lang || 'en' });
+  // The two nodes a browser would already have — the same reason boot() and
+  // runEnsureIdentity() pre-create theirs: the shim keeps innerHTML as a string.
+  const status = rendered.document.createElement('div');
+  status.setAttribute('id', 'jobs-respond-status-' + pid);
+  const btn = rendered.document.createElement('button');
+  btn.setAttribute('id', 'jobs-respond-btn-' + pid);
+  const m = /<button[^>]*data-qa="jobs-respond-btn"[^>]*\sonclick="([^"]*)"/.exec(rendered.sectionHtml);
+  const onclick = m ? m[1] : null;
+  const before = rendered.state.calls.length;
+  let error = null;
+  if (onclick) {
+    try { await vm.runInContext(onclick, rendered.sandbox, { filename: 'button-onclick' }); }
+    catch (e) { error = e; }
+  }
+  await settle();
+  return {
+    ...rendered,
+    onclick,
+    error,
+    statusHtml: status.innerHTML,
+    statusState: status.getAttribute('data-respond-state'),
+    buttonDisabled: btn.disabled,
+    submits: rendered.state.submits,
+    callsAfterClick: rendered.state.calls.slice(before).map((c) => c[0]),
+  };
+}
+
+// POSITIVE PATH FIRST, and it is the calibration of everything after it: if a
+// named agency did not deliver here, "nothing was delivered" below would be
+// measuring a broken button rather than a working refusal.
+const zClickNamed = await clickRespondButton({ profile: PROFILE_MATCH, lang: 'en' });
+ok(zClickNamed.onclick !== null && zClickNamed.onclick.includes('jobsRespondToProfile'),
+  `Z20 CALIBRATION — a NAMED agency renders a button whose onclick really calls the handler (${zClickNamed.onclick})`);
+ok(zClickNamed.submits.length === 1,
+  `Z21 CALIBRATION/POSITIVE — clicking it delivers exactly one response (got ${zClickNamed.submits.length})`);
+ok(zClickNamed.statusState === 'ok',
+  `Z21b and the screen says so from the server's acknowledgement (state=${zClickNamed.statusState})`);
+ok(!zClickNamed.sectionHtml.includes('data-qa="jobs-respond-blocked"'),
+  'Z22 the named card carries no refusal block at all — the block is not shown to someone who can respond');
+const zNamedBtn = /<button[^>]*data-qa="jobs-respond-btn"[^>]*>/.exec(zClickNamed.sectionHtml);
+ok(zNamedBtn !== null && !/\sdisabled(\s|>|=)/.test(zNamedBtn[0]),
+  'Z22b and its button is not disabled — the block did not switch responding off in general');
+
+for (const [why, profile] of NO_NAME_CASES) {
+  const r = await clickRespondButton({ profile, lang: 'en' });
+  ok(r.onclick !== null,
+    `Z23 (${why}) the disabled button still carries an onclick, so there IS something to click programmatically`);
+  ok(r.submits.length === 0,
+    `Z24 (${why}) running that onclick delivered NOTHING (got ${r.submits.length} submissions)`);
+  ok(!r.callsAfterClick.includes('submit_profile_response'),
+    `Z24b (${why}) submit_profile_response was never called`);
+  ok(!r.callsAfterClick.includes('export_redacted_cv_pdf'),
+    `Z24c (${why}) and no CV was written to disk on the way — the refusal is BEFORE the export, not after it`);
+  ok(!r.callsAfterClick.includes('ensure_profile_response_id'),
+    `Z24d (${why}) and no response id was minted, so a later named retry is still a first response`);
+  ok(/cannot be sent/i.test(r.statusHtml),
+    `Z25 (${why}) and the click leaves the reason on the status line, so a programmatic press is answered rather than ignored`);
+  ok(r.buttonDisabled === true,
+    `Z25b (${why}) the button stays disabled afterwards`);
+}
+
+// The blocked state must not be produced by the LANGUAGE of the check either:
+// a Russian screen refuses on the same fact and delivers on the same fact.
+const zClickNamedRu = await clickRespondButton({ profile: PROFILE_MATCH, lang: 'ru' });
+const zClickBlankRu = await clickRespondButton({ profile: PROFILE_BLANK_NAME, lang: 'ru' });
+ok(zClickNamedRu.submits.length === 1,
+  `Z26 (ru) a named agency still receives the response on a Russian screen (got ${zClickNamedRu.submits.length})`);
+ok(zClickBlankRu.submits.length === 0 && /отправить нельзя/i.test(zClickBlankRu.statusHtml),
+  'Z26b (ru) and an unnamed one is refused on it, in Russian');
+
+// ONE PREDICATE, TWO CALL SITES. If the renderer and the handler each decided
+// for themselves what "has a name" means, they would drift, and the drift would
+// look like a working button that refuses — or a dead button that sends.
+const zRespondHtmlSrc = fnBody(html, 'jobsProfileRespondHtml');
+const zRespondHandlerSrc = fnBody(html, 'jobsRespondToProfile');
+ok(zRespondHtmlSrc !== null && /jobsProfileRecipientName\(/.test(zRespondHtmlSrc),
+  'Z30 the renderer asks the one predicate whether the recipient has a name');
+ok(zRespondHandlerSrc !== null && /jobsProfileRecipientName\(/.test(zRespondHandlerSrc),
+  'Z30b and so does the handler — one answer to one question, in one place');
+// BOTH indices must be REAL. `-1 < 5` is true, so an ordering probe written
+// without this line is green on a handler that does not consult the predicate
+// at all — which is exactly the state this file is in while these tests are
+// still red, and exactly the mutation (a) is meant to catch.
+const zPredAt = zRespondHandlerSrc === null ? -1 : zRespondHandlerSrc.indexOf('jobsProfileRecipientName(');
+const zVaultAt = zRespondHandlerSrc === null ? -1 : zRespondHandlerSrc.indexOf("invoke('ensure_profile_response_id'");
+ok(zPredAt >= 0 && zVaultAt >= 0 && zPredAt < zVaultAt,
+  `Z30c and the handler asks it BEFORE it asks the vault for anything (predicate@${zPredAt}, vault@${zVaultAt})`);
 
 
 console.log('');
