@@ -2380,6 +2380,93 @@ ok(vacancyIdentity !== null && !vacancyIdentity.includes('crewing_name'),
   'W24 the vacancy block\'s own identity renderer is left exactly as it was');
 
 
+// ════════════════════════════════════════════════════════════════════════════
+// P2/V5c — THE COLOUR OF A TRIAL PUBLISHER, on BOTH blocks of the Jobs screen.
+//
+// `.job-trust-badge` is green by default (the "verified" colour). `trial` used
+// to get no modifier class in EITHER block — not in `jobsProfileCrewingTrust`
+// here, and not in `jobsCrewingIdentityHtml` on the vacancy feed, whose chain
+// only knows `legacy`, `pending`/`unknown` and `block`/`scam`. So an unvetted
+// agency wore a verified-coloured pill directly above a button whose result
+// cannot be withdrawn. The WORDS were already honest ("Publisher on a trial
+// period"); only the colour lied.
+//
+// BOTH blocks are asserted, and that is the requirement rather than symmetry:
+// changing one half would put ONE agency in TWO colours on ONE screen, which is
+// the defect the shared shape exists to prevent.
+//
+// MEASUREMENT BOUNDARY: the cascade claim below is read from the ORDER of the
+// rules in the stylesheet. The three modifiers have equal specificity (0,2,0),
+// so source order decides — that is the CSS rule, not an approximation. It is
+// still not a browser: no layout, no computed colour, is measured here.
+// ════════════════════════════════════════════════════════════════════════════
+
+section('X. a trial publisher is not painted as a verified one (both blocks)');
+
+// The class attribute of the badge, or null if no badge was rendered at all.
+function badgeClassOf(markup) {
+  const m = /<span class="([^"]*job-trust-badge[^"]*)"/.exec(String(markup || ''));
+  return m ? m[1] : null;
+}
+
+ok(badgeClassOf('<span class="job-trust-badge warn">x</span>') === 'job-trust-badge warn',
+  'X0 CALIBRATION — the badge probe reads the class off a badge it is given');
+ok(badgeClassOf('<div>Crewing: someone, no badge at all</div>') === null,
+  'X0b CALIBRATION — and returns null where there is no badge, so "no warn" cannot pass on nothing');
+
+const trustBox = boot({ lang: 'en' });
+await settle();
+
+// --- the profile card (this task's own renderer) ---
+const profileBadge = (status) => badgeClassOf(
+  trustBox.sandbox.jobsProfileCrewingHtml({ crewing_name: 'Aegean Crew Management', crewing_trust_status: status }));
+
+ok(profileBadge('active') === 'job-trust-badge',
+  `X1 profile card: an ACTIVE agency keeps the plain green badge (got ${profileBadge('active')})`);
+ok(String(profileBadge('legacy')).includes('legacy') && !String(profileBadge('legacy')).includes('warn'),
+  `X2 profile card: a LEGACY agency keeps its own badge and is not warned about (got ${profileBadge('legacy')})`);
+ok(String(profileBadge('trial')).includes('warn'),
+  `X3 profile card: a TRIAL publisher is marked warn (got ${profileBadge('trial')})`);
+ok(profileBadge('trial') !== 'job-trust-badge',
+  'X4 profile card: and is NOT left on the default green — the colour of "verified"');
+ok(profileBadge('who-knows') === null && profileBadge(undefined) === null,
+  'X5 profile card: a status this build cannot justify still renders NO badge at all');
+
+// --- the vacancy feed card (the block directly above the section) ---
+const vacancyBadge = (status, label) => badgeClassOf(
+  trustBox.sandbox.jobsCrewingIdentityHtml(
+    { crewing_ref: 'Aegean Crew Management', crewing_jurisdiction: 'gr',
+      crewing_trust_status: status, crewing_trust_label: label || 'label' },
+    trustBox.sandbox.esc));
+
+ok(vacancyBadge('verified') === 'job-trust-badge',
+  `X6 vacancy card: a VERIFIED agency keeps the plain green badge (got ${vacancyBadge('verified')})`);
+ok(String(vacancyBadge('verified_legacy')).includes('legacy') && !String(vacancyBadge('verified_legacy')).includes('warn'),
+  `X7 vacancy card: verified_legacy keeps its own badge (got ${vacancyBadge('verified_legacy')})`);
+ok(String(vacancyBadge('trial')).includes('warn'),
+  `X8 vacancy card: a TRIAL publisher is marked warn HERE TOO (got ${vacancyBadge('trial')})`);
+ok(vacancyBadge('trial') !== 'job-trust-badge',
+  'X9 vacancy card: and is not left on the default green — one agency, one colour, on one screen');
+
+// The neighbours of that chain, asserted because this edit is inside it.
+ok(String(vacancyBadge('pending')).includes('warn'), 'X10 vacancy card: pending still warns');
+ok(String(vacancyBadge('unknown')).includes('warn'), 'X11 vacancy card: unknown still warns');
+ok(String(vacancyBadge('scam')).includes('blocked'), 'X12 vacancy card: scam is still blocked');
+ok(String(vacancyBadge('blocked')).includes('blocked'), 'X13 vacancy card: blocked is still blocked');
+
+// BLOCKED MUST STAY STRONGER THAN WARN. `trial_blocked` is a synthetic value no
+// server sends; it exists to force both classes onto one badge so the ordering
+// can be measured instead of assumed.
+const bothClasses = String(vacancyBadge('trial_blocked'));
+ok(bothClasses.includes('blocked'),
+  `X14 a status that is both trial and blocked still carries the blocked class (got ${bothClasses})`);
+const cssWarnAt = html.indexOf('.job-trust-badge.warn');
+const cssBlockedAt = html.indexOf('.job-trust-badge.blocked');
+ok(cssWarnAt > 0 && cssBlockedAt > 0, 'X15 both modifier rules exist in the stylesheet');
+ok(cssBlockedAt > cssWarnAt,
+  'X16 and .blocked is declared AFTER .warn — equal specificity, so blocked wins the cascade');
+
+
 console.log('');
 if (fail > 0) {
   console.error(`FAILURES (${fail}):`);
