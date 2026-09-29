@@ -14289,7 +14289,7 @@ function jobsProfileCrewingTrust(status){
     // gets NO badge: a trust mark this build cannot justify is worse than none.
     if(s==='active')return {cls:'',label:tr('jobs.profiles.trust_verified')};
     if(s==='legacy')return {cls:'legacy',label:tr('jobs.profiles.trust_verified')};
-    if(s==='trial')return {cls:'',label:tr('jobs.profiles.trust_trial')};
+    if(s==='trial')return {cls:'warn',label:tr('jobs.profiles.trust_trial')};
     return null;
 }
 
@@ -14795,7 +14795,14 @@ function jobsCrewingIdentityHtml(v, esc){
     if(trustLabel){
         var cls = 'job-trust-badge';
         if(trustStatus.indexOf('legacy')>=0)cls += ' legacy';
-        if(trustStatus.indexOf('pending')>=0 || trustStatus.indexOf('unknown')>=0)cls += ' warn';
+        // `trial` warns for the same reason `pending` and `unknown` do: the
+        // default badge is GREEN, the colour of verified, and a publisher on
+        // trial has not been verified. Merged into this condition and not added
+        // as a fourth `if` so a status matching two of them cannot append
+        // ' warn' twice. `blocked` stays stronger: it is appended AFTER this
+        // line and its rule is declared AFTER `.warn` in the stylesheet, which
+        // at equal specificity is what decides the cascade.
+        if(trustStatus.indexOf('pending')>=0 || trustStatus.indexOf('unknown')>=0 || trustStatus.indexOf('trial')>=0)cls += ' warn';
         if(trustStatus.indexOf('block')>=0 || trustStatus.indexOf('scam')>=0)cls += ' blocked';
         badge = '<span class="'+cls+'">'+esc(trustLabel)+'</span>';
     }
