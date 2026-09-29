@@ -1912,6 +1912,44 @@ ok(countOf(markerWriterBody, 'set_vault_info(') === 1,
   `I8f2 and the function it calls writes exactly one row (found ${countOf(markerWriterBody, 'set_vault_info(')})`);
 ok(countOf(String(identityRustBody || ''), 'IDENTITY_KEY_REGISTERED_AT') === 0,
   'I8f3 and the command itself no longer names the marker row — there is one door to it');
+// GENERALISED FROM THAT ONE ROW TO ALL EIGHT (delta R1), because I8f3 closes a
+// ROW and the hole is the SHAPE. One line added to a command body —
+// `crate::db::set_vault_info(conn, KEY_IDENTITY_MESSAGE, …)`, the CONSTANT and
+// not the literal, outside the two extracted writers — writes a GLOBAL row and
+// was caught by nothing: X8 counts the LITERAL, which lives in the `const` and
+// is therefore already exactly one; X8b greps RAW key strings; X12f is a lower
+// bound `>= 8` and a bare write adds no `identity_vault_key(` to count; and the
+// Rust tests drive the two writers directly. Measured with that line in:
+// cargo 176/0 and this harness 759/0 — nothing went red.
+//
+// The invariant, therefore: inside a COMMAND body none of the eight constants
+// may appear except as the argument of `identity_vault_key(` — the one door. The
+// two writers are deliberately outside this loop: they reach the same door
+// through their own local `row(` closure, which is what the calibration below
+// uses to prove this probe can see an occurrence that does NOT go through it.
+// I8f3 is kept, not replaced: for the marker it asserts zero occurrences of any
+// kind, which is stricter than "only through the door".
+const EIGHT_KEY_CONSTS = ['KEY_PUBLIC_SEAFARER_ID', 'KEY_IDENTITY_CLAIM_STATUS',
+  'KEY_IDENTITY_DUPLICATE', 'KEY_IDENTITY_TRUST_LEVEL', 'KEY_IDENTITY_MESSAGE',
+  'KEY_IDENTITY_LAST_CLAIM_AT', 'KEY_IDENTITY_RECOVERY_KEY', 'IDENTITY_KEY_REGISTERED_AT'];
+function unscopedKeyConsts(body) {
+  const flat = withoutLineComments(String(body || '')).replace(/\s+/g, '');
+  const out = [];
+  EIGHT_KEY_CONSTS.forEach((c) => {
+    const total = countOf(flat, c);
+    const scoped = countOf(flat, 'identity_vault_key(&endpoint,' + c + ')');
+    if (total !== scoped) out.push(`${c}: ${total} named, ${scoped} through the one function`);
+  });
+  return out;
+}
+['ensure_seafarer_identity', 'submit_profile_response', 'seafarer_identity_entry_state'].forEach((fn) => {
+  const bare = unscopedKeyConsts(rustFnBody(jobsRs, fn));
+  ok(bare.length === 0,
+    `I8f4 (R1) ${fn} names none of the eight rows except through identity_vault_key( (${bare.join(' | ') || 'none'})`);
+});
+const i8f5 = unscopedKeyConsts(claimWriterBody);
+ok(i8f5.length === 7,
+  `I8f5 CALIBRATION — the same probe DOES see the seven constants the claim writer reaches through its own row( closure instead (found ${i8f5.length}), so I8f4 is not green over a blind probe`);
 ok(!String(identityRustBody || '').includes('"skipi_identity_key_registered_at"'),
   'I8g and it is never spelled out as a raw key, which would walk straight past the count above');
 ok(/"registered"/.test(String(identityRustBody || '')) && /"exists"/.test(String(identityRustBody || '')),
