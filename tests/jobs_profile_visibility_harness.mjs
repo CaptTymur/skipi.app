@@ -157,6 +157,14 @@ function countOf(haystack, needle) {
   return (haystack.split(needle).length - 1);
 }
 
+// Whitespace-insensitive source, so that a multi-line call reads the same as a
+// one-line one and a reformat cannot turn a held property into a red line. Five
+// of the eight identity writes are multi-line calls, which is exactly how a
+// one-line grep came to miss them.
+function tight(s) {
+  return String(s || '').replace(/\s+/g, '');
+}
+
 // The brace-matched block that OPENS at the first `{` at or after `marker`.
 // Used where a claim is positional — "this token is inside that block" — because
 // a substring search over the whole file answers a different question.
@@ -516,6 +524,13 @@ const IDENTITY_READY = {
 const IDENTITY_NONE = { public_seafarer_id: '', identity_key_registered_at: '' };
 const IDENTITY_ID_NO_KEY = { public_seafarer_id: 'SKP-HARNESS-0001', identity_key_registered_at: '' };
 
+// The row-name suffix of a non-production base, WRITTEN OUT BY HAND from the
+// card: trimmed, no trailing slash, lower case. Not read from jobs.rs on
+// purpose — see the boundary note in section X.
+function identityScopeOf(base) {
+  return String(base || '').trim().replace(/\/+$/, '').toLowerCase();
+}
+
 function makeInvoke(state) {
   return async (cmd, args) => {
     state.calls.push([cmd, args]);
@@ -550,15 +565,41 @@ function makeInvoke(state) {
       // identity the server has on file for this vault. The default is a vault
       // that has both, because that is the state every assertion written before
       // S4d was written in.
-      case 'seafarer_identity_entry_state':
+      case 'seafarer_identity_entry_state': {
         if (state.identityStateThrows) throw new Error('No vault open');
+        // THE RUST COMMAND'S CONTRACT FOR THE SCOPED ROWS (V12c), restated here
+        // BY HAND from the task card and deliberately NOT derived from jobs.rs:
+        // a stub that read the rule out of the file it is checking would compare
+        // the code with itself. On a stand or the pilot the command answers the
+        // rows bound to THAT base; on production it answers the global rows.
+        //
+        // Only a test that models a per-base vault (`identityByBase`) gets that
+        // answer. Every test written before this card passes no such model and
+        // is answered exactly as it was.
+        if (state.identityByBase) {
+          const ep = state.endpoint || {};
+          if (ep.stand === true || ep.pilot === true) {
+            const forBase = state.identityByBase[identityScopeOf(ep.base)] || IDENTITY_NONE;
+            return JSON.parse(JSON.stringify(forBase));
+          }
+        }
         return JSON.parse(JSON.stringify(state.identity));
+      }
       case 'ensure_seafarer_identity':
         state.ensureCalls.push(args || {});
         if (state.ensureThrows) throw new Error(state.ensureThrows);
         return JSON.parse(JSON.stringify(state.ensureResult));
       case 'get_matchable_profile':
-        return { user_id: 'harness-vault-user', public_seafarer_id: state.identity.public_seafarer_id };
+        // profile.rs:1005/1020 reads the BARE, GLOBAL row and this card does not
+        // touch it — so what the join screen gets is the identity of whichever
+        // registry issued it, never the one bound to the base in use.
+        return {
+          user_id: 'harness-vault-user',
+          public_seafarer_id: (state.identityGlobal || state.identity).public_seafarer_id,
+        };
+      case 'get_identity_trust_status':
+        if (state.trustThrows) throw new Error('vault locked');
+        return JSON.parse(JSON.stringify(state.trust));
       case 'register_my_identity_pubkey': return {};
       case 'get_seafarer_personal': return JSON.parse(JSON.stringify(state.personal));
       case 'set_seafarer_personal':
@@ -613,7 +654,28 @@ function boot(opts = {}) {
     cvThrows: !!opts.cvThrows,
     responseIdThrows: !!opts.responseIdThrows,
     identity: opts.identity === undefined ? { ...IDENTITY_READY } : { ...opts.identity },
+    // The per-base vault, absent unless a test models it (see the stub above).
+    identityByBase: opts.identityByBase === undefined ? null : opts.identityByBase,
+    // The GLOBAL rows, which on a non-production build are the ones ANOTHER
+    // registry wrote. Absent unless a test distinguishes them.
+    identityGlobal: opts.identityGlobal === undefined ? null : opts.identityGlobal,
     identityStateThrows: !!opts.identityStateThrows,
+    // What `get_identity_trust_status` answers. The default is the state in
+    // which the legacy "Claim Skipi Seafarer ID" button IS drawn today: a vault
+    // with a fingerprint and no server identity at all.
+    trust: opts.trust === undefined
+      ? {
+          status: 'unique',
+          user_id: 'harness-vault-user',
+          identity_fingerprint: 'idfp1_harnessfixture',
+          fingerprint_version: 1,
+          server_identity: {},
+          profile: { name: 'Tymur Rudov', date_of_birth: '1980-01-01', nationality: 'Ukraine' },
+          possible_duplicates: [],
+          linked_copies: [],
+        }
+      : opts.trust,
+    trustThrows: !!opts.trustThrows,
     feedbackPromptState: opts.feedbackPromptState === undefined
       ? { should_prompt: true } : opts.feedbackPromptState,
     ensureCalls: [],
@@ -838,6 +900,67 @@ async function runJoinAccept(opts = {}) {
   };
 }
 
+// Renders the real Jobs screen, then presses the REAL identity step handler, and
+// returns the section BEFORE and AFTER the press. The two snapshots are the
+// measurement: "a refusal did not move the decision" is a claim about the
+// difference between them, and it is worth nothing without the calibration that
+// a SUCCESS does move it.
+async function pressIdentityStep(opts = {}) {
+  const pid = opts.profileId || PROFILE_MATCH.profile_id;
+  const rendered = await renderJobsScreen({ profiles: [PROFILE_MATCH], ...opts });
+  const before = rendered.profilesHost.innerHTML;
+  // Same reason the other drivers pre-create their nodes: the shim keeps
+  // innerHTML as a string, so the status line and the button the handler writes
+  // into are put where a browser would already have them.
+  const status = rendered.document.createElement('div');
+  status.setAttribute('id', 'jobs-identity-status-' + pid);
+  const btn = rendered.document.createElement('button');
+  btn.setAttribute('id', 'jobs-identity-btn-' + pid);
+  const callsBefore = rendered.state.calls.map((c) => c[0]);
+  let pressError = null;
+  try {
+    await rendered.sandbox.jobsEnsureSkipiId(pid);
+  } catch (e) {
+    pressError = e;
+  }
+  await settle();
+  return {
+    ...rendered,
+    before,
+    after: rendered.profilesHost.innerHTML,
+    callsBefore,
+    callsAfter: rendered.state.calls.map((c) => c[0]),
+    statusHtml: status.innerHTML,
+    pressError,
+  };
+}
+
+// Runs the REAL identity-trust card of the settings screen — the one that draws
+// the legacy "Claim Skipi Seafarer ID" button — through whichever of its two
+// callers is asked for.
+//
+// A SHIM ARTIFACT USED ON PURPOSE, and named so it is not mistaken for the
+// product: FakeDocument registers every `id=` it finds in the file, including
+// the markup that lives inside an inline script as a string literal. So both
+// hosts (`#vault-identity-trust`, `#mobile-identity-trust`) exist before
+// anything opened that screen, which is what lets this driver call the real
+// loader without walking the settings UI.
+async function renderTrustCard(opts = {}) {
+  const booted = boot(opts);
+  await settle();
+  const host = booted.document.getElementById(
+    opts.compact ? 'mobile-identity-trust' : 'vault-identity-trust');
+  let error = null;
+  try {
+    if (opts.compact) await booted.sandbox.mobileRefreshIdentityTrust();
+    else await booted.sandbox.loadIdentityTrustStatus();
+  } catch (e) {
+    error = e;
+  }
+  await settle();
+  return { ...booted, error, host, html: host ? host.innerHTML : null };
+}
+
 // Runs the REAL diagnostics reporter, by the same door `window.onerror` uses.
 async function runDiagnostic(opts = {}) {
   const booted = boot(opts);
@@ -1002,6 +1125,9 @@ const NEW_KEYS = [
   'jobs.profiles.version',
   'jobs.profiles.error',
   'jobs.profiles.no_requirements',
+  // V12c: the one new pair of strings this card adds. Without this line the
+  // localisation checks below would not look at it and the green would be empty.
+  'jobs.profiles.identity_server_own',
 ];
 NEW_KEYS.forEach((k) => {
   ok(enBlock.includes(`'${k}'`), `D12 tr() dictionary carries ${k} in EN`);
@@ -1406,8 +1532,12 @@ ok(epFn.indexOf('jobs_test_api_base()') < epFn.indexOf('jobs_pilot_api_base()'),
 // would otherwise leave through `api::api_bases()` — i.e. to PRODUCTION — and
 // every one of them must read the PAIR: reading `stand` alone would answer
 // "this is the release build, go ahead" on the build the owner installs.
+// V12c adds the SIXTH: `skipiNonProductionBuild`, which decides whether the
+// legacy "Claim Skipi Seafarer ID" button — a write to `api::api_bases()`, i.e.
+// to production — is drawn at all. It is a write decider and reads the pair.
 const ENDPOINT_READERS = ['skipiDiagnosticsMayLeave', 'skipiFeedbackPromptAllowed',
-  'skipiRegisterJoinIdentity', 'skipiPublishMessagingPubkey', 'loadJobsProfiles'];
+  'skipiRegisterJoinIdentity', 'skipiPublishMessagingPubkey', 'loadJobsProfiles',
+  'skipiNonProductionBuild'];
 const endpointReadSites = countOf(html, "invoke('jobs_response_endpoint')");
 ok(endpointReadSites === ENDPOINT_READERS.length,
   `U13 exactly ${ENDPOINT_READERS.length} places in dist/index.html ask which server this build talks to (found ${endpointReadSites}) — a new one appears here as a mismatch`);
@@ -1416,6 +1546,8 @@ ENDPOINT_READERS.forEach((fn) => {
     `U13b ${fn} is one of them`);
 });
 const WRITE_DECIDERS = ENDPOINT_READERS.filter((f) => f !== 'loadJobsProfiles');
+ok(WRITE_DECIDERS.length === 5,
+  `U13c five of the six decide a write that would otherwise leave for production (found ${WRITE_DECIDERS.length})`);
 WRITE_DECIDERS.forEach((fn) => {
   const body = withoutLineComments(String(fnBody(html, fn) || '')).replace(/\s+/g, '');
   ok(body.includes('ep.stand===true||ep.pilot===true'),
@@ -1694,8 +1826,9 @@ ok(/доставлен для опубликованной версии 7/.test(
 // name the contact could deliver a CV under someone else's address.
 ok(submitBody !== null && /get_vault_info_value\(conn, "personal_email"\)/.test(submitBody),
   'P8 the contact is read from the vault, not accepted as an argument');
-ok(submitBody !== null && /get_vault_info_value\(conn, "skipi_public_seafarer_id"\)/.test(submitBody),
-  'P9 the seafarer identity the response is delivered as is the vault\'s own');
+ok(submitBody !== null
+  && tight(submitBody).includes('get_vault_info_value(conn,&identity_vault_key(&endpoint,KEY_PUBLIC_SEAFARER_ID)'),
+  'P9 the seafarer identity the response is delivered as is the vault\'s own — and (V12c) the row of the registry being delivered to');
 ok(submitBody !== null && /vault_signing_key/.test(submitBody),
   'P10 and it is the key in the vault that proves it');
 
@@ -1714,6 +1847,13 @@ ok(submitBody !== null && /vault_signing_key/.test(submitBody),
 section('I. the seafarer can obtain the identity the respond button requires');
 
 const identityRustBody = rustFnBody(jobsRs, 'ensure_seafarer_identity');
+// V12c moved the WRITES of the claim answer and of the registration marker out of
+// the command and behind two functions, so that a test can run the whole recorded
+// sequence against an in-memory vault. The properties asserted below did not
+// change; the place they are asserted over did, and these two bodies are it.
+const claimWriterBody = String(rustFnBody(jobsRs, 'write_identity_claim_answer') || '');
+const markerWriterBody = String(rustFnBody(jobsRs, 'write_identity_key_marker') || '');
+
 const stateBody = rustFnBody(jobsRs, 'seafarer_identity_entry_state');
 const stepSrc = fnBody(html, 'jobsIdentityStepBody');
 const respondSrc = fnBody(html, 'jobsProfileRespondHtml');
@@ -1747,10 +1887,12 @@ ok(idNoKey.sectionHtml.includes('data-qa="jobs-identity-step"'),
   'I8 a public id WITHOUT a registered identity still gets the step — the state a restored backup is in');
 ok(!idNoKey.sectionHtml.includes('data-qa="jobs-respond-btn"'),
   'I8b and not a respond button that would answer 401 with nowhere left to go');
-const markerAt = String(identityRustBody || '').indexOf('IDENTITY_KEY_REGISTERED_AT, &registered_at');
+const markerAt = String(identityRustBody || '').indexOf('write_identity_key_marker(');
 const keyPostAt = String(identityRustBody || '').indexOf('"/api/seafarer-identity/identity-key"');
 ok(keyPostAt >= 0 && markerAt > keyPostAt,
   'I8c the marker that opens the respond button is written only AFTER the server accepted the identity');
+ok(tight(markerWriterBody).includes('identity_vault_key(endpoint,IDENTITY_KEY_REGISTERED_AT)'),
+  'I8c2 (V12c) and the marker it writes belongs to the server that accepted it, not to every server');
 ok(/if key_answer\.status == 409/.test(String(identityRustBody || '')),
   'I8d 409 — this vault is already bound to a different identity — is a refusal, not a success');
 // COUNTED, NOT LOCATED, and the difference is a defect that got through: I8c
@@ -1759,9 +1901,55 @@ ok(/if key_answer\.status == 409/.test(String(identityRustBody || '')),
 // leaves the first write exactly where it was and I8c green. That mutation
 // restores defect A-1 whole (a vault with no identity on the server gets the
 // respond button) through the branch S4d itself added.
-const markerWrites = countOf(String(identityRustBody || ''), 'IDENTITY_KEY_REGISTERED_AT');
+// V12c: the marker is written by ONE function, and the command calls it ONCE.
+// The mutation this catches is unchanged — a second marker write inside the
+// `status == 409` branch would leave the first exactly where it is and I8c green,
+// and it would restore defect A-1 whole.
+const markerWrites = countOf(String(identityRustBody || ''), 'write_identity_key_marker(');
 ok(markerWrites === 1,
   `I8f the marker that opens the respond button is written in EXACTLY ONE place in this command (found ${markerWrites})`);
+ok(countOf(markerWriterBody, 'set_vault_info(') === 1,
+  `I8f2 and the function it calls writes exactly one row (found ${countOf(markerWriterBody, 'set_vault_info(')})`);
+ok(countOf(String(identityRustBody || ''), 'IDENTITY_KEY_REGISTERED_AT') === 0,
+  'I8f3 and the command itself no longer names the marker row — there is one door to it');
+// GENERALISED FROM THAT ONE ROW TO ALL EIGHT (delta R1), because I8f3 closes a
+// ROW and the hole is the SHAPE. One line added to a command body —
+// `crate::db::set_vault_info(conn, KEY_IDENTITY_MESSAGE, …)`, the CONSTANT and
+// not the literal, outside the two extracted writers — writes a GLOBAL row and
+// was caught by nothing: X8 counts the LITERAL, which lives in the `const` and
+// is therefore already exactly one; X8b greps RAW key strings; X12f is a lower
+// bound `>= 8` and a bare write adds no `identity_vault_key(` to count; and the
+// Rust tests drive the two writers directly. Measured with that line in:
+// cargo 176/0 and this harness 759/0 — nothing went red.
+//
+// The invariant, therefore: inside a COMMAND body none of the eight constants
+// may appear except as the argument of `identity_vault_key(` — the one door. The
+// two writers are deliberately outside this loop: they reach the same door
+// through their own local `row(` closure, which is what the calibration below
+// uses to prove this probe can see an occurrence that does NOT go through it.
+// I8f3 is kept, not replaced: for the marker it asserts zero occurrences of any
+// kind, which is stricter than "only through the door".
+const EIGHT_KEY_CONSTS = ['KEY_PUBLIC_SEAFARER_ID', 'KEY_IDENTITY_CLAIM_STATUS',
+  'KEY_IDENTITY_DUPLICATE', 'KEY_IDENTITY_TRUST_LEVEL', 'KEY_IDENTITY_MESSAGE',
+  'KEY_IDENTITY_LAST_CLAIM_AT', 'KEY_IDENTITY_RECOVERY_KEY', 'IDENTITY_KEY_REGISTERED_AT'];
+function unscopedKeyConsts(body) {
+  const flat = withoutLineComments(String(body || '')).replace(/\s+/g, '');
+  const out = [];
+  EIGHT_KEY_CONSTS.forEach((c) => {
+    const total = countOf(flat, c);
+    const scoped = countOf(flat, 'identity_vault_key(&endpoint,' + c + ')');
+    if (total !== scoped) out.push(`${c}: ${total} named, ${scoped} through the one function`);
+  });
+  return out;
+}
+['ensure_seafarer_identity', 'submit_profile_response', 'seafarer_identity_entry_state'].forEach((fn) => {
+  const bare = unscopedKeyConsts(rustFnBody(jobsRs, fn));
+  ok(bare.length === 0,
+    `I8f4 (R1) ${fn} names none of the eight rows except through identity_vault_key( (${bare.join(' | ') || 'none'})`);
+});
+const i8f5 = unscopedKeyConsts(claimWriterBody);
+ok(i8f5.length === 7,
+  `I8f5 CALIBRATION — the same probe DOES see the seven constants the claim writer reaches through its own row( closure instead (found ${i8f5.length}), so I8f4 is not green over a blind probe`);
 ok(!String(identityRustBody || '').includes('"skipi_identity_key_registered_at"'),
   'I8g and it is never spelled out as a raw key, which would walk straight past the count above');
 ok(/"registered"/.test(String(identityRustBody || '')) && /"exists"/.test(String(identityRustBody || '')),
@@ -1848,11 +2036,14 @@ ok(dup.statusHtml.includes('already exists'),
   'I9 a duplicate identity claim is refused with its own sentence, not a silent no-op');
 ok(!dup.sectionHtml.includes('data-qa="jobs-respond-btn"'),
   'I9b and the respond button does not appear on it');
-const emptyGuardAt = String(identityRustBody || '').indexOf('if issued.is_empty()');
-const writeIdAt = String(identityRustBody || '').indexOf('"skipi_public_seafarer_id", &issued');
-ok(emptyGuardAt >= 0 && writeIdAt > emptyGuardAt,
+// V12c: the refusal and the write live in `write_identity_claim_answer`, in the
+// order they were in before. The claim is the same claim.
+const emptyGuardAt = claimWriterBody.indexOf('if issued.is_empty()');
+const writeIdAt = tight(claimWriterBody).indexOf('row(KEY_PUBLIC_SEAFARER_ID),issued');
+ok(emptyGuardAt >= 0 && writeIdAt >= 0
+  && tight(claimWriterBody).indexOf('ifissued.is_empty()') < writeIdAt,
   'I9c the public id is written to the vault only AFTER an empty one has been refused');
-const dupBranch = blockAfter(String(identityRustBody || ''), 'if issued.is_empty()');
+const dupBranch = blockAfter(claimWriterBody, 'if issued.is_empty()');
 ok(dupBranch !== null && dupBranch.includes('Err(IDENTITY_CLAIM_DUPLICATE'),
   'I9d an empty id on a 200 returns a refusal — not Ok, and not the empty string the profile-side claim stores');
 
@@ -2878,6 +3069,491 @@ const zVaultAt = zRespondHandlerSrc === null ? -1 : zRespondHandlerSrc.indexOf("
 ok(zPredAt >= 0 && zVaultAt >= 0 && zPredAt < zVaultAt,
   `Z30c and the handler asks it BEFORE it asks the vault for anything (predicate@${zPredAt}, vault@${zVaultAt})`);
 
+
+
+// ------------ X. THE IDENTITY BELONGS TO THE REGISTRY THAT ISSUED IT (V12c) --
+//
+// WHAT WENT WRONG. `skipi_public_seafarer_id` was ONE row of `vault_info`, so a
+// vault that had been given an identity by one registry believed it had one on
+// every registry: on the pilot the entry step was already satisfied, the claim
+// was skipped, and the response path then minted a self-session against a host
+// that had never heard of that id. The EIGHT rows that hold WHAT A REGISTRY
+// ANSWERED now carry the base in their name on a stand and on the pilot; on
+// production the names are byte-for-byte today's.
+//
+// MEASUREMENT BOUNDARY, stated rather than implied. Node cannot run the Rust, so
+// this section has two kinds of assertion and they are not interchangeable:
+//
+//   * BEHAVIOURAL — the real inline scripts of `dist/index.html` driven through
+//     the DOM shim, with `seafarer_identity_entry_state` answering per base.
+//     That stub is the Rust command's CONTRACT restated BY HAND from the card
+//     and deliberately NOT derived from `jobs.rs`: a probe that reads the rule
+//     out of the file it is checking compares the code with itself.
+//   * SOURCE CONTRACT — claims about the text of `jobs.rs`: which function
+//     decides the row name, that the production branch returns the bare name,
+//     and that no bare literal of the eight reaches `set_vault_info` in that
+//     file at all.
+//
+// WHAT IS NOT CLAIMED HERE. That the eight production rows survive a full pass,
+// and that base A survives base B, is BEHAVIOUR of the vault and is proven in
+// Rust (`registry_scoped_identity` in `src-tauri/src/commands/jobs.rs`) against
+// an in-memory vault. This section does not pretend to it.
+//
+// ONE MORE BOUNDARY: `identity_fingerprint` and `identity_fingerprint_version`
+// are written GLOBALLY and on the non-production path as well, on purpose —
+// `sync_identity_fingerprint` describes the PERSON, not the registry. The norm
+// asserted here is therefore "none of the EIGHT", never "nothing global".
+
+section('X. the row name is decided by the base, by one function, from nothing a server said');
+
+const EIGHT_ROWS = [
+  'skipi_public_seafarer_id',
+  'skipi_identity_claim_status',
+  'skipi_identity_duplicate',
+  'skipi_identity_trust_level',
+  'skipi_identity_message',
+  'skipi_identity_last_claim_at',
+  'skipi_identity_recovery_key',
+  'skipi_identity_key_registered_at',
+];
+
+const PILOT_EP = { base: 'https://api.skipi.app:8444', stand: false, pilot: true };
+const STAND_EP = { base: 'http://127.0.0.1:8099', stand: true, pilot: false };
+const PROD_EP = { base: 'https://api.skipi.app', stand: false, pilot: false };
+// The identity ANOTHER registry issued, sitting in the global rows — the exact
+// state the owner's vault is in.
+const OTHER_REGISTRY_IDENTITY = {
+  public_seafarer_id: 'SKP-SF-OTHER-REGISTRY-0001',
+  identity_key_registered_at: '2026-09-20T00:00:00Z',
+};
+const THIS_REGISTRY_IDENTITY = {
+  public_seafarer_id: 'SKP-SF-PILOT-0001',
+  identity_key_registered_at: '2026-09-30T00:00:00Z',
+};
+
+// Comments are not code, and the test module is not the product. Every source
+// claim below is made over the product half of the file with the prose removed,
+// and `Flat` collapses whitespace so a multi-line call reads the same as a
+// one-line one — the exact trap that hid five of the eight writes from a grep.
+const jobsRsCode = withoutLineComments(jobsRs);
+const jobsRsTestAt = jobsRsCode.indexOf('#[cfg(test)]');
+const jobsRsProduct = jobsRsTestAt >= 0 ? jobsRsCode.slice(0, jobsRsTestAt) : jobsRsCode;
+const jobsRsFlat = jobsRsProduct.replace(/\s+/g, ' ');
+const profileRsFlat = withoutLineComments(
+  (allRustSrc.find(([f]) => f.endsWith('commands/profile.rs')) || ['', ''])[1],
+).replace(/\s+/g, ' ');
+const identityRsFlat = withoutLineComments(
+  (allRustSrc.find(([f]) => f.endsWith('src/identity.rs')) || ['', ''])[1],
+).replace(/\s+/g, ' ');
+
+ok(jobsRsTestAt > 0, 'X0 the product half of jobs.rs is separated from its test modules');
+ok(profileRsFlat.length > 1000 && identityRsFlat.length > 1000,
+  'X0b profile.rs and identity.rs were found (the calibration of X8c depends on them)');
+
+// ---- the one deciding function -------------------------------------------
+const keyFn = withoutLineComments(String(rustFnBody(jobsRs, 'identity_vault_key') || ''));
+ok(keyFn.length > 0, 'X0c jobs.rs defines identity_vault_key');
+ok(countOf(jobsRsProduct, 'fn identity_vault_key') === 1,
+  'X0d exactly one function decides the row name');
+
+// ---- TEST 6: an empty row for THIS base brings the existing step back -------
+const x6pilot = await renderJobsScreen({
+  profiles: [PROFILE_MATCH], endpoint: PILOT_EP,
+  identityGlobal: OTHER_REGISTRY_IDENTITY, identityByBase: {}, lang: 'en',
+});
+ok(x6pilot.sectionHtml.includes('data-qa="jobs-identity-step"'),
+  'X6 (card 6) pilot base, no row for it: the EXISTING identity step is drawn');
+ok(x6pilot.sectionHtml.includes('data-qa="jobs-identity-btn"'),
+  'X6b and the existing button is on it');
+ok(!x6pilot.sectionHtml.includes('data-qa="jobs-respond-btn"'),
+  'X6c and the respond button is not offered while the identity of this server is missing');
+ok(x6pilot.sectionHtml.includes('This server keeps its own Skipi ID'),
+  'X6d and the one new sentence says why he is asked again (EN, on the rendered screen)');
+const x6pilotRu = await renderJobsScreen({
+  profiles: [PROFILE_MATCH], endpoint: PILOT_EP,
+  identityGlobal: OTHER_REGISTRY_IDENTITY, identityByBase: {}, lang: 'ru',
+});
+ok(x6pilotRu.sectionHtml.includes('data-qa="jobs-identity-step"')
+  && x6pilotRu.sectionHtml.includes('У этого сервера свой Skipi ID'),
+  'X6e and the same screen in Russian, in Russian');
+const x6stand = await renderJobsScreen({
+  profiles: [PROFILE_MATCH], endpoint: STAND_EP,
+  identityGlobal: OTHER_REGISTRY_IDENTITY, identityByBase: {}, lang: 'en',
+});
+ok(x6stand.sectionHtml.includes('data-qa="jobs-identity-btn"'),
+  'X6f a stand behaves the same way — the rule is the pair of flags, not the pilot alone');
+// CALIBRATION: the new sentence is NOT shown on the production build, where the
+// Skipi ID really is obtained once.
+const x6prod = await renderJobsScreen({
+  profiles: [PROFILE_MATCH], endpoint: PROD_EP, identity: IDENTITY_NONE, lang: 'en',
+});
+ok(x6prod.sectionHtml.includes('data-qa="jobs-identity-step"'),
+  'X6g CALIBRATION — on production the step is drawn for an empty vault exactly as before');
+ok(!x6prod.sectionHtml.includes('This server keeps its own Skipi ID'),
+  'X6h and the new sentence is absent there, so it is not a second sentence for everyone');
+// SOURCE (mutation M2: the global row always). The scoped name must be
+// reachable, and it must be reached through the pair of flags.
+ok(/if\s+endpoint\.stand\s*\|\|\s*endpoint\.pilot/.test(keyFn),
+  'X6i the decision is the PAIR of flags, as everywhere else in this contract');
+ok(keyFn.includes('format!('),
+  'X6j and a non-production base really produces a name of its own');
+// SOURCE (mutation M7: skip the claim when the row is empty). The positive path
+// has to be reachable, or the step would be drawn for ever and do nothing.
+const ensureRust = withoutLineComments(String(rustFnBody(jobsRs, 'ensure_seafarer_identity') || ''));
+const ensureFlat = ensureRust.replace(/\s+/g, ' ');
+ok(ensureFlat.includes('let public_seafarer_id = vault_text(conn, &identity_vault_key(&endpoint, KEY_PUBLIC_SEAFARER_ID));'),
+  'X6k ensure_seafarer_identity reads the row of the base it is about to speak to');
+ok(ensureFlat.includes('let claim_request = if public_seafarer_id.is_empty() {'),
+  'X6l and builds a claim exactly when that row is empty');
+
+// ---- TEST 7: a filled row for this base hides the step, as today -----------
+const x7 = await renderJobsScreen({
+  profiles: [PROFILE_MATCH], endpoint: PILOT_EP,
+  identityGlobal: OTHER_REGISTRY_IDENTITY,
+  identityByBase: { [identityScopeOf(PILOT_EP.base)]: THIS_REGISTRY_IDENTITY },
+  lang: 'en',
+});
+ok(!x7.sectionHtml.includes('data-qa="jobs-identity-step"'),
+  'X7 (card 7) pilot base WITH its own row: the step is not drawn');
+ok(x7.sectionHtml.includes('data-qa="jobs-respond-btn"'),
+  'X7b and the respond button is what he sees instead');
+ok(!x7.sectionHtml.includes('This server keeps its own Skipi ID'),
+  'X7c and the new sentence is gone with the step it belongs to');
+// SOURCE (mutation M12: scoped on one half of the pair only). The entry state
+// reads BOTH halves through the one function.
+const stateRust = withoutLineComments(String(rustFnBody(jobsRs, 'seafarer_identity_entry_state') || ''));
+const stateFlat = stateRust.replace(/\s+/g, ' ');
+ok(stateFlat.includes('vault_text(conn, &identity_vault_key(&endpoint, KEY_PUBLIC_SEAFARER_ID))'),
+  'X7d the entry state reads the id through the one function');
+ok(tight(stateRust).includes('vault_text(conn,&identity_vault_key(&endpoint,IDENTITY_KEY_REGISTERED_AT)'),
+  'X7e and the registration marker through the same one — a half-bound pair is the state that loops');
+
+// ---- TEST 8: the production path is EXACTLY today's ------------------------
+// The names are LITERALS here. A test that read them out of the new code would
+// be comparing the code with itself.
+EIGHT_ROWS.forEach((name) => {
+  ok(countOf(jobsRsProduct, `"${name}"`) === 1,
+    `X8 (card 8) "${name}" is written in exactly one place in jobs.rs (found ${countOf(jobsRsProduct, `"${name}"`)})`);
+});
+// The bare-key patterns, checked over WHITESPACE-COLLAPSED source so that a
+// multi-line call cannot hide — five of these eight writes are multi-line, and
+// that is precisely what a one-line grep missed.
+function bareKeyPatterns(n) {
+  return [
+    `set_vault_info(conn, "${n}"`, `set_vault_info( conn, "${n}"`,
+    `get_vault_info_value(conn, "${n}"`, `get_vault_info_value( conn, "${n}"`,
+    `vault_text(conn, "${n}"`, `vault_text( conn, "${n}"`,
+  ];
+}
+EIGHT_ROWS.forEach((name) => {
+  const hits = bareKeyPatterns(name).filter((p) => jobsRsFlat.includes(p));
+  ok(hits.length === 0,
+    `X8b no bare, unscoped access to "${name}" is left in jobs.rs (${hits.join(' | ') || 'none'})`);
+});
+// CALIBRATION OF THE PROBE ITSELF: the same patterns MUST be found where a bare
+// access really does live. profile.rs and identity.rs keep the global rows on
+// purpose (they are the production reader and the legacy claim), and this card
+// does not touch them. If these two lines went green-empty, X8b above would be
+// green over a blind probe.
+ok(bareKeyPatterns('skipi_identity_claim_status').some((p) => profileRsFlat.includes(p)),
+  'X8c CALIBRATION — the bare-key probe does find the bare write that legitimately lives in profile.rs');
+ok(bareKeyPatterns('skipi_public_seafarer_id').some((p) => identityRsFlat.includes(p)),
+  'X8d CALIBRATION — and the bare read that legitimately lives in identity.rs');
+// The production branch itself: the bare name is returned, and it is returned
+// OUTSIDE the non-production branch (mutation M1: scoped always).
+const x8if = keyFn.search(/if\s+endpoint\.stand\s*\|\|\s*endpoint\.pilot/);
+const x8scoped = keyFn.indexOf('format!(');
+const x8bare = keyFn.indexOf('name.to_string()');
+ok(x8if >= 0 && x8scoped > x8if && x8bare > x8scoped,
+  `X8e the production build gets the bare name, after the non-production branch (if@${x8if}, scoped@${x8scoped}, bare@${x8bare})`);
+// And nothing about the eight rows leaked into the files this card may not touch.
+['commands/profile.rs', 'commands/messaging.rs', 'src/identity.rs'].forEach((f) => {
+  const entry = allRustSrc.find(([p]) => p.endsWith(f));
+  ok(entry !== undefined && !entry[1].includes('identity_vault_key'),
+    `X8f ${f} is untouched by the binding — it keeps reading the global rows, as the card requires`);
+});
+
+// ---- TEST 9: nothing is claimed until a person presses something -----------
+const x9 = await pressIdentityStep({
+  endpoint: PILOT_EP, identityGlobal: OTHER_REGISTRY_IDENTITY, identityByBase: {},
+});
+ok(x9.callsBefore.filter((c) => c === 'ensure_seafarer_identity').length === 0,
+  `X9 (card 9) drawing the screen claims nothing (${x9.callsBefore.filter((c) => c === 'ensure_seafarer_identity').length} calls)`);
+const x9after = x9.callsAfter.filter((c) => c === 'ensure_seafarer_identity').length;
+ok(x9after === 1, `X9b and one press makes exactly one call (${x9after})`);
+// THE COUNT IS OVER THE WHOLE BRIDGE, not over one screen: `ensure` has a SECOND
+// call site (`skipiRegisterJoinIdentity`), and a probe that watched only the Jobs
+// screen would report zero while the join was claiming.
+const x9startup = await runStartup({
+  endpoint: PILOT_EP, identityGlobal: OTHER_REGISTRY_IDENTITY, identityByBase: {},
+});
+ok(x9startup.calls.filter((c) => c === 'ensure_seafarer_identity').length === 0,
+  'X9c and starting the app claims nothing from either call site');
+ok(countOf(html, "invoke('ensure_seafarer_identity')") === 2,
+  `X9d there are exactly two call sites of the command in dist (found ${countOf(html, "invoke('ensure_seafarer_identity')")}) — a third appears here`);
+
+// ---- TEST 10: a refusal moves the decision in NEITHER direction ------------
+// CALIBRATION FIRST: on success the section really does change. Without this
+// line every refusal below would be green over a screen that never changes.
+const x10ok = await pressIdentityStep({
+  endpoint: PILOT_EP, identityGlobal: OTHER_REGISTRY_IDENTITY, identityByBase: {},
+  ensureResult: { ...THIS_REGISTRY_IDENTITY, identity_key_status: 'registered', claim_status: 'created', trust_level: 'identity_claimed' },
+});
+ok(x10ok.before !== x10ok.after,
+  'X10 CALIBRATION — a successful press really does redraw the section');
+ok(x10ok.after.includes('data-qa="jobs-respond-btn"'),
+  'X10b CALIBRATION — and what replaces the step is the respond button');
+const REFUSALS = [
+  ['403 with a body', 'identity claim returned 403: {"detail":"forbidden"}'],
+  ['403 with another body', 'identity claim returned 403: {"detail":"identity unknown"}'],
+  ['500', 'identity claim returned 500: internal error'],
+  ['transport error', 'error sending request for url (https://api.skipi.app:8444)'],
+  ['the product\'s own duplicate marker', 'IDENTITY_CLAIM_DUPLICATE'],
+];
+for (const [what, message] of REFUSALS) {
+  const r = await pressIdentityStep({
+    endpoint: PILOT_EP, identityGlobal: OTHER_REGISTRY_IDENTITY, identityByBase: {},
+    ensureThrows: message,
+  });
+  ok(r.before === r.after,
+    `X10c (${what}) the part of the screen that decides the step is byte-identical after the refusal`);
+  ok(r.after.includes('data-qa="jobs-identity-step"'),
+    `X10d (${what}) the step is still the step — a refusal does not promote him`);
+  ok(!r.after.includes('data-qa="jobs-respond-btn"'),
+    `X10e (${what}) and no respond button appeared`);
+}
+// SOURCE (mutation M5): nothing derived from an answer can reach the decision.
+['status', 'body', 'answer', 'claim', 'serde_json', 'send_on_response_bases', 'reqwest'].forEach((word) => {
+  ok(!keyFn.includes(word),
+    `X10f the row-name decision cannot see "${word}" — it has no way to read a server's reply`);
+});
+
+// ---- TEST 11: the same base never issues a second identity ----------------
+ok(tight(ensureRust).includes('letclaim_request=ifpublic_seafarer_id.is_empty(){'),
+  'X11 (card 11) the claim is built on EXACTLY the emptiness of this base\'s row, with nothing or-ed onto it');
+ok(ensureFlat.includes('} else { None };'),
+  'X11a and a row that is already there builds NO claim request at all');
+const x11claimBlock = blockAfter(ensureRust, 'if let Some(claim_body) = claim_request');
+ok(x11claimBlock !== null && x11claimBlock.includes('"/api/seafarer-identity/claim"'),
+  'X11b and the claim POST lives INSIDE that conditional, so "no request" is structural');
+ok(countOf(ensureRust, '"/api/seafarer-identity/claim"') === 1,
+  `X11c there is exactly one place that can claim (found ${countOf(ensureRust, '"/api/seafarer-identity/claim"')})`);
+ok(!x7.sectionHtml.includes('data-qa="jobs-identity-btn"'),
+  'X11d and the screen of a vault that already has this registry\'s row offers no second press');
+// BOUNDARY: that the row is actually THERE after the first pass is Rust
+// behaviour, proven by `registry_scoped_identity::test_2_...` — not here.
+
+// ---- TEST 12: claim, key, session and response read ONE value -------------
+const submitRust = withoutLineComments(String(rustFnBody(jobsRs, 'submit_profile_response') || ''));
+const submitFlat = submitRust.replace(/\s+/g, ' ');
+ok(submitFlat.includes('get_vault_info_value(conn, &identity_vault_key(&endpoint, KEY_PUBLIC_SEAFARER_ID))'),
+  'X12 (card 12) the response reads the id of the base it is delivering to');
+ok(submitFlat.includes('mint_self_session(&state, &client, &vault_user_id, &public_seafarer_id)'),
+  'X12b and the self-session is minted for THAT value, not for a second read');
+ok(ensureFlat.includes('"public_seafarer_id": public_seafarer_id,'),
+  'X12c the identity-key registration sends the value the claim just wrote');
+ok(ensureFlat.includes('write_identity_claim_answer(conn, &endpoint, &claim, &issued)?;'),
+  'X12d and the claim answer is recorded under the rows of that same base');
+ok(ensureFlat.includes('write_identity_key_marker(conn, &endpoint, &registered_at)?;'),
+  'X12e as is the marker that says the key is registered there');
+ok(countOf(jobsRsProduct, 'identity_vault_key(') >= 8,
+  `X12f every access goes through the one function (found ${countOf(jobsRsProduct, 'identity_vault_key(')} uses)`);
+
+// ---- TEST 13: the join screen — the watchdog, not the fix ------------------
+// Test 9 CANNOT express this: the join calls `ensure_seafarer_identity` by the
+// front door, from another screen and on another tap, so an assertion about the
+// Jobs button holds while the join is doing its own thing.
+const x13 = await runJoinAccept({
+  endpoint: PILOT_EP, identityGlobal: OTHER_REGISTRY_IDENTITY, identityByBase: {},
+});
+const x13sign = x13.state.calls.find(([c]) => c === 'onboard_crew_sign_accept');
+ok(x13sign !== undefined,
+  'X13 (card 13) the join reaches the point of signing for an identity');
+ok(x13sign !== undefined && x13sign[1] && x13sign[1].publicSeafarerId === OTHER_REGISTRY_IDENTITY.public_seafarer_id,
+  `X13b and the id it signs for is the GLOBAL one — another registry's (${x13sign && x13sign[1] && x13sign[1].publicSeafarerId})`);
+ok(x13sign !== undefined && x13sign[1] && x13sign[1].publicSeafarerId !== THIS_REGISTRY_IDENTITY.public_seafarer_id,
+  'X13c so joining a crew on the pilot still cannot work — this card did not change that, and does not claim to');
+ok(String(x13.blocked || '').length > 0 && x13.stage !== 'linked',
+  `X13d nothing was joined (stage=${x13.stage})`);
+ok(x13.calls.includes('ensure_seafarer_identity'),
+  'X13e the join registers through the command that speaks only to the base in use');
+['register_my_identity_pubkey', 'claim_seafarer_identity'].forEach((cmd) => {
+  ok(!x13.calls.includes(cmd),
+    `X13f and never through ${cmd}, which writes the GLOBAL rows through api_bases()`);
+});
+// CALIBRATION: on a production build the join takes the other path, so the probe
+// above is demonstrably able to tell the two apart.
+const x13prod = await runJoinAccept({ endpoint: PROD_EP });
+ok(x13prod.calls.includes('register_my_identity_pubkey') && !x13prod.calls.includes('ensure_seafarer_identity'),
+  'X13g CALIBRATION — a production build still takes the legacy registration, and the probe sees the difference');
+// SOURCE: where the join's id comes from, named so the next reader does not have
+// to infer it.
+ok(profileRsFlat.includes('"public_seafarer_id": g("skipi_public_seafarer_id")'),
+  'X13h get_matchable_profile still reads the bare global row (profile.rs, outside this card\'s four files)');
+
+// ---- TEST 14: the legacy Claim button is a production write ----------------
+// THE REGRESSION THIS CARD CREATES. Before the binding, the first successful
+// `ensure` filled the global row and this button disappeared. A non-production
+// build no longer writes that row, so without a gate the button would be drawn
+// for ever — on a screen the owner can reach on Android — and one press would
+// create the identity of a real person in the live product.
+const x14prod = await renderTrustCard({ endpoint: PROD_EP });
+ok(x14prod.html !== null, 'X14 the settings identity card renders');
+ok(x14prod.html.includes('claimSkipiIdentity()'),
+  'X14b CALIBRATION — on the production build the button is drawn exactly as before');
+for (const [what, ep] of [['pilot', PILOT_EP], ['stand', STAND_EP]]) {
+  const r = await renderTrustCard({ endpoint: ep });
+  ok(r.html !== null && !r.html.includes('claimSkipiIdentity()'),
+    `X14c (${what}) the button that writes to production is not drawn on a build that talks elsewhere`);
+  ok(r.html !== null && r.html.includes('mobile-card-title'),
+    `X14d (${what}) and the rest of the card is still there — the gate removed a button, not a screen`);
+}
+const x14unknown = await renderTrustCard({ endpointThrows: true });
+ok(x14unknown.html !== null && !x14unknown.html.includes('claimSkipiIdentity()'),
+  'X14e a build that cannot say which server it talks to draws no such button either — unknown is not "no"');
+for (const [what, ep] of [['production', PROD_EP], ['pilot', PILOT_EP]]) {
+  const r = await renderTrustCard({ endpoint: ep, compact: true });
+  ok(r.html !== null && !r.html.includes('claimSkipiIdentity()'),
+    `X14f (${what}, compact) the mobile card never offered it and still does not`);
+}
+const x14fn = withoutLineComments(String(fnBody(html, 'identityTrustHtml') || ''));
+ok(/else\s+if\s*\(\s*!compact\s*&&\s*nonprod\s*===\s*false\s*\)/.test(x14fn.replace(/\s+/g, ' ')),
+  'X14g the gate is written as the pair-flag answer, next to the !compact it keeps');
+['loadIdentityTrustStatus', 'mobileRefreshIdentityTrust'].forEach((fn) => {
+  const body = withoutLineComments(String(fnBody(html, fn) || ''));
+  ok(body.includes('skipiNonProductionBuild('),
+    `X14h ${fn} asks which server this build talks to before drawing the card`);
+});
+
+// ---- TEST 15: one server is ONE row name, whatever its case ---------------
+// `jobs_pilot_api_base` validates a PARSED url — and `Url::parse` lower-cases
+// scheme and host — but returns the RAW string. So `https://API.skipi.app:8444`
+// is a legal pilot base that would otherwise produce a SECOND row name for one
+// server: the row would read empty, the step would come back, and a SECOND claim
+// would be made in the same registry — which is forbidden, DECISIONS (904).
+ok(keyFn.includes('to_ascii_lowercase()'),
+  'X15 (card 15) the row name is built from a case-folded base');
+const x15fold = keyFn.indexOf('to_ascii_lowercase()');
+ok(x15fold >= 0 && x15fold > x8if,
+  'X15b and the folding lives inside the one deciding function, on its non-production branch');
+const pilotBaseFn = withoutLineComments(String(rustFnBody(jobsRs, 'jobs_pilot_api_base') || ''));
+ok(pilotBaseFn.includes("trim_end_matches('/')"),
+  'X15c the resolver itself still normalises exactly as it did');
+ok(!/to_ascii_lowercase|to_lowercase/.test(pilotBaseFn),
+  'X15d and is NOT case-folded itself — its literals are pinned by U5/U5b, so the folding belongs to the row name alone');
+ok(keyFn.includes("trim_end_matches('/')") && keyFn.includes('trim()'),
+  'X15e the row name gets the same trim and the same trailing-slash rule as the URL (mutation M11)');
+// BOUNDARY: that two spellings really produce one string is Rust behaviour and
+// is proven there (`test_1_...`, which compares all four spellings).
+
+// ---- X16: THE PRECONDITION, which is not one of the card's ten -------------
+//
+// `ensure_seafarer_identity` builds the claim body from
+// `required_vault_text(personal_first_name / personal_surname / personal_dob)`
+// and REFUSES BEFORE THE NETWORK when any of them is missing — the marker
+// `IDENTITY_PROFILE_INCOMPLETE`. On a pilot build this is now reachable where it
+// was not before: the step comes back for a vault that already has an identity
+// elsewhere, and a vault can carry an id from another registry while its personal
+// fields have since been emptied.
+//
+// WHAT THE SEAFARER READS, named rather than left to the source:
+//   EN "Fill these in your profile first - a Skipi ID is issued from them:"
+//   RU "Сначала заполните в профиле — из этих данных выдаётся Skipi ID:"
+// It is the product's own sentence; the marker itself never reaches the screen.
+for (const [lang, sentence] of [['en', 'Fill these in your profile first'],
+  ['ru', 'Сначала заполните в профиле']]) {
+  const r = await runEnsureIdentity({
+    endpoint: PILOT_EP, identityGlobal: OTHER_REGISTRY_IDENTITY, identityByBase: {},
+    ensureThrows: 'IDENTITY_PROFILE_INCOMPLETE', lang,
+  });
+  ok(r.statusHtml.includes(sentence),
+    `X16 (${lang}) a vault whose profile no longer carries the fields an identity is issued from reads the product's own sentence`);
+  ok(!r.statusHtml.includes('IDENTITY_PROFILE_INCOMPLETE'),
+    `X16b (${lang}) and never the marker that crossed from Rust`);
+  ok(!r.sectionHtml.includes('data-qa="jobs-respond-btn"'),
+    `X16c (${lang}) and no respond button was opened by a refusal`);
+}
+// And the refusal really is BEFORE the network: the claim body is built from the
+// three required fields, and `required_vault_text` is what refuses.
+ok(tight(ensureRust).includes('required_vault_text(conn,"personal_first_name")?')
+  && tight(ensureRust).includes('required_vault_text(conn,"personal_surname")?')
+  && tight(ensureRust).includes('required_vault_text(conn,"personal_dob")?'),
+  'X16d the three fields are demanded while the vault lock is still held, before any request');
+ok(tight(String(rustFnBody(jobsRs, 'required_vault_text') || '')).includes('Err(IDENTITY_PROFILE_INCOMPLETE.to_string())'),
+  'X16e and the refusal is the marker the WebView turns into the sentence above');
+
+
+// ---- TEST 16 (delta R1): the build's kind is a THREE-state answer, and only
+// ONE shape of answer may read as "production" ------------------------------
+//
+// The ids are R16*, not X16*: the X16 block above is the precondition and that
+// name is already taken.
+//
+// THE DEFECT. `skipiNonProductionBuild` answered
+// `!!(ep && (ep.stand===true || ep.pilot===true))`. A thrown command and a
+// literal `null` did give `null` — but a SUCCESSFUL invoke that answered `{}`,
+// `{stand:"true"}`, `{stand:1}` or any object without the pair gave **false**,
+// indistinguishable from a real production build. The gate
+// `!compact && nonprod===false` then draws "Claim Skipi Seafarer ID", and that
+// button writes through `api::api_bases()` — into the LIVE product. So
+// "unknown" collapsed into "production" on the one path where the collapse is
+// a write of a real person's identity.
+//
+// A REACHABLE MECHANISM, named as a mechanism and NOT as a measured fact: this
+// same dist/index.html is served by the SaaS web leg with an injected
+// `__TAURI__`→HTTP shim (the WEB=DESKTOP wave), and a shim that does not
+// implement `jobs_response_endpoint` can answer with an empty object. The shim
+// lives in the fleet (`webapp/**`) — another role's scope, NOT measured here.
+// Fail-closed must not depend on proving a shape unreachable.
+async function buildKindFor(ep) {
+  const booted = boot({ endpoint: PROD_EP });
+  await settle();
+  // The shape under test is installed on the live stub rather than passed to
+  // `boot`, because `boot` maps a literal `undefined` option onto its own
+  // default endpoint and so cannot express "the command answered nothing".
+  booted.state.endpoint = ep;
+  const host = booted.document.getElementById('vault-identity-trust');
+  const nonprod = await booted.sandbox.skipiNonProductionBuild();
+  let error = null;
+  try { await booted.sandbox.loadIdentityTrustStatus(); } catch (e) { error = e; }
+  await settle();
+  return { nonprod, error, html: host ? host.innerHTML : null };
+}
+const R16_UNKNOWN_SHAPES = [
+  ['null', null],
+  ['undefined — the command answered nothing', undefined],
+  ['{} — the empty object a shim answers with', {}],
+  ['{stand:false} — the second flag absent', { stand: false }],
+  ['{pilot:false} — the first flag absent', { pilot: false }],
+  ['{stand:"false",pilot:"false"} — strings, not booleans', { stand: 'false', pilot: 'false' }],
+  ['{stand:0,pilot:0} — numbers, not booleans', { stand: 0, pilot: 0 }],
+  ['[] — an array', []],
+  ['"production" — a string', 'production'],
+  ['42 — a number', 42],
+];
+for (const [what, ep] of R16_UNKNOWN_SHAPES) {
+  const r = await buildKindFor(ep);
+  ok(r.nonprod === null,
+    `R16a (${what}) the build's kind is UNKNOWN, not "production" (got ${JSON.stringify(r.nonprod) === undefined ? 'undefined' : JSON.stringify(r.nonprod)})`);
+  ok(r.html !== null && !r.html.includes('claimSkipiIdentity()'),
+    `R16b (${what}) and the button that writes to production is not drawn`);
+  ok(r.html !== null && r.html.includes('mobile-card-title'),
+    `R16c (${what}) while the rest of the card still renders — unknown removes a button, not a screen`);
+}
+// CALIBRATION, and the ONLY shape that may read as production: a valid object
+// whose two flags are BOTH boolean false. Without this pair of assertions the
+// ten refusals above would be green over a driver that cannot see the button
+// at all.
+const r16prod = await buildKindFor(PROD_EP);
+ok(r16prod.nonprod === false,
+  'R16d CALIBRATION — an endpoint object whose two flags are both boolean false IS production');
+ok(r16prod.html !== null && r16prod.html.includes('claimSkipiIdentity()'),
+  'R16e CALIBRATION — and there the button is drawn exactly as it is today, so the ten probes above demonstrably see it');
+const r16pilot = await buildKindFor(PILOT_EP);
+ok(r16pilot.nonprod === true,
+  'R16f a pilot build still answers true — the third state is untouched by this delta');
+ok(r16pilot.html !== null && !r16pilot.html.includes('claimSkipiIdentity()'),
+  'R16g and still draws no button, as test 14 already required');
 
 console.log('');
 if (fail > 0) {
