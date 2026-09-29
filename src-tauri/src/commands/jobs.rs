@@ -644,50 +644,143 @@ fn jobs_test_api_base() -> Option<String> {
     None
 }
 
+/// The PILOT address of a build the owner installs and accepts on, or nothing.
+///
+/// This exists because the installed release can only reach `api.skipi.app:443`
+/// — the shared production server — and the surface this slice is accepted on
+/// is NOT there: measured 2026-09-29 with `/health` 200 on both as the
+/// calibration, `/api/published-profiles` answers 404 on production and 200 on
+/// the pilot at `api.skipi.app:8444` (DECISIONS (869)). A release build with no
+/// way to reach the pilot has nowhere to show the scenario at all.
+///
+/// It is a SECOND resolver and not a widened first one, because the first lives
+/// inside `#[cfg(debug_assertions)]` and therefore does not exist in the build
+/// the owner installs. This one carries no `cfg`, so it reaches the release
+/// binary — and that is exactly why its validation is STRICTER than the stand's,
+/// not looser:
+///
+///   * scheme `https` and nothing else (the stand allows `http`; this must not);
+///   * host exactly `api.skipi.app`, one literal, no wildcard, no prefix match;
+///   * a port is mandatory, and it may not be 443. `Url::port()` already
+///     normalises the scheme default away (`url-2.5.8` doctest:
+///     `https://example.com:443/` -> `None`), so the first predicate alone
+///     rejects production; the second is written out so the property does not
+///     depend on that crate keeping its behaviour.
+///
+/// Compile-time only (`option_env!`), exactly like the stand resolver and for
+/// the same two reasons: an Android process cannot be handed a variable, and a
+/// runtime `std::env::var` would be a second way in that the harness cannot see.
+///
+/// With the variable absent this returns `None` before doing anything else, so
+/// every caller below compiles down to today's `api::` path and the build is
+/// the one that ships today.
+fn jobs_pilot_api_base() -> Option<String> {
+    if let Some(raw) = option_env!("SKIPI_PILOT_API_BASE") {
+        if let Ok(url) = reqwest::Url::parse(raw.trim()) {
+            if url.scheme() == "https"
+                && url.host_str() == Some("api.skipi.app")
+                && url.port().is_some()
+                && url.port() != Some(443)
+                && url.username().is_empty()
+                && url.password().is_none()
+                && url.path() == "/"
+                && url.query().is_none()
+                && url.fragment().is_none()
+            {
+                return Some(raw.trim().trim_end_matches('/').to_string());
+            }
+        }
+    }
+    None
+}
+
+/// THE ONE PLACE that answers "is a non-production base compiled into this
+/// build, and which one" — stand first, then pilot, then nothing.
+///
+/// One branch point rather than two, so that a reader auditing "can this build
+/// write to production" has a single function to read and the two callers
+/// below cannot drift apart from each other.
+fn jobs_non_production_base() -> Option<String> {
+    if let Some(stand) = jobs_test_api_base() {
+        return Some(stand);
+    }
+    if let Some(pilot) = jobs_pilot_api_base() {
+        return Some(pilot);
+    }
+    None
+}
+
 /// Every base this slice's requests may use, and NOTHING beyond them.
 ///
-/// When a stand is compiled in, the returned list is EXACTLY ONE base and the
-/// production hosts are not in it at all. That is the difference between this
-/// and `api::api_bases()`, which answers a loopback override with
-/// `[stand, api.skipi.app, api-ru.skipi.app]` — on that list a stand that is
-/// down is not an error, it is a production write.
+/// When a non-production base is compiled in — a stand OR the pilot — the
+/// returned list is EXACTLY ONE base and the production hosts are not in it at
+/// all. That is the difference between this and `api::api_bases()`, which
+/// answers a loopback override with `[stand, api.skipi.app, api-ru.skipi.app]`
+/// — on that list a base that is down is not an error, it is a production write.
+///
+/// Preference order: stand (debug builds only), then pilot, then production.
 fn response_bases() -> Vec<String> {
-    if let Some(stand) = jobs_test_api_base() {
-        return vec![stand];
+    if let Some(only) = jobs_non_production_base() {
+        return vec![only];
     }
     api::api_bases()
 }
 
-/// Which host the response path will actually talk to, and whether that is a
-/// stand. The UI renders a line from this in a service build, so the screenshot
-/// of a visual acceptance records WHICH server the app was speaking to.
+/// Which host the response path will actually talk to, and WHICH OF THE THREE
+/// KINDS of build this is. The UI renders a line from this whenever the build
+/// is not the production one, so the screenshot of a visual acceptance records
+/// the server as well as the screen.
+///
+/// Three states and not two, because a pilot build IS NOT A SERVICE BUILD. The
+/// owner accepts on it; calling it "service build" on his screen would name the
+/// wrong thing, and the two flags are kept separate rather than one flag reused
+/// for both meanings:
+///
+///   stand=true,  pilot=false -> a debug service build pointed at a stand
+///   stand=false, pilot=true  -> an installed build pointed at the pilot
+///   stand=false, pilot=false -> the production build, unchanged
+///
+/// `stand` keeps EXACTLY the meaning it had; the WebView guards that used to
+/// read it alone now read both, because "may this build write to production" is
+/// answered by the pair and not by either flag.
 #[derive(Debug, Clone, Serialize)]
 pub struct JobsResponseEndpoint {
     pub base: String,
     pub stand: bool,
+    pub pilot: bool,
 }
 
 #[tauri::command]
 pub fn jobs_response_endpoint() -> JobsResponseEndpoint {
-    match jobs_test_api_base() {
-        Some(stand) => JobsResponseEndpoint {
+    if let Some(stand) = jobs_test_api_base() {
+        return JobsResponseEndpoint {
             base: stand,
             stand: true,
-        },
-        None => JobsResponseEndpoint {
-            base: response_bases()
-                .first()
-                .cloned()
-                .unwrap_or_else(|| "unknown".to_string()),
+            pilot: false,
+        };
+    }
+    if let Some(pilot) = jobs_pilot_api_base() {
+        return JobsResponseEndpoint {
+            base: pilot,
             stand: false,
-        },
+            pilot: true,
+        };
+    }
+    JobsResponseEndpoint {
+        base: response_bases()
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "unknown".to_string()),
+        stand: false,
+        pilot: false,
     }
 }
 
-/// The GET side of the same rule as the POST side: when a stand is compiled in,
-/// the published-profiles list is read from THAT host and from nowhere else, and
-/// a failure there is a failure. With no stand this is byte-for-byte today's
-/// `api::get_json` — the release build cannot tell the difference.
+/// The GET side of the same rule as the POST side: when ANY non-production base
+/// is compiled in — stand or pilot — the published-profiles list is read from
+/// THAT host and from nowhere else, and a failure there is a failure. With
+/// neither this is byte-for-byte today's `api::get_json`, and the build that
+/// ships cannot tell the difference.
 fn get_json_for_response_path<T>(
     client: &reqwest::blocking::Client,
     path: &str,
@@ -695,7 +788,7 @@ fn get_json_for_response_path<T>(
 where
     T: serde::de::DeserializeOwned,
 {
-    if jobs_test_api_base().is_some() {
+    if jobs_non_production_base().is_some() {
         let answer = send_on_response_bases(client, false, path, None, None)?;
         if !(200..300).contains(&answer.status) {
             return Err(format!("server returned {}: {}", answer.status, answer.body));
@@ -711,11 +804,14 @@ struct HttpAnswer {
 }
 
 /// One request over `response_bases()`. A transport error moves to the next
-/// base ONLY IF THERE IS ONE; with a stand compiled in there is not, so the
-/// error is returned as an error and nothing is asked again anywhere else.
+/// base ONLY IF THERE IS ONE; with a stand or the pilot compiled in there is
+/// not, so the error is returned as an error and nothing is asked again
+/// anywhere else. A pilot that is down is an error on the screen, never a
+/// write to production.
 ///
-/// An HTTP answer — any status — ends the walk. A 4xx/5xx from the stand is the
-/// stand's answer, not a reason to ask a different host the same question.
+/// An HTTP answer — any status — ends the walk. A 4xx/5xx from a stand or the
+/// pilot is that server's answer, not a reason to ask a different host the same
+/// question.
 fn send_on_response_bases(
     client: &reqwest::blocking::Client,
     method_post: bool,

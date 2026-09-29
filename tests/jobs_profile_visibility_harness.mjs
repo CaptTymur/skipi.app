@@ -1152,18 +1152,21 @@ if (cfgBlock) {
   });
 }
 
-// (3) In the stand branch there is no production host, under any of its names.
+// (3) In the NON-PRODUCTION branch there is no production host, under any of
+// its names. The branch is no longer "the stand branch": since the pilot build
+// (section U) a stand and the pilot reach it through one predicate, and the
+// assertion follows the predicate rather than the old wording.
 const standBranch = blockAfter(
   String(blockAfter(jobsRs, 'fn response_bases()') || ''),
-  'if let Some(stand) = jobs_test_api_base()'
+  'if let Some(only) = jobs_non_production_base()'
 );
-ok(standBranch !== null, 'T8 response_bases() has a stand branch');
+ok(standBranch !== null, 'T8 response_bases() has a non-production branch');
 ['api_bases()', 'PRIMARY_API', 'RU_API', 'api.skipi.app', 'api-ru.skipi.app'].forEach((needle) => {
   ok(standBranch !== null && !standBranch.includes(needle),
-    `T9 the stand branch does not mention ${needle}`);
+    `T9 the non-production branch does not mention ${needle}`);
 });
-ok(standBranch !== null && /return\s+vec!\[\s*stand\s*\]/.test(standBranch),
-  'T10 with a stand compiled in the base list is EXACTLY ONE base — the production hosts are not in it to fall back to');
+ok(standBranch !== null && /return\s+vec!\[\s*only\s*\]/.test(standBranch),
+  'T10 with a stand OR the pilot compiled in the base list is EXACTLY ONE base — the production hosts are not in it to fall back to');
 
 // (4) The POST of the response has no path to a production base when the stand
 // fails. Enumerated, because "it does not" is only worth what the enumeration
@@ -1191,13 +1194,162 @@ ok(senderBody !== null && !/retryable|is_server_error/.test(senderBody),
 // The GET side obeys the same rule, and the release build keeps today's path.
 const getBranch = blockAfter(
   String(rustFnBody(jobsRs, 'get_json_for_response_path') || ''),
-  'if jobs_test_api_base().is_some()'
+  'if jobs_non_production_base().is_some()'
 );
-ok(getBranch !== null, 'T17 the published-profiles GET has a stand branch of its own');
+ok(getBranch !== null, 'T17 the published-profiles GET branches on the SAME one predicate as the POST side');
 ok(getBranch !== null && !/api_bases|PRIMARY_API|RU_API|api\.skipi\.app/.test(getBranch),
-  'T18 the GET stand branch mentions no production host either');
+  'T18 the GET non-production branch mentions no production host either');
+// The whole point of U: this branch must not narrow back to the stand alone, or
+// an installed pilot build would read the published profiles from PRODUCTION
+// while responding to the pilot.
+ok(!String(rustFnBody(jobsRs, 'get_json_for_response_path') || '').includes('jobs_test_api_base()'),
+  'T17b and it does not branch on the stand alone — a pilot build would otherwise GET from production');
 ok(String(rustFnBody(jobsRs, 'get_json_for_response_path') || '').includes('api::get_json'),
   'T19 with no stand the GET is today\'s api::get_json — the release build cannot tell the difference');
+
+section('U. the PILOT address an INSTALLED build may carry (DECISIONS (869))');
+
+// WHY THIS EXISTS, measured rather than assumed. The installed release reaches
+// only `api.skipi.app:443` — the shared production server — and the surface this
+// slice is accepted on is not there: with `/health` 200 on both as the
+// calibration, `/api/published-profiles` answered 404 on production and 200 on
+// the pilot at `api.skipi.app:8444` (2026-09-29). Without a compiled-in pilot
+// address there is nowhere to show the scenario on a build the owner installs.
+//
+// MEASUREMENT BOUNDARY, stated before the assertions. Everything in this section
+// is a SOURCE contract over Rust text plus DOM-shimmed runs of the real inline
+// scripts. That the COMPILED binary really carries the address — and that a build
+// without the variable does not — is proven on the built artefact with `grep -a`,
+// not here. Nothing here reaches the network.
+
+const PILOT_ENDPOINT = { base: 'https://api.skipi.app:8444', stand: false, pilot: true };
+
+const pilotResolver = rustFnBody(jobsRs, 'jobs_pilot_api_base');
+ok(pilotResolver !== null, 'U0 jobs.rs declares a jobs_pilot_api_base() resolver');
+const pilotCode = withoutLineComments(String(pilotResolver || ''));
+
+// (1) It is NOT behind a cfg. The stand resolver is, which is exactly why it
+// does not exist in the build the owner installs and why a second one is needed.
+const pilotDeclAt = jobsRs.indexOf('fn jobs_pilot_api_base()');
+const beforePilotLines = jobsRs.slice(0, Math.max(pilotDeclAt, 0)).split('\n')
+  .filter((l) => l.trim() !== '' && !/^\s*\/\//.test(l));
+const lineBeforePilot = (beforePilotLines[beforePilotLines.length - 1] || '').trim();
+ok(pilotDeclAt >= 0 && !/#\[\s*cfg/.test(lineBeforePilot),
+  `U1 no cfg attribute stands over the pilot resolver — it must exist in a release build (line before it: ${lineBeforePilot || '<none>'})`);
+ok(!pilotCode.includes('#[cfg'),
+  'U1b and there is no cfg block inside it either');
+
+// (2) Compile-time, once, and with NO address of its own. A build without the
+// variable therefore has nothing to fall back to and is today's build.
+const pilotEnvHits = allRustSrc
+  .map(([f, src]) => [f, countOf(src, 'option_env!("SKIPI_PILOT_API_BASE")')])
+  .filter(([, n]) => n > 0);
+const pilotEnvTotal = pilotEnvHits.reduce((a, [, n]) => a + n, 0);
+ok(pilotEnvTotal === 1,
+  `U2 option_env!("SKIPI_PILOT_API_BASE") occurs exactly once in src-tauri/src (found ${pilotEnvTotal} in ${pilotEnvHits.map(([f]) => path.basename(f)).join(',') || 'nothing'})`);
+ok(countOf(pilotCode, 'option_env!') === 1,
+  'U2b the address has exactly ONE source, and it is the compile-time variable');
+ok(!/https?:\/\//.test(pilotCode),
+  'U3 the resolver holds no url literal — with the variable absent there is no address to fall back to, so that build is byte-for-byte today\'s path');
+ok(!/env::var/.test(pilotCode),
+  'U3b nothing is read from the process environment: an Android process cannot be handed a variable, and a runtime door would be a second way in that this harness cannot see');
+
+// (3) THE VALIDATION IS STRICTER THAN THE STAND'S, and that is the point: this
+// one reaches the shipped binary.
+ok(pilotCode.includes('url.scheme() == "https"'),
+  'U4 the scheme must be https');
+ok(!/scheme\(\)\s*==\s*"http"(?!s)/.test(pilotCode),
+  'U4b plain http is accepted nowhere in it (the stand allows it; this must not)');
+ok(!/starts_with|ends_with|contains\(/.test(pilotCode),
+  'U4c no prefix, suffix or substring matching anywhere in the validation');
+ok(pilotCode.includes('url.host_str() == Some("api.skipi.app")'),
+  'U5 the host is ONE exact literal — api.skipi.app and nothing else');
+ok(countOf(pilotCode, '"api.skipi.app"') === 1,
+  'U5b that literal occurs exactly once, so a second host cannot hide beside it');
+ok(!/matches!\s*\(\s*url\.host_str/.test(pilotCode),
+  'U5c the host is not matched against a SET — one literal, compared with ==');
+ok(!/[*]/.test(pilotCode), 'U5d and no wildcard');
+ok(pilotCode.includes('url.port().is_some()'),
+  'U6 a port is MANDATORY');
+ok(pilotCode.includes('url.port() != Some(443)'),
+  'U7 and it may not be 443 — an address naming the production port is refused outright, so "Pilot build" on the screen can never mean production');
+[
+  ['url.username().is_empty()', 'no username'],
+  ['url.password().is_none()', 'no password'],
+  ['url.path() == "/"', 'no path'],
+  ['url.query().is_none()', 'no query'],
+  ['url.fragment().is_none()', 'no fragment'],
+].forEach(([needle, what]) => {
+  ok(pilotCode.includes(needle), `U8 the predicate is present: ${what}`);
+});
+ok(!/unwrap_or|unwrap\(\)|expect\(/.test(pilotCode),
+  'U9 there is no default that turns a refused address into a base');
+ok(String(pilotResolver || '').trim().endsWith('None'),
+  'U9b and the fallthrough is None — a refused address is no address, never production');
+
+// (4) ONE branch point, so "can this build write to production" has one function
+// to read and the two callers cannot drift apart.
+const nonProd = rustFnBody(jobsRs, 'jobs_non_production_base');
+ok(nonProd !== null, 'U10 jobs.rs has ONE function answering "is a non-production base compiled in"');
+const nonProdCode = withoutLineComments(String(nonProd || ''));
+ok(nonProdCode.includes('jobs_test_api_base()') && nonProdCode.includes('jobs_pilot_api_base()'),
+  'U10b it reads both resolvers');
+ok(nonProdCode.indexOf('jobs_test_api_base()') < nonProdCode.indexOf('jobs_pilot_api_base()'),
+  'U10c in the required order: stand (debug) first, then pilot');
+['api_bases()', 'PRIMARY_API', 'RU_API', 'api.skipi.app', 'api-ru.skipi.app'].forEach((needle) => {
+  ok(!nonProdCode.includes(needle), `U10d and it names no production host: ${needle}`);
+});
+const pilotCallSites = allRustSrc
+  .map(([f, src]) => [path.basename(f), countOf(withoutLineComments(src), 'jobs_pilot_api_base()')])
+  .filter(([, n]) => n > 0);
+const pilotCallTotal = pilotCallSites.reduce((a, [, n]) => a + n, 0);
+ok(pilotCallTotal === 3,
+  `U11 jobs_pilot_api_base occurs exactly three times in the crate — the definition and its TWO callers (found ${pilotCallTotal} in ${pilotCallSites.map(([f]) => f).join(',') || 'nothing'})`);
+ok(withoutLineComments(String(rustFnBody(jobsRs, 'jobs_response_endpoint') || '')).includes('jobs_pilot_api_base()'),
+  'U11b one caller is the endpoint the screen is drawn from');
+ok(nonProdCode.includes('jobs_pilot_api_base()'),
+  'U11c the other is the single branch point — there is no third');
+
+// (5) THREE STATES on the wire, not two.
+const epStruct = blockAfter(jobsRs, 'pub struct JobsResponseEndpoint');
+ok(epStruct !== null && /pub\s+pilot\s*:\s*bool/.test(epStruct),
+  'U12 JobsResponseEndpoint carries a pilot flag of its own');
+ok(epStruct !== null && /pub\s+stand\s*:\s*bool/.test(epStruct),
+  'U12b and stand keeps its own field, so nothing that already reads it changed meaning underneath');
+const epFn = withoutLineComments(String(rustFnBody(jobsRs, 'jobs_response_endpoint') || ''));
+ok(countOf(epFn, 'stand: true') === 1 && countOf(epFn, 'pilot: true') === 1,
+  'U12c exactly one returned state is the stand and exactly one is the pilot');
+ok(countOf(epFn, 'stand: false') === 2 && countOf(epFn, 'pilot: false') === 2,
+  'U12d and the third — the production build — sets neither');
+ok(epFn.indexOf('jobs_test_api_base()') < epFn.indexOf('jobs_pilot_api_base()'),
+  'U12e stand is answered before pilot here too, so a debug build on a stand is never reported as a pilot');
+
+// (6) WHAT A PILOT BUILD COULD STILL SEND PAST THE PILOT — enumerated, because
+// "nothing goes past" is worth exactly what the enumeration covers. Five places
+// in dist ask which server this build talks to. FOUR of them decide a write that
+// would otherwise leave through `api::api_bases()` — i.e. to PRODUCTION — and
+// every one of them must read the PAIR: reading `stand` alone would answer
+// "this is the release build, go ahead" on the build the owner installs.
+const ENDPOINT_READERS = ['skipiDiagnosticsMayLeave', 'skipiFeedbackPromptAllowed',
+  'skipiRegisterJoinIdentity', 'skipiPublishMessagingPubkey', 'loadJobsProfiles'];
+const endpointReadSites = countOf(html, "invoke('jobs_response_endpoint')");
+ok(endpointReadSites === ENDPOINT_READERS.length,
+  `U13 exactly ${ENDPOINT_READERS.length} places in dist/index.html ask which server this build talks to (found ${endpointReadSites}) — a new one appears here as a mismatch`);
+ENDPOINT_READERS.forEach((fn) => {
+  ok(String(fnBody(html, fn) || '').includes("invoke('jobs_response_endpoint')"),
+    `U13b ${fn} is one of them`);
+});
+const WRITE_DECIDERS = ENDPOINT_READERS.filter((f) => f !== 'loadJobsProfiles');
+WRITE_DECIDERS.forEach((fn) => {
+  const body = withoutLineComments(String(fnBody(html, fn) || '')).replace(/\s+/g, '');
+  ok(body.includes('ep.stand===true||ep.pilot===true'),
+    `U14 ${fn} decides from BOTH flags`);
+  ok(!body.replace('ep.stand===true||ep.pilot===true', '').includes('ep.stand'),
+    `U14b ${fn} has no SECOND, single-flag reading of ep.stand left beside it`);
+});
+// `loadJobsProfiles` decides nothing: it hands the endpoint to the renderer.
+ok(!withoutLineComments(String(fnBody(html, 'loadJobsProfiles') || '')).includes('register_my'),
+  'U14c the fifth reader writes nothing — it only passes the endpoint to the section renderer');
 
 section('A. the self-session signature: a narrow signer, not an oracle');
 
@@ -1271,6 +1423,36 @@ ok(standScreen.sectionHtml.includes('http://127.0.0.1:8099'),
 const prodScreen = await renderJobsScreen({ profiles: [PROFILE_MATCH], endpoint: { base: 'https://api.skipi.app', stand: false } });
 ok(!prodScreen.sectionHtml.includes('jobs-respond-stand'),
   'B13 a build with no stand prints no stand line');
+
+// THE PILOT BUILD IS NOT A SERVICE BUILD, and the screen must not say it is.
+// The owner ACCEPTS on this build; the line he reads is the only record of which
+// server the app was speaking to while he did.
+const pilotScreen = await renderJobsScreen({ profiles: [PROFILE_MATCH], endpoint: PILOT_ENDPOINT });
+ok(pilotScreen.sectionHtml.includes('data-qa="jobs-respond-pilot"'),
+  'B14 a pilot build prints a line of its own inside the respond block');
+ok(pilotScreen.sectionHtml.includes('https://api.skipi.app:8444'),
+  'B14b and it names the server, port and all, so a screenshot records it');
+ok(!pilotScreen.sectionHtml.includes('jobs-respond-stand'),
+  'B15 and it does NOT print the service-build line');
+ok(!prodScreen.sectionHtml.includes('jobs-respond-pilot'),
+  'B15b while the production build still prints neither');
+for (const [lang, service, pilot] of [
+  ['en', 'Service build', 'Pilot build - talking to'],
+  ['ru', 'Служебная сборка', 'Пилотная сборка — сервер'],
+]) {
+  const r = await renderJobsScreen({ profiles: [PROFILE_MATCH], lang, endpoint: PILOT_ENDPOINT });
+  ok(r.sectionHtml.includes(pilot),
+    `B16 (${lang}) the pilot build is named by its own sentence: ${pilot}`);
+  ok(!r.sectionHtml.includes(service),
+    `B17 (${lang}) and it is NEVER called a service build — the owner must see what he is accepting on`);
+}
+['jobs.profiles.respond_pilot'].forEach((k) => {
+  ok(enBlock.includes(`'${k}'`), `B18 tr() carries ${k} in EN`);
+  ok(ruBlock.includes(`'${k}'`), `B18b tr() carries ${k} in RU`);
+});
+ok(!enBlock.includes("'jobs.profiles.respond_pilot':'Service build")
+   && !ruBlock.includes("'jobs.profiles.respond_pilot':'Служебная сборка"),
+  'B19 and neither dictionary defines the pilot sentence as the service one');
 
 section('C. success is the SERVER\'S answer — and both halves of it');
 
@@ -1654,13 +1836,16 @@ ok(directPubkeyCalls === 1,
   `I13 the messaging key is published from exactly ONE place in this file (found ${directPubkeyCalls})`);
 ok(String(publisherJs || '').includes("invoke('jobs_response_endpoint')"),
   'I13b and that place asks which server this build talks to before publishing anything');
-ok(/stand!==false/.test(String(publisherJs || '').replace(/\s+/g, '')),
-  'I13c a service build — or one that cannot tell — publishes nothing');
+ok(/nonprod!==false/.test(String(publisherJs || '').replace(/\s+/g, '')),
+  'I13c a build that is not production — or one that cannot tell — publishes nothing');
 const standOpen = await renderJobsScreen({ profiles: [PROFILE_MATCH], endpoint: { base: 'http://127.0.0.1:8099', stand: true } });
 ok(!standOpen.state.calls.some((c) => c[0] === 'register_my_pubkey'),
   'I13d opening Jobs on a service build publishes no messaging key to production');
 ok(withId.state.calls.some((c) => c[0] === 'register_my_pubkey'),
   'I13e and a release build still publishes it — unchanged, byte for byte');
+const pilotOpen = await renderJobsScreen({ profiles: [PROFILE_MATCH], endpoint: PILOT_ENDPOINT });
+ok(!pilotOpen.state.calls.some((c) => c[0] === 'register_my_pubkey'),
+  'I13f nor does the PILOT build the owner installs — that key leaves through api_bases(), i.e. to production, and reaching the pilot on the response path does not move it');
 
 // ---- I14 (C-3): the commands are registered ------------------------------
 ok(/jobs::ensure_seafarer_identity/.test(libRs),
@@ -1795,6 +1980,9 @@ ok(joinRelease.calls.includes('register_my_identity_pubkey') && !joinRelease.cal
 const joinStand = await runJoinAccept({ endpoint: { base: 'http://127.0.0.1:8099', stand: true } });
 ok(joinStand.calls.includes('ensure_seafarer_identity') && !joinStand.calls.includes('register_my_identity_pubkey'),
   `N4 a service build registers the same key on the stand and nothing in production (called ${joinStand.calls.join(',')})`);
+const joinPilot = await runJoinAccept({ endpoint: PILOT_ENDPOINT });
+ok(joinPilot.calls.includes('ensure_seafarer_identity') && !joinPilot.calls.includes('register_my_identity_pubkey'),
+  `N4b and so does the PILOT build — one tap of "Join the crew" would otherwise write an IMMUTABLE, first-writer-wins identity into the live product (called ${joinPilot.calls.join(',')})`);
 const joinUnknown = await runJoinAccept({ endpointThrows: true });
 ok(!joinUnknown.calls.includes('register_my_identity_pubkey') && !joinUnknown.calls.includes('ensure_seafarer_identity'),
   'N5 a build that cannot tell which server it talks to registers nothing, anywhere');
@@ -1854,8 +2042,8 @@ const diagGuardJs = fnBody(html, 'skipiDiagnosticsMayLeave');
 ok(diagGuardJs !== null, 'N8 there is one guard, named');
 ok(String(diagGuardJs || '').includes("invoke('jobs_response_endpoint')"),
   'N8b and it asks which server this build talks to');
-ok(/returnstand===false/.test(String(diagGuardJs || '').replace(/\s+/g, '')),
-  'N8c unknown is not "no": only a build that KNOWS it is a release build reports');
+ok(/returnnonprod===false/.test(String(diagGuardJs || '').replace(/\s+/g, '')),
+  'N8c unknown is not "no": only a build that KNOWS it is the production build reports');
 ['reportAppDiagnostic', 'startAppDiagnostics'].forEach((fn) => {
   ok(withoutLineComments(String(fnBody(html, fn) || '')).includes('skipiDiagnosticsMayLeave('),
     `N9 ${fn} passes through the guard`);
@@ -1867,6 +2055,9 @@ ok(relDiag.calls.includes('record_app_diagnostic'),
 const standDiag = await runDiagnostic({ endpoint: { base: 'http://127.0.0.1:8099', stand: true } });
 ok(!standDiag.calls.includes('record_app_diagnostic'),
   'N11 a service build reports nothing — and it generates errors by construction');
+const pilotDiag = await runDiagnostic({ endpoint: PILOT_ENDPOINT });
+ok(!pilotDiag.calls.includes('record_app_diagnostic'),
+  'N11b nor does the pilot build — nothing here waits for a tap, and every report would carry install_id, version and a stack into the live product');
 const unknownDiag = await runDiagnostic({ endpointThrows: true });
 ok(!unknownDiag.calls.includes('record_app_diagnostic'),
   'N12 nor does a build that cannot say which server it is talking to');
@@ -1880,6 +2071,9 @@ ok(relStart.calls.includes('init_app_diagnostics'),
 const standStart = await runStartup({ endpoint: { base: 'http://127.0.0.1:8099', stand: true } });
 ok(!standStart.calls.includes('init_app_diagnostics'),
   'N14 a service build posts no unclean_shutdown report into the live product at startup');
+const pilotStart = await runStartup({ endpoint: PILOT_ENDPOINT });
+ok(!pilotStart.calls.includes('init_app_diagnostics'),
+  'N14b nor does the pilot build, which the owner will start many times over');
 const unknownStart = await runStartup({ endpointThrows: true });
 ok(!unknownStart.calls.includes('init_app_diagnostics'),
   'N15 and neither does a build that cannot tell');
@@ -1900,7 +2094,7 @@ const promptGuardJs = fnBody(html, 'skipiFeedbackPromptAllowed');
 ok(promptGuardJs !== null, 'N16 the automatic prompt has a guard of its own, named');
 ok(String(promptGuardJs || '').includes("invoke('jobs_response_endpoint')"),
   'N16b which asks which server this build talks to');
-ok(/returnstand===false/.test(String(promptGuardJs || '').replace(/\s+/g, '')),
+ok(/returnnonprod===false/.test(String(promptGuardJs || '').replace(/\s+/g, '')),
   'N16c and is fail-closed on the unknown, the same shape as the other two guards');
 const promptBody = String(fnBody(html, 'maybePromptForFeedback') || '');
 const guardAt = withoutLineComments(promptBody).indexOf('skipiFeedbackPromptAllowed(');
@@ -1922,6 +2116,11 @@ ok(!promptStand.dialogOpened,
 ok(!promptStand.calls.includes('get_feedback_prompt_state'),
   'N19b and does not even ask, so no cooldown is spent on a build nobody is rating');
 
+const promptPilot = await runFeedbackPrompt({ endpoint: PILOT_ENDPOINT });
+ok(!promptPilot.dialogOpened,
+  'N19c nor does the pilot build raise it — the rating it collects goes to production through submit_app_feedback');
+ok(!promptPilot.calls.includes('get_feedback_prompt_state'),
+  'N19d and it does not even ask, so no 14-day cooldown is spent on a build nobody is rating');
 const promptUnknown = await runFeedbackPrompt({ endpointThrows: true });
 ok(!promptUnknown.dialogOpened,
   'N20 and neither does a build that cannot say which server it is talking to');
