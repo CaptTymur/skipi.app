@@ -2668,6 +2668,23 @@ ok(badgeTextOf('<span class="job-trust-badge warn">Trial publisher</span>') === 
   'Z0 CALIBRATION — the badge-text probe reads the words out of a badge it is given');
 ok(badgeTextOf('<div>Crewing: someone, no badge at all</div>') === null,
   'Z0b CALIBRATION — and returns null where there is no badge, so an empty claim cannot pass');
+
+// The inner text of one `data-qa` div. NOT blockAfter(): that one matches
+// BRACES — it is the Rust-struct reader — and returns null on every piece of
+// HTML it is given, so an assertion built on it would have been green over
+// nothing had it been written the other way round.
+function qaDivText(markup, qa) {
+  const at = String(markup || '').indexOf('data-qa="' + qa + '"');
+  if (at < 0) return null;
+  const open = String(markup).indexOf('>', at);
+  const close = String(markup).indexOf('</div>', open);
+  if (open < 0 || close < 0) return null;
+  return String(markup).slice(open + 1, close);
+}
+ok(qaDivText('<div data-qa="zz" style="x">hello</div><div>after</div>', 'zz') === 'hello',
+  'Z0e CALIBRATION — the qa-div probe reads the text out of the div it names');
+ok(qaDivText('<div data-qa="other">hello</div>', 'zz') === null,
+  'Z0f CALIBRATION — and returns null when that div is absent, so "the reason is there" cannot pass on nothing');
 ok(!claimsOnly('<b>Verified by Skipi</b>', /verified/i, 'not verified by Skipi'),
   'Z0c CALIBRATION — claimsOnly still FIRES on an affirmative "Verified by Skipi"');
 ok(claimsOnly('<b>name not verified by Skipi</b>', /verified/i, 'not verified by Skipi'),
@@ -2695,7 +2712,6 @@ ok(/trial/i.test(String(zTrialBadgeEn)) && /пробн/i.test(String(zTrialBadge
 
 // SAME LINE, SAME BADGE, NO THIRD ELEMENT. The statement lives inside the badge
 // of the agency block that was already there.
-const zTrialCrewingEn = blockAfter(zTrialEn.sectionHtml, 'data-qa="jobs-profile-crewing"');
 ok(zTrialEn.sectionHtml.indexOf('data-qa="jobs-profile-crewing"') >= 0,
   'Z4 the agency block is the same block as before');
 ok((zTrialEn.sectionHtml.match(/job-trust-badge/g) || []).length === 1,
@@ -2747,7 +2763,7 @@ for (const [why, profile] of NO_NAME_CASES) {
     ok(r.sectionHtml.includes('</button><div data-qa="jobs-respond-blocked"'),
       `Z12 (${tag}) the reason is the element IMMEDIATELY after the button — read at the place of refusal`);
 
-    const blocked = blockAfter(r.sectionHtml, 'data-qa="jobs-respond-blocked"');
+    const blocked = qaDivText(r.sectionHtml, 'jobs-respond-blocked');
     ok(blocked !== null, `Z12b (${tag}) the reason block is readable`);
     if (lang === 'en') {
       ok(/cannot be sent/i.test(String(blocked)) && /cannot name the agency/i.test(String(blocked)),
