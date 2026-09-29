@@ -429,6 +429,11 @@ function makeInvoke(state) {
     state.calls.push([cmd, args]);
     switch (cmd) {
       case 'jobs_response_endpoint':
+        // A build that cannot say which server it talks to is a REAL state, not
+        // a hypothetical: the command is infallible in Rust today, and the guards
+        // that depend on it are written fail-closed precisely so that a future
+        // where it is not cannot quietly become a write into production.
+        if (state.endpointThrows) throw new Error('command not registered');
         return state.endpoint;
       case 'ensure_profile_response_id': {
         if (state.responseIdThrows) throw new Error('No vault open');
@@ -460,6 +465,9 @@ function makeInvoke(state) {
         state.ensureCalls.push(args || {});
         if (state.ensureThrows) throw new Error(state.ensureThrows);
         return JSON.parse(JSON.stringify(state.ensureResult));
+      case 'get_matchable_profile':
+        return { user_id: 'harness-vault-user', public_seafarer_id: state.identity.public_seafarer_id };
+      case 'register_my_identity_pubkey': return {};
       case 'get_seafarer_personal': return JSON.parse(JSON.stringify(state.personal));
       case 'set_seafarer_personal':
         Object.assign(state.personal, (args && args.fields) || {});
@@ -500,6 +508,7 @@ function boot(opts = {}) {
     profilesThrow: !!opts.profilesThrow,
     submits: [],
     endpoint: opts.endpoint === undefined ? { base: 'https://api.skipi.app', stand: false } : opts.endpoint,
+    endpointThrows: !!opts.endpointThrows,
     submitAck: opts.submitAck === undefined
       ? { delivered: true, response_id: 'r', profile_id: 'p', crewing_id: 'c', published_version: 7, intake_id: 'intake-0001', content_sha256: 'abc', created_at: '2026-09-28T00:00:00Z' }
       : opts.submitAck,
@@ -688,6 +697,48 @@ async function runEnsureIdentity(opts = {}) {
     buttonDisabled: btn.disabled,
     sectionHtml: rendered.profilesHost.innerHTML,
   };
+}
+
+// Runs the REAL "Join the crew" confirmation of the real inline scripts, far
+// enough to see WHICH identity registration it chose. The signing step after it
+// is left to fail: nothing asserted here depends on the join completing, and a
+// completed join would post to `/api/onboard/crew/accept` through `apiFetch`.
+async function runJoinAccept(opts = {}) {
+  const booted = boot(opts);
+  await settle();
+  booted.state.calls.length = 0;   // startup is not what this measures
+  booted.sandbox.myVessel.stage = 'confirm';
+  booted.sandbox.myVessel.acceptCode = 'HARNESS-CODE';
+  booted.sandbox.myVessel.resolved = { vessel_name: 'MV Harness', vessel_imo: '9000001' };
+  let error = null;
+  try { await booted.sandbox.myVesselAccept(); } catch (e) { error = e; }
+  await settle();
+  return {
+    ...booted,
+    error,
+    calls: booted.state.calls.map((c) => c[0]),
+    stage: booted.sandbox.myVessel.stage,
+    blocked: String(booted.sandbox.myVessel.error || ''),
+  };
+}
+
+// Runs the REAL diagnostics reporter, by the same door `window.onerror` uses.
+async function runDiagnostic(opts = {}) {
+  const booted = boot(opts);
+  await settle();
+  booted.state.calls.length = 0;
+  await booted.sandbox.reportAppDiagnostic('js_error', 'error', 'harness probe', { stack: 'harness' });
+  await settle();
+  return { ...booted, calls: booted.state.calls.map((c) => c[0]) };
+}
+
+// The STARTUP report, which is the one nobody presses: `init()` calls
+// `startAppDiagnostics()` on its own, and a previous session that did not close
+// cleanly is posted from there.
+async function runStartup(opts = {}) {
+  const booted = boot(opts);
+  await settle();
+  return { ...booted, calls: booted.state.calls.map((c) => c[0]) };
 }
 
 // ------------------------------------------------- S. source-level contract --
@@ -1132,6 +1183,7 @@ for (const [lang, needle] of [['en', 'cannot be withdrawn'], ['ru', 'Отозв�
 }
 ['jobs.profiles.respond', 'jobs.profiles.respond_irreversible', 'jobs.profiles.respond_sending',
  'jobs.profiles.respond_ok', 'jobs.profiles.respond_failed', 'jobs.profiles.respond_gone',
+ 'jobs.profiles.respond_already', 'jobs.profiles.respond_conflict',
  'jobs.profiles.respond_ack_version', 'jobs.profiles.respond_stand'].forEach((k) => {
   ok(enBlock.includes(`'${k}'`), `B8 tr() carries ${k} in EN`);
   ok(ruBlock.includes(`'${k}'`), `B9 tr() carries ${k} in RU`);
@@ -1202,6 +1254,12 @@ ok(submitBody !== null && /"delivered"/.test(submitBody) && /"intake_id"/.test(s
 
 section('C. the tombstone: our own sentence, never the server\'s wrong one');
 
+// THIS BRANCH IS NOW PRODUCED BY NOTHING, and that is the finding of S4e rather
+// than a gap here: the server answers a document its agency deleted with the
+// SAME sentence as an ordinary content conflict, on purpose, so no word reaches
+// a client that means "deleted". The branch and its sentence are kept for the
+// day the server can say it; what a 409 means TODAY is asserted in section Q.
+// It is exercised by injecting the token, which is the only way in.
 const gone = await runRespond({ submitThrows: 'RESPONSE_NO_LONGER_ACCEPTED' });
 ok(gone.statusState === 'gone', `C18 a 409 tombstone has its own state (got ${gone.statusState})`);
 ok(/no longer accepted/i.test(gone.statusHtml), 'C19 and its own sentence');
@@ -1211,8 +1269,10 @@ ok(!/[Ee]vent already/.test(html),
   'C21 that sentence is nowhere in the client at all');
 ok(gone.buttonDisabled === true,
   'C22 a tombstone does not re-enable the button: an endless retry cannot succeed and must not be offered');
-ok(submitBody !== null && /answer\.status == 409/.test(submitBody) && /RESPONSE_NO_LONGER_ACCEPTED/.test(submitBody),
-  'C23 the Rust half maps 409 to a token and drops the server body, so the wrong sentence cannot leak through');
+ok(submitBody !== null && /answer\.status == 409/.test(submitBody)
+   && /response_conflict_token\(&answer\.body\)/.test(submitBody)
+   && !/return Err\(format!\("server returned \{\}: \{\}", answer\.status, answer\.body\)\);[\s\S]*answer\.status == 409/.test(submitBody),
+  'C23 the Rust half turns a 409 into a MARKER read from the server\'s words and never hands the body on, so no sentence of the server can leak through');
 
 section('E. the response id survives a restart, and a retry is the SAME response');
 
@@ -1344,6 +1404,17 @@ ok(keyPostAt >= 0 && markerAt > keyPostAt,
   'I8c the marker that opens the respond button is written only AFTER the server accepted the identity');
 ok(/if key_answer\.status == 409/.test(String(identityRustBody || '')),
   'I8d 409 — this vault is already bound to a different identity — is a refusal, not a success');
+// COUNTED, NOT LOCATED, and the difference is a defect that got through: I8c
+// reads the POSITION of one literal, so a SECOND write of the same marker —
+// three lines inside the `status == 409` branch, which comes after the POST —
+// leaves the first write exactly where it was and I8c green. That mutation
+// restores defect A-1 whole (a vault with no identity on the server gets the
+// respond button) through the branch S4d itself added.
+const markerWrites = countOf(String(identityRustBody || ''), 'IDENTITY_KEY_REGISTERED_AT');
+ok(markerWrites === 1,
+  `I8f the marker that opens the respond button is written in EXACTLY ONE place in this command (found ${markerWrites})`);
+ok(!String(identityRustBody || '').includes('"skipi_identity_key_registered_at"'),
+  'I8g and it is never spelled out as a raw key, which would walk straight past the count above');
 ok(/"registered"/.test(String(identityRustBody || '')) && /"exists"/.test(String(identityRustBody || '')),
   'I8e registered and exists are BOTH success, so a legitimate repeat is not shown as a failure');
 
@@ -1574,6 +1645,182 @@ ok(JSON.stringify(claimKeys.slice().sort()) === JSON.stringify(['date_of_birth',
   `I17e the claim carries EXACTLY the five fields of a schema that is extra="forbid" (found ${claimKeys.join(',')})`);
 ok(stateBody !== null && !/reqwest|send_on_response_bases|api::/.test(String(stateBody || '')),
   'I17f the state the screen reads is a vault read with no network in it at all');
+
+// ════════════════════════════════════════════════════════════════════════════
+// N. A SERVICE BUILD WRITES NOTHING INTO THE LIVE PRODUCT — S4e.
+//
+// `api::api_bases()` takes its only override from a RUNTIME variable an Android
+// process cannot be given (`src-tauri/src/api.rs`), so on a phone that list is
+// exactly `[api.skipi.app, api-ru.skipi.app]`. Every command that walks it
+// writes into the product real seafarers use. S4d closed the identity claim,
+// the identity key and the messaging key. Two surfaces were left, and one of
+// them fires with nobody touching it.
+//
+// MEASUREMENT BOUNDARY, stated rather than implied: this asserts WHICH COMMAND
+// IS INVOKED, in a DOM shim. It compiles nothing, reaches no network and does
+// not measure a phone.
+// ════════════════════════════════════════════════════════════════════════════
+
+section('N. "Join the crew" no longer writes an immutable identity into production');
+
+// The record `register_my_identity_pubkey` writes is first-writer-wins: a
+// different key for the same vault is a 409 forever, so a single accidental tap
+// on a service build could never be taken back.
+const directJoinKeyCalls = countOf(html, "invoke('register_my_identity_pubkey')");
+ok(directJoinKeyCalls === 1,
+  `N1 the vault identity key is registered from exactly ONE place in this file (found ${directJoinKeyCalls})`);
+const joinJs = fnBody(html, 'skipiRegisterJoinIdentity');
+ok(joinJs !== null, 'N1b and that place is the guard, not the flow');
+ok(String(joinJs || '').includes("invoke('jobs_response_endpoint')"),
+  'N2 it asks which server this build talks to before registering anything');
+ok(String(joinJs || '').includes("invoke('ensure_seafarer_identity')"),
+  'N2b a service build registers the same key through the command that speaks only to response_bases()');
+ok(!withoutLineComments(String(fnBody(html, 'myVesselAccept') || '')).includes("invoke('register_my_identity_pubkey')"),
+  'N2c and the accept flow itself no longer invokes the production registration directly');
+
+const joinRelease = await runJoinAccept({});
+ok(joinRelease.calls.includes('register_my_identity_pubkey') && !joinRelease.calls.includes('ensure_seafarer_identity'),
+  `N3 a release build joins exactly as it always did (called ${joinRelease.calls.join(',')})`);
+const joinStand = await runJoinAccept({ endpoint: { base: 'http://127.0.0.1:8099', stand: true } });
+ok(joinStand.calls.includes('ensure_seafarer_identity') && !joinStand.calls.includes('register_my_identity_pubkey'),
+  `N4 a service build registers the same key on the stand and nothing in production (called ${joinStand.calls.join(',')})`);
+const joinUnknown = await runJoinAccept({ endpointThrows: true });
+ok(!joinUnknown.calls.includes('register_my_identity_pubkey') && !joinUnknown.calls.includes('ensure_seafarer_identity'),
+  'N5 a build that cannot tell which server it talks to registers nothing, anywhere');
+ok(joinUnknown.stage === 'blocked' && /Nothing was joined|Ничего не присоединено/.test(joinUnknown.blocked),
+  'N5b and says so with the sentence this flow already had — nothing was joined');
+
+section('N. the telemetry that posts BY ITSELF stops at a service build');
+
+// ENUMERATED FROM RUST, not listed by hand. `rustFnBody` reads one function and
+// does not look inside what it calls, and feedback.rs is built in exactly that
+// shape: record_app_diagnostic -> store_diagnostic -> sync_diagnostic_to_server
+// -> api::post_json_empty. An assertion of the form "this command has no api::"
+// would be green over every one of them. So reachability is computed: start
+// from every function naming an api:: sender, add every function that calls one
+// of those, repeat. A NEW sender appears here as a NEW NAME.
+const feedbackRs = (allRustSrc.find(([p]) => p.endsWith('feedback.rs')) || [])[1] || '';
+function rustFnNamesOf(src2) {
+  return Array.from(src2.matchAll(/\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*[<(]/g)).map((m) => m[1]);
+}
+function apiReachingFns(src2) {
+  const names = rustFnNamesOf(src2);
+  const bodies = new Map(names.map((n) => [n, withoutLineComments(rustFnBody(src2, n) || '')]));
+  const set = new Set(names.filter((n) => /\bapi::[a-z_]+\s*\(/.test(bodies.get(n) || '')));
+  for (;;) {
+    const before = set.size;
+    for (const n of names) {
+      if (set.has(n)) continue;
+      const b = bodies.get(n) || '';
+      for (const t of set) {
+        if (new RegExp('\\b' + t + '\\s*\\(').test(b)) { set.add(n); break; }
+      }
+    }
+    if (set.size === before) break;
+  }
+  return set;
+}
+const feedbackReaching = apiReachingFns(feedbackRs);
+const feedbackSenders = Array.from(feedbackRs.matchAll(/#\[(?:tauri::)?command[^\]]*\]\s*(?:pub\s+)?(?:async\s+)?fn\s+([A-Za-z0-9_]+)/g))
+  .map((m) => m[1]).filter((c) => feedbackReaching.has(c)).sort();
+ok(JSON.stringify(feedbackSenders) === JSON.stringify(['init_app_diagnostics', 'record_app_diagnostic', 'submit_app_feedback']),
+  `N6 the commands of feedback.rs that can reach the network are exactly the three known ones (found ${feedbackSenders.join(',')})`);
+// `app_heartbeat` and `mark_app_shutdown` are NOT in that set and are therefore
+// not behind the guard: they write to the local sqlite and reach no network.
+ok(!feedbackSenders.includes('app_heartbeat') && !feedbackSenders.includes('mark_app_shutdown'),
+  'N6b the two local-only commands are not senders, which is why they are left alone');
+// `submit_app_feedback` IS a sender and is deliberately NOT guarded here: it
+// fires only when a person taps "send" on the rating dialog, and refusing it
+// needs a sentence to that person — a copy decision, reported to the manager
+// rather than taken inside this slice. Named so it cannot be forgotten.
+
+const DIAGNOSTIC_SENDERS = ['record_app_diagnostic', 'init_app_diagnostics'];
+DIAGNOSTIC_SENDERS.forEach((cmd) => {
+  ok(countOf(html, `invoke('${cmd}'`) === 1,
+    `N7 ${cmd} is invoked from exactly one place in this file`);
+});
+const diagGuardJs = fnBody(html, 'skipiDiagnosticsMayLeave');
+ok(diagGuardJs !== null, 'N8 there is one guard, named');
+ok(String(diagGuardJs || '').includes("invoke('jobs_response_endpoint')"),
+  'N8b and it asks which server this build talks to');
+ok(/returnstand===false/.test(String(diagGuardJs || '').replace(/\s+/g, '')),
+  'N8c unknown is not "no": only a build that KNOWS it is a release build reports');
+['reportAppDiagnostic', 'startAppDiagnostics'].forEach((fn) => {
+  ok(withoutLineComments(String(fnBody(html, fn) || '')).includes('skipiDiagnosticsMayLeave('),
+    `N9 ${fn} passes through the guard`);
+});
+
+const relDiag = await runDiagnostic({});
+ok(relDiag.calls.includes('record_app_diagnostic'),
+  `N10 a release build still reports an error, unchanged (called ${relDiag.calls.join(',')})`);
+const standDiag = await runDiagnostic({ endpoint: { base: 'http://127.0.0.1:8099', stand: true } });
+ok(!standDiag.calls.includes('record_app_diagnostic'),
+  'N11 a service build reports nothing — and it generates errors by construction');
+const unknownDiag = await runDiagnostic({ endpointThrows: true });
+ok(!unknownDiag.calls.includes('record_app_diagnostic'),
+  'N12 nor does a build that cannot say which server it is talking to');
+
+// The report NOBODY presses: `init()` calls `startAppDiagnostics()` itself, and
+// a previous session that did not close cleanly is posted from there before the
+// seafarer has touched anything at all.
+const relStart = await runStartup({});
+ok(relStart.calls.includes('init_app_diagnostics'),
+  'N13 a release build still opens its diagnostics session at startup');
+const standStart = await runStartup({ endpoint: { base: 'http://127.0.0.1:8099', stand: true } });
+ok(!standStart.calls.includes('init_app_diagnostics'),
+  'N14 a service build posts no unclean_shutdown report into the live product at startup');
+const unknownStart = await runStartup({ endpointThrows: true });
+ok(!unknownStart.calls.includes('init_app_diagnostics'),
+  'N15 and neither does a build that cannot tell');
+// NOT ASSERTED, and said instead of faked: `setInterval` is a stub in this
+// shim, so the heartbeat and the lag timer never tick here. Their commands are
+// local-only (N6b), which is why nothing about them is claimed.
+
+section('Q. one 409 is not four — a repeat says what really happened');
+
+// MEASURED LIVE 2026-09-29: a second press answered 409 on a stand where
+// `candidate_intake_tombstones` was 0, the intake was alive and one row stood in
+// `profile_responses` — and the screen said the agency had removed what the
+// response was delivered into. Four refusals of this route share the status
+// code; the words are the only thing that separates them.
+const conflictTokenBody = rustFnBody(jobsRs, 'response_conflict_token');
+ok(conflictTokenBody !== null, 'Q1 jobs.rs has one named place that classifies a 409');
+ok(submitBody !== null && /response_conflict_token\(&answer\.body\)/.test(submitBody),
+  'Q2 and the response path hands it THE SERVER\'S OWN BODY, which is where the words are');
+ok(!/RESPONSE_NO_LONGER_ACCEPTED/.test(jobsRs),
+  'Q3 no 409 is read as a deleted document any more — the server has no word that means it');
+const conflictTokens = Array.from(new Set(
+  Array.from(String(conflictTokenBody || '').matchAll(/RESPONSE_[A-Z_]+/g)).map((m) => m[0]))).sort();
+ok(JSON.stringify(conflictTokens) === JSON.stringify(['RESPONSE_ALREADY_DELIVERED', 'RESPONSE_CONFLICT_UNKNOWN']),
+  `Q4 the classification is a CLOSED SET of two markers (found ${conflictTokens.join(',')})`);
+ok(jobsRs.includes('const INTAKE_CONTENT_CONFLICT: &str = "event already accepted with different content"'),
+  'Q5 the one word it matches is the server\'s own sentence, byte for byte');
+ok(/ifbody\.contains\(INTAKE_CONTENT_CONFLICT\)\{RESPONSE_ALREADY_DELIVERED\}else\{RESPONSE_CONFLICT_UNKNOWN\}/
+    .test(String(conflictTokenBody || '').replace(/\s+/g, '')),
+  'Q6 and the fallback is the marker that CLAIMS NOTHING — fail-closed on a body this build does not know');
+
+const already = await runRespond({ submitThrows: 'RESPONSE_ALREADY_DELIVERED' });
+ok(already.statusState === 'gone', `Q7 a repeat has its own state (got ${already.statusState})`);
+ok(/already been delivered/i.test(already.statusHtml), 'Q8 and its own sentence: the response is already on record');
+ok(!/removed/i.test(already.statusHtml),
+  'Q9 it does NOT say the agency removed anything — no word the client holds says that');
+ok(already.buttonDisabled === true,
+  'Q10 and the button is not re-offered: the same id rebuilt into different bytes can only earn the same 409');
+
+const unknown409 = await runRespond({ submitThrows: 'RESPONSE_CONFLICT_UNKNOWN' });
+ok(unknown409.statusState === 'gone', 'Q11 a conflict this build cannot name still ends the attempt');
+ok(/did not accept/i.test(unknown409.statusHtml), 'Q12 with a sentence that is true of every one of them');
+ok(!/removed/i.test(unknown409.statusHtml) && !/delivered/i.test(unknown409.statusHtml),
+  'Q13 claiming neither a delivery nor a removal — the two things it does not know');
+
+for (const [lang, needle] of [['en', 'already been delivered'], ['ru', 'уже доставлен']]) {
+  const r = await runRespond({ lang, submitThrows: 'RESPONSE_ALREADY_DELIVERED' });
+  ok(r.statusHtml.includes(needle), `Q14 (${lang}) the repeat sentence is localised`);
+}
+for (const [lang, needle] of [['en', 'did not accept'], ['ru', 'не приняло']]) {
+  const r = await runRespond({ lang, submitThrows: 'RESPONSE_CONFLICT_UNKNOWN' });
+  ok(r.statusHtml.includes(needle), `Q15 (${lang}) so is the one that names nothing`);
+}
 
 console.log('');
 if (fail > 0) {

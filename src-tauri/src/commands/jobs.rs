@@ -574,12 +574,39 @@ const SELF_SESSION_PAYLOAD_KEYS: [&str; 7] = [
     "vault_user_id",
 ];
 
-/// Stable error token for the tombstone case. NOT the server's own words: the
-/// 409 body says "event already accepted with different content", which is
-/// wrong about what happened (the agency deleted the intake), and repeating it
-/// verbatim would hand a seafarer a sentence that misdescribes his own action.
-/// The UI matches this token and says its own localised sentence.
-pub(crate) const RESPONSE_NO_LONGER_ACCEPTED: &str = "RESPONSE_NO_LONGER_ACCEPTED";
+/// The 409s of the response route, TOLD APART BY THE SERVER'S OWN WORDS.
+///
+/// Four refusals share this status code and the client used to read every one
+/// of them as a deleted document — so a second press told a seafarer that the
+/// agency had removed his response, measured live on 2026-09-29 against a stand
+/// where nothing had been removed: zero tombstones, the intake alive, one row in
+/// `profile_responses`. The words are the only thing that separates them and
+/// the client already holds them in `answer.body`.
+///
+/// WHAT THE SERVER CAN AND CANNOT SAY, read in its source rather than assumed:
+/// `candidate_intake_service.py` answers a document its agency deleted with the
+/// SAME sentence as an ordinary content conflict, on purpose — "an answer that
+/// said 'this was deleted' would confirm to anybody able to submit that a
+/// particular document once passed through this agency". A deleted document
+/// therefore has NO word of its own, and the one thing true of both branches is
+/// that this response is already on record and a repeat sends nothing new.
+///
+/// Everything else is a conflict whose reason this build does not know, and it
+/// says exactly that instead of inventing one. Fail-closed on the unknown.
+const INTAKE_CONTENT_CONFLICT: &str = "event already accepted with different content";
+pub(crate) const RESPONSE_ALREADY_DELIVERED: &str = "RESPONSE_ALREADY_DELIVERED";
+pub(crate) const RESPONSE_CONFLICT_UNKNOWN: &str = "RESPONSE_CONFLICT_UNKNOWN";
+
+/// One 409, classified by the words it carries. The body itself never crosses
+/// to the WebView: what crosses is a marker, and the sentence a seafarer reads
+/// is the client's own, in his language.
+fn response_conflict_token(body: &str) -> &'static str {
+    if body.contains(INTAKE_CONTENT_CONFLICT) {
+        RESPONSE_ALREADY_DELIVERED
+    } else {
+        RESPONSE_CONFLICT_UNKNOWN
+    }
+}
 
 /// The stand address of a SERVICE BUILD, or nothing at all.
 ///
@@ -975,11 +1002,12 @@ pub fn submit_profile_response(
         Some(&bearer),
     )?;
 
-    // The tombstone case, and the ONE place the server's own words are dropped
-    // on purpose: its 409 says the content differs, when what happened is that
-    // the agency deleted the intake this response was delivered into.
+    // The conflicts, and the ONE place the server's own words are read and then
+    // dropped: they tell the reasons apart, and not one of them is repeated to
+    // a seafarer. See `response_conflict_token` for what those words can and
+    // cannot prove.
     if answer.status == 409 {
-        return Err(RESPONSE_NO_LONGER_ACCEPTED.to_string());
+        return Err(response_conflict_token(&answer.body).to_string());
     }
     if !(200..300).contains(&answer.status) {
         return Err(format!("server returned {}: {}", answer.status, answer.body));
