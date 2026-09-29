@@ -175,6 +175,34 @@ pub struct PublishedProfile {
     pub profile_id: String,
     #[serde(default)]
     pub crewing_id: Option<String>,
+    /// WHO the seafarer's irreversible response goes to, in words he can read.
+    /// `Crewing.display_name` on the server; never an id. The owner's rule is
+    /// that a UUID and a conditional label ("Agency A") are both refusals, so
+    /// the absence of this value is said in a sentence and never filled in
+    /// from `crewing_id` above.
+    ///
+    /// OPTIONAL BECAUSE THE SERVER RUNNING THE PILOT TODAY DOES NOT SEND IT.
+    /// The three fields below arrive with the other half of this contract; a
+    /// build that made them required would stop parsing the WHOLE list against
+    /// today's production answer, which is exactly the failure the doc comment
+    /// above this struct was written about.
+    #[serde(default)]
+    pub crewing_name: Option<String>,
+    /// ISO country code of the agency's registration (`Crewing.jurisdiction`).
+    #[serde(default)]
+    pub crewing_jurisdiction: Option<String>,
+    /// The agency's raw token state — `legacy`, `active` or `trial`, the same
+    /// set `published_profiles.py` will show a seafarer at all.
+    ///
+    /// NOT the same vocabulary as `PublicVacancy::crewing_trust_status` above,
+    /// which is a MAPPED value (`verified` / `trial` / `verified_legacy`) and
+    /// arrives with a ready-made `crewing_trust_label` the client only prints.
+    /// This surface sends neither, so the mapping into the words the vacancy
+    /// block shows is done client-side — see `jobsProfileCrewingTrust` in
+    /// `dist/index.html`. It is deliberately the same three badges and not a
+    /// second vocabulary: both blocks are on one screen.
+    #[serde(default)]
+    pub crewing_trust_status: Option<String>,
     /// The profile version AS AT PUBLICATION, read from the frozen snapshot.
     /// Its absence means the row is not snapshot-backed; the UI drops it
     /// rather than showing criteria whose provenance it cannot name.
