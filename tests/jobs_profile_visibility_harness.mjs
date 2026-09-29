@@ -412,6 +412,18 @@ const WORK_HISTORY = [
 const VAULT_RESPONSE_IDS = new Map();
 let vaultIdCounter = 0;
 
+// THREE VAULT STATES, and the middle one is the whole point of the S4d gate.
+// `IDENTITY_ID_NO_KEY` is reachable in the shipped product — a restored backup
+// carries the id and not the server-side identity, and so does every vault that
+// claimed an id through the legacy settings tab — and in it the respond button
+// answers 401 with no way left to fix it.
+const IDENTITY_READY = {
+  public_seafarer_id: 'SKP-HARNESS-0001',
+  identity_key_registered_at: '2026-09-29T00:00:00Z',
+};
+const IDENTITY_NONE = { public_seafarer_id: '', identity_key_registered_at: '' };
+const IDENTITY_ID_NO_KEY = { public_seafarer_id: 'SKP-HARNESS-0001', identity_key_registered_at: '' };
+
 function makeInvoke(state) {
   return async (cmd, args) => {
     state.calls.push([cmd, args]);
@@ -437,6 +449,17 @@ function makeInvoke(state) {
         state.submits.push((args && { ...args, cvBase64: undefined }) || {});
         if (state.submitThrows) throw new Error(state.submitThrows);
         return state.submitAck;
+      // The pair the respond button needs: an id the agency answers to, and an
+      // identity the server has on file for this vault. The default is a vault
+      // that has both, because that is the state every assertion written before
+      // S4d was written in.
+      case 'seafarer_identity_entry_state':
+        if (state.identityStateThrows) throw new Error('No vault open');
+        return JSON.parse(JSON.stringify(state.identity));
+      case 'ensure_seafarer_identity':
+        state.ensureCalls.push(args || {});
+        if (state.ensureThrows) throw new Error(state.ensureThrows);
+        return JSON.parse(JSON.stringify(state.ensureResult));
       case 'get_seafarer_personal': return JSON.parse(JSON.stringify(state.personal));
       case 'set_seafarer_personal':
         Object.assign(state.personal, (args && args.fields) || {});
@@ -483,6 +506,19 @@ function boot(opts = {}) {
     submitThrows: opts.submitThrows || '',
     cvThrows: !!opts.cvThrows,
     responseIdThrows: !!opts.responseIdThrows,
+    identity: opts.identity === undefined ? { ...IDENTITY_READY } : { ...opts.identity },
+    identityStateThrows: !!opts.identityStateThrows,
+    ensureCalls: [],
+    ensureThrows: opts.ensureThrows || '',
+    ensureResult: opts.ensureResult === undefined
+      ? {
+          public_seafarer_id: 'SKP-HARNESS-0002',
+          identity_key_registered_at: '2026-09-29T00:10:00Z',
+          identity_key_status: 'registered',
+          claim_status: 'created',
+          trust_level: 'identity_claimed',
+        }
+      : opts.ensureResult,
   };
   const document = new FakeDocument(html);
   const store = new Map([
@@ -615,6 +651,42 @@ async function runRespond(opts = {}) {
     statusState: nodes ? nodes.status.getAttribute('data-respond-state') : null,
     buttonDisabled: nodes ? nodes.btn.disabled : null,
     submits: booted.state.submits,
+  };
+}
+
+// Renders the real Jobs screen for a vault that cannot respond yet, then runs
+// the REAL identity handler the step's button is wired to, and returns what the
+// section looks like afterwards.
+//
+// The two nodes are pre-created for the same reason `runRespond` pre-creates
+// its own: the shim keeps innerHTML as a string and does not build children
+// from it, so the status line and the button the handler writes into are put
+// where a browser would already have them.
+async function runEnsureIdentity(opts = {}) {
+  const pid = opts.profileId || PROFILE_MATCH.profile_id;
+  const rendered = await renderJobsScreen({
+    profiles: [PROFILE_MATCH],
+    identity: IDENTITY_NONE,
+    ...opts,
+  });
+  const status = rendered.document.createElement('div');
+  status.setAttribute('id', 'jobs-identity-status-' + pid);
+  const btn = rendered.document.createElement('button');
+  btn.setAttribute('id', 'jobs-identity-btn-' + pid);
+  let ensureError = null;
+  try {
+    await rendered.sandbox.jobsEnsureSkipiId(pid);
+  } catch (e) {
+    ensureError = e;
+  }
+  await settle();
+  return {
+    ...rendered,
+    ensureError,
+    statusHtml: status.innerHTML,
+    statusState: status.getAttribute('data-respond-state'),
+    buttonDisabled: btn.disabled,
+    sectionHtml: rendered.profilesHost.innerHTML,
   };
 }
 
@@ -1218,6 +1290,290 @@ ok(submitBody !== null && /get_vault_info_value\(conn, "skipi_public_seafarer_id
 ok(submitBody !== null && /vault_signing_key/.test(submitBody),
   'P10 and it is the key in the vault that proves it');
 
+// ════════════════════════════════════════════════════════════════════════════
+// I. THE IDENTITY THE RESPOND BUTTON REQUIRES (S4d — №562 and №563)
+//
+// MEASUREMENT BOUNDARY, said before the assertions rather than implied. This
+// section measures the DESKTOP client gap: source contracts over Rust and JS
+// text plus DOM-shimmed runs of the real inline scripts. It compiles nothing,
+// reaches no network, and — see the header of this file — knows nothing about
+// Android. The mobile LAYOUT is reached by construction (one loader, two call
+// sites, counted below); that this layout is what a Pixel shows is not
+// something any assertion here can say.
+// ════════════════════════════════════════════════════════════════════════════
+
+section('I. the seafarer can obtain the identity the respond button requires');
+
+const identityRustBody = rustFnBody(jobsRs, 'ensure_seafarer_identity');
+const stateBody = rustFnBody(jobsRs, 'seafarer_identity_entry_state');
+const stepSrc = fnBody(html, 'jobsIdentityStepBody');
+const respondSrc = fnBody(html, 'jobsProfileRespondHtml');
+const ensureJs = fnBody(html, 'jobsEnsureSkipiId');
+const publisherJs = fnBody(html, 'skipiPublishMessagingPubkey');
+
+ok(identityRustBody !== null, 'I0 jobs.rs defines ensure_seafarer_identity');
+ok(stepSrc !== null, 'I0b dist defines the identity step');
+ok(ensureJs !== null, 'I0c dist defines the handler its button calls');
+
+// ---- I1: with neither half, the step stands where the button would ---------
+const noId = await renderJobsScreen({ profiles: [PROFILE_MATCH], identity: IDENTITY_NONE });
+ok(noId.sectionHtml.includes('data-qa="jobs-identity-step"'),
+  'I1 a vault with no Skipi ID gets the step that obtains one, inside the respond block');
+ok(!noId.sectionHtml.includes('data-qa="jobs-respond-btn"'),
+  'I1b INSTEAD of a respond button that would refuse on the client and send nothing');
+
+// ---- I2: with both halves, the step is gone and the button is back ---------
+const withId = await renderJobsScreen({ profiles: [PROFILE_MATCH] });
+ok(!withId.sectionHtml.includes('data-qa="jobs-identity-step"'),
+  'I2 a vault that can be spoken for is not asked for an identity it already has');
+ok(withId.sectionHtml.includes('data-qa="jobs-respond-btn"'),
+  'I2b and it gets the respond button');
+
+// ---- I8 (A-1): the gate is the PAIR, never the public id alone -------------
+// `POST /claim` issues the id and writes NO identity key; the self-session the
+// response path mints looks the key up FIRST and refuses without it. Gating on
+// the id would hide the step in the one state where it is still needed.
+const idNoKey = await renderJobsScreen({ profiles: [PROFILE_MATCH], identity: IDENTITY_ID_NO_KEY });
+ok(idNoKey.sectionHtml.includes('data-qa="jobs-identity-step"'),
+  'I8 a public id WITHOUT a registered identity still gets the step — the state a restored backup is in');
+ok(!idNoKey.sectionHtml.includes('data-qa="jobs-respond-btn"'),
+  'I8b and not a respond button that would answer 401 with nowhere left to go');
+const markerAt = String(identityRustBody || '').indexOf('IDENTITY_KEY_REGISTERED_AT, &registered_at');
+const keyPostAt = String(identityRustBody || '').indexOf('"/api/seafarer-identity/identity-key"');
+ok(keyPostAt >= 0 && markerAt > keyPostAt,
+  'I8c the marker that opens the respond button is written only AFTER the server accepted the identity');
+ok(/if key_answer\.status == 409/.test(String(identityRustBody || '')),
+  'I8d 409 — this vault is already bound to a different identity — is a refusal, not a success');
+ok(/"registered"/.test(String(identityRustBody || '')) && /"exists"/.test(String(identityRustBody || '')),
+  'I8e registered and exists are BOTH success, so a legitimate repeat is not shown as a failure');
+
+// ---- I3: one decision, one place -------------------------------------------
+ok(String(respondSrc || '').includes('jobsIdentityStepBody('),
+  'I3 the respond block itself decides between the step and the button');
+ok(String(respondSrc || '').includes('data-qa="jobs-respond-btn"'),
+  'I3b and the same function renders the button — the two are branches of one decision');
+const stepCallSites = countOf(html, 'jobsIdentityStepBody(') - countOf(html, 'function jobsIdentityStepBody(');
+ok(stepCallSites === 1,
+  `I3c the step body has exactly ONE call site — a second copy is a second answer to "may he respond" (found ${stepCallSites})`);
+
+// ---- I4 (F-1): the loader still has exactly two call sites ------------------
+// Counted by CALLS, not by the two `#jobs-profiles-host` markup sites: the
+// refusals that keep this section closed live in the loader, and a third caller
+// is how they stop holding.
+const identityLoaderSites = countOf(html, 'loadJobsProfiles(') - countOf(html, 'function loadJobsProfiles(');
+ok(identityLoaderSites === 2,
+  `I4 loadJobsProfiles is called from exactly two places, desktop and mobile (found ${identityLoaderSites})`);
+ok(String(ensureJs || '').includes('jobsProfilesRerenderIdentity('),
+  'I4b success re-draws the section from what is already on screen instead of adding a third caller');
+
+// ---- I5: the step never says "key", in either language ---------------------
+// SCOPED TO THE STEP'S OWN MARKUP, deliberately. `key` occurs legitimately
+// dozens of times in this document (recovery key, API key); an assertion over
+// the file would either be red forever or be written so loosely it catches
+// nothing. Both branches of the step are rendered by the real function.
+for (const lang of ['en', 'ru']) {
+  const booted = boot({ lang });
+  const branches = [
+    ['button', booted.sandbox.jobsIdentityStepBody('p-1', { ...IDENTITY_NONE, missing: [] })],
+    ['missing fields', booted.sandbox.jobsIdentityStepBody('p-1', { ...IDENTITY_NONE, missing: ['first_name', 'surname', 'date_of_birth'] })],
+  ];
+  branches.forEach(([what, markup]) => {
+    ok(!/key/i.test(markup), `I5 (${lang}, ${what}) the step never says "key" — a seafarer is asked for a Skipi ID, not for cryptography`);
+    ok(!/ключ/i.test(markup), `I5b (${lang}, ${what}) nor "ключ"`);
+    ok(markup.length > 0, `I5c (${lang}, ${what}) the step actually rendered something`);
+  });
+}
+
+// ---- I6: the step exists in both languages, on the rendered screen ---------
+const IDENTITY_KEYS = [
+  'jobs.profiles.identity_why',
+  'jobs.profiles.identity_get',
+  'jobs.profiles.identity_working',
+  'jobs.profiles.identity_failed',
+  'jobs.profiles.identity_duplicate',
+  'jobs.profiles.identity_taken',
+  'jobs.profiles.identity_need_profile',
+  'jobs.profiles.identity_open_profile',
+  'jobs.profiles.identity_field_first_name',
+  'jobs.profiles.identity_field_surname',
+  'jobs.profiles.identity_field_dob',
+];
+IDENTITY_KEYS.forEach((k) => {
+  ok(enBlock.includes(`'${k}'`), `I6 tr() carries ${k} in EN`);
+  ok(ruBlock.includes(`'${k}'`), `I6b tr() carries ${k} in RU`);
+});
+// tr() falls back to EN for a missing key, so a deleted RU line is SILENT in
+// the dictionary and visible only on the rendered screen. Hence both.
+ok(noId.sectionHtml.includes('Get my Skipi ID'),
+  'I6c the step is in English on the rendered English screen');
+const ruNoId = await renderJobsScreen({ profiles: [PROFILE_MATCH], identity: IDENTITY_NONE, lang: 'ru' });
+ok(ruNoId.sectionHtml.includes('Получить Skipi ID'),
+  'I6d and in Russian on the Russian one — not the English fallback');
+
+// ---- I7: a refusal is the product's sentence, never the server's -----------
+const rawRefusal = await runEnsureIdentity({ ensureThrows: 'server returned 500: boom from /api/seafarer-identity/claim' });
+ok(!/boom|500|api\/seafarer-identity/.test(rawRefusal.statusHtml),
+  'I7 the raw refusal is not printed at the seafarer');
+ok(rawRefusal.statusHtml.includes('could not be set up'),
+  `I7b the product says its own sentence instead (${rawRefusal.statusHtml.replace(/<[^>]+>/g, '').slice(0, 80)})`);
+ok(rawRefusal.statusState === 'error', 'I7c and it is shown as a failure');
+
+// ---- I9 (A-2): possible_duplicate is a 200 OK that is NOT a success --------
+// The server answers a duplicate fingerprint with 200 and a NULL id. Writing
+// that empty id into the vault — the way the profile-side claim does — would
+// leave the screen pressing a button that succeeds and changes nothing, and
+// this product has no recovery flow to send him to.
+const dup = await runEnsureIdentity({ ensureThrows: 'IDENTITY_CLAIM_DUPLICATE' });
+ok(dup.statusHtml.includes('already exists'),
+  'I9 a duplicate identity claim is refused with its own sentence, not a silent no-op');
+ok(!dup.sectionHtml.includes('data-qa="jobs-respond-btn"'),
+  'I9b and the respond button does not appear on it');
+const emptyGuardAt = String(identityRustBody || '').indexOf('if issued.is_empty()');
+const writeIdAt = String(identityRustBody || '').indexOf('"skipi_public_seafarer_id", &issued');
+ok(emptyGuardAt >= 0 && writeIdAt > emptyGuardAt,
+  'I9c the public id is written to the vault only AFTER an empty one has been refused');
+const dupBranch = blockAfter(String(identityRustBody || ''), 'if issued.is_empty()');
+ok(dupBranch !== null && dupBranch.includes('Err(IDENTITY_CLAIM_DUPLICATE'),
+  'I9d an empty id on a 200 returns a refusal — not Ok, and not the empty string the profile-side claim stores');
+
+// ---- I10 (C-1 / №563): the single-base rule, by ENUMERATION ---------------
+// `rustFnBody` reads ONE function and does not look inside what it calls, so an
+// assertion shaped like "the command body has no api::" is green the moment the
+// request moves into a helper. This enumerates every function of the file
+// instead: a helper that reaches production is a NEW name in this set.
+const jobsFnNames = Array.from(jobsRs.matchAll(/\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*[<(]/g)).map((m) => m[1]);
+const API_SENDERS = ['api::get_json', 'api::post_json', 'api::post_empty', 'api::post_json_empty', 'api::api_bases'];
+const fnsReachingApi = jobsFnNames
+  .filter((n) => API_SENDERS.some((s) => withoutLineComments(rustFnBody(jobsRs, n) || '').includes(s)))
+  .sort();
+const API_BASELINE = ['bump_counter', 'fetch_jobs', 'fetch_mailing_requests', 'fetch_recent_vessel_reviews',
+  'fetch_vessel_projection', 'get_json_for_response_path', 'mailing_request_send_click', 'response_bases'];
+ok(JSON.stringify(fnsReachingApi) === JSON.stringify(API_BASELINE.slice().sort()),
+  `I10 the ONLY functions of jobs.rs that reach api:: are the pre-existing public-board ones — the identity path is not among them (found ${fnsReachingApi.join(',')})`);
+['ensure_seafarer_identity', 'seafarer_identity_entry_state'].forEach((n) => {
+  const body = withoutLineComments(rustFnBody(jobsRs, n) || '');
+  API_SENDERS.concat(['api_bases()']).forEach((s) => {
+    ok(!body.includes(s), `I10b ${n} does not call ${s} (every one of them walks api_bases())`);
+  });
+});
+ok(countOf(String(identityRustBody || ''), 'send_on_response_bases(') === 2,
+  'I10c both requests of the identity path go through the one sender, and there are exactly two of them');
+ok(/"\/api\/seafarer-identity\/claim"/.test(String(identityRustBody || ''))
+   && /"\/api\/seafarer-identity\/identity-key"/.test(String(identityRustBody || '')),
+  'I10d and those two are the claim and the identity registration');
+
+// ---- I11 (C-4): no second sender may be introduced -------------------------
+// "Only over response_bases()" still permits writing a NEW sender that walks
+// something else, which would bypass T15/T16 entirely. So the senders of this
+// file are enumerated too. `fetch_skipi_info_index` talks to skipi.info, which
+// is not the Skipi API at all and has no bases to walk.
+const fnsThatSend = jobsFnNames
+  .filter((n) => withoutLineComments(rustFnBody(jobsRs, n) || '').includes('.send()'))
+  .sort();
+ok(JSON.stringify(fnsThatSend) === JSON.stringify(['fetch_skipi_info_index', 'send_on_response_bases']),
+  `I11 exactly one sender walks Skipi API bases and it is send_on_response_bases (found ${fnsThatSend.join(',')})`);
+
+// ---- I12 (C-2): the step calls the NEW command, not the old ones ----------
+// The cheapest way to make every assertion above green and still write into
+// production is to wire the button to `claimSkipiIdentity()`, which exists, is
+// global, shows a toast, re-renders — and goes through api_bases().
+ok(String(stepSrc || '').includes('jobsEnsureSkipiId('),
+  'I12 the step button is wired to the new handler');
+ok(!String(stepSrc || '').includes('claimSkipiIdentity('),
+  'I12b and not to the legacy claim that walks api_bases()');
+ok(noId.sectionHtml.includes('jobsEnsureSkipiId('),
+  'I12c the wiring is on the rendered screen, not only in the source');
+ok(!noId.sectionHtml.includes('claimSkipiIdentity('),
+  'I12d and the legacy claim is not');
+ok(String(ensureJs || '').includes("invoke('ensure_seafarer_identity')"),
+  'I12e the handler invokes the command that speaks only to response_bases()');
+['claim_seafarer_identity', 'register_my_identity_pubkey'].forEach((cmd) => {
+  ok(!String(ensureJs || '').includes(cmd), `I12f and never ${cmd}`);
+});
+const drove = await runEnsureIdentity({});
+const droveCalls = drove.state.calls.map((c) => c[0]);
+ok(droveCalls.includes('ensure_seafarer_identity'),
+  'I12g pressing the step really invokes it (the handler was run, not read)');
+ok(!droveCalls.includes('claim_seafarer_identity') && !droveCalls.includes('register_my_identity_pubkey'),
+  'I12h and neither of the two commands that address production');
+ok(drove.sectionHtml.includes('data-qa="jobs-respond-btn"'),
+  'I12i and after a confirmed pair the respond button is what stands there');
+ok(!drove.sectionHtml.includes('data-qa="jobs-identity-step"'),
+  'I12j with the step gone');
+
+// ---- I13 (B-1): the messaging key is not published by a service build -----
+// A THIRD key, and nothing above would have caught it: `register_my_pubkey`
+// (X25519) goes through api::post_json_empty -> api_bases(), and OPENING the
+// Jobs screen fires it. On a phone that list is production only, so a service
+// build was writing a synthetic record into the live product before the
+// seafarer touched anything.
+const directPubkeyCalls = countOf(html, "invoke('register_my_pubkey')");
+ok(directPubkeyCalls === 1,
+  `I13 the messaging key is published from exactly ONE place in this file (found ${directPubkeyCalls})`);
+ok(String(publisherJs || '').includes("invoke('jobs_response_endpoint')"),
+  'I13b and that place asks which server this build talks to before publishing anything');
+ok(/stand!==false/.test(String(publisherJs || '').replace(/\s+/g, '')),
+  'I13c a service build — or one that cannot tell — publishes nothing');
+const standOpen = await renderJobsScreen({ profiles: [PROFILE_MATCH], endpoint: { base: 'http://127.0.0.1:8099', stand: true } });
+ok(!standOpen.state.calls.some((c) => c[0] === 'register_my_pubkey'),
+  'I13d opening Jobs on a service build publishes no messaging key to production');
+ok(withId.state.calls.some((c) => c[0] === 'register_my_pubkey'),
+  'I13e and a release build still publishes it — unchanged, byte for byte');
+
+// ---- I14 (C-3): the commands are registered ------------------------------
+ok(/jobs::ensure_seafarer_identity/.test(libRs),
+  'I14 lib.rs registers ensure_seafarer_identity (an unregistered command is an invoke that always throws)');
+ok(/jobs::seafarer_identity_entry_state/.test(libRs),
+  'I14b lib.rs registers seafarer_identity_entry_state');
+
+// ---- I15 (E-2): the step draws its OWN list of missing profile fields -----
+// `readyProfileMissingListHtml` answers a different question and is asserted
+// absent from this surface elsewhere in this file; "say which fields are
+// missing" is a direct invitation to reuse it by name similarity.
+ok(!withoutLineComments(String(stepSrc || '')).includes('readyProfileMissingListHtml'),
+  'I15 the step does not reuse readyProfileMissingListHtml (that list is the seafarer\'s own jobs gaps)');
+
+// MEASURED ON THE FUNCTION, NOT ON THE SCREEN, AND THE REASON IS A FINDING.
+// `fpRequiredKeys` — the Jobs readiness gate — already requires surname,
+// first_name and date_of_birth, and `showJobs` turns readiness OFF and emits no
+// `#jobs-profiles-host` at all when any of them is missing (the mobile branch
+// does the same). So this branch cannot be reached through the Jobs screen
+// today: it is the fallback for a profile that empties out between the loader
+// and the press, and for the Rust refusal that would otherwise be a raw error.
+// Rendering the screen to assert it would assert nothing, so the real renderer
+// is called directly and the boundary is stated instead of implied.
+const missingBooted = boot({});
+const missingStep = missingBooted.sandbox.jobsIdentityStepBody('p-1',
+  { ...IDENTITY_NONE, missing: ['first_name', 'date_of_birth'] });
+ok(missingStep.includes('data-qa="jobs-identity-missing"'),
+  'I16 a profile missing the fields an identity is issued from says WHICH, before anything is asked of the server');
+ok(missingStep.includes('First name') && missingStep.includes('Date of birth'),
+  'I16b and names exactly the missing ones');
+ok(!missingStep.includes('Surname'),
+  'I16c and not the ones that are filled in');
+ok(!missingStep.includes('data-qa="jobs-identity-btn"'),
+  'I16d the button that could only earn a 422 is not offered');
+ok(missingStep.includes('openSettings('),
+  'I16e and there is a way to the profile from here');
+ok(String(fnBody(html, 'loadJobsProfiles') || '').includes('jobsIdentityMissingProfileFields(sp)'),
+  'I16f the loader is what fills that list, from the profile it already holds');
+
+// ---- I17: the identity is the vault's own, and nothing may substitute it ---
+ok(String(identityRustBody || '').includes('crate::identity::user_id_for_pubkey'),
+  'I17 the vault_user_id is DERIVED from the key, not read back from a row anything could have written');
+const ensureSig = (/pub fn ensure_seafarer_identity\s*\(([\s\S]*?)\)\s*->/.exec(jobsRs) || [])[1] || '';
+ok(/^\s*state:\s*tauri::State<crate::AppState>,?\s*$/.test(ensureSig),
+  'I17b the command takes only the app state — there is no argument a WebView script could substitute an identity with');
+ok(String(identityRustBody || '').includes('crate::identity::identity_key_register_message'),
+  'I17c the self-signature is over the server\'s own registration message');
+ok(String(identityRustBody || '').includes('signing.sign('),
+  'I17d and it is really signed — the authenticity gate is not weakened anywhere here');
+const claimJsonBlock = blockAfter(String(identityRustBody || ''), 'let claim_body = serde_json::json!');
+const claimKeys = (String(claimJsonBlock || '').match(/"([a-z_]+)"\s*:/g) || []).map((s) => s.replace(/[":\s]/g, ''));
+ok(JSON.stringify(claimKeys.slice().sort()) === JSON.stringify(['date_of_birth', 'first_name', 'last_name', 'nationality_code', 'vault_user_id']),
+  `I17e the claim carries EXACTLY the five fields of a schema that is extra="forbid" (found ${claimKeys.join(',')})`);
+ok(stateBody !== null && !/reqwest|send_on_response_bases|api::/.test(String(stateBody || '')),
+  'I17f the state the screen reads is a vault read with no network in it at all');
 
 console.log('');
 if (fail > 0) {

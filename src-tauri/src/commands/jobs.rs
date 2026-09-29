@@ -1065,3 +1065,284 @@ fn mint_self_session(
         .map(str::to_string)
         .ok_or_else(|| "the session carried no access token".to_string())
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// THE SEAFARER'S IDENTITY — OBTAINED WHERE HE NEEDS IT, AND ON ONE HOST (S4d)
+//
+// Two defects are closed here and both were found by pressing the product.
+//
+// №562: the only button that claims a Skipi ID lives in the LEGACY vaults tab
+// of settings, which opens only through a fail-closed branch of the unified
+// settings; the mobile layout draws the same card with `compact=true` and has
+// no button at all. The one call site of the identity-key registration is
+// `myVesselAccept()`, which refuses to run before a `public_seafarer_id`
+// exists. So a seafarer standing in front of the respond button could not get
+// the identity that button requires.
+//
+// №563: `claim_seafarer_identity` and `register_my_identity_pubkey` both go
+// through `api::api_bases()`, whose only override is the RUNTIME variable
+// `SKIPI_API_BASE` — and an Android process has no way to be given one. On a
+// phone that list is EXACTLY [api.skipi.app, api-ru.skipi.app]. A service
+// build would therefore have written a synthetic identity claim and, worse, a
+// synthetic IDENTITY KEY into the live product — and that key is immutable
+// (first-writer-wins, a different key is 409 forever). Everything below speaks
+// only through `send_on_response_bases`, i.e. only over `response_bases()`,
+// which with a stand compiled in is a list of ONE base with no production host
+// in it to fall back to.
+//
+// NOTHING about authenticity is weakened: the signature is the real one, the
+// `vault_user_id` is DERIVED FROM THE KEY (this command takes no parameters,
+// so there is nothing for a WebView script to substitute), and the server's
+// gate is untouched.
+// ════════════════════════════════════════════════════════════════════════════
+
+/// `vault_info` key: when THIS vault's Ed25519 identity key was accepted by the
+/// server. Written ONLY after the key registration succeeded.
+///
+/// It exists because "has a public seafarer id" is NOT the same as "can be
+/// spoken for". The self-session the response path mints starts with
+/// `db.get(SeafarerIdentityKey, vault_user_id)` and refuses without that row,
+/// while `POST /claim` never writes one. So the state "id, no key" is real —
+/// a vault restored from a backup is in it, and so is every vault that claimed
+/// an id through the legacy settings tab. Gating the entry point on the id
+/// alone would make the step disappear exactly where it is still needed and
+/// leave the seafarer with a respond button that answers 401.
+const IDENTITY_KEY_REGISTERED_AT: &str = "skipi_identity_key_registered_at";
+
+/// Refusals the WebView turns into a sentence of its own. The raw words of a
+/// server are never shown to a seafarer, so what crosses the boundary is a
+/// marker and not prose.
+const IDENTITY_CLAIM_DUPLICATE: &str = "IDENTITY_CLAIM_DUPLICATE";
+const IDENTITY_KEY_TAKEN: &str = "IDENTITY_KEY_TAKEN";
+const IDENTITY_PROFILE_INCOMPLETE: &str = "IDENTITY_PROFILE_INCOMPLETE";
+
+fn vault_text(conn: &rusqlite::Connection, key: &str) -> String {
+    crate::db::get_vault_info_value(conn, key)
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default()
+}
+
+fn required_vault_text(conn: &rusqlite::Connection, key: &str) -> Result<String, String> {
+    let value = vault_text(conn, key);
+    if value.is_empty() {
+        return Err(IDENTITY_PROFILE_INCOMPLETE.to_string());
+    }
+    Ok(value)
+}
+
+/// The claim answer, read back field by field. `public_seafarer_id` is
+/// `Option` because the server answers `possible_duplicate` with a 200 and a
+/// NULL id — see `ensure_seafarer_identity` for why that is a refusal.
+#[derive(Debug, Clone, Deserialize)]
+struct SeafarerIdentityClaimAnswer {
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    duplicate: bool,
+    #[serde(default)]
+    public_seafarer_id: Option<String>,
+    #[serde(default)]
+    trust_level: String,
+    #[serde(default)]
+    identity_recovery_key: Option<String>,
+    #[serde(default)]
+    message: String,
+}
+
+/// What the Jobs screen needs to decide whether to draw the identity step, and
+/// nothing else. Read-only, no network, no parameters.
+#[derive(Debug, Clone, Serialize)]
+pub struct SeafarerIdentityEntryState {
+    pub public_seafarer_id: String,
+    pub identity_key_registered_at: String,
+}
+
+#[tauri::command]
+pub fn seafarer_identity_entry_state(
+    state: tauri::State<crate::AppState>,
+) -> Result<SeafarerIdentityEntryState, String> {
+    let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = lock.as_ref().ok_or("No vault open")?;
+    Ok(SeafarerIdentityEntryState {
+        public_seafarer_id: vault_text(conn, "skipi_public_seafarer_id"),
+        identity_key_registered_at: vault_text(conn, IDENTITY_KEY_REGISTERED_AT),
+    })
+}
+
+/// Claim the public identity and register the vault's identity key — both of
+/// them, in that order, and both only over `response_bases()`.
+///
+/// Idempotent before the network: a vault that already carries a
+/// `skipi_public_seafarer_id` does not claim a second one; it goes straight to
+/// the key, which is how a vault stuck in the "id, no key" state heals itself.
+#[tauri::command]
+pub fn ensure_seafarer_identity(
+    state: tauri::State<crate::AppState>,
+) -> Result<serde_json::Value, String> {
+    use ed25519_dalek::Signer;
+
+    let vault = {
+        let guard = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
+        guard.as_ref().cloned().ok_or("No vault open")?
+    };
+    let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = lock.as_ref().ok_or("No vault open")?;
+
+    crate::identity::ensure_vault_identity(conn, &vault)?;
+    let signing = crate::identity::vault_signing_key(&vault)?;
+    let pub_bytes = signing.verifying_key().to_bytes();
+    // DERIVED FROM THE KEY. Not read from `vault_info`, not accepted from the
+    // caller — the same rule the self-session signer holds itself to.
+    let vault_user_id = crate::identity::user_id_for_pubkey(&pub_bytes);
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(20))
+        .connect_timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let mut public_seafarer_id = vault_text(conn, "skipi_public_seafarer_id");
+    let mut claim_status = vault_text(conn, "skipi_identity_claim_status");
+    let mut trust_level = vault_text(conn, "skipi_identity_trust_level");
+
+    if public_seafarer_id.is_empty() {
+        // EXACTLY the five fields of `SeafarerIdentityClaimRequest`, which is
+        // `extra="forbid"`: a sixth would be 422 on every claim forever.
+        let claim_body = serde_json::json!({
+            "vault_user_id": vault_user_id,
+            "first_name": required_vault_text(conn, "personal_first_name")?,
+            "last_name": required_vault_text(conn, "personal_surname")?,
+            "date_of_birth": required_vault_text(conn, "personal_dob")?,
+            "nationality_code": crate::db::get_vault_info_value(conn, "personal_nationality_code")
+                .map(|s| s.trim().to_ascii_uppercase())
+                .filter(|s| !s.is_empty()),
+        });
+        let answer = send_on_response_bases(
+            &client,
+            true,
+            "/api/seafarer-identity/claim",
+            Some(&claim_body),
+            None,
+        )?;
+        if !(200..300).contains(&answer.status) {
+            return Err(format!(
+                "identity claim returned {}: {}",
+                answer.status, answer.body
+            ));
+        }
+        let claim: SeafarerIdentityClaimAnswer = serde_json::from_str(&answer.body)
+            .map_err(|e| format!("the identity claim did not parse: {e}"))?;
+        let issued = claim
+            .public_seafarer_id
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or("")
+            .to_string();
+
+        // What the server said is recorded either way — it is the only record
+        // of a duplicate there is.
+        crate::db::set_vault_info(conn, "skipi_identity_claim_status", &claim.status)
+            .map_err(|e| e.to_string())?;
+        crate::db::set_vault_info(
+            conn,
+            "skipi_identity_duplicate",
+            if claim.duplicate { "true" } else { "false" },
+        )
+        .map_err(|e| e.to_string())?;
+        crate::db::set_vault_info(conn, "skipi_identity_trust_level", &claim.trust_level)
+            .map_err(|e| e.to_string())?;
+        crate::db::set_vault_info(conn, "skipi_identity_message", &claim.message)
+            .map_err(|e| e.to_string())?;
+        crate::db::set_vault_info(
+            conn,
+            "skipi_identity_last_claim_at",
+            &chrono::Utc::now().to_rfc3339(),
+        )
+        .map_err(|e| e.to_string())?;
+
+        // A 200 WITH AN EMPTY ID IS NOT A SUCCESS. `possible_duplicate` answers
+        // exactly that: another vault already claimed this name and date of
+        // birth. Writing the empty string into `skipi_public_seafarer_id` — the
+        // way the profile-side claim does — would leave the screen in a silent
+        // forever-loop: press, 200, still no id, press again. There is no
+        // recovery flow in this product to send him to, so the honest thing is
+        // to stop and say so.
+        if issued.is_empty() {
+            return Err(IDENTITY_CLAIM_DUPLICATE.to_string());
+        }
+        crate::db::set_vault_info(conn, "skipi_public_seafarer_id", &issued)
+            .map_err(|e| e.to_string())?;
+        if let Some(key) = claim
+            .identity_recovery_key
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+        {
+            crate::db::set_vault_info(conn, "skipi_identity_recovery_key", key)
+                .map_err(|e| e.to_string())?;
+        }
+        let _ = crate::identity::sync_identity_fingerprint(conn);
+
+        public_seafarer_id = issued;
+        claim_status = claim.status;
+        trust_level = claim.trust_level;
+    }
+
+    // ---- the identity key, and the marker ONLY once the server has it ------
+    let b64 = base64::engine::general_purpose::STANDARD;
+    let identity_pubkey_b64 = b64.encode(pub_bytes);
+    let register_message =
+        crate::identity::identity_key_register_message(&vault_user_id, &identity_pubkey_b64);
+    let signature = b64.encode(signing.sign(register_message.as_bytes()).to_bytes());
+    let key_body = serde_json::json!({
+        "vault_user_id": vault_user_id,
+        "identity_pubkey_b64": identity_pubkey_b64,
+        "signature": signature,
+        "public_seafarer_id": public_seafarer_id,
+    });
+    let key_answer = send_on_response_bases(
+        &client,
+        true,
+        "/api/seafarer-identity/identity-key",
+        Some(&key_body),
+        None,
+    )?;
+    // 409 is the immutable binding refusing a DIFFERENT key for this vault. It
+    // is not a success and it never becomes one by retrying.
+    if key_answer.status == 409 {
+        return Err(IDENTITY_KEY_TAKEN.to_string());
+    }
+    if !(200..300).contains(&key_answer.status) {
+        return Err(format!(
+            "identity key registration returned {}: {}",
+            key_answer.status, key_answer.body
+        ));
+    }
+    let key_status = serde_json::from_str::<serde_json::Value>(&key_answer.body)
+        .ok()
+        .and_then(|v| {
+            v.get("status")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string)
+        })
+        .unwrap_or_default();
+    // `registered` (first time) and `exists` (the same key again) are both
+    // success and neither is distinguished. Anything else is not assumed to be.
+    if key_status != "registered" && key_status != "exists" {
+        return Err(format!(
+            "identity key registration answered '{}'",
+            key_status
+        ));
+    }
+
+    let registered_at = chrono::Utc::now().to_rfc3339();
+    crate::db::set_vault_info(conn, IDENTITY_KEY_REGISTERED_AT, &registered_at)
+        .map_err(|e| e.to_string())?;
+
+    Ok(serde_json::json!({
+        "public_seafarer_id": public_seafarer_id,
+        "identity_key_registered_at": registered_at,
+        "identity_key_status": key_status,
+        "claim_status": claim_status,
+        "trust_level": trust_level,
+    }))
+}
