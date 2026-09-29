@@ -176,7 +176,23 @@ pub struct PublishedProfile {
     #[serde(default)]
     pub crewing_id: Option<String>,
     /// WHO the seafarer's irreversible response goes to, in words he can read.
-    /// `Crewing.display_name` on the server; never an id. The owner's rule is
+    /// `Crewing.display_name` on the server; never an id.
+    ///
+    /// SELF-ASSERTED, AND THIS COMMENT IS THE ONLY PLACE THAT SAYS SO. Read
+    /// from the server's own bytes on 2026-09-29: `PATCH
+    /// /api/crewings/{crewing_id}/profile` (`app/routers/crewings.py:692`)
+    /// runs under scope `profile:write`, which any working crewing token
+    /// carries, and applies `CrewingProfilePatch`
+    /// (`app/schemas.py:33`) with a bare `setattr` loop. That model accepts
+    /// `display_name`, `legal_name`, `jurisdiction`, `registration_number`,
+    /// `mlc_cert_number` and `mlc_cert_valid_to` — so the name AND the
+    /// jurisdiction below are what the agency says about itself, and the audit
+    /// row is written after the change, not before it. Only the boolean
+    /// `mlc_certified` stays out of that model and admin-gated.
+    ///
+    /// Nothing is decided here on account of that. It is recorded so that no
+    /// later reader takes this field, or the trust badge rendered beside it,
+    /// for a name somebody checked. The owner's rule is
     /// that a UUID and a conditional label ("Agency A") are both refusals, so
     /// the absence of this value is said in a sentence and never filled in
     /// from `crewing_id` above.
@@ -1546,4 +1562,124 @@ pub fn ensure_seafarer_identity(
         "claim_status": claim_status,
         "trust_level": trust_level,
     }))
+}
+
+// ---------------------------------------------------------------------------
+// THE ANSWER OF A LIVE SERVER, not a fixture written by the same hand that
+// wrote the parser.
+//
+// The client half of the neighbouring response contract was finished against
+// an invented fixture and the two halves never met until it was too late to be
+// cheap. This module exists so that cannot be said of this one: the bytes below
+// were captured from a running server and are parsed HERE, by the type the
+// product actually uses, in the crate that ships.
+//
+// PROVENANCE: GET /api/published-profiles?rank=Second Officer&vessel_type=Bulk
+// Carrier, ANONYMOUS (the way a seafarer reaches it), status 200, captured
+// 2026-09-29T17:02:32Z. Server side: skipi-server PR #32, head 6690fc86.
+//
+// BOUNDARY, so this is not read as more than it is: the envelope stored the
+// body as parsed JSON, so these are the answer's VALUES re-serialised, not its
+// wire bytes. Key order and whitespace are therefore not byte-identical to what
+// crossed the network; key NAMES, types and values are.
+#[cfg(test)]
+mod live_published_profiles_contract {
+    use super::*;
+
+    const LIVE_BODY: &str = r#"{"items":[{"profile_id":"3f51ec8e-34f9-4375-8120-9d2c56b9c77f","crewing_id":"322dc865-60a1-4ded-a816-20bb3ac9c4d8","crewing_name":"Limassol Marine Manning","crewing_jurisdiction":"CY","crewing_trust_status":"trial","published_version":1,"rank":"Second Officer","vessel_type":"Bulk Carrier","mandatory_certs":[],"extra_requirements":[]},{"profile_id":"81d508ff-23fb-4c85-a14b-8f6151df1e1a","crewing_id":"dcdc1fa4-5187-4801-a365-ade399601ae7","crewing_name":"Aegean Crew Services","crewing_jurisdiction":"GR","crewing_trust_status":"active","published_version":1,"rank":"Second Officer","vessel_type":"Bulk Carrier","mandatory_certs":["stcw_basic","gmdss"],"extra_requirements":[{"id":"x1","label":"Tanker endorsement","weight":5,"category":"endorsement","description":null}]}]}"#;
+
+    /// The same answer as the server RUNNING THE PILOT sends it today: the
+    /// three agency keys simply absent.
+    const LIVE_BODY_WITHOUT_AGENCY_FIELDS: &str = r#"{"items":[{"profile_id":"3f51ec8e-34f9-4375-8120-9d2c56b9c77f","crewing_id":"322dc865-60a1-4ded-a816-20bb3ac9c4d8","published_version":1,"rank":"Second Officer","vessel_type":"Bulk Carrier","mandatory_certs":[],"extra_requirements":[]},{"profile_id":"81d508ff-23fb-4c85-a14b-8f6151df1e1a","crewing_id":"dcdc1fa4-5187-4801-a365-ade399601ae7","published_version":1,"rank":"Second Officer","vessel_type":"Bulk Carrier","mandatory_certs":["stcw_basic","gmdss"],"extra_requirements":[{"id":"x1","label":"Tanker endorsement","weight":5,"category":"endorsement","description":null}]}]}"#;
+
+    fn parse(s: &str) -> PublishedProfileListResp {
+        serde_json::from_str(s).expect("the live answer must parse")
+    }
+
+    #[test]
+    fn calibration_a_wrong_type_is_still_a_parse_error() {
+        // Without this, "it parsed" would be a claim about nothing: a parser
+        // that accepted everything would pass every other test in this module.
+        let broken = LIVE_BODY.replace(r#""published_version":1"#, r#""published_version":"one""#);
+        assert_ne!(broken, LIVE_BODY, "the calibration must actually change the bytes");
+        assert!(
+            serde_json::from_str::<PublishedProfileListResp>(&broken).is_err(),
+            "a string where an integer belongs must fail to parse"
+        );
+    }
+
+    #[test]
+    fn the_live_answer_parses_with_the_type_the_client_uses() {
+        let parsed = parse(LIVE_BODY);
+        assert_eq!(parsed.items.len(), 2, "the live answer carried two rows");
+    }
+
+    #[test]
+    fn every_agency_field_arrives_under_the_name_this_client_reads() {
+        let parsed = parse(LIVE_BODY);
+        let mut seen: Vec<(String, String, String)> = parsed
+            .items
+            .iter()
+            .map(|p| {
+                (
+                    p.crewing_name.clone().expect("crewing_name present"),
+                    p.crewing_jurisdiction.clone().expect("crewing_jurisdiction present"),
+                    p.crewing_trust_status.clone().expect("crewing_trust_status present"),
+                )
+            })
+            .collect();
+        seen.sort();
+        assert_eq!(
+            seen,
+            vec![
+                ("Aegean Crew Services".to_string(), "GR".to_string(), "active".to_string()),
+                ("Limassol Marine Manning".to_string(), "CY".to_string(), "trial".to_string()),
+            ],
+            "the server's key names and values must be the ones this type declares"
+        );
+    }
+
+    #[test]
+    fn both_trust_states_the_screen_distinguishes_are_present() {
+        // Not decoration: the green case and the warned case are two different
+        // renders, and a capture carrying only one of them would have left the
+        // other proven by fixture alone.
+        let parsed = parse(LIVE_BODY);
+        let mut states: Vec<String> = parsed
+            .items
+            .iter()
+            .filter_map(|p| p.crewing_trust_status.clone())
+            .collect();
+        states.sort();
+        assert_eq!(states, vec!["active".to_string(), "trial".to_string()]);
+    }
+
+    #[test]
+    fn a_live_row_carries_a_uuid_the_screen_must_never_print() {
+        // The fixture this was built on used readable ids. The live surface does
+        // not: `crewing_id` is a UUID, and it is exactly what the owner refused
+        // to see in place of a name.
+        let parsed = parse(LIVE_BODY);
+        for p in &parsed.items {
+            let id = p.crewing_id.clone().expect("crewing_id present");
+            assert_eq!(id.len(), 36, "crewing_id is a UUID on the live surface: {id}");
+        }
+    }
+
+    #[test]
+    fn todays_server_answer_without_the_three_fields_still_parses_whole() {
+        // The failure this guards is not "one field is None". It is the WHOLE
+        // list failing to parse because one key is absent — which is what
+        // `CandidateProfileRankSummary` does, and what would empty the Jobs tab
+        // with no explanation on the server running the pilot right now.
+        let parsed = parse(LIVE_BODY_WITHOUT_AGENCY_FIELDS);
+        assert_eq!(parsed.items.len(), 2, "every row must survive the absence");
+        for p in &parsed.items {
+            assert!(p.crewing_name.is_none());
+            assert!(p.crewing_jurisdiction.is_none());
+            assert!(p.crewing_trust_status.is_none());
+            // And the row is still renderable: the criteria are untouched.
+            assert!(p.rank.is_some() && p.vessel_type.is_some());
+        }
+    }
 }

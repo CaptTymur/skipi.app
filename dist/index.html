@@ -14293,6 +14293,11 @@ function jobsProfileCrewingTrust(status){
     return null;
 }
 
+// The badge speaks about the agency's TOKEN STATE and about nothing else. The
+// name and the jurisdiction on the same line are self-asserted: a crewing may
+// rewrite both through `PATCH /api/crewings/{id}/profile` under `profile:write`,
+// which any working crewing token carries. Stated so the line is not misread as
+// three checked facts; nothing here is decided on account of it.
 function jobsProfileCrewingHtml(p){
     var name=String((p&&p.crewing_name)||'').trim();
     var jurisdiction=String((p&&p.crewing_jurisdiction)||'').trim().toUpperCase();

@@ -379,12 +379,11 @@ class FakeDocument {
 // has already done the normalised matching — the client's job is to know that
 // an unknown value is not a match and to show what else is required.
 const PROFILE_MATCH = {
-  profile_id: 'prof-match-0001',
-  // The three agency fields of the V5c contract. `crewing_id` is a UUID here
-  // so the "no UUID on screen" probe below has something real to miss.
-  crewing_id: '7d6f1a52-3c84-4f0e-9a21-b0c5e4d81f33',
-  crewing_name: 'Aegean Crew Management',
-  crewing_jurisdiction: 'gr',
+  profile_id: '81d508ff-23fb-4c85-a14b-8f6151df1e1a',   // MEASURED, and a UUID
+  // MEASURED: the agency half of this row is the live server's own bytes.
+  crewing_id: 'dcdc1fa4-5187-4801-a365-ade399601ae7',
+  crewing_name: 'Aegean Crew Services',
+  crewing_jurisdiction: 'GR',
   crewing_trust_status: 'active',
   published_version: 7,
   rank: 'Second Officer',
@@ -401,23 +400,34 @@ const PROFILE_NO_VERSION = { ...PROFILE_MATCH, profile_id: 'prof-nover-0004', pu
 
 // ---- W. who receives an irreversible response (P2/V5c) ---------------------
 //
-// The crewing ids below are REAL UUIDs and not the readable label this fixture
-// carried before, on purpose: "no UUID reaches the screen" is measured with a
-// UUID-shaped probe, and a probe run against `crewing-alpha` would have passed
-// over a screen that prints the id in full. The probe is calibrated on the
-// fixture itself (W0) before it is believed about the render.
-const CREWING_ALPHA_ID = '7d6f1a52-3c84-4f0e-9a21-b0c5e4d81f33';
-const CREWING_BRAVO_ID = 'c1e9b2a7-5f43-4d16-8e70-2a9b6c3d5041';
+// THE IDENTITIES BELOW ARE MEASURED, not invented. They are the two rows a
+// LIVE server answered on 2026-09-29T17:02:32Z (see LIVE_BODY at the foot of
+// this file for the captured answer itself). What is still constructed here is
+// the REQUIREMENTS half — `published_version`, `mandatory_certs` and
+// `extra_requirements` are chosen to exercise have / missing / unknown against
+// the catalog above, and the live rows do not carry that spread. Which half is
+// which is said out loud so the next reader does not have to guess.
+const CREWING_ALPHA_ID = 'dcdc1fa4-5187-4801-a365-ade399601ae7';   // MEASURED
+const CREWING_BRAVO_ID = '322dc865-60a1-4ded-a816-20bb3ac9c4d8';   // MEASURED
 
 // A second agency, so "the seafarer can tell WHICH agency" is measured by two
 // rows that differ, not by one row that happens to carry a string.
 const PROFILE_OTHER_AGENCY = {
   ...PROFILE_MATCH,
-  profile_id: 'prof-match-0005',
+  profile_id: '3f51ec8e-34f9-4375-8120-9d2c56b9c77f',   // MEASURED
   crewing_id: CREWING_BRAVO_ID,
-  crewing_name: 'Baltic Marine Personnel',
-  crewing_jurisdiction: 'ee',
+  crewing_name: 'Limassol Marine Manning',
+  crewing_jurisdiction: 'CY',
   crewing_trust_status: 'trial',
+};
+
+// SYNTHETIC, and said so: the live surface sends the jurisdiction already
+// upper-cased, so the client's own normalisation cannot be proven on it. This
+// row exists to prove that one line of behaviour and nothing else.
+const PROFILE_LOWERCASE_JUR = {
+  ...PROFILE_MATCH,
+  profile_id: 'prof-lowercase-jur-0007',
+  crewing_jurisdiction: 'gr',
 };
 
 // THE OLD SERVER, which is the one the pilot is running until the other half of
@@ -2258,37 +2268,56 @@ section('W. the agency is named before the irreversible response (P2/V5c)');
 
 // A probe is worth nothing until it is shown to fire on a fact already known.
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+// THIS PROBE USED TO READ THE WHOLE MARKUP, AND THAT WAS THE WRONG PROBE.
+// It passed only because the invented fixture gave `profile_id` a readable
+// value. The LIVE surface uses a UUID there too, and the card legitimately
+// carries it in `data-profile-id`, in the respond button's DOM id and in its
+// onclick — none of which a seafarer reads. The owner's rule is about what he
+// SEES, so the claim is made over visible text; and `crewing_id`, the id he
+// refused to be shown in place of a name, is asserted absent from EVERYTHING,
+// attributes included. Two different claims, two different scopes.
+function visibleText(markup) {
+  return String(markup || '').replace(/<[^>]*>/g, ' ');
+}
 ok(UUID_RE.test(JSON.stringify(PROFILE_MATCH)),
-  'W0 CALIBRATION — the UUID probe does find a UUID in the fixture it is given');
-ok(!UUID_RE.test('prof-match-0001'),
-  'W0b CALIBRATION — and it does not fire on the profile id, which is not one');
+  'W0 CALIBRATION — the UUID probe does find a UUID in the bytes it is given');
+ok(!UUID_RE.test(visibleText('<div data-profile-id="81d508ff-23fb-4c85-a14b-8f6151df1e1a">Crewing: someone</div>')),
+  'W0b CALIBRATION — visibleText hides a UUID that lives only in an attribute');
+ok(UUID_RE.test(visibleText('<div>81d508ff-23fb-4c85-a14b-8f6151df1e1a</div>')),
+  'W0c CALIBRATION — and still finds one that is actually printed for the reader');
 
 const agencyEn = await renderJobsScreen({ profiles: [PROFILE_MATCH], lang: 'en' });
 const agencyRu = await renderJobsScreen({ profiles: [PROFILE_MATCH], lang: 'ru' });
 
-ok(agencyEn.sectionHtml.includes('Aegean Crew Management'),
+ok(agencyEn.sectionHtml.includes('Aegean Crew Services'),
   'W1 the agency NAME is on the card (EN)');
-ok(agencyRu.sectionHtml.includes('Aegean Crew Management'),
+ok(agencyRu.sectionHtml.includes('Aegean Crew Services'),
   'W2 and on the RU card too — a proper name is not dropped by the other locale');
 ok(agencyEn.sectionHtml.includes('GR') && agencyRu.sectionHtml.includes('GR'),
-  'W3 the jurisdiction is beside it, upper-cased, in both locales');
+  'W3 the jurisdiction is beside it in both locales (MEASURED: the live answer sends "GR")');
+const lowerJur = await renderJobsScreen({ profiles: [PROFILE_LOWERCASE_JUR], lang: 'en' });
+ok(lowerJur.sectionHtml.includes('GR') && !lowerJur.sectionHtml.includes('registered in gr'),
+  'W3b the client still upper-cases one that arrives lower-cased (SYNTHETIC — the live answer never does)');
 
 // The owner refused a conditional label. A UUID is the other thing he refused.
 for (const [lang, r] of [['en', agencyEn], ['ru', agencyRu]]) {
-  ok(!UUID_RE.test(r.sectionHtml),
-    `W4 (${lang}) NO UUID reaches the screen anywhere in the section`);
+  ok(!UUID_RE.test(visibleText(r.sectionHtml)),
+    `W4 (${lang}) no UUID is PRINTED anywhere in the section`);
   ok(!r.sectionHtml.includes(CREWING_ALPHA_ID),
-    `W4b (${lang}) and this row's crewing id in particular is absent`);
+    `W4b (${lang}) and the crewing id is absent from the markup ENTIRELY, attributes included`);
 }
 
 // "A name is on screen" and "the seafarer can tell WHICH agency" are different
 // claims. Two rows of two agencies is what separates them.
 const twoAgencies = await renderJobsScreen({ profiles: [PROFILE_MATCH, PROFILE_OTHER_AGENCY], lang: 'en' });
-ok(twoAgencies.sectionHtml.includes('Aegean Crew Management')
-   && twoAgencies.sectionHtml.includes('Baltic Marine Personnel'),
+ok(twoAgencies.sectionHtml.includes('Aegean Crew Services')
+   && twoAgencies.sectionHtml.includes('Limassol Marine Manning'),
   'W5 two profiles of two different agencies carry two different names');
-ok(!UUID_RE.test(twoAgencies.sectionHtml),
-  'W5b and neither of the two ids leaks while doing it');
+ok(!UUID_RE.test(visibleText(twoAgencies.sectionHtml)),
+  'W5b and no id is printed while doing it');
+ok(!twoAgencies.sectionHtml.includes(CREWING_ALPHA_ID) && !twoAgencies.sectionHtml.includes(CREWING_BRAVO_ID),
+  'W5c neither crewing id appears in the markup at all');
 
 // The counterparty is named in the SAME WORDS as the block directly above it.
 // Two neighbouring blocks on one screen calling the counterparty two different
@@ -2330,7 +2359,7 @@ ok(oldSrvEn.sectionHtml.includes('Second Officer'),
   'W14 the row is still shown — a missing agency name does not remove the profile');
 ok(oldSrvEn.sectionHtml.indexOf('data-qa="jobs-profile-crewing"') >= 0,
   'W15 and the agency line is still there, saying something rather than nothing');
-ok(!UUID_RE.test(oldSrvEn.sectionHtml) && !oldSrvEn.sectionHtml.includes(CREWING_ALPHA_ID),
+ok(!UUID_RE.test(visibleText(oldSrvEn.sectionHtml)) && !oldSrvEn.sectionHtml.includes(CREWING_ALPHA_ID),
   'W16 the id is NOT substituted for the missing name — that is the thing the owner refused');
 ok(/not available/i.test(oldSrvEn.sectionHtml),
   'W17 (en) it says plainly that the name is not available');
@@ -2341,7 +2370,7 @@ ok(!/[Ѐ-ӿ]/.test(oldSrvEn.sectionHtml),
 
 // One bad row must not take a good one down with it, on this field too.
 const mixed = await renderJobsScreen({ profiles: [PROFILE_NO_AGENCY_FIELDS, PROFILE_OTHER_AGENCY], lang: 'en' });
-ok(mixed.sectionHtml.includes('Baltic Marine Personnel'),
+ok(mixed.sectionHtml.includes('Limassol Marine Manning'),
   'W19 a row without agency fields beside a row with them: the named one still renders');
 
 section('W. the Rust type cannot be made fatal by a missing agency field');
@@ -2419,7 +2448,7 @@ await settle();
 
 // --- the profile card (this task's own renderer) ---
 const profileBadge = (status) => badgeClassOf(
-  trustBox.sandbox.jobsProfileCrewingHtml({ crewing_name: 'Aegean Crew Management', crewing_trust_status: status }));
+  trustBox.sandbox.jobsProfileCrewingHtml({ crewing_name: 'Aegean Crew Services', crewing_trust_status: status }));
 
 ok(profileBadge('active') === 'job-trust-badge',
   `X1 profile card: an ACTIVE agency keeps the plain green badge (got ${profileBadge('active')})`);
@@ -2435,7 +2464,7 @@ ok(profileBadge('who-knows') === null && profileBadge(undefined) === null,
 // --- the vacancy feed card (the block directly above the section) ---
 const vacancyBadge = (status, label) => badgeClassOf(
   trustBox.sandbox.jobsCrewingIdentityHtml(
-    { crewing_ref: 'Aegean Crew Management', crewing_jurisdiction: 'gr',
+    { crewing_ref: 'Aegean Crew Services', crewing_jurisdiction: 'gr',
       crewing_trust_status: status, crewing_trust_label: label || 'label' },
     trustBox.sandbox.esc));
 
@@ -2465,6 +2494,90 @@ const cssBlockedAt = html.indexOf('.job-trust-badge.blocked');
 ok(cssWarnAt > 0 && cssBlockedAt > 0, 'X15 both modifier rules exist in the stylesheet');
 ok(cssBlockedAt > cssWarnAt,
   'X16 and .blocked is declared AFTER .warn — equal specificity, so blocked wins the cascade');
+
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// Y — THE ANSWER OF A LIVE SERVER, rendered by the real screen.
+//
+// Everything above this line about the agency fields was true of a fixture. The
+// bytes below are not a fixture: they are the body a running server returned to
+// GET /api/published-profiles?rank=Second Officer&vessel_type=Bulk Carrier,
+// ANONYMOUS (the way a seafarer reaches it), status 200, captured
+// 2026-09-29T17:02:32Z. Server side: skipi-server PR #32, head 6690fc86.
+//
+// The Rust half of this meeting is asserted in the crate itself
+// (`live_published_profiles_contract` in src-tauri/src/commands/jobs.rs), where
+// the type the product actually uses parses these same bytes. This section is
+// the other half: what the seafarer's screen DOES with them.
+//
+// BOUNDARY: the capture stored the body as parsed JSON, so these are the
+// answer's VALUES re-serialised — key names, types and values are the server's,
+// whitespace and key order are not the wire's.
+// ════════════════════════════════════════════════════════════════════════════
+
+section('Y. the live server answer, on the real screen');
+
+const LIVE_BODY = JSON.parse('{"items":[{"profile_id":"3f51ec8e-34f9-4375-8120-9d2c56b9c77f","crewing_id":"322dc865-60a1-4ded-a816-20bb3ac9c4d8","crewing_name":"Limassol Marine Manning","crewing_jurisdiction":"CY","crewing_trust_status":"trial","published_version":1,"rank":"Second Officer","vessel_type":"Bulk Carrier","mandatory_certs":[],"extra_requirements":[]},{"profile_id":"81d508ff-23fb-4c85-a14b-8f6151df1e1a","crewing_id":"dcdc1fa4-5187-4801-a365-ade399601ae7","crewing_name":"Aegean Crew Services","crewing_jurisdiction":"GR","crewing_trust_status":"active","published_version":1,"rank":"Second Officer","vessel_type":"Bulk Carrier","mandatory_certs":["stcw_basic","gmdss"],"extra_requirements":[{"id":"x1","label":"Tanker endorsement","weight":5,"category":"endorsement","description":null}]}]}');
+const LIVE_ITEMS = LIVE_BODY.items;
+
+ok(Array.isArray(LIVE_ITEMS) && LIVE_ITEMS.length === 2,
+  `Y0 CALIBRATION — the captured body is real JSON and carried two rows (got ${LIVE_ITEMS.length})`);
+ok(LIVE_ITEMS.every((p) => Object.keys(p).length === 10),
+  'Y0b CALIBRATION — each live row carries ten keys, the three new ones among them');
+
+// The card block that contains a given agency name, so a per-row claim is made
+// about THAT row and not about the section as a whole.
+function cardOf(sectionHtml, name) {
+  const parts = String(sectionHtml || '').split('<div class="jobs-profile-card"');
+  return parts.find((c) => c.includes(name)) || null;
+}
+
+const liveEn = await renderJobsScreen({ profiles: LIVE_ITEMS, lang: 'en' });
+const liveRu = await renderJobsScreen({ profiles: LIVE_ITEMS, lang: 'ru' });
+
+ok(!liveEn.error, `Y1 the real screen renders the live answer${liveEn.error ? ': ' + liveEn.error.message : ''}`);
+for (const [lang, r] of [['en', liveEn], ['ru', liveRu]]) {
+  ok(r.sectionHtml.includes('Aegean Crew Services') && r.sectionHtml.includes('Limassol Marine Manning'),
+    `Y2 (${lang}) both agencies the live server named are on screen, by name`);
+  ok(r.sectionHtml.includes('GR') && r.sectionHtml.includes('CY'),
+    `Y3 (${lang}) each carries the jurisdiction the server sent`);
+  ok(!UUID_RE.test(visibleText(r.sectionHtml)),
+    `Y4 (${lang}) no UUID is printed — and on the live surface profile_id and crewing_id are BOTH UUIDs`);
+  for (const p of LIVE_ITEMS) {
+    ok(!r.sectionHtml.includes(p.crewing_id),
+      `Y5 (${lang}) the crewing id of ${p.crewing_name} is absent from the markup entirely`);
+  }
+}
+
+// The colour, per row, on measured data: the active agency green, the trial one
+// warned. This is the claim that was made on a fixture and is now made on the
+// server's own answer.
+const aegeanCard = cardOf(liveEn.sectionHtml, 'Aegean Crew Services');
+const limassolCard = cardOf(liveEn.sectionHtml, 'Limassol Marine Manning');
+ok(aegeanCard !== null && limassolCard !== null, 'Y6 both live rows rendered their own card');
+ok(aegeanCard !== limassolCard, 'Y6b and they are two different cards, not one matched twice');
+ok(badgeClassOf(aegeanCard) === 'job-trust-badge',
+  `Y7 the ACTIVE agency (Aegean Crew Services) keeps the plain green badge (got ${badgeClassOf(aegeanCard)})`);
+ok(String(badgeClassOf(limassolCard)).includes('warn'),
+  `Y8 the TRIAL agency (Limassol Marine Manning) is warned (got ${badgeClassOf(limassolCard)})`);
+ok(badgeClassOf(limassolCard) !== 'job-trust-badge',
+  'Y9 and is NOT left on the colour of verified — measured on the live answer, not on a fixture');
+
+// The server running the pilot before this contract shipped: the same answer
+// with the three keys gone.
+const liveOldShape = LIVE_ITEMS.map((p) => {
+  const q = { ...p };
+  delete q.crewing_name; delete q.crewing_jurisdiction; delete q.crewing_trust_status;
+  return q;
+});
+const liveOld = await renderJobsScreen({ profiles: liveOldShape, lang: 'en' });
+ok(!liveOld.error && liveOld.sectionHtml.includes('Second Officer'),
+  'Y10 the same rows without the three keys still render — the list is not lost');
+ok((liveOld.sectionHtml.match(/not available/gi) || []).length === 2,
+  'Y11 and BOTH rows say so honestly, rather than one of them showing an id');
+ok(!UUID_RE.test(visibleText(liveOld.sectionHtml)),
+  'Y12 with still no id printed anywhere');
 
 
 console.log('');
