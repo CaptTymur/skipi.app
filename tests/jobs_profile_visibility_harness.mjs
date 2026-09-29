@@ -1351,6 +1351,22 @@ WRITE_DECIDERS.forEach((fn) => {
 ok(!withoutLineComments(String(fnBody(html, 'loadJobsProfiles') || '')).includes('register_my'),
   'U14c the fifth reader writes nothing — it only passes the endpoint to the section renderer');
 
+// (7) WHAT A PILOT BUILD STILL SENDS TO PRODUCTION — said here, asserted at I10.
+//
+// "The whole slice speaks to the pilot" is true of THIS SLICE and of nothing
+// else in the file. Two calls moved onto `response_bases()`: the
+// published-profiles GET and the response POST. The other Jobs features of
+// jobs.rs were production-only before and are production-only still — the
+// vacancy feed, the mailing-request calls, the vessel projection and the recent
+// reviews, and the counter; TWO OF THOSE ARE WRITES. A pilot build sends them to
+// production exactly as today's build does.
+//
+// That set is already enumerated by I10 (`API_BASELINE`), which turns a NEW
+// direct api:: caller into a red line. It is NOT repeated here: a second copy of
+// the same check is not a second guarantee, and it would drift from the first.
+// This paragraph exists so a reader of the pilot section is not left to infer
+// that compiling in a pilot moved anything but these two calls.
+
 section('A. the self-session signature: a narrow signer, not an oracle');
 
 ok(/#\[tauri::command\]\s*pub fn sign_self_session_challenge/.test(jobsRs),

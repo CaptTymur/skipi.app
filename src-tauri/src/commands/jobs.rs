@@ -700,6 +700,15 @@ fn jobs_pilot_api_base() -> Option<String> {
 /// One branch point rather than two, so that a reader auditing "can this build
 /// write to production" has a single function to read and the two callers
 /// below cannot drift apart from each other.
+///
+/// WHAT THIS DOES NOT MOVE, said here because the name invites the wrong
+/// reading. Exactly two calls of this file take their base from
+/// `response_bases()`: the published-profiles GET and the response POST. The
+/// other Jobs features — the vacancy feed, the mailing-request calls, the vessel
+/// projection and the recent reviews, and the counter — reach `api::` directly
+/// and are production-only before and after, and TWO OF THOSE ARE WRITES. A
+/// pilot build sends them to production exactly as today's build does. That set
+/// is enumerated by `I10` in the harness, which reds on a new direct caller.
 fn jobs_non_production_base() -> Option<String> {
     if let Some(stand) = jobs_test_api_base() {
         return Some(stand);
