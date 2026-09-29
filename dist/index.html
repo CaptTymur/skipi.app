@@ -10574,6 +10574,35 @@ function feedbackPromptFlag(state){
     return !!(state && (state.should_prompt || state.shouldPrompt));
 }
 
+// WHETHER THIS BUILD MAY ASK FOR A RATING BY ITSELF, and the one place it is
+// decided.
+//
+// Measured 2026-09-29, not feared: the prompt is not hypothetical on a service
+// build. `get_feedback_prompt_state` answers should_prompt on the THIRD launch
+// (`src-tauri/src/feedback.rs`, FIRST_PROMPT_LAUNCHES = 3, no rating submitted
+// yet), and this dialog opens 90 seconds after a vault is loaded with nobody
+// having asked for it. Sending what it collects writes a permanent row carrying
+// whatever a person typed into the product real seafarers use, because
+// `submit_app_feedback` goes through
+// `api::post_json_empty` -> `api::api_bases()`, whose only override is a runtime
+// variable an Android process cannot be given, so on a phone that list is
+// exactly the production hosts.
+//
+// A service build therefore does not RAISE the dialog at all. Nothing shown is
+// nothing to be wrong about, and no refusal has to be explained to a person who
+// asked for nothing. THE MANUAL ENTRY POINTS ARE DELIBERATELY UNTOUCHED — a
+// person tapping "Rate Skipi Seafarer" in About or in the mobile menu is acting
+// on purpose, and that is not this guard's business. Unknown is not "no": the
+// same fail-closed shape as `skipiDiagnosticsMayLeave` and the publisher.
+async function skipiFeedbackPromptAllowed(){
+    if(typeof invoke!=='function')return false;
+    var stand=null;
+    try{
+        var ep=await invoke('jobs_response_endpoint');
+        stand=!!(ep&&ep.stand===true);
+    }catch(e){ stand=null; }
+    return stand===false;
+}
 function maybePromptForFeedback(context){
     if(appFeedbackPromptScheduled || typeof invoke!=='function')return;
     appFeedbackPromptScheduled=true;
@@ -10582,6 +10611,11 @@ function maybePromptForFeedback(context){
             if(document.getElementById('app-feedback-overlay'))return;
             var fp=document.getElementById('forced-profile-overlay');
             if(fp && fp.style.display==='flex')return;
+            // Asked BEFORE `get_feedback_prompt_state`, and the order is the
+            // property: that command is not a pure read — on a "yes" it bumps
+            // prompt_count and stamps last_prompted_at, spending a cooldown a
+            // service build has no business spending.
+            if(!(await skipiFeedbackPromptAllowed()))return;
             var st=await invoke('get_feedback_prompt_state',{appVersion:APP_VERSION});
             if(feedbackPromptFlag(st))openFeedbackDialog(context||'auto');
         }catch(e){}

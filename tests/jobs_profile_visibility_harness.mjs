@@ -168,6 +168,33 @@ function blockAfter(src, marker) {
   return null;
 }
 
+// The innermost brace-block that CONTAINS `index` — the mirror of `blockAfter`,
+// walking backwards. A claim about what a lock is held ACROSS is positional in
+// exactly this way, and a substring search over the function answers a
+// different question.
+function enclosingBlock(src, index) {
+  let depth = 0;
+  let open = -1;
+  for (let i = index; i >= 0; i--) {
+    const ch = src[i];
+    if (ch === '}') depth++;
+    else if (ch === '{') {
+      if (depth === 0) { open = i; break; }
+      depth--;
+    }
+  }
+  if (open < 0) return null;
+  let d = 0;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === '{') d++;
+    else if (src[i] === '}') {
+      d--;
+      if (d === 0) return src.slice(open + 1, i);
+    }
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------- DOM shim --
 
 function parseAttrs(raw) {
@@ -490,6 +517,11 @@ function makeInvoke(state) {
       case 'get_vault_types': return [];
       case 'get_last_vault': return null;
       case 'get_recent_vaults': return [];
+      case 'get_feedback_prompt_state':
+        // The state a build on its THIRD launch with no rating submitted gets
+        // back (feedback.rs, FIRST_PROMPT_LAUNCHES = 3) — i.e. the one that
+        // opens the dialog with nobody asking.
+        return JSON.parse(JSON.stringify(state.feedbackPromptState));
       case 'get_optional_categories': return [];
       case 'get_settings': return {};
       default: return {};
@@ -517,6 +549,8 @@ function boot(opts = {}) {
     responseIdThrows: !!opts.responseIdThrows,
     identity: opts.identity === undefined ? { ...IDENTITY_READY } : { ...opts.identity },
     identityStateThrows: !!opts.identityStateThrows,
+    feedbackPromptState: opts.feedbackPromptState === undefined
+      ? { should_prompt: true } : opts.feedbackPromptState,
     ensureCalls: [],
     ensureThrows: opts.ensureThrows || '',
     ensureResult: opts.ensureResult === undefined
@@ -529,6 +563,12 @@ function boot(opts = {}) {
         }
       : opts.ensureResult,
   };
+  // TIMERS ARE STILL NEVER RUN BY THIS SHIM — they are only RECORDED, which
+  // changes nothing for every assertion written before this line. One driver
+  // then runs the ONE callback it names (the 90-second rating prompt); turning
+  // timers on globally would fire update checks and the forced-profile overlay
+  // in every other test.
+  const scheduled = [];
   const document = new FakeDocument(html);
   const store = new Map([
     ['skipi-ui-language', opts.lang || 'en'],
@@ -561,7 +601,7 @@ function boot(opts = {}) {
     SkipiPluginRuntime: { create: () => ({ open() {}, close() {}, destroy() {} }) },
     addEventListener() {},
     removeEventListener() {},
-    setTimeout: () => 0,
+    setTimeout: (fn, ms) => { scheduled.push([fn, Number(ms) || 0]); return scheduled.length; },
     clearTimeout() {},
     setInterval: () => 0,
     clearInterval() {},
@@ -614,7 +654,7 @@ function boot(opts = {}) {
     respondNodes.set(pid, { status, btn });
   }
 
-  return { sandbox, document, store, state, profilesHost, feedHost, respondNodes };
+  return { sandbox, document, store, state, profilesHost, feedHost, respondNodes, scheduled };
 }
 
 async function settle(turns = 80) {
@@ -739,6 +779,37 @@ async function runStartup(opts = {}) {
   const booted = boot(opts);
   await settle();
   return { ...booted, calls: booted.state.calls.map((c) => c[0]) };
+}
+
+// Runs the REAL rating prompt the way the product does: `loadVault` calls
+// `maybePromptForFeedback`, which schedules ONE 90-second callback. The callback
+// is found by its delay and run here — no other timer of the app is touched.
+async function runFeedbackPrompt(opts = {}) {
+  const booted = boot(opts);
+  await settle();
+  booted.state.calls.length = 0;
+  booted.scheduled.length = 0;
+  booted.sandbox.maybePromptForFeedback('harness');
+  const timer = booted.scheduled.find(([, ms]) => ms === 90000);
+  // A SHIM ARTIFACT, dropped on purpose and named rather than worked around:
+  // FakeDocument parses every `<tag id=...>` it finds in the file, including the
+  // markup that lives INSIDE an inline script as a string literal. So
+  // `#app-feedback-overlay` "exists" before anything opened it, and the
+  // product's own "a dialog is already up" check would return before reaching
+  // the guard — which would make the two refusals below green over nothing.
+  // That is what the release control (N18b) is here to catch, and it did.
+  booted.document._ids.delete('app-feedback-overlay');
+  // The product's own callback swallows everything; so does this.
+  if (timer) { try { await timer[0](); } catch (e) { /* as the product does */ } }
+  await settle();
+  return {
+    ...booted,
+    scheduledMs: timer ? timer[1] : null,
+    calls: booted.state.calls.map((c) => c[0]),
+    // `insertAdjacentHTML` keeps markup as a string in this shim, so the dialog
+    // is read where the product wrote it rather than through getElementById.
+    dialogOpened: String(booted.document.body.innerHTML).includes('id="app-feedback-overlay"'),
+  };
 }
 
 // ------------------------------------------------- S. source-level contract --
@@ -1646,6 +1717,46 @@ ok(JSON.stringify(claimKeys.slice().sort()) === JSON.stringify(['date_of_birth',
 ok(stateBody !== null && !/reqwest|send_on_response_bases|api::/.test(String(stateBody || '')),
   'I17f the state the screen reads is a vault read with no network in it at all');
 
+// ---- I18: the vault mutex is not held across a request ---------------------
+// Every request of this path is bounded by the client's 20-second timeout and
+// `send_on_response_bases` walks EVERY base on a transport error, so one lock
+// around both requests blocks every other vault command for up to 40 s against
+// a stand and up to 80 s against the two production bases — an app that has
+// frozen, on the phone, in the week it is being driven by hand.
+//
+// MEASURED POSITIONALLY, not by keyword: for each `state.conn.lock()` the block
+// that CONTAINS it is taken, and a request inside that block is the defect. A
+// single lock at the top of the function makes that block the whole body, which
+// is exactly how this read before S4e.
+function locksSpanningNetwork(body) {
+  const src2 = String(body || '');
+  const out = [];
+  let from = 0;
+  for (;;) {
+    const at = src2.indexOf('state.conn.lock()', from);
+    if (at < 0) break;
+    from = at + 1;
+    // No enclosing `{` inside the body means the lock was taken at the TOP
+    // LEVEL of the function — so the block it is held for is the whole body,
+    // which is exactly the shape this assertion exists to catch. It is not a
+    // parse failure and must not be reported as one.
+    const block = enclosingBlock(src2, at) === null ? src2 : enclosingBlock(src2, at);
+    if (/send_on_response_bases\s*\(|\.send\s*\(/.test(withoutLineComments(block))) out.push('SPANS');
+  }
+  return out;
+}
+['ensure_seafarer_identity', 'submit_profile_response'].forEach((fn) => {
+  const body = rustFnBody(jobsRs, fn) || '';
+  const bad = locksSpanningNetwork(body);
+  ok(bad.length === 0,
+    `I18 ${fn} never holds the vault lock across a request (found ${bad.length}: ${bad.join(',') || 'none'})`);
+});
+const identityLocks = countOf(withoutLineComments(String(identityRustBody || '')), 'state.conn.lock()');
+ok(identityLocks === 3,
+  `I18b it takes that lock three separate times — read, the claim answer, the marker (found ${identityLocks})`);
+ok(countOf(withoutLineComments(String(rustFnBody(jobsRs, 'submit_profile_response') || '')), 'state.conn.lock()') === 1,
+  'I18c and the command it copies takes it once, before the network — the shape is the file\'s, not this function\'s');
+
 // ════════════════════════════════════════════════════════════════════════════
 // N. A SERVICE BUILD WRITES NOTHING INTO THE LIVE PRODUCT — S4e.
 //
@@ -1775,6 +1886,59 @@ ok(!unknownStart.calls.includes('init_app_diagnostics'),
 // NOT ASSERTED, and said instead of faked: `setInterval` is a stub in this
 // shim, so the heartbeat and the lag timer never tick here. Their commands are
 // local-only (N6b), which is why nothing about them is claimed.
+
+section('N. a service build does not ASK for a rating by itself');
+
+// WHY THIS IS NOT PRECAUTION: `get_feedback_prompt_state` answers should_prompt
+// on the THIRD launch with no rating submitted (feedback.rs,
+// FIRST_PROMPT_LAUNCHES = 3), and `loadVault` schedules this dialog 90 seconds
+// after a vault opens. Ten cycles on a phone pass that mark many times over, and
+// what the dialog collects goes to production through `submit_app_feedback`.
+// The cure is not a refusal a person would have to be told about: the dialog is
+// simply not RAISED. Nothing shown is nothing to be wrong about.
+const promptGuardJs = fnBody(html, 'skipiFeedbackPromptAllowed');
+ok(promptGuardJs !== null, 'N16 the automatic prompt has a guard of its own, named');
+ok(String(promptGuardJs || '').includes("invoke('jobs_response_endpoint')"),
+  'N16b which asks which server this build talks to');
+ok(/returnstand===false/.test(String(promptGuardJs || '').replace(/\s+/g, '')),
+  'N16c and is fail-closed on the unknown, the same shape as the other two guards');
+const promptBody = String(fnBody(html, 'maybePromptForFeedback') || '');
+const guardAt = withoutLineComments(promptBody).indexOf('skipiFeedbackPromptAllowed(');
+const stateAskAt = withoutLineComments(promptBody).indexOf("invoke('get_feedback_prompt_state'");
+ok(guardAt >= 0 && stateAskAt >= 0 && guardAt < stateAskAt,
+  'N17 and it is asked BEFORE the prompt state, which is not a pure read — a "yes" spends a 14-day cooldown');
+
+const promptRelease = await runFeedbackPrompt({});
+ok(promptRelease.scheduledMs === 90000,
+  `N18 the prompt is really scheduled by the product, 90 s after a vault opens (got ${promptRelease.scheduledMs})`);
+ok(promptRelease.dialogOpened,
+  'N18b CONTROL — on a release build the dialog still opens by itself, exactly as before');
+ok(promptRelease.calls.includes('get_feedback_prompt_state'),
+  'N18c and it still asks the state that decides it');
+
+const promptStand = await runFeedbackPrompt({ endpoint: { base: 'http://127.0.0.1:8099', stand: true } });
+ok(!promptStand.dialogOpened,
+  'N19 a service build never raises it — the rating it would collect goes to the live product');
+ok(!promptStand.calls.includes('get_feedback_prompt_state'),
+  'N19b and does not even ask, so no cooldown is spent on a build nobody is rating');
+
+const promptUnknown = await runFeedbackPrompt({ endpointThrows: true });
+ok(!promptUnknown.dialogOpened,
+  'N20 and neither does a build that cannot say which server it is talking to');
+ok(!promptUnknown.calls.includes('get_feedback_prompt_state'), 'N20b nor does it ask');
+
+// THE MANUAL DOOR IS NOT TOUCHED, and that is asserted rather than promised: a
+// person tapping "Rate Skipi Seafarer" acted on purpose. Only the automatic
+// path is closed.
+ok(!withoutLineComments(String(fnBody(html, 'openFeedbackDialog') || '')).includes('skipiFeedbackPromptAllowed('),
+  'N21 the dialog itself carries no guard — a person who taps still gets it');
+ok(html.includes("openFeedbackDialog(\\'about\\')") || html.includes("openFeedbackDialog('about')"),
+  'N21b the About screen still offers the manual rating button');
+ok(html.includes("openFeedbackDialog(\\'mobile-top-feedback\\')") || html.includes("openFeedbackDialog('mobile-top-feedback')"),
+  'N21c and so does the mobile feedback menu');
+const openDialogSites = countOf(html, 'openFeedbackDialog(') - countOf(html, 'function openFeedbackDialog(');
+ok(openDialogSites === 3,
+  `N21d exactly three ways in: two manual and the automatic one this guard closes (found ${openDialogSites})`);
 
 section('Q. one 409 is not four — a repeat says what really happened');
 

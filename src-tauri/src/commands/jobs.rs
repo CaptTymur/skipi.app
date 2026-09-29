@@ -1203,6 +1203,15 @@ pub fn seafarer_identity_entry_state(
 /// Idempotent before the network: a vault that already carries a
 /// `skipi_public_seafarer_id` does not claim a second one; it goes straight to
 /// the key, which is how a vault stuck in the "id, no key" state heals itself.
+///
+/// THE VAULT MUTEX IS NEVER HELD ACROSS A REQUEST, and the shape below is
+/// `submit_profile_response`'s, followed literally rather than invented here.
+/// Each request is bounded by the client's 20-second timeout, and
+/// `send_on_response_bases` walks EVERY base on a transport error — so one lock
+/// around both of them blocked every other vault command for up to 40 s against
+/// a stand (one base) and up to 80 s against the two production bases, which a
+/// person reads as an application that has frozen. The lock is taken in blocks
+/// that touch sqlite and nothing else: read, release, speak, take it to write.
 #[tauri::command]
 pub fn ensure_seafarer_identity(
     state: tauri::State<crate::AppState>,
@@ -1213,15 +1222,50 @@ pub fn ensure_seafarer_identity(
         let guard = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
         guard.as_ref().cloned().ok_or("No vault open")?
     };
-    let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
-    let conn = lock.as_ref().ok_or("No vault open")?;
 
-    crate::identity::ensure_vault_identity(conn, &vault)?;
-    let signing = crate::identity::vault_signing_key(&vault)?;
+    // ---- everything this command READS from the vault, and then the lock goes
+    let (signing, vault_user_id, mut public_seafarer_id, mut claim_status, mut trust_level, claim_request) = {
+        let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = lock.as_ref().ok_or("No vault open")?;
+        crate::identity::ensure_vault_identity(conn, &vault)?;
+        let signing = crate::identity::vault_signing_key(&vault)?;
+        // DERIVED FROM THE KEY. Not read from `vault_info`, not accepted from the
+        // caller — the same rule the self-session signer holds itself to.
+        let vault_user_id =
+            crate::identity::user_id_for_pubkey(&signing.verifying_key().to_bytes());
+        let public_seafarer_id = vault_text(conn, "skipi_public_seafarer_id");
+        let claim_status = vault_text(conn, "skipi_identity_claim_status");
+        let trust_level = vault_text(conn, "skipi_identity_trust_level");
+        // Built HERE because its five fields are vault reads, and built only
+        // when a claim is actually needed — so a vault that already carries an
+        // id is never asked for fields it may not have, and the refusal of an
+        // incomplete profile still leaves from this block.
+        let claim_request = if public_seafarer_id.is_empty() {
+            // EXACTLY the five fields of `SeafarerIdentityClaimRequest`, which is
+            // `extra="forbid"`: a sixth would be 422 on every claim forever.
+            let claim_body = serde_json::json!({
+                "vault_user_id": vault_user_id,
+                "first_name": required_vault_text(conn, "personal_first_name")?,
+                "last_name": required_vault_text(conn, "personal_surname")?,
+                "date_of_birth": required_vault_text(conn, "personal_dob")?,
+                "nationality_code": crate::db::get_vault_info_value(conn, "personal_nationality_code")
+                    .map(|s| s.trim().to_ascii_uppercase())
+                    .filter(|s| !s.is_empty()),
+            });
+            Some(claim_body)
+        } else {
+            None
+        };
+        (
+            signing,
+            vault_user_id,
+            public_seafarer_id,
+            claim_status,
+            trust_level,
+            claim_request,
+        )
+    };
     let pub_bytes = signing.verifying_key().to_bytes();
-    // DERIVED FROM THE KEY. Not read from `vault_info`, not accepted from the
-    // caller — the same rule the self-session signer holds itself to.
-    let vault_user_id = crate::identity::user_id_for_pubkey(&pub_bytes);
 
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(20))
@@ -1229,27 +1273,12 @@ pub fn ensure_seafarer_identity(
         .build()
         .map_err(|e| e.to_string())?;
 
-    let mut public_seafarer_id = vault_text(conn, "skipi_public_seafarer_id");
-    let mut claim_status = vault_text(conn, "skipi_identity_claim_status");
-    let mut trust_level = vault_text(conn, "skipi_identity_trust_level");
-
-    if public_seafarer_id.is_empty() {
-        // EXACTLY the five fields of `SeafarerIdentityClaimRequest`, which is
-        // `extra="forbid"`: a sixth would be 422 on every claim forever.
-        let claim_body = serde_json::json!({
-            "vault_user_id": vault_user_id,
-            "first_name": required_vault_text(conn, "personal_first_name")?,
-            "last_name": required_vault_text(conn, "personal_surname")?,
-            "date_of_birth": required_vault_text(conn, "personal_dob")?,
-            "nationality_code": crate::db::get_vault_info_value(conn, "personal_nationality_code")
-                .map(|s| s.trim().to_ascii_uppercase())
-                .filter(|s| !s.is_empty()),
-        });
+    if let Some(claim_body) = claim_request.as_ref() {
         let answer = send_on_response_bases(
             &client,
             true,
             "/api/seafarer-identity/claim",
-            Some(&claim_body),
+            Some(claim_body),
             None,
         )?;
         if !(200..300).contains(&answer.status) {
@@ -1267,48 +1296,54 @@ pub fn ensure_seafarer_identity(
             .unwrap_or("")
             .to_string();
 
-        // What the server said is recorded either way — it is the only record
-        // of a duplicate there is.
-        crate::db::set_vault_info(conn, "skipi_identity_claim_status", &claim.status)
-            .map_err(|e| e.to_string())?;
-        crate::db::set_vault_info(
-            conn,
-            "skipi_identity_duplicate",
-            if claim.duplicate { "true" } else { "false" },
-        )
-        .map_err(|e| e.to_string())?;
-        crate::db::set_vault_info(conn, "skipi_identity_trust_level", &claim.trust_level)
-            .map_err(|e| e.to_string())?;
-        crate::db::set_vault_info(conn, "skipi_identity_message", &claim.message)
-            .map_err(|e| e.to_string())?;
-        crate::db::set_vault_info(
-            conn,
-            "skipi_identity_last_claim_at",
-            &chrono::Utc::now().to_rfc3339(),
-        )
-        .map_err(|e| e.to_string())?;
-
-        // A 200 WITH AN EMPTY ID IS NOT A SUCCESS. `possible_duplicate` answers
-        // exactly that: another vault already claimed this name and date of
-        // birth. Writing the empty string into `skipi_public_seafarer_id` — the
-        // way the profile-side claim does — would leave the screen in a silent
-        // forever-loop: press, 200, still no id, press again. There is no
-        // recovery flow in this product to send him to, so the honest thing is
-        // to stop and say so.
-        if issued.is_empty() {
-            return Err(IDENTITY_CLAIM_DUPLICATE.to_string());
-        }
-        crate::db::set_vault_info(conn, "skipi_public_seafarer_id", &issued)
-            .map_err(|e| e.to_string())?;
-        if let Some(key) = claim
-            .identity_recovery_key
-            .as_deref()
-            .filter(|s| !s.trim().is_empty())
+        // ---- the answer, written under the lock again, in the SAME ORDER
         {
-            crate::db::set_vault_info(conn, "skipi_identity_recovery_key", key)
+            let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+            let conn = lock.as_ref().ok_or("No vault open")?;
+            // What the server said is recorded either way — it is the only record
+            // of a duplicate there is.
+            crate::db::set_vault_info(conn, "skipi_identity_claim_status", &claim.status)
                 .map_err(|e| e.to_string())?;
+            crate::db::set_vault_info(
+                conn,
+                "skipi_identity_duplicate",
+                if claim.duplicate { "true" } else { "false" },
+            )
+            .map_err(|e| e.to_string())?;
+            crate::db::set_vault_info(conn, "skipi_identity_trust_level", &claim.trust_level)
+                .map_err(|e| e.to_string())?;
+            crate::db::set_vault_info(conn, "skipi_identity_message", &claim.message)
+                .map_err(|e| e.to_string())?;
+            crate::db::set_vault_info(
+                conn,
+                "skipi_identity_last_claim_at",
+                &chrono::Utc::now().to_rfc3339(),
+            )
+            .map_err(|e| e.to_string())?;
+
+            // A 200 WITH AN EMPTY ID IS NOT A SUCCESS. `possible_duplicate` answers
+            // exactly that: another vault already claimed this name and date of
+            // birth. Writing the empty string into `skipi_public_seafarer_id` — the
+            // way the profile-side claim does — would leave the screen in a silent
+            // forever-loop: press, 200, still no id, press again. There is no
+            // recovery flow in this product to send him to, so the honest thing is
+            // to stop and say so. The refusal leaves from inside this block, which
+            // is where the lock is dropped.
+            if issued.is_empty() {
+                return Err(IDENTITY_CLAIM_DUPLICATE.to_string());
+            }
+            crate::db::set_vault_info(conn, "skipi_public_seafarer_id", &issued)
+                .map_err(|e| e.to_string())?;
+            if let Some(key) = claim
+                .identity_recovery_key
+                .as_deref()
+                .filter(|s| !s.trim().is_empty())
+            {
+                crate::db::set_vault_info(conn, "skipi_identity_recovery_key", key)
+                    .map_err(|e| e.to_string())?;
+            }
+            let _ = crate::identity::sync_identity_fingerprint(conn);
         }
-        let _ = crate::identity::sync_identity_fingerprint(conn);
 
         public_seafarer_id = issued;
         claim_status = claim.status;
@@ -1362,9 +1397,14 @@ pub fn ensure_seafarer_identity(
         ));
     }
 
+    // ---- and the marker, under the lock for the third and last time -------
     let registered_at = chrono::Utc::now().to_rfc3339();
-    crate::db::set_vault_info(conn, IDENTITY_KEY_REGISTERED_AT, &registered_at)
-        .map_err(|e| e.to_string())?;
+    {
+        let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = lock.as_ref().ok_or("No vault open")?;
+        crate::db::set_vault_info(conn, IDENTITY_KEY_REGISTERED_AT, &registered_at)
+            .map_err(|e| e.to_string())?;
+    }
 
     Ok(serde_json::json!({
         "public_seafarer_id": public_seafarer_id,
