@@ -380,7 +380,12 @@ class FakeDocument {
 // an unknown value is not a match and to show what else is required.
 const PROFILE_MATCH = {
   profile_id: 'prof-match-0001',
-  crewing_id: 'crewing-alpha',
+  // The three agency fields of the V5c contract. `crewing_id` is a UUID here
+  // so the "no UUID on screen" probe below has something real to miss.
+  crewing_id: '7d6f1a52-3c84-4f0e-9a21-b0c5e4d81f33',
+  crewing_name: 'Aegean Crew Management',
+  crewing_jurisdiction: 'gr',
+  crewing_trust_status: 'active',
   published_version: 7,
   rank: 'Second Officer',
   vessel_type: 'Bulk Carrier',
@@ -393,6 +398,38 @@ const PROFILE_MATCH = {
 const PROFILE_NO_RANK = { ...PROFILE_MATCH, profile_id: 'prof-norank-0002', rank: null };
 const PROFILE_NO_VESSEL = { ...PROFILE_MATCH, profile_id: 'prof-novt-0003', vessel_type: '   ' };
 const PROFILE_NO_VERSION = { ...PROFILE_MATCH, profile_id: 'prof-nover-0004', published_version: null };
+
+// ---- W. who receives an irreversible response (P2/V5c) ---------------------
+//
+// The crewing ids below are REAL UUIDs and not the readable label this fixture
+// carried before, on purpose: "no UUID reaches the screen" is measured with a
+// UUID-shaped probe, and a probe run against `crewing-alpha` would have passed
+// over a screen that prints the id in full. The probe is calibrated on the
+// fixture itself (W0) before it is believed about the render.
+const CREWING_ALPHA_ID = '7d6f1a52-3c84-4f0e-9a21-b0c5e4d81f33';
+const CREWING_BRAVO_ID = 'c1e9b2a7-5f43-4d16-8e70-2a9b6c3d5041';
+
+// A second agency, so "the seafarer can tell WHICH agency" is measured by two
+// rows that differ, not by one row that happens to carry a string.
+const PROFILE_OTHER_AGENCY = {
+  ...PROFILE_MATCH,
+  profile_id: 'prof-match-0005',
+  crewing_id: CREWING_BRAVO_ID,
+  crewing_name: 'Baltic Marine Personnel',
+  crewing_jurisdiction: 'ee',
+  crewing_trust_status: 'trial',
+};
+
+// THE OLD SERVER, which is the one the pilot is running until the other half of
+// this contract is deployed: the three fields simply are not in the answer.
+// This row is not a hypothetical — it is today's production shape.
+const PROFILE_NO_AGENCY_FIELDS = (() => {
+  const p = { ...PROFILE_MATCH, profile_id: 'prof-oldsrv-0006' };
+  delete p.crewing_name;
+  delete p.crewing_jurisdiction;
+  delete p.crewing_trust_status;
+  return p;
+})();
 
 const CATALOG = {
   positions: [],
@@ -2200,6 +2237,148 @@ for (const [lang, needle] of [['en', 'did not accept'], ['ru', 'не приня�
   const r = await runRespond({ lang, submitThrows: 'RESPONSE_CONFLICT_UNKNOWN' });
   ok(r.statusHtml.includes(needle), `Q15 (${lang}) so is the one that names nothing`);
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// P2/V5c — WHO the irreversible response goes to.
+//
+// The owner's words: before responding, the seafarer must see a COMPREHENSIBLE
+// NAME of the receiving agency — not a UUID and not a conditional label
+// ("Agency A / B" was put to him and refused).
+//
+// MEASUREMENT BOUNDARY, stated before the assertions: the three fields below
+// are read from a FIXTURE in this file. The server half of the contract is
+// written in parallel and nothing here has met it. So these assertions prove
+// (a) the client renders a name it is given, (b) it survives an answer without
+// the fields, and (c) no id reaches the screen — they do NOT prove the two
+// halves agree. That is proven only by parsing a RAW ANSWER OF THE LIVE SERVER,
+// and until that has been run this contract is one half, not one contract.
+// ════════════════════════════════════════════════════════════════════════════
+
+section('W. the agency is named before the irreversible response (P2/V5c)');
+
+// A probe is worth nothing until it is shown to fire on a fact already known.
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+ok(UUID_RE.test(JSON.stringify(PROFILE_MATCH)),
+  'W0 CALIBRATION — the UUID probe does find a UUID in the fixture it is given');
+ok(!UUID_RE.test('prof-match-0001'),
+  'W0b CALIBRATION — and it does not fire on the profile id, which is not one');
+
+const agencyEn = await renderJobsScreen({ profiles: [PROFILE_MATCH], lang: 'en' });
+const agencyRu = await renderJobsScreen({ profiles: [PROFILE_MATCH], lang: 'ru' });
+
+ok(agencyEn.sectionHtml.includes('Aegean Crew Management'),
+  'W1 the agency NAME is on the card (EN)');
+ok(agencyRu.sectionHtml.includes('Aegean Crew Management'),
+  'W2 and on the RU card too — a proper name is not dropped by the other locale');
+ok(agencyEn.sectionHtml.includes('GR') && agencyRu.sectionHtml.includes('GR'),
+  'W3 the jurisdiction is beside it, upper-cased, in both locales');
+
+// The owner refused a conditional label. A UUID is the other thing he refused.
+for (const [lang, r] of [['en', agencyEn], ['ru', agencyRu]]) {
+  ok(!UUID_RE.test(r.sectionHtml),
+    `W4 (${lang}) NO UUID reaches the screen anywhere in the section`);
+  ok(!r.sectionHtml.includes(CREWING_ALPHA_ID),
+    `W4b (${lang}) and this row's crewing id in particular is absent`);
+}
+
+// "A name is on screen" and "the seafarer can tell WHICH agency" are different
+// claims. Two rows of two agencies is what separates them.
+const twoAgencies = await renderJobsScreen({ profiles: [PROFILE_MATCH, PROFILE_OTHER_AGENCY], lang: 'en' });
+ok(twoAgencies.sectionHtml.includes('Aegean Crew Management')
+   && twoAgencies.sectionHtml.includes('Baltic Marine Personnel'),
+  'W5 two profiles of two different agencies carry two different names');
+ok(!UUID_RE.test(twoAgencies.sectionHtml),
+  'W5b and neither of the two ids leaks while doing it');
+
+// The counterparty is named in the SAME WORDS as the block directly above it.
+// Two neighbouring blocks on one screen calling the counterparty two different
+// things is the defect this assertion exists to prevent.
+ok(agencyEn.sectionHtml.includes('Crewing:'),
+  'W6 the EN card uses the same word the vacancy block above it uses ("Crewing:")');
+ok(agencyRu.sectionHtml.includes('Крюинг:'),
+  'W6b and the RU card uses that word localised, not a second word for the same thing');
+ok(agencyEn.sectionHtml.includes('job-trust-badge'),
+  'W7 the trust mark reuses the vacancy block\'s own badge class, not a new one');
+
+// WHERE it is matters: the requirement is "before the irreversible response".
+const crewingAt = agencyEn.sectionHtml.indexOf('data-qa="jobs-profile-crewing"');
+const respondAt = agencyEn.sectionHtml.indexOf('data-qa="jobs-profile-respond"');
+ok(crewingAt >= 0, 'W8 the card carries a named agency block');
+ok(crewingAt >= 0 && respondAt >= 0 && crewingAt < respondAt,
+  'W9 and it is rendered BEFORE the respond block — read while the choice is still open');
+
+// A trial publisher is not a verified one, and the words must not say it is.
+const trialEn = await renderJobsScreen({ profiles: [PROFILE_OTHER_AGENCY], lang: 'en' });
+const trialRu = await renderJobsScreen({ profiles: [PROFILE_OTHER_AGENCY], lang: 'ru' });
+ok(/trial/i.test(trialEn.sectionHtml), 'W10 (en) a trial publisher is said to be on trial');
+ok(/пробн/i.test(trialRu.sectionHtml), 'W10b (ru) and so it is in Russian');
+ok(!/verified/i.test(trialEn.sectionHtml),
+  'W11 (en) and it is NOT called verified — that word belongs to a different state');
+ok(!/проверен/i.test(trialRu.sectionHtml), 'W11b (ru) same');
+ok(/verified/i.test(agencyEn.sectionHtml) && /проверен/i.test(agencyRu.sectionHtml),
+  'W12 while an active agency IS called verified — the two states are told apart');
+
+section('W. the answer of the server that is running TODAY still renders');
+
+// Until the server half ships, the pilot answers without these three fields.
+// The neighbouring `CandidateProfileRankSummary` has no defaults and a missing
+// key there kills the parse of the WHOLE list; this surface must not repeat it.
+const oldSrvEn = await renderJobsScreen({ profiles: [PROFILE_NO_AGENCY_FIELDS], lang: 'en' });
+const oldSrvRu = await renderJobsScreen({ profiles: [PROFILE_NO_AGENCY_FIELDS], lang: 'ru' });
+ok(!oldSrvEn.error, `W13 the screen still renders on an answer without the fields${oldSrvEn.error ? ': ' + oldSrvEn.error.message : ''}`);
+ok(oldSrvEn.sectionHtml.includes('Second Officer'),
+  'W14 the row is still shown — a missing agency name does not remove the profile');
+ok(oldSrvEn.sectionHtml.indexOf('data-qa="jobs-profile-crewing"') >= 0,
+  'W15 and the agency line is still there, saying something rather than nothing');
+ok(!UUID_RE.test(oldSrvEn.sectionHtml) && !oldSrvEn.sectionHtml.includes(CREWING_ALPHA_ID),
+  'W16 the id is NOT substituted for the missing name — that is the thing the owner refused');
+ok(/not available/i.test(oldSrvEn.sectionHtml),
+  'W17 (en) it says plainly that the name is not available');
+ok(/недоступно/i.test(oldSrvRu.sectionHtml),
+  'W17b (ru) and says it in Russian — an honest sentence, not an empty slot');
+ok(!/[Ѐ-ӿ]/.test(oldSrvEn.sectionHtml),
+  'W18 the EN render of that sentence carries no Cyrillic (both locales are real)');
+
+// One bad row must not take a good one down with it, on this field too.
+const mixed = await renderJobsScreen({ profiles: [PROFILE_NO_AGENCY_FIELDS, PROFILE_OTHER_AGENCY], lang: 'en' });
+ok(mixed.sectionHtml.includes('Baltic Marine Personnel'),
+  'W19 a row without agency fields beside a row with them: the named one still renders');
+
+section('W. the Rust type cannot be made fatal by a missing agency field');
+
+// EXACT, and not `'pub struct PublishedProfile'`: `PublishedProfileRequirement`
+// is declared FIRST in this file, so the loose marker matched that struct and
+// reported the three fields missing from a type that never had them. The probe
+// was wrong before the code was, which is the only reason this comment exists.
+const publishedProfileStruct = blockAfter(jobsRs, 'pub struct PublishedProfile {');
+ok(publishedProfileStruct !== null, 'W20 jobs.rs declares the PublishedProfile type');
+ok(String(publishedProfileStruct || '').includes('pub profile_id: String'),
+  'W20b CALIBRATION — and the block read is that struct, not PublishedProfileRequirement beside it');
+// Doc comments are stripped first. The field name appears inside the prose
+// that explains it (`crewing_trust_status` names itself while contrasting with
+// the vacancy field), and a probe that reads prose as a declaration measures
+// the comment, not the type.
+const profileStructCode = withoutLineComments(publishedProfileStruct || '');
+ok(/#\[serde\(default\)\]\s*pub crewing_id:/.test(profileStructCode),
+  'W20c CALIBRATION — the attribute probe fires on a field that already had the attribute');
+ok(!/#\[serde\(default\)\]\s*pub profile_id:/.test(profileStructCode),
+  'W20d CALIBRATION — and does not fire on profile_id, which deliberately has none');
+for (const field of ['crewing_name', 'crewing_jurisdiction', 'crewing_trust_status']) {
+  ok(new RegExp('pub ' + field + '\\s*:').test(profileStructCode),
+    `W21 PublishedProfile carries ${field}`);
+  // POSITIONAL: the attribute is the thing immediately before THIS field, not
+  // somewhere above it. Nothing may stand between them.
+  ok(new RegExp('#\\[serde\\(default\\)\\]\\s*pub ' + field + '\\s*:').test(profileStructCode),
+    `W22 ${field} is declared with #[serde(default)] — an old server's silence is not a parse error`);
+  ok(new RegExp('pub ' + field + '\\s*:\\s*Option<').test(profileStructCode),
+    `W23 ${field} is an Option — absent is a value this client can render, not a failure`);
+}
+
+// The vacancy block is a different item and is not touched by this one.
+const vacancyIdentity = fnBody(html, 'jobsCrewingIdentityHtml');
+ok(vacancyIdentity !== null && !vacancyIdentity.includes('crewing_name'),
+  'W24 the vacancy block\'s own identity renderer is left exactly as it was');
+
 
 console.log('');
 if (fail > 0) {
