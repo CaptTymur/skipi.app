@@ -1104,7 +1104,12 @@ pub fn submit_profile_response(
         let user_id = crate::identity::user_id_for_pubkey(&signing.verifying_key().to_bytes());
         let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
         let conn = lock.as_ref().ok_or("No vault open")?;
-        let public_id = crate::db::get_vault_info_value(conn, "skipi_public_seafarer_id")
+        // THE ID OF THE REGISTRY THIS RESPONSE IS BEING DELIVERED TO, and never
+        // another registry's: the self-session below is minted from this value on
+        // that same host, and an id it never issued is an id it does not know.
+        let endpoint = jobs_response_endpoint();
+        let public_id =
+            crate::db::get_vault_info_value(conn, &identity_vault_key(&endpoint, KEY_PUBLIC_SEAFARER_ID))
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .ok_or("this vault has no public seafarer id yet")?;
@@ -1293,6 +1298,171 @@ const IDENTITY_CLAIM_DUPLICATE: &str = "IDENTITY_CLAIM_DUPLICATE";
 const IDENTITY_KEY_TAKEN: &str = "IDENTITY_KEY_TAKEN";
 const IDENTITY_PROFILE_INCOMPLETE: &str = "IDENTITY_PROFILE_INCOMPLETE";
 
+/// The other seven `vault_info` rows that hold WHAT ONE REGISTRY ANSWERED about
+/// this seafarer. They are named here and nowhere else so that every use of them
+/// is a use of this list: a bare literal reappearing beside `set_vault_info` is
+/// then a visible change, and five of these eight writes are multi-line calls
+/// that a one-line grep does not see.
+const KEY_PUBLIC_SEAFARER_ID: &str = "skipi_public_seafarer_id";
+const KEY_IDENTITY_CLAIM_STATUS: &str = "skipi_identity_claim_status";
+const KEY_IDENTITY_DUPLICATE: &str = "skipi_identity_duplicate";
+const KEY_IDENTITY_TRUST_LEVEL: &str = "skipi_identity_trust_level";
+const KEY_IDENTITY_MESSAGE: &str = "skipi_identity_message";
+const KEY_IDENTITY_LAST_CLAIM_AT: &str = "skipi_identity_last_claim_at";
+const KEY_IDENTITY_RECOVERY_KEY: &str = "skipi_identity_recovery_key";
+
+/// THE EIGHT ROWS THAT DESCRIBE A REGISTRY'S VIEW OF THIS SEAFARER — and not one
+/// of them describes the seafarer himself.
+///
+/// All eight, not the two that are read to draw the step: `skipi_identity_*` are
+/// written in the same block as the id, and leaving them global would mean a
+/// claim against one server overwrote another server's answer. The one that makes
+/// this a matter of loss rather than tidiness is
+/// `skipi_identity_recovery_key`: the server keeps only its HMAC hash
+/// (`identity.py:164`) and `POST /recover` wants the key itself (`:215-222`), so
+/// there is no second copy of it anywhere and overwriting it cannot be undone.
+///
+/// WHAT IS NOT IN THIS LIST, deliberately: `identity_fingerprint`,
+/// `identity_fingerprint_version` and `identity_trust_status` (`identity.rs`)
+/// describe the PERSON — they are derived from the vault's own personal fields
+/// and do not depend on which server is being addressed. Binding them would
+/// invent a difference that does not exist, and `sync_identity_fingerprint` is
+/// called from inside the claim block on every path, this one included.
+const SCOPED_IDENTITY_KEYS: [&str; 8] = [
+    KEY_PUBLIC_SEAFARER_ID,
+    KEY_IDENTITY_CLAIM_STATUS,
+    KEY_IDENTITY_DUPLICATE,
+    KEY_IDENTITY_TRUST_LEVEL,
+    KEY_IDENTITY_MESSAGE,
+    KEY_IDENTITY_LAST_CLAIM_AT,
+    KEY_IDENTITY_RECOVERY_KEY,
+    IDENTITY_KEY_REGISTERED_AT,
+];
+
+/// THE ONE PLACE that answers "under which `vault_info` row does the registry
+/// this build talks to keep its answer about this seafarer".
+///
+/// A `public_seafarer_id` is issued BY A REGISTRY and means nothing outside it.
+/// One global row therefore made a vault that had been given an identity by one
+/// server believe it had one on every server: the entry step was already
+/// satisfied, `ensure_seafarer_identity` claimed nothing, and the response path
+/// then minted a self-session against a host that had never heard of the id.
+/// That is the whole of the dead end this function opens, and it opens it with
+/// the step and the gate that already exist.
+///
+/// NOTHING A SERVER SAID REACHES THIS DECISION. The only inputs are the endpoint
+/// this build was compiled for and the name of the row — no status, no body, no
+/// claim answer. So a refusal, any refusal including a 403, cannot move the step
+/// in either direction, which is the standing rule of DECISIONS (903) held
+/// absolutely rather than approximately.
+///
+/// THE NAME IS CASE-FOLDED, and that is not cosmetic. `jobs_pilot_api_base`
+/// validates a PARSED url — and `Url::parse` lower-cases scheme and host — while
+/// returning the RAW string, so `https://API.skipi.app:8444` is a legal pilot
+/// base. Two row names for one server would read empty, bring the step back and
+/// make a SECOND claim in the same registry, which DECISIONS (904) forbids.
+///
+/// The production build gets EXACTLY today's names, so it cannot tell this
+/// function is here.
+fn identity_vault_key(endpoint: &JobsResponseEndpoint, name: &str) -> String {
+    debug_assert!(
+        SCOPED_IDENTITY_KEYS.contains(&name),
+        "identity_vault_key is for the eight registry-scoped rows and no others"
+    );
+    if endpoint.stand || endpoint.pilot {
+        // The same normalisation the URL itself is given by both resolvers
+        // (`trim`, no trailing slash), plus the case-folding above, so that one
+        // server is one row.
+        let base = endpoint
+            .base
+            .trim()
+            .trim_end_matches('/')
+            .to_ascii_lowercase();
+        return format!("{name}:{base}");
+    }
+    name.to_string()
+}
+
+/// Everything a claim answer leaves in the vault, in the ORDER it was left in
+/// before this function existed, under the rows of the registry that answered.
+///
+/// It is a function rather than five lines inside the command for one reason: the
+/// claim cannot be replayed in a test — it needs a server — while the property
+/// that matters is not the request but WHAT IS WRITTEN. Behind one door, a test
+/// opens a vault in memory, runs the whole sequence against a stand and reads all
+/// eight production rows back one by one.
+///
+/// THE REFUSAL STAYS INSIDE, where it was. A 200 with an empty id is
+/// `possible_duplicate` and is not a success: the five rows that record what the
+/// server said are already written when it leaves, and the id row is not.
+fn write_identity_claim_answer(
+    conn: &rusqlite::Connection,
+    endpoint: &JobsResponseEndpoint,
+    claim: &SeafarerIdentityClaimAnswer,
+    issued: &str,
+) -> Result<(), String> {
+    let row = |name: &str| identity_vault_key(endpoint, name);
+    // What the server said is recorded either way — it is the only record of a
+    // duplicate there is.
+    crate::db::set_vault_info(conn, &row(KEY_IDENTITY_CLAIM_STATUS), &claim.status)
+        .map_err(|e| e.to_string())?;
+    crate::db::set_vault_info(
+        conn,
+        &row(KEY_IDENTITY_DUPLICATE),
+        if claim.duplicate { "true" } else { "false" },
+    )
+    .map_err(|e| e.to_string())?;
+    crate::db::set_vault_info(conn, &row(KEY_IDENTITY_TRUST_LEVEL), &claim.trust_level)
+        .map_err(|e| e.to_string())?;
+    crate::db::set_vault_info(conn, &row(KEY_IDENTITY_MESSAGE), &claim.message)
+        .map_err(|e| e.to_string())?;
+    crate::db::set_vault_info(
+        conn,
+        &row(KEY_IDENTITY_LAST_CLAIM_AT),
+        &chrono::Utc::now().to_rfc3339(),
+    )
+    .map_err(|e| e.to_string())?;
+
+    // A 200 WITH AN EMPTY ID IS NOT A SUCCESS. `possible_duplicate` answers
+    // exactly that: another vault already claimed this name and date of birth.
+    // Writing the empty string into the id row — the way the profile-side claim
+    // does — would leave the screen in a silent forever-loop: press, 200, still
+    // no id, press again. There is no recovery flow in this product to send him
+    // to, so the honest thing is to stop and say so.
+    if issued.is_empty() {
+        return Err(IDENTITY_CLAIM_DUPLICATE.to_string());
+    }
+    crate::db::set_vault_info(conn, &row(KEY_PUBLIC_SEAFARER_ID), issued)
+        .map_err(|e| e.to_string())?;
+    if let Some(key) = claim
+        .identity_recovery_key
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+    {
+        crate::db::set_vault_info(conn, &row(KEY_IDENTITY_RECOVERY_KEY), key)
+            .map_err(|e| e.to_string())?;
+    }
+    // GLOBAL ON PURPOSE, on this path too: the fingerprint describes the person,
+    // not the registry, and this call is where it always was.
+    let _ = crate::identity::sync_identity_fingerprint(conn);
+    Ok(())
+}
+
+/// The marker that says this vault's identity key is registered — written only
+/// once the server has it, and under the row of the server that has it.
+fn write_identity_key_marker(
+    conn: &rusqlite::Connection,
+    endpoint: &JobsResponseEndpoint,
+    registered_at: &str,
+) -> Result<(), String> {
+    crate::db::set_vault_info(
+        conn,
+        &identity_vault_key(endpoint, IDENTITY_KEY_REGISTERED_AT),
+        registered_at,
+    )
+    .map_err(|e| e.to_string())
+}
+
 fn vault_text(conn: &rusqlite::Connection, key: &str) -> String {
     crate::db::get_vault_info_value(conn, key)
         .map(|s| s.trim().to_string())
@@ -1340,9 +1510,17 @@ pub fn seafarer_identity_entry_state(
 ) -> Result<SeafarerIdentityEntryState, String> {
     let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let conn = lock.as_ref().ok_or("No vault open")?;
+    // Both halves are read for the base this build talks to. A pair where one
+    // half is bound and the other is not is the state that loops: the step
+    // disappears with an id the server does not know, or comes back for ever
+    // beside a marker that says it is done.
+    let endpoint = jobs_response_endpoint();
     Ok(SeafarerIdentityEntryState {
-        public_seafarer_id: vault_text(conn, "skipi_public_seafarer_id"),
-        identity_key_registered_at: vault_text(conn, IDENTITY_KEY_REGISTERED_AT),
+        public_seafarer_id: vault_text(conn, &identity_vault_key(&endpoint, KEY_PUBLIC_SEAFARER_ID)),
+        identity_key_registered_at: vault_text(
+            conn,
+            &identity_vault_key(&endpoint, IDENTITY_KEY_REGISTERED_AT),
+        ),
     })
 }
 
@@ -1372,6 +1550,11 @@ pub fn ensure_seafarer_identity(
         guard.as_ref().cloned().ok_or("No vault open")?
     };
 
+    // WHICH REGISTRY THIS PASS IS ABOUT, read ONCE and used for every row below,
+    // so that the row read to decide whether to claim and the row written with
+    // the answer cannot be two different rows.
+    let endpoint = jobs_response_endpoint();
+
     // ---- everything this command READS from the vault, and then the lock goes
     let (signing, vault_user_id, mut public_seafarer_id, mut claim_status, mut trust_level, claim_request) = {
         let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
@@ -1382,9 +1565,9 @@ pub fn ensure_seafarer_identity(
         // caller — the same rule the self-session signer holds itself to.
         let vault_user_id =
             crate::identity::user_id_for_pubkey(&signing.verifying_key().to_bytes());
-        let public_seafarer_id = vault_text(conn, "skipi_public_seafarer_id");
-        let claim_status = vault_text(conn, "skipi_identity_claim_status");
-        let trust_level = vault_text(conn, "skipi_identity_trust_level");
+        let public_seafarer_id = vault_text(conn, &identity_vault_key(&endpoint, KEY_PUBLIC_SEAFARER_ID));
+        let claim_status = vault_text(conn, &identity_vault_key(&endpoint, KEY_IDENTITY_CLAIM_STATUS));
+        let trust_level = vault_text(conn, &identity_vault_key(&endpoint, KEY_IDENTITY_TRUST_LEVEL));
         // Built HERE because its five fields are vault reads, and built only
         // when a claim is actually needed — so a vault that already carries an
         // id is never asked for fields it may not have, and the refusal of an
@@ -1449,49 +1632,11 @@ pub fn ensure_seafarer_identity(
         {
             let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
             let conn = lock.as_ref().ok_or("No vault open")?;
-            // What the server said is recorded either way — it is the only record
-            // of a duplicate there is.
-            crate::db::set_vault_info(conn, "skipi_identity_claim_status", &claim.status)
-                .map_err(|e| e.to_string())?;
-            crate::db::set_vault_info(
-                conn,
-                "skipi_identity_duplicate",
-                if claim.duplicate { "true" } else { "false" },
-            )
-            .map_err(|e| e.to_string())?;
-            crate::db::set_vault_info(conn, "skipi_identity_trust_level", &claim.trust_level)
-                .map_err(|e| e.to_string())?;
-            crate::db::set_vault_info(conn, "skipi_identity_message", &claim.message)
-                .map_err(|e| e.to_string())?;
-            crate::db::set_vault_info(
-                conn,
-                "skipi_identity_last_claim_at",
-                &chrono::Utc::now().to_rfc3339(),
-            )
-            .map_err(|e| e.to_string())?;
-
-            // A 200 WITH AN EMPTY ID IS NOT A SUCCESS. `possible_duplicate` answers
-            // exactly that: another vault already claimed this name and date of
-            // birth. Writing the empty string into `skipi_public_seafarer_id` — the
-            // way the profile-side claim does — would leave the screen in a silent
-            // forever-loop: press, 200, still no id, press again. There is no
-            // recovery flow in this product to send him to, so the honest thing is
-            // to stop and say so. The refusal leaves from inside this block, which
-            // is where the lock is dropped.
-            if issued.is_empty() {
-                return Err(IDENTITY_CLAIM_DUPLICATE.to_string());
-            }
-            crate::db::set_vault_info(conn, "skipi_public_seafarer_id", &issued)
-                .map_err(|e| e.to_string())?;
-            if let Some(key) = claim
-                .identity_recovery_key
-                .as_deref()
-                .filter(|s| !s.trim().is_empty())
-            {
-                crate::db::set_vault_info(conn, "skipi_identity_recovery_key", key)
-                    .map_err(|e| e.to_string())?;
-            }
-            let _ = crate::identity::sync_identity_fingerprint(conn);
+            // Every row of the answer, in the order it always was, under the rows
+            // of the registry that answered. The `possible_duplicate` refusal
+            // still leaves from inside this block, which is where the lock is
+            // dropped.
+            write_identity_claim_answer(conn, &endpoint, &claim, &issued)?;
         }
 
         public_seafarer_id = issued;
@@ -1551,8 +1696,7 @@ pub fn ensure_seafarer_identity(
     {
         let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
         let conn = lock.as_ref().ok_or("No vault open")?;
-        crate::db::set_vault_info(conn, IDENTITY_KEY_REGISTERED_AT, &registered_at)
-            .map_err(|e| e.to_string())?;
+        write_identity_key_marker(conn, &endpoint, &registered_at)?;
     }
 
     Ok(serde_json::json!({
@@ -1680,6 +1824,388 @@ mod live_published_profiles_contract {
             assert!(p.crewing_trust_status.is_none());
             // And the row is still renderable: the criteria are untouched.
             assert!(p.rank.is_some() && p.vessel_type.is_some());
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // THE IDENTITY BELONGS TO THE REGISTRY THAT ISSUED IT — the half the JS harness
+    // cannot reach: what the EIGHT rows of a real vault hold after a claim answer
+    // has been recorded against a non-production base.
+    //
+    // WHY AN IN-MEMORY VAULT AND NOT THE COMMAND ITSELF. `ensure_seafarer_identity`
+    // needs a server and a `tauri::State`, and a unit test has neither. What matters
+    // here is not the request but WHAT IS WRITTEN, so the writes live behind
+    // `write_identity_claim_answer` / `write_identity_key_marker` and these tests run
+    // those against `Connection::open_in_memory()` with the same `vault_info` table
+    // the product creates (`db.rs`, migration 1). The boundary is therefore: this
+    // module proves the ROWS, not the network sequence around them.
+    //
+    // THE FIVE TESTS ARE THE FIVE THE CARD NAMES, in its order, and the mutation
+    // matrix (M1, M3, M4, M10, M11, M15) is what proves they are not vacuous.
+    mod registry_scoped_identity {
+        // `super` is the module this one is nested in; `super::super` is `jobs`
+        // itself. It is NESTED because this home allows one test-module
+        // attribute per file: a source contract cuts a file at that attribute,
+        // and a second one would hide production code behind the cut.
+        use super::super::*;
+
+        /// This file, read as text. Two of the five claims are about SHAPE and not
+        /// about values — which arguments the deciding function can even see, and
+        /// that the self-session signer was not touched by this card — and a claim
+        /// about shape is made over the source or not at all.
+        const THIS_FILE: &str = include_str!("jobs.rs");
+
+        fn vault() -> rusqlite::Connection {
+            let conn = rusqlite::Connection::open_in_memory().expect("an in-memory vault");
+            conn.execute_batch("CREATE TABLE vault_info (key TEXT PRIMARY KEY, value TEXT);")
+                .expect("the same two columns db.rs migration 1 creates");
+            conn
+        }
+
+        fn ep(base: &str, stand: bool, pilot: bool) -> JobsResponseEndpoint {
+            JobsResponseEndpoint {
+                base: base.to_string(),
+                stand,
+                pilot,
+            }
+        }
+
+        fn answer(id: &str, recovery: &str) -> SeafarerIdentityClaimAnswer {
+            SeafarerIdentityClaimAnswer {
+                status: "created".to_string(),
+                duplicate: false,
+                public_seafarer_id: Some(id.to_string()),
+                trust_level: "identity_claimed".to_string(),
+                identity_recovery_key: Some(recovery.to_string()),
+                message: "identity created".to_string(),
+            }
+        }
+
+        fn without_line_comments(src: &str) -> String {
+            src.lines()
+                .filter(|l| !l.trim_start().starts_with("//"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
+
+        /// The brace-matched body of one function of this file.
+        fn body_of(name: &str) -> String {
+            let needle = format!("fn {name}(");
+            let at = THIS_FILE
+                .find(&needle)
+                .unwrap_or_else(|| panic!("fn {name} is not in this file"));
+            let open = at + THIS_FILE[at..].find('{').expect("a function body");
+            let bytes = THIS_FILE.as_bytes();
+            let mut depth = 0usize;
+            for i in open..bytes.len() {
+                match bytes[i] {
+                    b'{' => depth += 1,
+                    b'}' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            return without_line_comments(&THIS_FILE[open + 1..i]);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            panic!("unbalanced body for {name}")
+        }
+
+        fn signature_of(name: &str) -> String {
+            let needle = format!("fn {name}(");
+            let at = THIS_FILE
+                .find(&needle)
+                .unwrap_or_else(|| panic!("fn {name} is not in this file"));
+            let start = at + needle.len();
+            let end = start + THIS_FILE[start..].find(')').expect("a closing paren");
+            THIS_FILE[start..end].split_whitespace().collect::<Vec<_>>().join(" ")
+        }
+
+        // ---- TEST 1 (card 1): which row name, character by character ------------
+        #[test]
+        fn test_1_the_row_name_is_scoped_off_production_and_bare_on_it() {
+            let stand = ep("http://127.0.0.1:8099", true, false);
+            let pilot = ep("https://api.skipi.app:8444", false, true);
+            let prod = ep("https://api.skipi.app", false, false);
+
+            // Production: EXACTLY today's two names, spelled out here rather than
+            // taken from the constants the same change introduced.
+            assert_eq!(
+                identity_vault_key(&prod, KEY_PUBLIC_SEAFARER_ID),
+                "skipi_public_seafarer_id"
+            );
+            assert_eq!(
+                identity_vault_key(&prod, IDENTITY_KEY_REGISTERED_AT),
+                "skipi_identity_key_registered_at"
+            );
+            // And all eight of them, so "the production path is unchanged" is a
+            // statement about the whole set and not about its first member.
+            for name in SCOPED_IDENTITY_KEYS {
+                assert_eq!(
+                    identity_vault_key(&prod, name),
+                    name,
+                    "production must keep the bare name of {name}"
+                );
+            }
+
+            // A stand and the pilot each get a name of their own.
+            assert_eq!(
+                identity_vault_key(&pilot, KEY_PUBLIC_SEAFARER_ID),
+                "skipi_public_seafarer_id:https://api.skipi.app:8444"
+            );
+            assert_eq!(
+                identity_vault_key(&stand, KEY_PUBLIC_SEAFARER_ID),
+                "skipi_public_seafarer_id:http://127.0.0.1:8099"
+            );
+            for name in SCOPED_IDENTITY_KEYS {
+                assert_eq!(
+                    identity_vault_key(&pilot, name),
+                    format!("{name}:https://api.skipi.app:8444")
+                );
+                assert_ne!(
+                    identity_vault_key(&pilot, name),
+                    identity_vault_key(&stand, name),
+                    "two servers are never one row for {name}"
+                );
+            }
+
+            // ONE SERVER IS ONE NAME (mutations M11 and M15). A trailing slash,
+            // surrounding space and an upper-case host all land on the same row:
+            // `jobs_pilot_api_base` validates a PARSED url and returns the RAW
+            // string, so `https://API.skipi.app:8444` is a legal pilot base — and a
+            // second row name for one server would empty the row, bring the step
+            // back and make a SECOND claim in the same registry, DECISIONS (904).
+            for other in [
+                ep("https://api.skipi.app:8444/", false, true),
+                ep("  https://api.skipi.app:8444  ", false, true),
+                ep("https://API.skipi.app:8444", false, true),
+                ep("HTTPS://API.SKIPI.APP:8444/", false, true),
+            ] {
+                assert_eq!(
+                    identity_vault_key(&other, KEY_PUBLIC_SEAFARER_ID),
+                    identity_vault_key(&pilot, KEY_PUBLIC_SEAFARER_ID),
+                    "'{}' must be the same row as '{}'",
+                    other.base,
+                    pilot.base
+                );
+            }
+            // CALIBRATION: a genuinely different base IS a different row. Without
+            // this the four assertions above would pass on a function that returned
+            // one constant.
+            let neighbour = ep("https://api.skipi.app:8445", false, true);
+            assert_ne!(
+                identity_vault_key(&neighbour, KEY_PUBLIC_SEAFARER_ID),
+                identity_vault_key(&pilot, KEY_PUBLIC_SEAFARER_ID)
+            );
+        }
+
+        // ---- TEST 2 (card 2): ALL EIGHT production rows survive a full pass -----
+        #[test]
+        fn test_2_a_full_pass_on_a_stand_leaves_all_eight_production_rows_untouched() {
+            let conn = vault();
+            let stand = ep("http://127.0.0.1:8099", true, false);
+
+            // The personality this vault ALREADY has, written where the production
+            // build keeps it. `skipi_identity_recovery_key` is in here on purpose:
+            // the server keeps only its HMAC hash (`identity.py:164`) and `/recover`
+            // wants the key itself (`:215-222`), so overwriting this row is an
+            // irreversible loss with no second copy anywhere.
+            let mut before: Vec<(&str, String)> = Vec::new();
+            for name in SCOPED_IDENTITY_KEYS {
+                let value = format!("production-value-of-{name}");
+                crate::db::set_vault_info(&conn, name, &value).expect("seed");
+                before.push((name, value));
+            }
+
+            write_identity_claim_answer(
+                &conn,
+                &stand,
+                &answer("SKP-SF-STAND-0001", "recovery-key-of-the-stand"),
+                "SKP-SF-STAND-0001",
+            )
+            .expect("the claim answer is recorded");
+            write_identity_key_marker(&conn, &stand, "2026-09-30T00:00:00Z")
+                .expect("the marker is recorded");
+
+            // ONE BY ONE, NAMED, all eight. The test that was green while the
+            // recovery key was being destroyed looked at `skipi_public_seafarer_id`
+            // alone; that is why every row is asserted separately here.
+            for (name, value) in &before {
+                assert_eq!(
+                    crate::db::get_vault_info_value(&conn, name).as_deref(),
+                    Some(value.as_str()),
+                    "the production row {name} must not move on a non-production pass"
+                );
+            }
+
+            // And the stand's own rows exist, under names of their own.
+            for name in SCOPED_IDENTITY_KEYS {
+                let scoped = identity_vault_key(&stand, name);
+                assert_ne!(scoped, name, "{name} must be scoped on a stand");
+                assert!(
+                    crate::db::get_vault_info_value(&conn, &scoped).is_some(),
+                    "the stand's own row {scoped} must have been written"
+                );
+            }
+            assert_eq!(
+                crate::db::get_vault_info_value(
+                    &conn,
+                    &identity_vault_key(&stand, KEY_PUBLIC_SEAFARER_ID)
+                )
+                .as_deref(),
+                Some("SKP-SF-STAND-0001")
+            );
+            assert_eq!(
+                crate::db::get_vault_info_value(
+                    &conn,
+                    &identity_vault_key(&stand, KEY_IDENTITY_RECOVERY_KEY)
+                )
+                .as_deref(),
+                Some("recovery-key-of-the-stand")
+            );
+
+            // CRITERION 3 OF DECISIONS (904), the behavioural half of harness X11: a
+            // SECOND pass over the same base finds the row filled, so it builds no
+            // claim request at all.
+            assert!(
+                !vault_text(&conn, &identity_vault_key(&stand, KEY_PUBLIC_SEAFARER_ID)).is_empty(),
+                "a second pass must find this registry's id and claim nothing"
+            );
+
+            // CALIBRATION, and the norm stated honestly: the fingerprint rows ARE
+            // written globally on this path, because they describe the PERSON.
+            // `sync_identity_fingerprint` is called from inside the claim block
+            // exactly as it was before. The norm is "none of the EIGHT", not
+            // "nothing global" — the second would be a lie and a red without cause.
+            assert_eq!(
+                crate::db::get_vault_info_value(&conn, "identity_fingerprint_version").as_deref(),
+                Some("1"),
+                "the whole recorded sequence must really have run"
+            );
+        }
+
+        // ---- TEST 3 (card 3): base A survives a claim against base B -----------
+        #[test]
+        fn test_3_the_rows_of_one_base_survive_a_claim_against_another() {
+            let conn = vault();
+            let a = ep("https://api.skipi.app:8444", false, true);
+            let b = ep("https://api.skipi.app:8445", false, true);
+
+            write_identity_claim_answer(&conn, &a, &answer("SKP-SF-A-0001", "recovery-a"), "SKP-SF-A-0001")
+                .expect("base A");
+            write_identity_key_marker(&conn, &a, "2026-09-29T00:00:00Z").expect("base A marker");
+            let a_rows: Vec<(String, String)> = SCOPED_IDENTITY_KEYS
+                .iter()
+                .map(|name| {
+                    let key = identity_vault_key(&a, name);
+                    let value = crate::db::get_vault_info_value(&conn, &key)
+                        .unwrap_or_else(|| panic!("base A wrote {key}"));
+                    (key, value)
+                })
+                .collect();
+
+            write_identity_claim_answer(&conn, &b, &answer("SKP-SF-B-0001", "recovery-b"), "SKP-SF-B-0001")
+                .expect("base B");
+            write_identity_key_marker(&conn, &b, "2026-09-30T00:00:00Z").expect("base B marker");
+
+            for (key, value) in &a_rows {
+                assert_eq!(
+                    crate::db::get_vault_info_value(&conn, key).as_deref(),
+                    Some(value.as_str()),
+                    "connecting base B must not touch {key}"
+                );
+            }
+            assert_eq!(
+                crate::db::get_vault_info_value(&conn, &identity_vault_key(&b, KEY_PUBLIC_SEAFARER_ID))
+                    .as_deref(),
+                Some("SKP-SF-B-0001")
+            );
+            assert_eq!(
+                crate::db::get_vault_info_value(&conn, &identity_vault_key(&a, KEY_PUBLIC_SEAFARER_ID))
+                    .as_deref(),
+                Some("SKP-SF-A-0001"),
+                "and base A keeps the id its own registry issued"
+            );
+            // CALIBRATION: the two writes really did go to different rows.
+            assert_ne!(
+                identity_vault_key(&a, KEY_PUBLIC_SEAFARER_ID),
+                identity_vault_key(&b, KEY_PUBLIC_SEAFARER_ID)
+            );
+        }
+
+        // ---- TEST 4 (card 4): the decision cannot see a server's reply ---------
+        #[test]
+        fn test_4_the_row_name_decision_is_blind_to_every_server_answer() {
+            // A claim about SHAPE: the function that decides which row to read takes
+            // the endpoint this build was compiled for and a row name, and there is
+            // no third door. A 403 — any refusal — therefore cannot move the step in
+            // either direction, which is the standing rule of DECISIONS (903).
+            assert_eq!(
+                signature_of("identity_vault_key"),
+                "endpoint: &JobsResponseEndpoint, name: &str",
+                "the deciding function takes the endpoint and the row name, nothing else"
+            );
+            let body = body_of("identity_vault_key");
+            // CALIBRATION: the body was really found, so the absences below are
+            // absences in code and not in an empty string.
+            assert!(
+                body.contains("endpoint.stand") && body.contains("endpoint.pilot"),
+                "the body must be the one that branches on the pair of flags"
+            );
+            for word in [
+                "status",
+                "body",
+                "answer",
+                "claim",
+                "serde_json",
+                "send_on_response_bases",
+                "reqwest",
+                "HttpAnswer",
+            ] {
+                assert!(
+                    !body.contains(word),
+                    "nothing derived from a server's reply may reach this decision, found '{word}'"
+                );
+            }
+        }
+
+        // ---- TEST 5 (card 5): the self-session signer was not touched ----------
+        #[test]
+        fn test_5_the_self_session_signer_still_binds_only_this_vault() {
+            // BOUNDARY, stated rather than implied: this is a SOURCE regression, not
+            // a live signature run. Running one needs an open vault and a
+            // `tauri::State`, and the card forbids touching the signer at all — so
+            // the honest assertion is that its refusals are still written there and
+            // that nothing of the registry binding was added to it.
+            let body = body_of("sign_self_session_challenge");
+            assert!(
+                body.contains("challenge belongs to a different vault identity"),
+                "the refusal of a payload that names another vault must still be here"
+            );
+            assert!(
+                body.contains("field(\"vault_user_id\") != own_user_id"),
+                "and it must still be decided by comparing with the id derived from the key"
+            );
+            assert!(
+                body.contains("not a self-session challenge payload"),
+                "as must the refusal of anything that is not a self-session payload"
+            );
+            assert!(
+                body.contains("user_id_for_pubkey"),
+                "the id it compares against is still derived from the vault's own key"
+            );
+            for absent in [
+                "identity_vault_key",
+                "skipi_public_seafarer_id",
+                "jobs_response_endpoint",
+                "SCOPED_IDENTITY_KEYS",
+            ] {
+                assert!(
+                    !body.contains(absent),
+                    "this card put nothing of the registry binding into the signer, found '{absent}'"
+                );
+            }
         }
     }
 }
