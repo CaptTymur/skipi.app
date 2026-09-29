@@ -3444,6 +3444,79 @@ ok(tight(ensureRust).includes('required_vault_text(conn,"personal_first_name")?'
 ok(tight(String(rustFnBody(jobsRs, 'required_vault_text') || '')).includes('Err(IDENTITY_PROFILE_INCOMPLETE.to_string())'),
   'X16e and the refusal is the marker the WebView turns into the sentence above');
 
+
+// ---- TEST 16 (delta R1): the build's kind is a THREE-state answer, and only
+// ONE shape of answer may read as "production" ------------------------------
+//
+// The ids are R16*, not X16*: the X16 block above is the precondition and that
+// name is already taken.
+//
+// THE DEFECT. `skipiNonProductionBuild` answered
+// `!!(ep && (ep.stand===true || ep.pilot===true))`. A thrown command and a
+// literal `null` did give `null` — but a SUCCESSFUL invoke that answered `{}`,
+// `{stand:"true"}`, `{stand:1}` or any object without the pair gave **false**,
+// indistinguishable from a real production build. The gate
+// `!compact && nonprod===false` then draws "Claim Skipi Seafarer ID", and that
+// button writes through `api::api_bases()` — into the LIVE product. So
+// "unknown" collapsed into "production" on the one path where the collapse is
+// a write of a real person's identity.
+//
+// A REACHABLE MECHANISM, named as a mechanism and NOT as a measured fact: this
+// same dist/index.html is served by the SaaS web leg with an injected
+// `__TAURI__`→HTTP shim (the WEB=DESKTOP wave), and a shim that does not
+// implement `jobs_response_endpoint` can answer with an empty object. The shim
+// lives in the fleet (`webapp/**`) — another role's scope, NOT measured here.
+// Fail-closed must not depend on proving a shape unreachable.
+async function buildKindFor(ep) {
+  const booted = boot({ endpoint: PROD_EP });
+  await settle();
+  // The shape under test is installed on the live stub rather than passed to
+  // `boot`, because `boot` maps a literal `undefined` option onto its own
+  // default endpoint and so cannot express "the command answered nothing".
+  booted.state.endpoint = ep;
+  const host = booted.document.getElementById('vault-identity-trust');
+  const nonprod = await booted.sandbox.skipiNonProductionBuild();
+  let error = null;
+  try { await booted.sandbox.loadIdentityTrustStatus(); } catch (e) { error = e; }
+  await settle();
+  return { nonprod, error, html: host ? host.innerHTML : null };
+}
+const R16_UNKNOWN_SHAPES = [
+  ['null', null],
+  ['undefined — the command answered nothing', undefined],
+  ['{} — the empty object a shim answers with', {}],
+  ['{stand:false} — the second flag absent', { stand: false }],
+  ['{pilot:false} — the first flag absent', { pilot: false }],
+  ['{stand:"false",pilot:"false"} — strings, not booleans', { stand: 'false', pilot: 'false' }],
+  ['{stand:0,pilot:0} — numbers, not booleans', { stand: 0, pilot: 0 }],
+  ['[] — an array', []],
+  ['"production" — a string', 'production'],
+  ['42 — a number', 42],
+];
+for (const [what, ep] of R16_UNKNOWN_SHAPES) {
+  const r = await buildKindFor(ep);
+  ok(r.nonprod === null,
+    `R16a (${what}) the build's kind is UNKNOWN, not "production" (got ${JSON.stringify(r.nonprod) === undefined ? 'undefined' : JSON.stringify(r.nonprod)})`);
+  ok(r.html !== null && !r.html.includes('claimSkipiIdentity()'),
+    `R16b (${what}) and the button that writes to production is not drawn`);
+  ok(r.html !== null && r.html.includes('mobile-card-title'),
+    `R16c (${what}) while the rest of the card still renders — unknown removes a button, not a screen`);
+}
+// CALIBRATION, and the ONLY shape that may read as production: a valid object
+// whose two flags are BOTH boolean false. Without this pair of assertions the
+// ten refusals above would be green over a driver that cannot see the button
+// at all.
+const r16prod = await buildKindFor(PROD_EP);
+ok(r16prod.nonprod === false,
+  'R16d CALIBRATION — an endpoint object whose two flags are both boolean false IS production');
+ok(r16prod.html !== null && r16prod.html.includes('claimSkipiIdentity()'),
+  'R16e CALIBRATION — and there the button is drawn exactly as it is today, so the ten probes above demonstrably see it');
+const r16pilot = await buildKindFor(PILOT_EP);
+ok(r16pilot.nonprod === true,
+  'R16f a pilot build still answers true — the third state is untouched by this delta');
+ok(r16pilot.html !== null && !r16pilot.html.includes('claimSkipiIdentity()'),
+  'R16g and still draws no button, as test 14 already required');
+
 console.log('');
 if (fail > 0) {
   console.error(`FAILURES (${fail}):`);

@@ -7917,6 +7917,16 @@ function identityTrustBadgeHtml(status){
 // or null when the build cannot say. The tri-state is the point: "unknown" must
 // not be allowed to read as "production".
 //
+// AND THAT IS A PROMISE ABOUT THE SHAPE OF THE ANSWER, not only about a thrown
+// command — which is what the first version of this function got wrong. It
+// answered `!!(ep && (ep.stand===true || ep.pilot===true))`: a THROWN command
+// and a literal `null` gave `null`, but a SUCCESSFUL invoke that answered `{}`,
+// `{stand:"true"}`, `{stand:1}` or any object without the pair gave **false**,
+// indistinguishable from a real production build. So "unknown" collapsed into
+// "production" on the one path where that collapse writes a real person's
+// identity into the live product. Production is therefore answered ONLY for an
+// object that carries both flags as booleans; every other shape is `null`.
+//
 // It exists for the button below. `claimSkipiIdentity()` reaches
 // `profile::claim_seafarer_identity`, which goes out through `api::api_bases()`:
 // on a phone that is PRODUCTION and nothing else. Until the vault rows were bound
@@ -7928,17 +7938,25 @@ function identityTrustBadgeHtml(status){
 // only being tested.
 async function skipiNonProductionBuild(){
     if(typeof invoke!=='function')return null;
-    var nonprod=null;
     try{
         var ep=await invoke('jobs_response_endpoint');
+        // THE ANSWER IS READ AT ALL ONLY WHEN ITS SHAPE CARRIES BOTH FLAGS AS
+        // BOOLEANS. Both names are asked through ONE symmetric list, so neither
+        // flag can be read without the other and neither is read as a single
+        // flag. Anything else — not an object, an array, a flag absent, a flag
+        // that is a string or a number — says nothing about which server this
+        // build talks to and leaves the answer `null`.
+        var pair=['stand','pilot'];
+        var shapeKnown=!!ep&&typeof ep==='object'&&!Array.isArray(ep)
+            &&pair.every(function(k){return typeof ep[k]==='boolean';});
+        if(!shapeKnown)return null;
         // "MAY THIS BUILD WRITE TO PRODUCTION" IS ANSWERED BY THE PAIR, not by
         // either flag alone. A pilot build is not a stand and it is not
         // production either; reading `stand` on its own would let the build the
         // owner installs write a synthetic, permanent record into the live
         // product the first time this path ran.
-        nonprod=!!(ep&&(ep.stand===true||ep.pilot===true));
-    }catch(e){ nonprod=null; }
-    return nonprod;
+        return !!(ep&&(ep.stand===true||ep.pilot===true));
+    }catch(e){ return null; }
 }
 function identityTrustHtml(data, compact, nonprod){
     data=data||{};
