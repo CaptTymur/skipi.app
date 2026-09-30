@@ -3919,6 +3919,42 @@ ok(!conflictBlock.includes('RESPONSE_CONFLICT_UNKNOWN'),
 ok(countOf(submitSrc, 'set_vault_info') === 2,
   `RS9 (D15) both receipt writes are INLINE in this command (found ${countOf(submitSrc, 'set_vault_info')}) — moved into a helper, every positional claim above goes blind`);
 
+// D18/D19 — NEITHER WRITE MAY LAND IN A VAULT THAT WAS SWAPPED MID-REQUEST.
+//
+// The command reads the identity, RELEASES the vault lock to speak to the server
+// for up to 45 seconds, and takes it again to write. Four production sites
+// replace the open vault (`commands/profile.rs:166`, `:898`, `:910`, `:949`) and
+// nothing forbids one of them landing inside that window — so the receipt could
+// carry vault A's identity into vault B's file. The reader would refuse it
+// afterwards, which is right, but vault A would be left without the receipt it
+// earned while a stranger's file held its metadata.
+const atCapture = submitSrc.indexOf('vault_db_file(conn)');
+ok(atCapture > 0,
+  'RS24 the file of the connection the identity was read out of is captured');
+ok(atCapture < atSend,
+  'RS24b (D18/D19) and captured BEFORE the request — anything read later is read of whatever connection is open by then');
+ok(countOf(submitSrc, 'same_vault_db') === 2,
+  `RS24c (D18/D19) and BOTH receipt writes are guarded by that comparison (found ${countOf(submitSrc, 'same_vault_db')})`);
+ok(countOf(alreadyBlock, 'same_vault_db') === 1,
+  'RS24d one of them being the classified-409 write');
+// THE COMPARISON IS OF THE CONNECTION'S OWN FILE, not of `state.vault_path`.
+// Those four sites set `vault_path` FIRST and `conn` SECOND under two separate
+// locks, so `vault_path` LAGS the connection during a swap and a comparison
+// against it can be wrong in both directions; and it is a DIRECTORY, not the
+// database file. Asking the connection puts the check and the write in one
+// critical section on one object.
+const sameVaultSrc = withoutLineComments(String(rustFnBody(jobsRs, 'same_vault_db') || ''));
+ok(sameVaultSrc.length > 0, 'RS25 same_vault_db found');
+ok(!/vault_path|state\./.test(sameVaultSrc),
+  'RS25b and the decision never reaches for state.vault_path — the lagging half of the swap');
+const dbFileSrc = withoutLineComments(String(rustFnBody(jobsRs, 'vault_db_file') || ''));
+ok(/conn\.path\(\)/.test(dbFileSrc),
+  'RS25c the file is asked of the sqlite handle itself');
+ok(/is_empty\(\)|filter/.test(dbFileSrc),
+  'RS25d and an empty answer (an in-memory database) is folded into unknown, which every caller refuses');
+ok(!/canonicalize/.test(dbFileSrc + sameVaultSrc),
+  'RS25e and nothing touches the filesystem while the vault lock is held');
+
 // D4 — the base is part of the key ALWAYS, and no flag decides it.
 const keySrc = withoutLineComments(String(rustFnBody(jobsRs, 'response_receipt_key') || ''));
 ok(keySrc.includes('normalized_response_base') && keySrc.includes('RESPONSE_RECEIPT_KEY_PREFIX'),

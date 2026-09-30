@@ -791,6 +791,53 @@ fn receipt_already_on_record(
     }
 }
 
+/// WHICH FILE THIS CONNECTION IS ACTUALLY WRITING TO, asked of the sqlite
+/// handle itself (`sqlite3_db_filename(db, "main")`) rather than of any state
+/// beside it.
+///
+/// An in-memory database answers with an EMPTY string rather than nothing, so
+/// empty is folded into "unknown" here — and unknown is a refusal at every
+/// caller. The product never holds an in-memory vault; the unit tests do, and a
+/// rule that let two different in-memory handles read as "the same file" would
+/// be green for the wrong reason.
+fn vault_db_file(conn: &rusqlite::Connection) -> Option<String> {
+    conn.path()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+/// MAY A RECEIPT CAPTURED AGAINST ONE VAULT BE WRITTEN TO THE VAULT THAT IS
+/// OPEN NOW?
+///
+/// The hazard is real and not hypothetical: `submit_profile_response` reads the
+/// identity, RELEASES the lock to speak to the server for up to 45 seconds, and
+/// takes it again to write. Four production sites replace the open vault
+/// (`commands/profile.rs:166`, `:898`, `:910`, `:949`) and nothing forbids one
+/// of them running inside that window. The receipt would then carry vault A's
+/// `vault_user_id` and land in vault B's file: the reader refuses it afterwards,
+/// which is right, but vault A — the one that actually delivered — would be left
+/// without its receipt while a stranger's file held its metadata.
+///
+/// WHY THE FILE OF THE CONNECTION AND NOT `state.vault_path`. Those same four
+/// sites set `vault_path` FIRST and `conn` SECOND, under two separate locks, so
+/// `vault_path` LAGS behind the connection during a swap and a comparison
+/// against it can be wrong in both directions. Asking the connection is exact:
+/// the object being checked is the object about to be written, inside one
+/// critical section, so the window is closed by construction instead of made
+/// smaller. `state.vault_path` is also a DIRECTORY (`identity::vault_signing_key`
+/// takes `identity_dir` from it), not the database file.
+///
+/// Fail-closed: an unknown file on either side is a refusal. The string is
+/// compared as sqlite resolved it and is never canonicalised — that would mean
+/// touching the filesystem while holding the vault lock.
+fn same_vault_db(captured: Option<&str>, current: Option<&str>) -> bool {
+    match (captured, current) {
+        (Some(captured), Some(current)) => !captured.is_empty() && captured == current,
+        _ => false,
+    }
+}
+
 /// DOES THIS STORED RECEIPT BELONG TO THIS VAULT, THIS REGISTRY, THIS PROFILE
 /// AND THIS RESPONSE? Five answers, every one of them from the device, and any
 /// single "no" means there is no receipt.
@@ -1296,7 +1343,10 @@ pub fn submit_profile_response(
 
     // Identity and contact are read from the vault, never accepted from the
     // caller: a response is delivered as the seafarer whose key signs for it.
-    let (vault_user_id, public_seafarer_id, contact) = {
+    // `vault_db` is the file this identity was read OUT OF, captured in the very
+    // same critical section as the identity itself — see `same_vault_db` for the
+    // swap it exists to refuse.
+    let (vault_user_id, public_seafarer_id, contact, vault_db) = {
         let vault = {
             let guard = state
                 .vault_path
@@ -1321,7 +1371,10 @@ pub fn submit_profile_response(
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .ok_or("add an e-mail to your profile before responding")?;
-        (user_id, public_id, contact)
+        // Asked of THIS connection, while the lock that produced the identity
+        // above is still held. Anything read later would be read of whatever
+        // connection is open by then, which is the problem and not the check.
+        (user_id, public_id, contact, vault_db_file(conn))
     };
 
     let cv_bytes = std::fs::read(&cv_path).map_err(|e| format!("could not read the CV: {e}"))?;
@@ -1384,7 +1437,16 @@ pub fn submit_profile_response(
         // for why that shape matters and what it cost).
         if token == RESPONSE_ALREADY_DELIVERED {
             let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
-            if let Some(conn) = lock.as_ref() {
+            // NOT INTO A VAULT THAT IS NO LONGER THE ONE THAT SPOKE. The vault
+            // may have been replaced while the request was in flight, and this
+            // receipt names the identity of the vault that sent it. A mismatch
+            // writes NOTHING — not here and not anywhere else — and says nothing
+            // outward: the screen is then today's screen, exactly as it is when
+            // the vault cannot be written at all.
+            if let Some(conn) = lock
+                .as_ref()
+                .filter(|conn| same_vault_db(vault_db.as_deref(), vault_db_file(conn).as_deref()))
+            {
                 let receipt = receipt_already_on_record(
                     &answer,
                     &profile_id,
@@ -1434,7 +1496,14 @@ pub fn submit_profile_response(
     // The lock is taken here, after the request, for these two statements only.
     {
         let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(conn) = lock.as_ref() {
+        // The same refusal as the 409 branch, and for the same reason: a vault
+        // swapped during the request must not receive another vault's receipt,
+        // and the vault that delivered must not have one written on its behalf
+        // into somebody else's file. See `same_vault_db`.
+        if let Some(conn) = lock
+            .as_ref()
+            .filter(|conn| same_vault_db(vault_db.as_deref(), vault_db_file(conn).as_deref()))
+        {
             let receipt = receipt_from_acknowledgement(
                 &answer,
                 &ack,
@@ -2917,6 +2986,172 @@ mod live_published_profiles_contract {
                     "'{other}' is a conflict whose reason this build does not know"
                 );
             }
+        }
+
+
+        // ---- the vault may be swapped WHILE the request is in flight --------
+        //
+        // BOUNDARY, declared rather than implied. `submit_profile_response`
+        // needs a `tauri::State` and a server, which a unit test has not got,
+        // so what runs here is the DECISION and a write guarded by it —
+        // `guarded_write` below is a model of the product's two write blocks,
+        // three lines long and written out so it can be compared with them by
+        // eye. That the product's two blocks really are guarded by this same
+        // decision is asserted over the source (harness RS24/RS25) and by the
+        // D18/D19 drills, because that half is a claim about shape.
+
+        fn file_vault(path: &std::path::Path) -> rusqlite::Connection {
+            let conn = rusqlite::Connection::open(path).expect("a file vault");
+            conn.execute_batch("CREATE TABLE IF NOT EXISTS vault_info (key TEXT PRIMARY KEY, value TEXT);")
+                .expect("the same two columns db.rs migration 1 creates");
+            conn
+        }
+
+        /// A unique directory of this test's own, so two tests running in
+        /// parallel cannot meet in the same file.
+        fn temp_dir(tag: &str) -> std::path::PathBuf {
+            let dir = std::env::temp_dir().join(format!(
+                "skipi-v16-receipt-{}-{}-{:?}",
+                tag,
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(0)
+            ));
+            std::fs::create_dir_all(&dir).expect("a temp dir");
+            dir
+        }
+
+        /// THE MODEL OF BOTH PRODUCT WRITE BLOCKS, in the shape they have.
+        fn guarded_write(
+            conn: &rusqlite::Connection,
+            captured: Option<&str>,
+            receipt: &ResponseReceipt,
+        ) -> bool {
+            if same_vault_db(captured, vault_db_file(conn).as_deref()) {
+                if let Ok(json) = serde_json::to_string(receipt) {
+                    let _ = crate::db::set_vault_info(
+                        conn,
+                        &response_receipt_key(&receipt.base, &receipt.profile_id),
+                        &json,
+                    );
+                }
+                return true;
+            }
+            false
+        }
+
+        fn receipt_row(conn: &rusqlite::Connection) -> Option<String> {
+            crate::db::get_vault_info_value(conn, &response_receipt_key(BASE, PROFILE))
+        }
+
+        #[test]
+        fn calibration_what_sqlite_answers_about_its_own_file() {
+            // MEASURED, not remembered, because the whole rule rests on it: a
+            // file database names an absolute path, and an IN-MEMORY one answers
+            // with an EMPTY STRING rather than with nothing. If that ever became
+            // `None`, `vault_db_file` would still fold it to `None` — but the
+            // reason the fold is there would have stopped being visible.
+            let dir = temp_dir("calib");
+            let path = dir.join("vault.db");
+            let disk = file_vault(&path);
+            let named = vault_db_file(&disk).expect("a file vault names its file");
+            assert!(
+                named.ends_with("vault.db") && named.starts_with('/'),
+                "sqlite names the file absolutely, got {named}"
+            );
+            let memory = rusqlite::Connection::open_in_memory().expect("an in-memory vault");
+            assert_eq!(
+                memory.path().map(str::trim),
+                Some(""),
+                "an in-memory database answers with the empty string"
+            );
+            assert!(
+                vault_db_file(&memory).is_none(),
+                "and `vault_db_file` folds that into unknown"
+            );
+            // Two different in-memory handles must therefore NEVER read as the
+            // same vault, which is exactly what the fold buys.
+            let memory2 = rusqlite::Connection::open_in_memory().unwrap();
+            assert!(!same_vault_db(
+                vault_db_file(&memory).as_deref(),
+                vault_db_file(&memory2).as_deref()
+            ));
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+
+        #[test]
+        fn the_receipt_is_written_when_the_vault_is_still_the_one_that_spoke() {
+            // THE POSITIVE HALF FIRST. Without it the refusal below would be
+            // green over a guard that refuses everything, and the card would
+            // have shipped a receipt that is never written at all.
+            let dir = temp_dir("same");
+            let path = dir.join("vault-a.db");
+            let conn = file_vault(&path);
+            let captured = vault_db_file(&conn);
+            let receipt = receipt_from_acknowledgement(
+                &answer_from(BASE), &ack(), PROFILE, RESPONSE, VAULT_USER, SUBJECT,
+            );
+            assert!(
+                guarded_write(&conn, captured.as_deref(), &receipt),
+                "the same open vault must accept its own receipt"
+            );
+            let row = receipt_row(&conn).expect("the row must be there");
+            assert_eq!(accept(&row), Some(receipt), "and it must read back whole");
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+
+        #[test]
+        fn d18_d19_a_vault_swapped_during_the_request_receives_nothing() {
+            // THE HAZARD, run rather than described: the identity was read out
+            // of vault A, the request took up to 45 seconds with the lock
+            // released, and by the time the receipt is written the open vault is
+            // B. Vault A delivered; vault B has never heard of this response.
+            let dir = temp_dir("swap");
+            let path_a = dir.join("vault-a.db");
+            let path_b = dir.join("vault-b.db");
+            let conn_a = file_vault(&path_a);
+            let conn_b = file_vault(&path_b);
+            let captured_a = vault_db_file(&conn_a);
+            assert_ne!(
+                captured_a, vault_db_file(&conn_b),
+                "the two vaults must really be two files, or this test proves nothing"
+            );
+            let receipt = receipt_from_acknowledgement(
+                &answer_from(BASE), &ack(), PROFILE, RESPONSE, VAULT_USER, SUBJECT,
+            );
+            assert!(
+                !guarded_write(&conn_b, captured_a.as_deref(), &receipt),
+                "a receipt captured against vault A must be refused by vault B"
+            );
+            // NOT ONE RECORD ANYWHERE — read out of BOTH databases, because
+            // "it did not panic" is not the same claim.
+            assert!(
+                receipt_row(&conn_b).is_none(),
+                "the stranger's vault must hold no row"
+            );
+            assert!(
+                receipt_row(&conn_a).is_none(),
+                "and nothing must have leaked sideways into vault A either"
+            );
+            // The honest remainder, pinned so it is not mistaken for a fix:
+            // vault A, which really did deliver, is left WITHOUT a receipt. The
+            // screen is then today's screen and the button is live again; the
+            // server still refuses that response id, so a press says "already
+            // delivered". That is a refusal to lie, not a repaired state.
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+
+        #[test]
+        fn an_unknown_file_on_either_side_is_a_refusal() {
+            assert!(!same_vault_db(None, Some("/vaults/a.db")), "nothing captured is a refusal");
+            assert!(!same_vault_db(Some("/vaults/a.db"), None), "nothing open now is a refusal");
+            assert!(!same_vault_db(None, None), "two unknowns are not a match");
+            assert!(!same_vault_db(Some(""), Some("")), "two empties are not a match");
+            assert!(!same_vault_db(Some("/vaults/a.db"), Some("/vaults/b.db")));
+            // And the only accepting case, so the four refusals are not vacuous.
+            assert!(same_vault_db(Some("/vaults/a.db"), Some("/vaults/a.db")));
         }
 
         // ---- D13: the decision cannot see a non-production predicate --------
