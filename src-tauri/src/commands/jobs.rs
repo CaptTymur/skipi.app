@@ -2243,7 +2243,7 @@ mod live_published_profiles_contract {
         }
 
         /// The brace-matched body of one function of this file.
-        fn body_of(name: &str) -> String {
+        pub(super) fn body_of(name: &str) -> String {
             let needle = format!("fn {name}(");
             let at = THIS_FILE
                 .find(&needle)
@@ -2266,7 +2266,7 @@ mod live_published_profiles_contract {
             panic!("unbalanced body for {name}")
         }
 
-        fn signature_of(name: &str) -> String {
+        pub(super) fn signature_of(name: &str) -> String {
             let needle = format!("fn {name}(");
             let at = THIS_FILE
                 .find(&needle)
@@ -2558,6 +2558,398 @@ mod live_published_profiles_contract {
                 assert!(
                     !body.contains(absent),
                     "this card put nothing of the registry binding into the signer, found '{absent}'"
+                );
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // THE DELIVERY RECEIPT — the half of №605 that a JS harness cannot reach.
+    //
+    // WHY THESE ARE HERE AND NOT IN THE HARNESS. The harness reads jobs.rs as
+    // TEXT (`rustFnBody`), so every claim it makes about this mechanism is a
+    // claim about the ORDER OF LINES. Three of the properties this card rests
+    // on are not properties of an order — what the key is character for
+    // character, what the five conditions actually accept and refuse, and
+    // which host a receipt names when the walk had to try a second one. Those
+    // are executed here, against the real functions.
+    //
+    // THE BOUNDARY: this module proves the PURE HALF — key, value, decision.
+    // It opens no vault of the product, makes no request and does not prove the
+    // Tauri command's plumbing; that is the harness's and the device's part.
+    mod response_receipt {
+        use super::super::*;
+
+        const BASE: &str = "https://api.skipi.app:8444";
+        const PROFILE: &str = "81d508ff-23fb-4c85-a14b-8f6151df1e1a";
+        const RESPONSE: &str = "11111111-2222-4333-8444-000000000001";
+        const VAULT_USER: &str = "vault-user-aaaa";
+        const SUBJECT: &str = "SKP-SF-YXHF-K5GX";
+
+        /// The acknowledgement the PILOT SERVER really sends, key for key
+        /// (`app/routers/profile_responses.py:203-212` on `ed6627e3`).
+        const ACK_BODY: &str = r#"{"delivered":true,"response_id":"11111111-2222-4333-8444-000000000001","profile_id":"81d508ff-23fb-4c85-a14b-8f6151df1e1a","crewing_id":"dcdc1fa4-5187-4801-a365-ade399601ae7","published_version":2,"intake_id":"intake-0001","content_sha256":"9f2c","created_at":"2026-09-29T17:02:32.512Z"}"#;
+
+        fn ack() -> serde_json::Value {
+            serde_json::from_str(ACK_BODY).expect("the live acknowledgement must parse")
+        }
+
+        fn answer_from(base: &str) -> HttpAnswer {
+            HttpAnswer {
+                status: 201,
+                body: ACK_BODY.to_string(),
+                base: base.to_string(),
+            }
+        }
+
+        fn stored(receipt: &ResponseReceipt) -> String {
+            serde_json::to_string(receipt).expect("a receipt must serialise")
+        }
+
+        fn accept(json: &str) -> Option<ResponseReceipt> {
+            accepted_response_receipt(json, BASE, VAULT_USER, SUBJECT, PROFILE, RESPONSE)
+        }
+
+        // ---- the row name -------------------------------------------------
+        #[test]
+        fn the_row_name_carries_the_base_on_every_build_including_production() {
+            // The one deliberate difference from `identity_vault_key`, which
+            // keeps a bare name on production because it has rows that predate
+            // the scoping. This row has no legacy, so there is no exception and
+            // "the same server" is a property OF THE NAME.
+            assert_eq!(
+                response_receipt_key("https://api.skipi.app", PROFILE),
+                format!("profile_response_receipt:https://api.skipi.app:{PROFILE}")
+            );
+            assert_eq!(
+                response_receipt_key(BASE, PROFILE),
+                format!("profile_response_receipt:https://api.skipi.app:8444:{PROFILE}")
+            );
+            // Two servers are two rows, and that is the whole point.
+            assert_ne!(
+                response_receipt_key("https://api.skipi.app", PROFILE),
+                response_receipt_key(BASE, PROFILE)
+            );
+        }
+
+        #[test]
+        fn the_base_is_normalised_the_same_three_ways_the_identity_rows_are() {
+            // `jobs_pilot_api_base` validates a PARSED url — `Url::parse`
+            // lower-cases scheme and host — while returning the RAW string, so
+            // `https://API.skipi.app:8444` is a legal base. Two names for one
+            // server would hide a receipt from the vault that wrote it.
+            let canonical = response_receipt_key(BASE, PROFILE);
+            for spelling in [
+                "  https://api.skipi.app:8444  ",
+                "https://api.skipi.app:8444/",
+                "https://API.skipi.app:8444",
+                "https://Api.Skipi.App:8444/",
+            ] {
+                assert_eq!(
+                    response_receipt_key(spelling, PROFILE),
+                    canonical,
+                    "'{spelling}' must name the same row"
+                );
+            }
+            // And the profile id is trimmed too, so a padded argument cannot
+            // orphan a row.
+            assert_eq!(response_receipt_key(BASE, "  81d508ff-23fb-4c85-a14b-8f6151df1e1a\n"), canonical);
+        }
+
+        // ---- the value ----------------------------------------------------
+        #[test]
+        fn the_receipt_carries_what_the_server_said_and_nothing_invented() {
+            let r = receipt_from_acknowledgement(
+                &answer_from(BASE), &ack(), PROFILE, RESPONSE, VAULT_USER, SUBJECT,
+            );
+            assert_eq!(r.source, "acknowledgement");
+            assert_eq!(r.response_id, RESPONSE);
+            assert_eq!(r.profile_id, PROFILE);
+            assert_eq!(r.base, BASE);
+            assert_eq!(r.vault_user_id, VAULT_USER);
+            assert_eq!(r.subject_id, SUBJECT);
+            assert_eq!(r.intake_id.as_deref(), Some("intake-0001"));
+            assert_eq!(r.published_version, Some(2));
+            assert_eq!(r.crewing_id.as_deref(), Some("dcdc1fa4-5187-4801-a365-ade399601ae7"));
+            assert_eq!(r.content_sha256.as_deref(), Some("9f2c"));
+            // THE ONLY TIME IN THE RECEIPT IS THE SERVER'S. A device clock here
+            // would let a phone with the wrong date read as a delivery date on
+            // the screen the owner accepts from.
+            assert_eq!(r.server_created_at.as_deref(), Some("2026-09-29T17:02:32.512Z"));
+        }
+
+        #[test]
+        fn an_absent_field_stays_absent_and_is_never_substituted() {
+            let thin: serde_json::Value =
+                serde_json::from_str(r#"{"delivered":true,"intake_id":"intake-0002"}"#).unwrap();
+            let r = receipt_from_acknowledgement(
+                &answer_from(BASE), &thin, PROFILE, RESPONSE, VAULT_USER, SUBJECT,
+            );
+            assert_eq!(r.intake_id.as_deref(), Some("intake-0002"));
+            assert!(r.published_version.is_none(), "no version is not version zero");
+            assert!(r.crewing_id.is_none());
+            assert!(r.content_sha256.is_none());
+            assert!(r.server_created_at.is_none(), "no server time is not 'now'");
+            // A whitespace-only string is an absence too, not a value.
+            let blank: serde_json::Value =
+                serde_json::from_str(r#"{"intake_id":"   ","created_at":""}"#).unwrap();
+            let rb = receipt_from_acknowledgement(
+                &answer_from(BASE), &blank, PROFILE, RESPONSE, VAULT_USER, SUBJECT,
+            );
+            assert!(rb.intake_id.is_none() && rb.server_created_at.is_none());
+        }
+
+        #[test]
+        fn the_409_receipt_claims_only_what_a_409_can_say() {
+            let r = receipt_already_on_record(
+                &answer_from(BASE), PROFILE, RESPONSE, VAULT_USER, SUBJECT,
+            );
+            assert_eq!(r.source, "already_on_record");
+            assert_eq!(r.base, BASE);
+            // A conflict body carries no intake id, no version and no
+            // timestamp. Every one of them is absent rather than guessed.
+            assert!(r.intake_id.is_none());
+            assert!(r.published_version.is_none());
+            assert!(r.crewing_id.is_none());
+            assert!(r.content_sha256.is_none());
+            assert!(r.server_created_at.is_none());
+        }
+
+        // ---- D16: WHICH HOST ANSWERED, and why no screen test can see it ---
+        #[test]
+        fn d16_the_receipt_names_the_host_that_answered_not_the_first_one_tried() {
+            // Production is TWO bases and `send_on_response_bases` walks them
+            // on a transport error. A receipt naming the first would say
+            // "delivered" about a host that has no such row — and on a stand
+            // and on the pilot the list is ONE base, so the equality holds
+            // identically there and no test on those surfaces could ever tell
+            // the difference. This is that test.
+            let first = "https://api-ru.skipi.app";
+            let second = "https://api.skipi.app";
+            let answered = answer_from(second);
+            let r = receipt_from_acknowledgement(
+                &answered, &ack(), PROFILE, RESPONSE, VAULT_USER, SUBJECT,
+            );
+            assert_eq!(
+                r.base, second,
+                "the receipt must name the base that answered, not the base that was tried first"
+            );
+            let json = stored(&r);
+            assert!(
+                accepted_response_receipt(&json, first, VAULT_USER, SUBJECT, PROFILE, RESPONSE)
+                    .is_none(),
+                "and a reader pointed at the FIRST base must refuse it"
+            );
+            assert!(
+                accepted_response_receipt(&json, second, VAULT_USER, SUBJECT, PROFILE, RESPONSE)
+                    .is_some(),
+                "while the same receipt is accepted for the base that answered"
+            );
+        }
+
+        // ---- the five conditions ------------------------------------------
+        #[test]
+        fn calibration_the_receipt_this_vault_wrote_is_accepted() {
+            // Without this, the twelve refusals below would be green over a
+            // decision that accepts nothing at all.
+            let r = receipt_from_acknowledgement(
+                &answer_from(BASE), &ack(), PROFILE, RESPONSE, VAULT_USER, SUBJECT,
+            );
+            let accepted = accept(&stored(&r)).expect("this vault's own receipt must be accepted");
+            assert_eq!(accepted, r, "and it comes back unchanged");
+            // Accepted through every legal spelling of the same base, too.
+            let padded = ResponseReceipt { base: "  https://API.skipi.app:8444/  ".to_string(), ..r.clone() };
+            assert!(accept(&stored(&padded)).is_some(), "one server is one server");
+        }
+
+        #[test]
+        fn d4_to_d8_each_of_the_five_conditions_refuses_on_its_own() {
+            let good = receipt_from_acknowledgement(
+                &answer_from(BASE), &ack(), PROFILE, RESPONSE, VAULT_USER, SUBJECT,
+            );
+            // D4 — another server's receipt.
+            let other_base = ResponseReceipt { base: "https://api.skipi.app".to_string(), ..good.clone() };
+            assert!(accept(&stored(&other_base)).is_none(), "D4 another registry's receipt is not this one's");
+            // D5 — another vault's receipt (a restored copy, a shared phone).
+            let other_vault = ResponseReceipt { vault_user_id: "vault-user-bbbb".to_string(), ..good.clone() };
+            assert!(accept(&stored(&other_vault)).is_none(), "D5 another vault's receipt is not this vault's");
+            // D6 — another identity on the same server.
+            let other_subject = ResponseReceipt { subject_id: "SKP-SF-OTHER-0001".to_string(), ..good.clone() };
+            assert!(accept(&stored(&other_subject)).is_none(), "D6 another seafarer's receipt is not his");
+            // D8 — another profile's receipt on this card.
+            let other_profile = ResponseReceipt { profile_id: "3f51ec8e-34f9-4375-8120-9d2c56b9c77f".to_string(), ..good.clone() };
+            assert!(accept(&stored(&other_profile)).is_none(), "D8 another profile's receipt is not this card's");
+            // D7 — the response this vault would send is not the one recorded.
+            let other_response = ResponseReceipt { response_id: "99999999-2222-4333-8444-000000000009".to_string(), ..good.clone() };
+            assert!(accept(&stored(&other_response)).is_none(), "D7 a receipt without THIS response id is refused");
+        }
+
+        #[test]
+        fn an_empty_expectation_is_a_refusal_and_not_a_wildcard() {
+            // TWO ABSENCES MUST NOT READ AS AGREEMENT. A vault with no public
+            // seafarer id for this base, or one whose response id row is gone,
+            // would otherwise match a receipt whose field is equally empty.
+            let blanked = ResponseReceipt {
+                source: "acknowledgement".to_string(),
+                response_id: String::new(),
+                profile_id: PROFILE.to_string(),
+                base: BASE.to_string(),
+                vault_user_id: String::new(),
+                subject_id: String::new(),
+                intake_id: None,
+                published_version: None,
+                crewing_id: None,
+                content_sha256: None,
+                server_created_at: None,
+            };
+            let json = stored(&blanked);
+            assert!(
+                accepted_response_receipt(&json, BASE, "", "", PROFILE, "").is_none(),
+                "empty against empty is not a match"
+            );
+            assert!(
+                accepted_response_receipt(&json, BASE, "   ", "   ", PROFILE, "   ").is_none(),
+                "and whitespace against whitespace is not either"
+            );
+            // Nor may an empty BASE match anything.
+            let good = receipt_from_acknowledgement(
+                &answer_from(BASE), &ack(), PROFILE, RESPONSE, VAULT_USER, SUBJECT,
+            );
+            assert!(
+                accepted_response_receipt(&stored(&good), "  ", VAULT_USER, SUBJECT, PROFILE, RESPONSE)
+                    .is_none(),
+                "a build that cannot name its base holds no receipt"
+            );
+        }
+
+        #[test]
+        fn a_row_that_is_not_a_receipt_this_build_wrote_is_refused() {
+            for junk in [
+                "",
+                "   ",
+                "not json at all",
+                "{}",
+                "[]",
+                r#""acknowledgement""#,
+                // A source this build never writes.
+                r#"{"source":"assumed","response_id":"11111111-2222-4333-8444-000000000001","profile_id":"81d508ff-23fb-4c85-a14b-8f6151df1e1a","base":"https://api.skipi.app:8444","vault_user_id":"vault-user-aaaa","subject_id":"SKP-SF-YXHF-K5GX"}"#,
+                // A source that LOOKS right.
+                r#"{"source":"acknowledged","response_id":"11111111-2222-4333-8444-000000000001","profile_id":"81d508ff-23fb-4c85-a14b-8f6151df1e1a","base":"https://api.skipi.app:8444","vault_user_id":"vault-user-aaaa","subject_id":"SKP-SF-YXHF-K5GX"}"#,
+                // A partial row: the shape without the fields that bind it.
+                r#"{"source":"acknowledgement"}"#,
+            ] {
+                assert!(
+                    accept(junk).is_none(),
+                    "'{junk}' must not read as a delivery"
+                );
+            }
+        }
+
+        // ---- the row and the reader agree, through real sqlite -------------
+        #[test]
+        fn the_row_written_is_the_row_read_back() {
+            // The key and the value are produced by two different functions,
+            // and a disagreement between them would be a receipt that exists
+            // and can never be found. Same `vault_info` table the product
+            // creates (db.rs, migration 1).
+            let conn = rusqlite::Connection::open_in_memory().expect("an in-memory vault");
+            conn.execute_batch("CREATE TABLE vault_info (key TEXT PRIMARY KEY, value TEXT);")
+                .expect("the same two columns db.rs migration 1 creates");
+            let r = receipt_from_acknowledgement(
+                &answer_from(BASE), &ack(), PROFILE, RESPONSE, VAULT_USER, SUBJECT,
+            );
+            crate::db::set_vault_info(&conn, &response_receipt_key(&r.base, &r.profile_id), &stored(&r))
+                .expect("the write must succeed");
+            // Read back the way the command reads it: key built from the
+            // ENDPOINT's base spelled differently, which must still find it.
+            let found = crate::db::get_vault_info_value(
+                &conn,
+                &response_receipt_key("https://API.skipi.app:8444/", PROFILE),
+            )
+            .expect("the row must be findable through any legal spelling of the base");
+            assert_eq!(accept(&found), Some(r));
+            // And a DIFFERENT server's key finds nothing at all.
+            assert!(crate::db::get_vault_info_value(
+                &conn,
+                &response_receipt_key("https://api.skipi.app", PROFILE),
+            )
+            .is_none());
+        }
+
+        // ---- D14: the sentence the whole of write site 2 hangs on -----------
+        #[test]
+        fn d14_the_servers_exact_words_are_pinned_and_only_they_classify() {
+            // READ_FROM_AUTHORITY: `candidate_intake_service.py:105` at
+            // `ed6627e3`. BOUNDARY, said out loud: this pins the CLIENT's copy.
+            // It cannot see the server change its wording — if that happens
+            // write site 2 stops firing rather than starting to lie.
+            assert_eq!(
+                INTAKE_CONTENT_CONFLICT,
+                "event already accepted with different content"
+            );
+            assert_eq!(
+                response_conflict_token(r#"{"detail":"event already accepted with different content"}"#),
+                RESPONSE_ALREADY_DELIVERED
+            );
+            // THE THREE OTHER REFUSALS THAT SHARE THIS STATUS CODE. Not one of
+            // them is a delivery, and not one of them writes a receipt. The
+            // first two are the server's own other sentences, measured in its
+            // source; they are DIFFERENT sentences and they go to UNKNOWN.
+            for other in [
+                r#"{"detail":"response already accepted with different content"}"#,
+                r#"{"detail":"response_id already used for another profile"}"#,
+                r#"{"detail":"conflict"}"#,
+                "",
+            ] {
+                assert_eq!(
+                    response_conflict_token(other),
+                    RESPONSE_CONFLICT_UNKNOWN,
+                    "'{other}' is a conflict whose reason this build does not know"
+                );
+            }
+        }
+
+        // ---- D13: the decision cannot see a non-production predicate --------
+        #[test]
+        fn d13_the_decision_is_made_from_strings_and_from_nothing_else() {
+            // BACKLOG №603 is four inline copies of "unknown -> production". A
+            // new call site with a predicate of its own would widen that class
+            // instead of closing it, so the deciding function takes strings —
+            // which is a claim about its SHAPE, and a claim about shape is made
+            // over the source.
+            // The two source readers of the sibling module, reused rather than
+            // copied: one `body_of` in this file means one answer to "what does
+            // this function's body say", and a second copy would be a second
+            // answer that can drift from it.
+            use super::registry_scoped_identity::{body_of, signature_of};
+            let signature = signature_of("accepted_response_receipt");
+            for forbidden in ["JobsResponseEndpoint", "endpoint", "stand", "pilot", "Connection"] {
+                assert!(
+                    !signature.contains(forbidden),
+                    "the decision must not be able to see '{forbidden}' (signature: {signature})"
+                );
+            }
+            let body = body_of("accepted_response_receipt");
+            for forbidden in [
+                "jobs_response_endpoint",
+                "jobs_non_production_base",
+                "jobs_test_api_base",
+                "jobs_pilot_api_base",
+                ".stand",
+                ".pilot",
+            ] {
+                assert!(
+                    !body.contains(forbidden),
+                    "and it must not reach for '{forbidden}' either"
+                );
+            }
+            // The READER may take the base — and only the base.
+            let reader = body_of("jobs_response_receipts");
+            assert!(reader.contains("endpoint.base"), "the reader takes the base");
+            for forbidden in [".stand", ".pilot", "jobs_non_production_base"] {
+                assert!(
+                    !reader.contains(forbidden),
+                    "the reader must not read '{forbidden}'"
                 );
             }
         }
