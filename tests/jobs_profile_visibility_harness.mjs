@@ -3961,6 +3961,18 @@ ok(/base:\s*base\.clone\(\)/.test(walkSrc),
   'RS20c (D16) and the walk records the loop variable — the step that actually answered');
 ok(submitSrc.includes('&answer.base') || /response_receipt_key\(&answer\.base/.test(submitSrc),
   'RS20d (D16) and the row it is stored under names that same host');
+// AND THE UNIT TEST THAT PROVES D16 MUST BE ABLE TO SEE D16. Measured on
+// 2026-09-30: a first version of that test used a production spelling for BOTH
+// of its bases, and since `jobs_response_endpoint()` answers the production host
+// in a unit build, substituting the endpoint produced a value the test was
+// content with — it stayed GREEN under the mutation it is named for, and three
+// sibling tests caught it instead. The pilot spelling on the answering side is
+// what makes the substitution visible, so it is pinned here rather than left to
+// the next person's memory.
+const d16Body = String(rustFnBody(jobsRs, 'd16_the_receipt_names_the_host_that_answered_not_the_first_one_tried') || '');
+ok(d16Body.length > 0, 'RS20e the unit test named for D16 exists');
+ok(/api\.skipi\.app:8444/.test(d16Body) && /"https:\/\/api\.skipi\.app"/.test(d16Body),
+  'RS20f (D16) and its two bases are NOT both production spellings — otherwise it cannot see the mutation it is named for');
 
 // D14 — the exact bytes the whole of write site 2 hangs on.
 ok(jobsRs.includes('const INTAKE_CONTENT_CONFLICT: &str = "event already accepted with different content";'),
