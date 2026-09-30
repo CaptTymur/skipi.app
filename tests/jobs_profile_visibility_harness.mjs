@@ -4094,6 +4094,106 @@ ok(libRs.includes('jobs::jobs_response_receipts'),
 ok(countOf(libRs, 'jobs::jobs_response_receipts') === 1,
   'RS23b exactly once');
 
+// ════════════════════════════════════════════════════════════════════════════
+// RV. THE RESTORED SCREEN DOES NOT ATTRIBUTE AN EARLIER DELIVERY TO THE VERSION
+//     THE PERSON IS LOOKING AT.
+//
+// The false signature was introduced BY THIS CARD, which is why it is closed in
+// it. A 409 carries no version, so an `already_on_record` receipt has none —
+// and the bare sentence "your response has already been delivered", printed
+// beside a card headed "criteria as published, version 2", reads as a claim
+// about version 2 that nothing supports. The `acknowledgement` branch is a
+// different case and is deliberately untouched: the server named the version
+// there and the number is printed, so a v1 delivery beside a v2 heading is a
+// plain historical fact.
+// ════════════════════════════════════════════════════════════════════════════
+
+section('RV. an earlier delivery is not attributed to the version on screen');
+
+// The status line only, tags stripped — the `style` attribute carries digits
+// (font-weight:600) and would otherwise answer the "no digits" question for us.
+function statusLineHtmlOf(html) {
+  const m = String(html || '').match(/data-qa="jobs-respond-status"[^>]*>([\s\S]*?)<\/div>/);
+  return m ? m[1] : '';
+}
+function statusTextOf(html) {
+  return statusLineHtmlOf(html).replace(/<[^>]*>/g, '').trim();
+}
+
+const EN_EARLIER = 'It was delivered earlier: Skipi Seafarer cannot say which published version that response answered.';
+const RU_EARLIER = 'Он был доставлен ранее: Скипи Моряк не может назвать, какой опубликованной версии тот отклик отвечал.';
+
+ok(enBlock.includes("'jobs.profiles.respond_already_version_unknown'"),
+  'RV0 the one new dictionary key exists in EN');
+ok(ruBlock.includes("'jobs.profiles.respond_already_version_unknown'"),
+  'RV0b and in RU — the single deliberate exception to "no new dictionary lines", taken because minimality must not cost the screen its honesty');
+
+// PROFILE_MATCH is published_version 7, so "the version on screen" is a real
+// number the status line could have borrowed.
+const RV_CARD = PROFILE_MATCH;
+
+for (const [lang, already, earlier] of [['en', EN_ALREADY, EN_EARLIER], ['ru', RU_ALREADY, RU_EARLIER]]) {
+  const r = await renderJobsScreen({ profiles: [RV_CARD], receipts: mapOf(RECEIPT_ALREADY), lang });
+  const line = statusTextOf(r.sectionHtml);
+  ok(line.includes(already), `RV1 (${lang}) the existing sentence is still there`);
+  ok(line.includes(earlier), `RV2 (${lang}) (D21) and the second sentence says the delivery was EARLIER and that this build cannot name its version`);
+  ok(!/\d/.test(line),
+    `RV3 (${lang}) (D22) and the line carries NOT ONE DIGIT — an unknown version is not guessed (line: ${JSON.stringify(line)})`);
+  ok(!r.sectionHtml.includes('data-respond-state="ok"'),
+    `RV3b (${lang}) and it is not dressed as a confirmation`);
+  // The card heading DOES name the current version; the status line must not
+  // have borrowed it. Without this the "no digit" check could pass over a
+  // screen where the heading was missing too.
+  ok(/data-qa="jobs-respond-status"/.test(r.sectionHtml) && r.sectionHtml.includes(String(RV_CARD.published_version)),
+    `RV3c (${lang}) CALIBRATION — the version the line refuses to borrow is on the card, so there was something to borrow`);
+  ok(!statusLineHtmlOf(r.sectionHtml).includes('published version')
+     && !statusLineHtmlOf(r.sectionHtml).includes('опубликованной версии ')
+     || !/\d/.test(line),
+    `RV3d (${lang}) and no "delivered against published version N" phrasing reaches this branch`);
+  // THE BUTTON STAYS DEAD. This branch decides nothing about responding again.
+  ok(/data-qa="jobs-respond-btn"[^>]*\sdisabled/.test(r.sectionHtml)
+    && /data-qa="jobs-respond-btn"[^>]*aria-disabled="true"/.test(r.sectionHtml),
+    `RV4 (${lang}) (D10) and the button is still drawn and DEAD — no version disagreement revives it`);
+}
+
+// CALIBRATION of the whole section: the acknowledgement branch MUST still print
+// the version. Without this pair, RV1-RV3 would be green over a build that had
+// simply stopped printing versions anywhere.
+for (const [lang, okSentence] of [['en', EN_OK], ['ru', RU_OK]]) {
+  const r = await renderJobsScreen({ profiles: [RV_CARD], receipts: mapOf(RECEIPT_ACK), lang });
+  const line = statusTextOf(r.sectionHtml);
+  ok(line.includes(okSentence), `RV5 (${lang}) CALIBRATION — the acknowledgement branch still shows its confirmation`);
+  ok(/\d/.test(line) && line.includes(String(RECEIPT_ACK.published_version)),
+    `RV5b (${lang}) CALIBRATION — and still names the version THE SERVER gave (${RECEIPT_ACK.published_version}), which is why that branch is untouched`);
+  ok(!line.includes(EN_EARLIER) && !line.includes(RU_EARLIER),
+    `RV5c (${lang}) and does NOT carry the "cannot say which version" sentence — there the version is known`);
+  ok(/data-qa="jobs-respond-btn"[^>]*\sdisabled/.test(r.sectionHtml),
+    `RV5d (${lang}) (D10) the button is dead in this branch too`);
+}
+
+// One sentence pair, one function: the pressed screen and the restored screen
+// must not drift into two claims about one card.
+const pressed = await runRespond({ submitThrows: 'RESPONSE_ALREADY_DELIVERED' });
+ok(pressed.statusHtml.includes(EN_ALREADY) && pressed.statusHtml.includes(EN_EARLIER),
+  'RV6 a FRESH 409 press says the same two things as the restored screen — one function, no drift');
+ok(!/\d/.test(String(pressed.statusHtml).replace(/<[^>]*>/g, '')),
+  'RV6b and no digit there either');
+ok(countOf(html, 'function jobsRespondAlreadyText(') === 1
+  && countOf(html, 'jobsRespondAlreadyText()') === 3,
+  `RV6c and that pair is built in exactly ONE place, used by both (found ${countOf(html, 'jobsRespondAlreadyText()') - 1} uses)`);
+
+// ---- THE FOUR RENDERED LINES, PRINTED AS EVIDENCE --------------------------
+// Taken from the rendered screen, not retyped: this is what goes to the
+// counsellor before merge.
+console.log('\n  --- RENDERED STATUS LINES (evidence, both states x both locales) ---');
+for (const [state, receipt] of [['acknowledgement', RECEIPT_ACK], ['already_on_record', RECEIPT_ALREADY]]) {
+  for (const lang of ['en', 'ru']) {
+    const r = await renderJobsScreen({ profiles: [RV_CARD], receipts: mapOf(receipt), lang });
+    console.log(`  [${state} / ${lang}] ${statusTextOf(r.sectionHtml)}`);
+  }
+}
+console.log('  --- end evidence ---');
+
 console.log('');
 if (fail > 0) {
   console.error(`FAILURES (${fail}):`);
