@@ -3922,21 +3922,67 @@ ok(countOf(submitSrc, 'set_vault_info') === 2,
 // D18/D19 — NEITHER WRITE MAY LAND IN A VAULT THAT WAS SWAPPED MID-REQUEST.
 //
 // The command reads the identity, RELEASES the vault lock to speak to the server
-// for up to 45 seconds, and takes it again to write. Four production sites
-// replace the open vault (`commands/profile.rs:166`, `:898`, `:910`, `:949`) and
-// nothing forbids one of them landing inside that window — so the receipt could
-// carry vault A's identity into vault B's file. The reader would refuse it
-// afterwards, which is right, but vault A would be left without the receipt it
-// earned while a stranger's file held its metadata.
+// for up to 45 seconds, and takes it again to write. Nothing forbids the open
+// vault being replaced inside that window — so the receipt could carry vault A's
+// identity into vault B's file. The reader would refuse it afterwards, which is
+// right, but vault A would be left without the receipt it earned while a
+// stranger's file held its metadata.
+//
+// TWO NUMBERS, AND THEY MEAN DIFFERENT THINGS — counted rather than recalled,
+// because one of them was written here as the other and was simply wrong.
+//   * NINE production sites replace the open vault: `commands/vault.rs:591`,
+//     `:616`, `:626`, `:727`, `:1067` and `commands/profile.rs:166`, `:898`,
+//     `:910`, `:949`. (A tenth, `restore_account_profile`, guards itself by
+//     refusing while the vault is closed.) THAT is the size of the hazard.
+//   * FOUR of them — the `profile.rs` ones — update `vault_path` and release
+//     its lock BEFORE taking `conn`'s, so `vault_path` LAGS the connection
+//     during the swap. Those four are why comparing `state.vault_path` instead
+//     would be wrong in both directions, including refusing a write to the
+//     CORRECT vault. The five in `vault.rs` hold both locks together and have
+//     no lag at all.
+// The guard is indifferent to which kind a site is, because it asks the
+// connection and not the state beside it.
 const atCapture = submitSrc.indexOf('vault_db_file(conn)');
 ok(atCapture > 0,
   'RS24 the file of the connection the identity was read out of is captured');
 ok(atCapture < atSend,
   'RS24b (D18/D19) and captured BEFORE the request — anything read later is read of whatever connection is open by then');
-ok(countOf(submitSrc, 'same_vault_db') === 2,
-  `RS24c (D18/D19) and BOTH receipt writes are guarded by that comparison (found ${countOf(submitSrc, 'same_vault_db')})`);
-ok(countOf(alreadyBlock, 'same_vault_db') === 1,
-  'RS24d one of them being the classified-409 write');
+// THE ADDRESS, NOT THE COUNT — and this line reads the way it does because the
+// count was tried first and failed in an auditor's hands.
+//
+// MEASURED 2026-09-30, reproduced by me before changing anything:
+// `countOf(submitSrc, 'same_vault_db') === 2` was green over a COMPLETELY
+// UNGUARDED acknowledgement write. Remove the guard from that write and add one
+// mention of `same_vault_db` anywhere else in the command — which is exactly
+// what a legitimate third guarded write would look like — and the harness read
+// 899 passed / 0 failed. `cargo test` cannot see it by construction: these
+// blocks need a `tauri::State` no unit test has. A count cannot express "THIS
+// write is guarded". The region from the lock that opens one write to the
+// receipt that write builds can, and a legitimate third write no longer reds it.
+function guardRegionBefore(marker) {
+  const at = submitSrc.indexOf(marker);
+  if (at < 0) return null;
+  const lockAt = submitSrc.lastIndexOf('state.conn.lock()', at);
+  if (lockAt < 0) return null;
+  return submitSrc.slice(lockAt, at);
+}
+const ackGuardRegion = guardRegionBefore('receipt_from_acknowledgement');
+const alreadyGuardRegion = guardRegionBefore('receipt_already_on_record');
+ok(ackGuardRegion !== null && alreadyGuardRegion !== null,
+  'RS24c both write regions were located (each write\'s own lock, up to its own receipt)');
+for (const [what, region, id] of [
+  ['the acknowledgement write', ackGuardRegion, 'RS24d'],
+  ['the classified-409 write', alreadyGuardRegion, 'RS24e'],
+]) {
+  const n = countOf(String(region || ''), 'same_vault_db');
+  ok(n === 1,
+    `${id} (D18/D19/D20) ${what} is guarded between its own lock and its own receipt (found ${n})`);
+  // AND IN THE GATING POSITION. Without this, `let _ = same_vault_db(..);`
+  // dropped after the lock would satisfy the count while gating nothing — the
+  // D21 drill.
+  ok(tight(String(region || '')).includes('.filter(|conn|same_vault_db('),
+    `${id}b (D21) and the comparison is what BINDS the connection, not a value computed beside it`);
+}
 // THE COMPARISON IS OF THE CONNECTION'S OWN FILE, not of `state.vault_path`.
 // Those four sites set `vault_path` FIRST and `conn` SECOND under two separate
 // locks, so `vault_path` LAGS the connection during a swap and a comparison
@@ -4007,8 +4053,24 @@ ok(submitSrc.includes('&answer.base') || /response_receipt_key\(&answer\.base/.t
 // the next person's memory.
 const d16Body = String(rustFnBody(jobsRs, 'd16_the_receipt_names_the_host_that_answered_not_the_first_one_tried') || '');
 ok(d16Body.length > 0, 'RS20e the unit test named for D16 exists');
-ok(/api\.skipi\.app:8444/.test(d16Body) && /"https:\/\/api\.skipi\.app"/.test(d16Body),
-  'RS20f (D16) and its two bases are NOT both production spellings — otherwise it cannot see the mutation it is named for');
+// PINNED ON THE ANSWERING SIDE, and this is the SECOND attempt at this line.
+// MEASURED 2026-09-30: a version asserting only that both spellings were PRESENT
+// in the body stayed green after the two literals were merely SWAPPED — both are
+// present either way — and under the D16 mutation the test named for it went
+// back to being non-discriminating. Presence is not a property; WHICH base
+// answered is. The D22 drill is that swap.
+//
+// Read out of the source rather than hard-coded by name, so renaming the
+// variables reds nothing (verified) and changing which base answers reds this.
+const d16AnsweringVar = (d16Body.match(/answer_from\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)/) || [])[1];
+ok(!!d16AnsweringVar, 'RS20f the test builds its HttpAnswer from a named base');
+const d16AnsweringLiteral = d16AnsweringVar
+  ? (d16Body.match(new RegExp('let\\s+' + d16AnsweringVar + '\\s*=\\s*"([^"]+)"')) || [])[1]
+  : undefined;
+ok(/:\d+$/.test(String(d16AnsweringLiteral || '')),
+  `RS20g (D16/D22) and the base that ANSWERED carries a port — a production spelling there is what jobs_response_endpoint() returns in a unit build, so the substitution would be invisible (got ${JSON.stringify(d16AnsweringLiteral)})`);
+ok(/"https:\/\/api\.skipi\.app"/.test(d16Body),
+  'RS20h while the base that was merely TRIED is the bare production host, so the mutation has something to substitute');
 
 // D14 — the exact bytes the whole of write site 2 hangs on.
 ok(jobsRs.includes('const INTAKE_CONTENT_CONFLICT: &str = "event already accepted with different content";'),
