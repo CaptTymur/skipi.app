@@ -14397,7 +14397,67 @@ function jobsProfileCrewingHtml(p){
         +esc(tr('jobs.profiles.crewing')+': ')+parts.join(' · ')+badge+'</div>';
 }
 
-function jobsProfilesSectionHtml(items, docs, docsKnown, endpoint, identity){
+// THE ONE PLACE that answers "does this device hold a delivery receipt for this
+// profile", so the renderer and the handler cannot drift into a dead button that
+// sends or a live button that refuses — the same rule the recipient name is
+// already held to.
+//
+// Rust has already checked the five conditions that make a receipt this vault's,
+// this registry's, this profile's and this response's. What is left here is the
+// shape: an object whose `source` is one this build knows. Anything else — null,
+// a string, an unknown source — is no receipt.
+function jobsProfileReceipt(receipts, pid){
+    var key=String(pid||'');
+    if(!key||!receipts||typeof receipts!=='object')return null;
+    var r=receipts[key];
+    if(!r||typeof r!=='object')return null;
+    var src=String(r.source||'');
+    if(src!=='acknowledgement'&&src!=='already_on_record')return null;
+    return r;
+}
+
+// The receipt of the profile the HANDLER is about to speak for, read from what
+// the section was last drawn from — the same source `jobsProfileById` uses, for
+// the same reason.
+function jobsProfileReceiptById(pid){
+    return jobsProfileReceipt(jobsProfilesLastRender&&jobsProfilesLastRender.receipts, pid);
+}
+
+// The sentence a receipt is shown as, and it is one of the two this file ALREADY
+// says on a press — no new string, no new claim.
+//
+// `already_on_record` deliberately reuses `respond_already` word for word: a 409
+// cannot tell "delivered and kept" from "delivered and the agency removed it",
+// because the server answers both with the same sentence on purpose. So the
+// screen says the one thing true of both, which is what a repeat press says
+// today.
+function jobsRespondReceiptText(receipt){
+    if(String((receipt&&receipt.source)||'')==='acknowledgement'){
+        var v=receipt&&receipt.published_version;
+        var version=(v===null||v===undefined)
+            ?'' :' '+tr('jobs.profiles.respond_ack_version')+' '+String(v);
+        return tr('jobs.profiles.respond_ok')+version;
+    }
+    return tr('jobs.profiles.respond_already');
+}
+
+// Which state a receipt reads as. `acknowledgement` is the green line the
+// handler writes on a confirmed delivery; `already_on_record` is the same
+// non-retryable state a 409 leaves, and it keeps that state's colour so the
+// restored screen and the pressed screen are one screen.
+function jobsRespondReceiptState(receipt){
+    return String((receipt&&receipt.source)||'')==='acknowledgement'?'ok':'gone';
+}
+
+// ONE SHAPE OF A STATUS LINE, used both by the renderer that PRE-FILLS it after
+// a cold start and by the handler that writes it on a press. Two copies of this
+// markup would be two lines that drift.
+function jobsRespondStatusHtml(state, text){
+    var color=state==='ok'?'var(--green)':(state==='pending'?'var(--text2)':'var(--red)');
+    return '<span style="color:'+color+';font-weight:'+(state==='pending'?'400':'600')+';">'+esc(text)+'</span>';
+}
+
+function jobsProfilesSectionHtml(items, docs, docsKnown, endpoint, identity, receipts){
     // BOTH localisation mechanisms of this file are used here on purpose. The
     // tr() dictionary carries the prose; the inline table below carries the
     // short marks. The desktop feed card body next door is localised by
@@ -14445,7 +14505,7 @@ function jobsProfilesSectionHtml(items, docs, docsKnown, endpoint, identity){
         }
         h+='<div style="font-size:11px;color:var(--text2);margin-top:8px;">'+esc(tr('jobs.profiles.unknown_note'))+'</div>';
         h+=jobsProfileCrewingHtml(p);
-        h+=jobsProfileRespondHtml(p, endpoint, identity);
+        h+=jobsProfileRespondHtml(p, endpoint, identity, jobsProfileReceipt(receipts, p&&p.profile_id));
         h+='</div>';
     });
     return h+'</div>';
@@ -14460,7 +14520,7 @@ function jobsProfilesSectionHtml(items, docs, docsKnown, endpoint, identity){
 //
 // Nothing here claims anything about delivery: the status line starts empty and
 // is only ever written from the server's own acknowledgement.
-function jobsProfileRespondHtml(profile, endpoint, identity){
+function jobsProfileRespondHtml(profile, endpoint, identity, receipt){
     var pid=String((profile&&profile.profile_id)||'');
     if(!pid)return '';
     var ru=getUiLang()==='ru';
@@ -14480,6 +14540,37 @@ function jobsProfileRespondHtml(profile, endpoint, identity){
         h+='<div data-qa="jobs-respond-pilot" style="font-size:11px;color:var(--orange);margin-bottom:6px;">'
           +esc(tr('jobs.profiles.respond_pilot'))+' '+esc(String(endpoint.base||''))+'</div>';
     }
+    // THE RESPONSE IS ALREADY ON RECORD, AND THIS DEVICE KNOWS IT WITHOUT
+    // ASKING ANYBODY — №605.
+    //
+    // FIRST, BEFORE BOTH EARLY RETURNS BELOW, and that ordering is the fix and
+    // not a preference. A delivery is a fact about the PAST: it does not depend
+    // on whether the identity step happens to be satisfied right now, nor on
+    // whether the app can name the receiving agency in today's answer. Placed
+    // after either refusal, a restored vault would be walked through "Get my
+    // Skipi ID" and handed a live irreversible button for a response the server
+    // already holds — which is the very defect this card closes, reached by a
+    // different door.
+    //
+    // THE BUTTON IS DRAWN AND DEAD, exactly as in the "no recipient" branch
+    // below: a refusal at the place where he pressed, not in another corner of
+    // the card. And there is NO sentence about irreversibility here — that
+    // sentence exists to be read while the choice is still open, and this choice
+    // was made.
+    if(receipt){
+        var rState=jobsRespondReceiptState(receipt);
+        h+='<button type="button" class="btn btn-accent btn-sm" data-qa="jobs-respond-btn"'
+          +' id="jobs-respond-btn-'+escAttr(pid)+'" disabled aria-disabled="true"'
+          +' data-receipt-source="'+escAttr(String(receipt.source||''))+'"'
+          +' onclick="jobsRespondToProfile(\''+jsString(pid)+'\')">'
+          +esc(tr('jobs.profiles.respond'))+'</button>';
+        h+='<div data-qa="jobs-respond-status" id="jobs-respond-status-'+escAttr(pid)+'"'
+          +' role="status" data-respond-state="'+escAttr(rState)+'"'
+          +' style="font-size:12px;margin-top:8px;line-height:1.45;">'
+          +jobsRespondStatusHtml(rState, jobsRespondReceiptText(receipt))+'</div>';
+        return h+'</div>';
+    }
+
     // NO NAME OF THE RECIPIENT, NO RESPONSE — owner, 2026-09-30.
     //
     // This is checked BEFORE the identity step on purpose. If the app cannot
@@ -14614,7 +14705,25 @@ function jobsProfilesRerenderIdentity(identity){
     var host=document.getElementById('jobs-profiles-host');
     var last=jobsProfilesLastRender;
     if(!host||!last)return false;
-    host.innerHTML=jobsProfilesSectionHtml(last.items,last.docs,last.docsKnown,last.endpoint,identity);
+    // The receipts travel with the rest of the last render. Without that, a
+    // claim of the identity would redraw the section from data that has no
+    // receipts in it, and the restored state would live only until the first
+    // time this ran.
+    host.innerHTML=jobsProfilesSectionHtml(last.items,last.docs,last.docsKnown,last.endpoint,identity,last.receipts);
+    return true;
+}
+
+// WHAT THIS SESSION HAS JUST LEARNED, written where every later redraw reads
+// from. Rust has already put the same fact in the vault in the same call; this
+// is the in-memory echo of it, and without it a redraw inside ONE session would
+// bring the active button back — №605 without a restart.
+function jobsProfileRememberReceipt(pid, receipt){
+    var key=String(pid||'');
+    if(!key||!jobsProfilesLastRender||!receipt)return false;
+    if(!jobsProfilesLastRender.receipts||typeof jobsProfilesLastRender.receipts!=='object'){
+        jobsProfilesLastRender.receipts={};
+    }
+    jobsProfilesLastRender.receipts[key]=receipt;
     return true;
 }
 
@@ -14699,9 +14808,8 @@ function jobsRespondSetStatus(box, state, text){
     // REPLACED, never appended: a refusal that is added under an earlier
     // "delivered" line leaves both sentences on screen, and the seafarer reads
     // the one he wants. One state, one sentence.
-    var color=state==='ok'?'var(--green)':(state==='pending'?'var(--text2)':'var(--red)');
     box.setAttribute('data-respond-state', state);
-    box.innerHTML='<span style="color:'+color+';font-weight:'+(state==='pending'?'400':'600')+';">'+esc(text)+'</span>';
+    box.innerHTML=jobsRespondStatusHtml(state, text);
 }
 
 // Deliver one response, and show success ONLY on the server's acknowledgement.
@@ -14717,6 +14825,21 @@ async function jobsRespondToProfile(profileId){
     if(!pid)return;
     var box=document.getElementById('jobs-respond-status-'+pid);
     var btn=document.getElementById('jobs-respond-btn-'+pid);
+    // ALREADY DELIVERED — AND IT IS THE CODE THAT REFUSES, not the grey button.
+    //
+    // THE FIRST BLOCK OF THIS HANDLER, before `ensure_profile_response_id`,
+    // before the CV is written to disk and before anything touches the network.
+    // A press that reaches here anyway — a scripted click, an attribute stripped
+    // in a devtools console — therefore sends nothing, writes no privacy-reduced
+    // CV into the downloads folder and costs nothing. The order is the same one
+    // the renderer uses, so the screen and the press never say two different
+    // things about the same card.
+    var receipt=jobsProfileReceiptById(pid);
+    if(receipt){
+        if(btn)btn.disabled=true;
+        jobsRespondSetStatus(box, jobsRespondReceiptState(receipt), jobsRespondReceiptText(receipt));
+        return;
+    }
     // THE REAL BLOCK, and the reason the one in the markup is not the whole
     // answer. A disabled attribute is a statement to a browser; this is a
     // statement to the code. Nothing is asked of the vault first — no response
@@ -14774,7 +14897,14 @@ async function jobsRespondToProfile(profileId){
         // a stand where nothing had been removed, the intake was alive and one
         // row stood in `profile_responses`. What a repeat really means is that
         // the response is already on record, and that is what it now says.
-        if(raw.indexOf('RESPONSE_ALREADY_DELIVERED')>=0){ refuse('gone',tr('jobs.profiles.respond_already')); return; }
+        if(raw.indexOf('RESPONSE_ALREADY_DELIVERED')>=0){
+            // Rust has just written this receipt into the vault. Remembering it
+            // here too is what keeps a redraw inside THIS session from bringing
+            // the active button back.
+            jobsProfileRememberReceipt(pid,{source:'already_on_record',published_version:null});
+            refuse('gone',tr('jobs.profiles.respond_already'));
+            return;
+        }
         if(raw.indexOf('RESPONSE_CONFLICT_UNKNOWN')>=0){ refuse('gone',tr('jobs.profiles.respond_conflict')); return; }
         // KEPT, and today produced by nothing — stated rather than hidden. The
         // server answers a document its agency deleted with the SAME sentence as
@@ -14802,6 +14932,13 @@ async function jobsRespondToProfile(profileId){
     var version=(ack.published_version===null||ack.published_version===undefined)
         ?'' :' '+tr('jobs.profiles.respond_ack_version')+' '+String(ack.published_version);
     jobsRespondSetStatus(box,'ok',tr('jobs.profiles.respond_ok')+version);
+    // The same fact Rust has just written into the vault, kept where every later
+    // redraw of this session reads from.
+    jobsProfileRememberReceipt(pid,{
+        source:'acknowledgement',
+        published_version:(ack.published_version===null||ack.published_version===undefined)
+            ?null:ack.published_version
+    });
 }
 
 // The only loader of this section, called from exactly two places: the desktop
@@ -14845,8 +14982,18 @@ async function loadJobsProfiles(sp){
     try{ identity=await invoke('seafarer_identity_entry_state'); }catch(e){ identity=null; }
     identity=identity||{};
     identity.missing=jobsIdentityMissingProfileFields(sp);
-    jobsProfilesLastRender={items:visible,docs:docs,docsKnown:docsKnown,endpoint:endpoint};
-    host.innerHTML=jobsProfilesSectionHtml(visible, docs, docsKnown, endpoint, identity);
+    // WHICH OF THESE RESPONSES THIS DEVICE HAS ALREADY DELIVERED, read from the
+    // vault and from nowhere else — the input that did not exist before №605, and
+    // the reason a cold start used to show an irreversible button on a response
+    // the server already held. No network: the command does not have one.
+    var receipts=null;
+    try{
+        receipts=await invoke('jobs_response_receipts',{
+            profileIds:visible.map(function(p){ return String((p&&p.profile_id)||''); })
+        });
+    }catch(e){ receipts=null; }
+    jobsProfilesLastRender={items:visible,docs:docs,docsKnown:docsKnown,endpoint:endpoint,receipts:receipts};
+    host.innerHTML=jobsProfilesSectionHtml(visible, docs, docsKnown, endpoint, identity, receipts);
     return visible;
 }
 

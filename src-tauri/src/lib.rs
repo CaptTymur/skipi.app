@@ -282,6 +282,7 @@ pub fn run() {
             jobs::fetch_published_profiles,
             jobs::jobs_response_endpoint,
             jobs::ensure_profile_response_id,
+            jobs::jobs_response_receipts,
             jobs::sign_self_session_challenge,
             jobs::seafarer_identity_entry_state,
             jobs::ensure_seafarer_identity,

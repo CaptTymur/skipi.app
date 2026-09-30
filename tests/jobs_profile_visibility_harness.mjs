@@ -553,6 +553,20 @@ function makeInvoke(state) {
         }
         return VAULT_RESPONSE_IDS.get(pid);
       }
+      // WHAT THE VAULT ALREADY HOLDS ABOUT DELIVERED RESPONSES (№605). The
+      // five conditions that make a receipt this vault's, this registry's,
+      // this profile's and this response's are checked IN RUST — this stub
+      // stands for a command that has already applied them, and the JS side's
+      // own contract is what it does with the answer.
+      //
+      // `receiptsThrow` is a REAL state and not decoration: the command is new,
+      // so a build whose WebView is newer than its binary answers "not
+      // registered", and the loader must then draw today's screen rather than
+      // no screen.
+      case 'jobs_response_receipts':
+        state.receiptCalls.push((args && args.profileIds) || null);
+        if (state.receiptsThrow) throw new Error('command not registered');
+        return JSON.parse(JSON.stringify(state.receipts));
       case 'get_downloads_dir': return '/tmp/jobs-harness-downloads';
       case 'export_redacted_cv_pdf':
         if (state.cvThrows) throw new Error('vault locked');
@@ -651,6 +665,12 @@ function boot(opts = {}) {
       ? { delivered: true, response_id: 'r', profile_id: 'p', crewing_id: 'c', published_version: 7, intake_id: 'intake-0001', content_sha256: 'abc', created_at: '2026-09-28T00:00:00Z' }
       : opts.submitAck,
     submitThrows: opts.submitThrows || '',
+    // The receipts the vault holds. EMPTY BY DEFAULT, so every assertion
+    // written before this card is answered exactly as it was: no receipt is the
+    // state of every vault that has not delivered anything.
+    receipts: opts.receipts === undefined ? {} : opts.receipts,
+    receiptsThrow: !!opts.receiptsThrow,
+    receiptCalls: [],
     cvThrows: !!opts.cvThrows,
     responseIdThrows: !!opts.responseIdThrows,
     identity: opts.identity === undefined ? { ...IDENTITY_READY } : { ...opts.identity },
@@ -2217,7 +2237,10 @@ function locksSpanningNetwork(body) {
   }
   return out;
 }
-['ensure_seafarer_identity', 'submit_profile_response'].forEach((fn) => {
+// `jobs_response_receipts` is in this list from the day it was written, and it
+// has no request in it at all. That is the point of pinning it here: the reader
+// of №605 answers from the vault, and the invariant says it will stay that way.
+['ensure_seafarer_identity', 'submit_profile_response', 'jobs_response_receipts'].forEach((fn) => {
   const body = rustFnBody(jobsRs, fn) || '';
   const bad = locksSpanningNetwork(body);
   ok(bad.length === 0,
@@ -2226,8 +2249,21 @@ function locksSpanningNetwork(body) {
 const identityLocks = countOf(withoutLineComments(String(identityRustBody || '')), 'state.conn.lock()');
 ok(identityLocks === 3,
   `I18b it takes that lock three separate times — read, the claim answer, the marker (found ${identityLocks})`);
-ok(countOf(withoutLineComments(String(rustFnBody(jobsRs, 'submit_profile_response') || '')), 'state.conn.lock()') === 1,
-  'I18c and the command it copies takes it once, before the network — the shape is the file\'s, not this function\'s');
+// THREE, and each one is named, for the same reason `I18b` counts three next
+// door: №605 added two vault writes to this command and a count of one would
+// have been red on an honest implementation.
+//
+// THE COUNT IS NOT COSMETIC AND IT IS NOT WEAKENED BY BEING RAISED. The
+// tempting way to keep this green at one was to move `lock()` + `set_vault_info`
+// into a helper function — and `rustFnBody` does not follow a call, so BOTH I18
+// and I18c would have gone blind while reading green. That is exactly "do the
+// card honestly and break the guard", so the writes stay INLINE here, each in
+// its own narrow block after the request, and this number rises to say so.
+// Mutation D15 is the proof: move either write into a helper and this drops to
+// one.
+const submitLocks = countOf(withoutLineComments(String(rustFnBody(jobsRs, 'submit_profile_response') || '')), 'state.conn.lock()');
+ok(submitLocks === 3,
+  `I18c it takes that lock three separate times — the identity read before the network, the receipt on the server's acknowledgement, the receipt on the classified 409 (found ${submitLocks})`);
 
 // ════════════════════════════════════════════════════════════════════════════
 // N. A SERVICE BUILD WRITES NOTHING INTO THE LIVE PRODUCT — S4e.
@@ -3554,6 +3590,399 @@ ok(r16pilot.nonprod === true,
   'R16f a pilot build still answers true — the third state is untouched by this delta');
 ok(r16pilot.html !== null && !r16pilot.html.includes('claimSkipiIdentity()'),
   'R16g and still draws no button, as test 14 already required');
+
+// ════════════════════════════════════════════════════════════════════════════
+// RC. A DELIVERY THAT HAPPENED IS STILL VISIBLE AFTER A COLD START — №605.
+//
+// WHAT WAS MEASURED BROKEN, not deduced: on 2026-09-29 a response was delivered
+// to the pilot, the app was force-stopped and started cold, and the card came
+// back BYTE FOR BYTE the card from before — an active "Respond with Skipi" and
+// no trace of the delivery. The server's row survived and so did the response id
+// in the vault; only the SCREEN did not, and it could not have: the
+// acknowledgement was handed to the WebView and written nowhere.
+//
+// MEASUREMENT BOUNDARY, stated rather than implied. This section runs the real
+// inline scripts in a DOM shim over a stubbed `jobs_response_receipts`. It
+// therefore proves WHAT THE SCREEN DOES WITH A RECEIPT and what the handler
+// refuses; it compiles nothing, opens no vault and does not prove the five
+// conditions that decide whether a receipt is this vault's — those are Rust's,
+// pinned by the unit tests in `jobs.rs` and by the source claims at the end of
+// this section.
+// ════════════════════════════════════════════════════════════════════════════
+
+section('RC. the receipt of a delivered response, restored on the screen (№605)');
+
+const RECEIPT_ACK = {
+  source: 'acknowledgement',
+  response_id: '11111111-2222-4333-8444-000000000001',
+  profile_id: PROFILE_MATCH.profile_id,
+  base: 'https://api.skipi.app',
+  vault_user_id: 'harness-vault-user',
+  subject_id: 'SKP-HARNESS-0001',
+  intake_id: 'intake-0001',
+  published_version: 7,
+  crewing_id: CREWING_ALPHA_ID,
+  content_sha256: 'abc',
+  server_created_at: '2026-09-28T00:00:00Z',
+};
+// The 409 receipt, and every optional field really is absent: a conflict body
+// carries no intake id, no version and no timestamp, so there is nothing else
+// honest to record.
+const RECEIPT_ALREADY = {
+  source: 'already_on_record',
+  response_id: RECEIPT_ACK.response_id,
+  profile_id: PROFILE_MATCH.profile_id,
+  base: RECEIPT_ACK.base,
+  vault_user_id: RECEIPT_ACK.vault_user_id,
+  subject_id: RECEIPT_ACK.subject_id,
+  intake_id: null,
+  published_version: null,
+  crewing_id: null,
+  content_sha256: null,
+  server_created_at: null,
+};
+const RECEIPT_ACK_NO_VERSION = { ...RECEIPT_ACK, published_version: null };
+const mapOf = (r) => ({ [PROFILE_MATCH.profile_id]: r });
+
+const EN_OK = 'The agency received your response.';
+const EN_VERSION = 'delivered against published version';
+const EN_ALREADY = 'Your response has already been delivered. Pressing again sends nothing new.';
+const EN_IRREVERSIBLE = 'A response cannot be withdrawn. Once it is delivered, the agency keeps it.';
+const RU_OK = 'Агентство получило ваш отклик.';
+const RU_ALREADY = 'Ваш отклик уже доставлен. Повторное нажатие ничего нового не отправит.';
+
+// ---- CALIBRATION FIRST. Without this pair the whole section could be green
+// over a driver that cannot see the button at all, and "the receipt hides it"
+// would be a claim about nothing.
+const rc0 = await renderJobsScreen({ profiles: [PROFILE_MATCH] });
+ok(rc0.sectionHtml.includes('data-qa="jobs-respond-btn"')
+  && !/data-qa="jobs-respond-btn"[^>]*\sdisabled/.test(rc0.sectionHtml),
+  'RC0 CALIBRATION — with NO receipt the button is drawn and LIVE, exactly as today');
+ok(rc0.sectionHtml.includes(EN_IRREVERSIBLE),
+  'RC0b CALIBRATION — and the sentence about irreversibility is printed, exactly as today');
+ok(rc0.sectionHtml.includes('data-qa="jobs-respond-status"')
+  && !rc0.sectionHtml.includes(EN_OK) && !rc0.sectionHtml.includes(EN_ALREADY),
+  'RC0c CALIBRATION — and the status line is EMPTY: nothing claims a delivery');
+ok(!rc0.sectionHtml.includes('data-receipt-source'),
+  'RC0d CALIBRATION — and no receipt marker is on the card');
+
+// ---- D10: the screen after a cold start on a CONFIRMED delivery -------------
+const rc1 = await renderJobsScreen({ profiles: [PROFILE_MATCH], receipts: mapOf(RECEIPT_ACK) });
+ok(/data-qa="jobs-respond-btn"[^>]*\sdisabled/.test(rc1.sectionHtml),
+  'RC1 (D10) with a receipt the button is DEAD — drawn and disabled, at the place where he pressed');
+ok(/data-qa="jobs-respond-btn"[^>]*aria-disabled="true"/.test(rc1.sectionHtml),
+  'RC1b and it says so to a screen reader too');
+ok(!rc1.sectionHtml.includes(EN_IRREVERSIBLE),
+  'RC1c (D10) and the irreversibility warning is NOT printed — that sentence is for a choice still open');
+ok(rc1.sectionHtml.includes(EN_OK),
+  'RC1d and the status line is PRE-FILLED with the sentence the delivery already earned');
+ok(rc1.sectionHtml.includes(EN_VERSION + ' 7'),
+  'RC1e and it names the published version the server acknowledged — from the receipt, not from a guess');
+ok(rc1.sectionHtml.includes('data-respond-state="ok"'),
+  'RC1f and the line carries the same state attribute the handler writes on a delivery');
+ok(rc1.sectionHtml.includes('data-receipt-source="acknowledgement"'),
+  'RC1g and the card says which kind of receipt restored it');
+// The version is the server's or it is absent — never a substitute.
+const rc1n = await renderJobsScreen({ profiles: [PROFILE_MATCH], receipts: mapOf(RECEIPT_ACK_NO_VERSION) });
+ok(rc1n.sectionHtml.includes(EN_OK) && !rc1n.sectionHtml.includes(EN_VERSION),
+  'RC1h a receipt without a version says so by SAYING NOTHING — no invented number');
+
+// ---- the same screen in Russian ---------------------------------------------
+const rc2 = await renderJobsScreen({ profiles: [PROFILE_MATCH], receipts: mapOf(RECEIPT_ACK), lang: 'ru' });
+ok(rc2.sectionHtml.includes(RU_OK) && /data-qa="jobs-respond-btn"[^>]*\sdisabled/.test(rc2.sectionHtml),
+  'RC2 and the restored screen is in Russian for a Russian seafarer, button equally dead');
+
+// ---- the 409 receipt: the sentence the product ALREADY says ------------------
+const rc3 = await renderJobsScreen({ profiles: [PROFILE_MATCH], receipts: mapOf(RECEIPT_ALREADY) });
+ok(rc3.sectionHtml.includes(EN_ALREADY),
+  'RC3 an already_on_record receipt shows the sentence a repeat press shows today — no new claim');
+ok(!rc3.sectionHtml.includes(EN_OK),
+  'RC3b and NOT the confirmation sentence: a 409 is not an acknowledgement');
+ok(rc3.sectionHtml.includes('data-respond-state="gone"'),
+  'RC3c and it keeps the non-retryable state of that refusal');
+ok(/data-qa="jobs-respond-btn"[^>]*\sdisabled/.test(rc3.sectionHtml) && !rc3.sectionHtml.includes(EN_IRREVERSIBLE),
+  'RC3d dead button, no irreversibility warning');
+const rc3ru = await renderJobsScreen({ profiles: [PROFILE_MATCH], receipts: mapOf(RECEIPT_ALREADY), lang: 'ru' });
+ok(rc3ru.sectionHtml.includes(RU_ALREADY),
+  'RC3e and in Russian it is the Russian sentence that already exists');
+
+// ---- fail-closed on every shape that is NOT a receipt -----------------------
+// A stub that answered "yes" to anything would make every assertion above
+// vacuous, so the refusals are enumerated rather than assumed.
+const NOT_RECEIPTS = [
+  ['null', null],
+  ['undefined — the command answered nothing', undefined],
+  ['{} — no row for any profile', {}],
+  ['a string', 'delivered'],
+  ['an array', []],
+  ['a row that is not an object', { [PROFILE_MATCH.profile_id]: 'delivered' }],
+  ['a row with no source', { [PROFILE_MATCH.profile_id]: { response_id: 'r' } }],
+  ['a source this build does not know', { [PROFILE_MATCH.profile_id]: { source: 'assumed' } }],
+  ['a source that LOOKS right but is not', { [PROFILE_MATCH.profile_id]: { source: 'acknowledged' } }],
+  ['a receipt for ANOTHER profile', { [PROFILE_OTHER_AGENCY.profile_id]: RECEIPT_ACK }],
+];
+for (const [what, receipts] of NOT_RECEIPTS) {
+  const r = await renderJobsScreen({ profiles: [PROFILE_MATCH], receipts });
+  ok(r.sectionHtml.includes('data-qa="jobs-respond-btn"')
+    && !/data-qa="jobs-respond-btn"[^>]*\sdisabled/.test(r.sectionHtml)
+    && r.sectionHtml.includes(EN_IRREVERSIBLE)
+    && !r.sectionHtml.includes(EN_OK),
+    `RC4 (${what}) is NOT a receipt: today's screen, live button, warning printed, no claim of delivery`);
+}
+// And a build whose WebView is newer than its binary: the command is not
+// registered at all.
+const rc5 = await renderJobsScreen({ profiles: [PROFILE_MATCH], receiptsThrow: true });
+ok(rc5.sectionHtml.includes('data-qa="jobs-respond-btn"')
+  && !/data-qa="jobs-respond-btn"[^>]*\sdisabled/.test(rc5.sectionHtml)
+  && rc5.sectionHtml.includes(EN_IRREVERSIBLE),
+  'RC5 a command that is not registered leaves TODAY\'S screen, not a broken one');
+
+// ---- the loader really asks, and asks for the rows it is drawing ------------
+const rc6 = await renderJobsScreen({ profiles: [PROFILE_MATCH, PROFILE_OTHER_AGENCY], receipts: {} });
+ok(rc6.state.receiptCalls.length === 1,
+  `RC6 the loader asks the vault ONCE per render (found ${rc6.state.receiptCalls.length})`);
+ok(Array.isArray(rc6.state.receiptCalls[0])
+  && rc6.state.receiptCalls[0].includes(PROFILE_MATCH.profile_id)
+  && rc6.state.receiptCalls[0].includes(PROFILE_OTHER_AGENCY.profile_id),
+  'RC6b and it asks about the profiles it is about to draw, not about a fixed one');
+// U1/U2 already prove a hidden row is not drawn; this proves it is not asked
+// about either — the ids that leave the WebView are the ids on the screen.
+const rc6h = await renderJobsScreen({ profiles: [PROFILE_NO_RANK, PROFILE_MATCH], receipts: {} });
+ok(Array.isArray(rc6h.state.receiptCalls[0])
+  && !rc6h.state.receiptCalls[0].includes(PROFILE_NO_RANK.profile_id),
+  'RC6c and a row that is not shown is not asked about');
+
+// ---- D11: THE HANDLER REFUSES, and the grey button is only the visible half --
+const rc7 = await runRespond({ receipts: mapOf(RECEIPT_ACK) });
+ok(rc7.submits.length === 0,
+  `RC7 (D11) a press with a receipt sends NOTHING (found ${rc7.submits.length} submits)`);
+const rc7cmds = rc7.state.calls.map((c) => c[0]);
+ok(!rc7cmds.includes('export_redacted_cv_pdf'),
+  'RC7b (D11) and writes no privacy-reduced CV into the downloads folder — the refusal is before the file');
+ok(!rc7cmds.includes('ensure_profile_response_id'),
+  'RC7c (D11) and mints nothing in the vault — the refusal is the FIRST block of the handler');
+ok(rc7.statusState === 'ok' && rc7.statusHtml.includes(EN_OK),
+  'RC7d and the seafarer is told what is true: the agency has his response');
+ok(rc7.buttonDisabled === true,
+  'RC7e and the button is left dead');
+const rc7a = await runRespond({ receipts: mapOf(RECEIPT_ALREADY) });
+ok(rc7a.submits.length === 0 && rc7a.statusState === 'gone' && rc7a.statusHtml.includes(EN_ALREADY),
+  'RC7f the same for an already_on_record receipt — nothing sent, the existing sentence shown');
+// CALIBRATION of the four refusals above: with no receipt this same driver DOES
+// reach the network, so RC7 measures the receipt and not a broken driver.
+const rc7cal = await runRespond({});
+ok(rc7cal.submits.length === 1 && rc7cal.state.calls.map((c) => c[0]).includes('export_redacted_cv_pdf'),
+  'RC7g CALIBRATION — without a receipt this driver demonstrably does submit and does write the CV');
+
+// ---- D12: the receipt survives the redraw after an identity claim ------------
+const rc8 = boot({ profiles: [PROFILE_MATCH], receipts: mapOf(RECEIPT_ACK), identity: IDENTITY_NONE });
+try { await rc8.sandbox.showJobs(); } catch (e) { /* section V's claim, not this one */ }
+await settle();
+ok(/data-qa="jobs-respond-btn"[^>]*\sdisabled/.test(rc8.profilesHost.innerHTML)
+  && rc8.profilesHost.innerHTML.includes(EN_OK),
+  'RC8 a vault with NO identity still shows the delivery it already made — the receipt is read BEFORE the identity step');
+ok(!rc8.profilesHost.innerHTML.includes('data-qa="jobs-identity-step"'),
+  'RC8b and it is not asked for a Skipi ID for a response the server already holds');
+const rc8redrawn = rc8.sandbox.jobsProfilesRerenderIdentity(IDENTITY_READY);
+ok(rc8redrawn === true, 'RC8c the identity redraw really ran');
+ok(/data-qa="jobs-respond-btn"[^>]*\sdisabled/.test(rc8.profilesHost.innerHTML)
+  && rc8.profilesHost.innerHTML.includes(EN_OK),
+  'RC8d (D12) and AFTER that redraw the receipt is still there — the state does not live only until the first claim');
+// And a receipt is read before the OTHER early return too: an answer that can no
+// longer name the agency does not erase a delivery that already happened.
+const rc8blank = await renderJobsScreen({
+  profiles: [{ ...PROFILE_BLANK_NAME, profile_id: PROFILE_MATCH.profile_id }],
+  receipts: mapOf(RECEIPT_ACK),
+});
+ok(rc8blank.sectionHtml.includes(EN_OK)
+  && !rc8blank.sectionHtml.includes('data-qa="jobs-respond-blocked"'),
+  'RC8e a blank agency name does not un-deliver a delivered response either');
+
+// ---- D17: the same session, without any restart -----------------------------
+// THE MIRROR OF №605 AND THE HALF A COLD START HIDES. After a successful
+// delivery the vault has a receipt but `jobsProfilesLastRender` was built before
+// it existed, so any redraw in the same session would hand back a LIVE
+// irreversible button on a response already delivered.
+const rc9 = boot({ profiles: [PROFILE_MATCH], receipts: {}, respondFor: [PROFILE_MATCH.profile_id] });
+try { await rc9.sandbox.showJobs(); } catch (e) { /* not this claim */ }
+await settle();
+ok(!/data-qa="jobs-respond-btn"[^>]*\sdisabled/.test(rc9.profilesHost.innerHTML),
+  'RC9 CALIBRATION — before the press the button of this very render is live');
+await rc9.sandbox.jobsRespondToProfile(PROFILE_MATCH.profile_id);
+await settle();
+ok(rc9.state.submits.length === 1, 'RC9b the press really delivered (the driver is not inert)');
+ok(rc9.sandbox.jobsProfilesRerenderIdentity(IDENTITY_READY) === true, 'RC9c and a redraw ran afterwards');
+ok(/data-qa="jobs-respond-btn"[^>]*\sdisabled/.test(rc9.profilesHost.innerHTML)
+  && rc9.profilesHost.innerHTML.includes(EN_OK),
+  'RC9d (D17) and the redraw shows the delivery — a receipt learned in this session is not lost by a redraw');
+// The same for the 409 that produces a receipt, and NOT for the conflict whose
+// reason this build does not know.
+const rc9c = boot({
+  profiles: [PROFILE_MATCH], receipts: {}, respondFor: [PROFILE_MATCH.profile_id],
+  submitThrows: 'RESPONSE_ALREADY_DELIVERED',
+});
+try { await rc9c.sandbox.showJobs(); } catch (e) { /* not this claim */ }
+await settle();
+await rc9c.sandbox.jobsRespondToProfile(PROFILE_MATCH.profile_id);
+await settle();
+rc9c.sandbox.jobsProfilesRerenderIdentity(IDENTITY_READY);
+ok(/data-qa="jobs-respond-btn"[^>]*\sdisabled/.test(rc9c.profilesHost.innerHTML)
+  && rc9c.profilesHost.innerHTML.includes(EN_ALREADY),
+  'RC9e (D17) an already-delivered 409 also survives a redraw in the same session');
+const rc9u = boot({
+  profiles: [PROFILE_MATCH], receipts: {}, respondFor: [PROFILE_MATCH.profile_id],
+  submitThrows: 'RESPONSE_CONFLICT_UNKNOWN',
+});
+try { await rc9u.sandbox.showJobs(); } catch (e) { /* not this claim */ }
+await settle();
+await rc9u.sandbox.jobsRespondToProfile(PROFILE_MATCH.profile_id);
+await settle();
+rc9u.sandbox.jobsProfilesRerenderIdentity(IDENTITY_READY);
+ok(!rc9u.profilesHost.innerHTML.includes(EN_OK) && !rc9u.profilesHost.innerHTML.includes(EN_ALREADY),
+  'RC9f (D3) a conflict whose reason this build does not know remembers NOTHING — it is not a delivery');
+const rc9t = boot({
+  profiles: [PROFILE_MATCH], receipts: {}, respondFor: [PROFILE_MATCH.profile_id],
+  submitThrows: 'network: connection refused',
+});
+try { await rc9t.sandbox.showJobs(); } catch (e) { /* not this claim */ }
+await settle();
+await rc9t.sandbox.jobsRespondToProfile(PROFILE_MATCH.profile_id);
+await settle();
+rc9t.sandbox.jobsProfilesRerenderIdentity(IDENTITY_READY);
+ok(!rc9t.profilesHost.innerHTML.includes(EN_OK) && !rc9t.profilesHost.innerHTML.includes(EN_ALREADY),
+  'RC9g (D9) a transport failure remembers NOTHING either — a network error is not a delivery');
+// A 2xx that is NOT a confirmation must not be remembered as one.
+const rc9p = boot({
+  profiles: [PROFILE_MATCH], receipts: {}, respondFor: [PROFILE_MATCH.profile_id],
+  submitAck: { delivered: true, intake_id: '   ' },
+});
+try { await rc9p.sandbox.showJobs(); } catch (e) { /* not this claim */ }
+await settle();
+await rc9p.sandbox.jobsRespondToProfile(PROFILE_MATCH.profile_id);
+await settle();
+rc9p.sandbox.jobsProfilesRerenderIdentity(IDENTITY_READY);
+ok(!rc9p.profilesHost.innerHTML.includes(EN_OK),
+  'RC9h (D2) an answer with no intake id is not a delivery on the screen either');
+
+// ---- NOT ONE NEW STRING IN THE DICTIONARY -----------------------------------
+// The card's PRESERVE line, measured rather than promised: both sentences the
+// restored screen shows already existed in RU and EN before this card.
+['jobs.profiles.respond_ok', 'jobs.profiles.respond_already', 'jobs.profiles.respond_ack_version']
+  .forEach((k) => {
+    ok(enBlock.includes(`'${k}'`) && ruBlock.includes(`'${k}'`),
+      `RC10 the sentence the receipt shows is the EXISTING key ${k}, in both languages`);
+  });
+ok(!/jobs\.profiles\.receipt/.test(html),
+  'RC10b and no `jobs.profiles.receipt*` key was invented — zero new dictionary lines');
+
+// ---- SOURCE CLAIMS. What the DOM shim cannot see ----------------------------
+//
+// BOUNDARY: these read jobs.rs AS TEXT. A property that holds only by the order
+// of lines is asserted here AND has an executable unit test in `jobs.rs`, because
+// text is not execution — see the receipt module at the foot of that file.
+section('RC. the receipt is written only on the server\'s word (source contract)');
+
+const submitSrc = withoutLineComments(String(rustFnBody(jobsRs, 'submit_profile_response') || ''));
+ok(submitSrc.length > 0, 'RS0 submit_profile_response found');
+
+// D2 — POSITIONAL: both halves of the check, then the write, then Ok(ack).
+const atDelivered = submitSrc.indexOf('"delivered"');
+const atIntake = submitSrc.indexOf('intake_id.is_none()');
+const atAckWrite = submitSrc.indexOf('receipt_from_acknowledgement');
+const atOk = submitSrc.lastIndexOf('Ok(ack)');
+ok(atDelivered > 0 && atIntake > atDelivered,
+  'RS1 both halves of the confirmation are still checked, in order');
+ok(atAckWrite > atIntake,
+  'RS2 (D2) the receipt is built AFTER both halves — a 2xx without them writes nothing');
+ok(atOk > atAckWrite,
+  'RS3 and BEFORE the acknowledgement is returned');
+const atSend = submitSrc.indexOf('send_on_response_bases');
+ok(atSend > 0 && atAckWrite > atSend,
+  'RS4 (D9) and after the request — a transport error leaves through the `?` and never reaches it');
+
+// D3 — the 409 write is under RESPONSE_ALREADY_DELIVERED and nowhere else.
+const conflictBlock = withoutLineComments(String(blockAfter(submitSrc, 'if answer.status == 409') || ''));
+ok(conflictBlock.length > 0, 'RS5 the 409 branch was found');
+ok(conflictBlock.includes('receipt_already_on_record'),
+  'RS6 the 409 receipt is written inside that branch');
+const alreadyBlock = withoutLineComments(String(blockAfter(conflictBlock, 'if token == RESPONSE_ALREADY_DELIVERED') || ''));
+ok(alreadyBlock.includes('receipt_already_on_record') && alreadyBlock.includes('set_vault_info'),
+  'RS7 (D3) and only inside the RESPONSE_ALREADY_DELIVERED arm of the classifier');
+ok(countOf(conflictBlock, 'set_vault_info') === 1
+  && countOf(alreadyBlock, 'set_vault_info') === 1,
+  'RS8 (D3) which is the ONLY write in that branch — RESPONSE_CONFLICT_UNKNOWN writes nothing');
+ok(!conflictBlock.includes('RESPONSE_CONFLICT_UNKNOWN'),
+  'RS8b and the unknown token is not even named on a write path');
+
+// D15 — the writes are INLINE. A helper would make RS1-RS8 and I18/I18c blind,
+// because rustFnBody does not follow a call.
+ok(countOf(submitSrc, 'set_vault_info') === 2,
+  `RS9 (D15) both receipt writes are INLINE in this command (found ${countOf(submitSrc, 'set_vault_info')}) — moved into a helper, every positional claim above goes blind`);
+
+// D4 — the base is part of the key ALWAYS, and no flag decides it.
+const keySrc = withoutLineComments(String(rustFnBody(jobsRs, 'response_receipt_key') || ''));
+ok(keySrc.includes('normalized_response_base') && keySrc.includes('RESPONSE_RECEIPT_KEY_PREFIX'),
+  'RS10 (D4) the row name is built from the normalised base and the profile id');
+ok(!/endpoint|stand|pilot|if\s/.test(keySrc),
+  'RS10b (D4) with NO branch in it — production is not an exception here, unlike the identity rows');
+
+// D13 — not one non-production predicate reaches the reader's decision.
+const readerSrc = withoutLineComments(String(rustFnBody(jobsRs, 'jobs_response_receipts') || ''));
+ok(readerSrc.length > 0, 'RS11 jobs_response_receipts found');
+ok(!/\.stand|\.pilot|jobs_non_production_base|jobs_test_api_base|jobs_pilot_api_base/.test(readerSrc),
+  'RS11b (D13) and it reads NO non-production predicate — BACKLOG №603 does not get a new call site');
+ok(/endpoint\.base/.test(readerSrc),
+  'RS11c only the base is taken from the endpoint');
+const decideSrc = withoutLineComments(String(rustFnBody(jobsRs, 'accepted_response_receipt') || ''));
+ok(decideSrc.length > 0, 'RS12 accepted_response_receipt found');
+ok(!/\.stand|\.pilot|endpoint|jobs_response_endpoint/.test(decideSrc),
+  'RS12b (D13) and the deciding function cannot even see an endpoint — it takes strings');
+// D4-D8 — all five conditions, in the one function that decides.
+[['base', 'RS13'], ['vault_user_id', 'RS14'], ['subject_id', 'RS15'], ['profile_id', 'RS16'], ['response_id', 'RS17']]
+  .forEach(([field, id]) => {
+    ok(decideSrc.includes(field),
+      `${id} (D4-D8) the decision compares ${field} — remove it and another vault's receipt reads as this one's`);
+  });
+ok(decideSrc.includes('RECEIPT_SOURCE_ACKNOWLEDGEMENT') && decideSrc.includes('RECEIPT_SOURCE_ALREADY_ON_RECORD'),
+  'RS18 and a `source` this build did not write is refused');
+ok(readerSrc.includes('RESPONSE_ID_KEY_PREFIX'),
+  'RS19 (D7) the response id it compares against is the one in THIS vault');
+
+// D16 — the receipt names the host that ANSWERED. Text here, execution in the
+// unit test: on a stand and on the pilot the list is one base, so equality holds
+// identically and no screen-level test could ever tell the difference.
+const ackBuildSrc = withoutLineComments(String(rustFnBody(jobsRs, 'receipt_from_acknowledgement') || ''));
+ok(ackBuildSrc.includes('answer.base'),
+  'RS20 (D16) the receipt takes its base from the ANSWER, not from the endpoint');
+ok(!/jobs_response_endpoint/.test(ackBuildSrc),
+  'RS20b and the builder cannot reach the endpoint at all');
+const walkSrc = withoutLineComments(String(rustFnBody(jobsRs, 'send_on_response_bases') || ''));
+ok(/base:\s*base\.clone\(\)/.test(walkSrc),
+  'RS20c (D16) and the walk records the loop variable — the step that actually answered');
+ok(submitSrc.includes('&answer.base') || /response_receipt_key\(&answer\.base/.test(submitSrc),
+  'RS20d (D16) and the row it is stored under names that same host');
+
+// D14 — the exact bytes the whole of write site 2 hangs on.
+ok(jobsRs.includes('const INTAKE_CONTENT_CONFLICT: &str = "event already accepted with different content";'),
+  'RS21 (D14) the server sentence write site 2 depends on is pinned character for character');
+// BOUNDARY, said out loud: this pins the CLIENT's copy. It cannot see the server
+// change its wording — provenance is `candidate_intake_service.py:105` at
+// `ed6627e3`, and if the server changes it, write site 2 stops firing rather
+// than starting to lie.
+// Over the PRODUCT half with the prose removed: a comment that names the
+// constant is not a second reader of it, and counting comments would make this
+// line fail on documentation.
+ok(countOf(jobsRsProduct, 'INTAKE_CONTENT_CONFLICT') === 2,
+  `RS21b and that literal has exactly one user in the product code — the classifier (found ${countOf(jobsRsProduct, 'INTAKE_CONTENT_CONFLICT') - 1})`);
+
+// PRESERVE — the delivery path and the id minting are untouched by this card.
+const ensureIdSrc = withoutLineComments(String(rustFnBody(jobsRs, 'ensure_profile_response_id') || ''));
+ok(ensureIdSrc.length > 0 && !/receipt/i.test(ensureIdSrc),
+  'RS22 PRESERVE — ensure_profile_response_id knows nothing about receipts');
+ok(libRs.includes('jobs::jobs_response_receipts'),
+  'RS23 the reader is registered, so the WebView can actually call it');
+ok(countOf(libRs, 'jobs::jobs_response_receipts') === 1,
+  'RS23b exactly once');
 
 console.log('');
 if (fail > 0) {

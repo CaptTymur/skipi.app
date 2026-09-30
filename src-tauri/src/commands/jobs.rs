@@ -652,6 +652,198 @@ fn response_conflict_token(body: &str) -> &'static str {
     }
 }
 
+/// `vault_info` key prefix for THE SERVER'S OWN CONFIRMATION about one response.
+///
+/// The response id already survived the process (`ensure_profile_response_id`)
+/// and the server's row already survived it — measured on 2026-09-29 — and the
+/// only thing that did not was the SCREEN: after a cold start the card was
+/// byte-for-byte the card from before the delivery, an irreversible button and
+/// nothing else. It could not be otherwise: the acknowledgement was returned to
+/// the WebView and written nowhere, so no renderer could read it.
+///
+/// THE BASE IS ALWAYS PART OF THIS NAME, production included — the one
+/// deliberate difference from `identity_vault_key`, which keeps a bare name on
+/// production because it has eight years of rows that predate the scoping. This
+/// row has no legacy at all, so "the same server" is a property OF THE NAME and
+/// not a check bolted on top of it.
+const RESPONSE_RECEIPT_KEY_PREFIX: &str = "profile_response_receipt:";
+
+/// The two things a receipt can be, and there is no third. `acknowledgement` is
+/// the server's 2xx with both halves of the confirmation in it;
+/// `already_on_record` is the ONE 409 whose words say the response is already
+/// accepted for this profile at this agency. A `source` that is neither is not
+/// a receipt this build wrote and is refused by the reader.
+const RECEIPT_SOURCE_ACKNOWLEDGEMENT: &str = "acknowledgement";
+const RECEIPT_SOURCE_ALREADY_ON_RECORD: &str = "already_on_record";
+
+/// The normalisation of a base, and the same three steps `identity_vault_key`
+/// gives one: `trim`, no trailing slash, case-folded. Case matters for the same
+/// reason it matters there — `jobs_pilot_api_base` validates a PARSED url while
+/// returning the RAW string, so `https://API.skipi.app:8444` is a legal base and
+/// two names for one server would hide a receipt from the vault that wrote it.
+fn normalized_response_base(base: &str) -> String {
+    base.trim().trim_end_matches('/').to_ascii_lowercase()
+}
+
+fn response_receipt_key(base: &str, profile_id: &str) -> String {
+    format!(
+        "{RESPONSE_RECEIPT_KEY_PREFIX}{}:{}",
+        normalized_response_base(base),
+        profile_id.trim()
+    )
+}
+
+/// WHAT THE SERVER SAID, and not one field this client invented.
+///
+/// Every optional field is `Option` and an absent one stays absent: a receipt
+/// with a substituted value would be this build's claim about a row it cannot
+/// see. `server_created_at` is the server's `created_at` and there is NO local
+/// clock anywhere in here — a device clock in a receipt would let a wrong phone
+/// time read as a delivery time on a screen the owner accepts from.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ResponseReceipt {
+    pub source: String,
+    pub response_id: String,
+    pub profile_id: String,
+    /// The host that ACTUALLY answered — see `HttpAnswer::base`.
+    pub base: String,
+    pub vault_user_id: String,
+    pub subject_id: String,
+    #[serde(default)]
+    pub intake_id: Option<String>,
+    #[serde(default)]
+    pub published_version: Option<i64>,
+    #[serde(default)]
+    pub crewing_id: Option<String>,
+    #[serde(default)]
+    pub content_sha256: Option<String>,
+    #[serde(default)]
+    pub server_created_at: Option<String>,
+}
+
+fn ack_text(ack: &serde_json::Value, key: &str) -> Option<String> {
+    ack.get(key)
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+/// The receipt of a CONFIRMED delivery, built from the answer of the host that
+/// answered.
+///
+/// It takes the whole `HttpAnswer` and not a bare string on purpose. On
+/// production `response_bases()` is TWO hosts and `send_on_response_bases`
+/// walks them, so "the base" and "the base that answered" are different values
+/// there — and a receipt naming the first one would say "delivered" about a
+/// server that has no such row. On a stand and on the pilot the list is one
+/// base and the two are identical, which is exactly why no test on those
+/// surfaces could ever tell the difference: the property is pinned by the unit
+/// test that hands this function a second base instead.
+fn receipt_from_acknowledgement(
+    answer: &HttpAnswer,
+    ack: &serde_json::Value,
+    profile_id: &str,
+    response_id: &str,
+    vault_user_id: &str,
+    subject_id: &str,
+) -> ResponseReceipt {
+    ResponseReceipt {
+        source: RECEIPT_SOURCE_ACKNOWLEDGEMENT.to_string(),
+        response_id: response_id.trim().to_string(),
+        profile_id: profile_id.trim().to_string(),
+        base: answer.base.clone(),
+        vault_user_id: vault_user_id.trim().to_string(),
+        subject_id: subject_id.trim().to_string(),
+        intake_id: ack_text(ack, "intake_id"),
+        published_version: ack.get("published_version").and_then(serde_json::Value::as_i64),
+        crewing_id: ack_text(ack, "crewing_id"),
+        content_sha256: ack_text(ack, "content_sha256"),
+        server_created_at: ack_text(ack, "created_at"),
+    }
+}
+
+/// The receipt of a response the server says is ALREADY ON RECORD.
+///
+/// Every optional field is `None`, and that is the honest shape: a 409 carries
+/// no intake id, no version and no timestamp, so there is nothing to record but
+/// the refusal's own meaning. The screen therefore says exactly the sentence the
+/// product already says on a repeat press, and claims nothing more.
+fn receipt_already_on_record(
+    answer: &HttpAnswer,
+    profile_id: &str,
+    response_id: &str,
+    vault_user_id: &str,
+    subject_id: &str,
+) -> ResponseReceipt {
+    ResponseReceipt {
+        source: RECEIPT_SOURCE_ALREADY_ON_RECORD.to_string(),
+        response_id: response_id.trim().to_string(),
+        profile_id: profile_id.trim().to_string(),
+        base: answer.base.clone(),
+        vault_user_id: vault_user_id.trim().to_string(),
+        subject_id: subject_id.trim().to_string(),
+        intake_id: None,
+        published_version: None,
+        crewing_id: None,
+        content_sha256: None,
+        server_created_at: None,
+    }
+}
+
+/// DOES THIS STORED RECEIPT BELONG TO THIS VAULT, THIS REGISTRY, THIS PROFILE
+/// AND THIS RESPONSE? Five answers, every one of them from the device, and any
+/// single "no" means there is no receipt.
+///
+/// It takes strings and NOTHING ELSE — no endpoint, no flags, no connection. So
+/// the decision provably cannot read a non-production predicate: BACKLOG №603
+/// is four inline copies of "unknown -> production", and a new call site with a
+/// predicate of its own would have widened that class rather than closed it.
+/// The base is compared as a normalised string; which base that is comes from
+/// `jobs_response_endpoint().base` at the one call site.
+///
+/// AN EMPTY EXPECTATION IS A REFUSAL, not a wildcard. A vault with no public
+/// seafarer id for this base, or with its response id lost, must not match a
+/// receipt whose field is equally empty — that would be two absences reading as
+/// agreement.
+fn accepted_response_receipt(
+    stored: &str,
+    expected_base: &str,
+    expected_vault_user_id: &str,
+    expected_subject_id: &str,
+    expected_profile_id: &str,
+    expected_response_id: &str,
+) -> Option<ResponseReceipt> {
+    let receipt: ResponseReceipt = serde_json::from_str(stored).ok()?;
+    if receipt.source != RECEIPT_SOURCE_ACKNOWLEDGEMENT
+        && receipt.source != RECEIPT_SOURCE_ALREADY_ON_RECORD
+    {
+        return None;
+    }
+    let same = |inside: &str, expected: &str| -> bool {
+        let expected = expected.trim();
+        !expected.is_empty() && inside.trim() == expected
+    };
+    if normalized_response_base(&receipt.base) != normalized_response_base(expected_base)
+        || normalized_response_base(expected_base).is_empty()
+    {
+        return None;
+    }
+    if !same(&receipt.vault_user_id, expected_vault_user_id) {
+        return None;
+    }
+    if !same(&receipt.subject_id, expected_subject_id) {
+        return None;
+    }
+    if !same(&receipt.profile_id, expected_profile_id) {
+        return None;
+    }
+    if !same(&receipt.response_id, expected_response_id) {
+        return None;
+    }
+    Some(receipt)
+}
+
 /// The stand address of a SERVICE BUILD, or nothing at all.
 ///
 /// Compile-time (`option_env!`), inside `#[cfg(debug_assertions)]`, validated by
@@ -854,6 +1046,15 @@ where
 struct HttpAnswer {
     status: u16,
     body: String,
+    /// THE HOST THAT ANSWERED, and not the first one tried.
+    ///
+    /// `send_on_response_bases` walks `response_bases()` and a transport error
+    /// moves to the next base when there is one. On production that list is two
+    /// hosts and the first of them is `api-ru.skipi.app`, which is down
+    /// (BACKLOG №607) — so "which base" and "which base answered" are genuinely
+    /// different values, and a receipt that named the wrong one would tell a
+    /// seafarer his response is on a server that has never seen it.
+    base: String,
 }
 
 /// One request over `response_bases()`. A transport error moves to the next
@@ -895,6 +1096,9 @@ fn send_on_response_bases(
                 return Ok(HttpAnswer {
                     status,
                     body: text,
+                    // The loop variable, and only it: this is the one place in
+                    // the file that knows which walk step actually answered.
+                    base: base.clone(),
                 });
             }
             Err(e) => {
@@ -1161,7 +1365,46 @@ pub fn submit_profile_response(
     // a seafarer. See `response_conflict_token` for what those words can and
     // cannot prove.
     if answer.status == 409 {
-        return Err(response_conflict_token(&answer.body).to_string());
+        let token = response_conflict_token(&answer.body);
+        // WRITE SITE 2 — THE ONE 409 WHOSE WORDS MEAN THE RESPONSE IS ON RECORD,
+        // and no other refusal of this route.
+        //
+        // The sentence `INTAKE_CONTENT_CONFLICT` is raised by the server in two
+        // places (`candidate_intake_service.py:330` by event and `:417` through
+        // the tombstone lookup) and in BOTH of them the response was delivered.
+        // `RESPONSE_CONFLICT_UNKNOWN` is "a conflict whose reason this build does
+        // not know" — the other three refusals that share this status code — and
+        // it writes nothing at all, because a receipt is a statement about a
+        // delivery and this build cannot make that statement here. A transport
+        // error left through the `?` above and never reaches this branch; a
+        // withdrawn profile answers 404 and falls through to the error below.
+        //
+        // The lock is taken HERE, after the request, and held for these two
+        // statements only — never across a request (see `ensure_seafarer_identity`
+        // for why that shape matters and what it cost).
+        if token == RESPONSE_ALREADY_DELIVERED {
+            let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(conn) = lock.as_ref() {
+                let receipt = receipt_already_on_record(
+                    &answer,
+                    &profile_id,
+                    &response_id,
+                    &vault_user_id,
+                    &public_seafarer_id,
+                );
+                // A vault that cannot be written is NOT a different refusal: the
+                // seafarer reads the same sentence either way, and the receipt
+                // simply stays absent — which is today's screen, byte for byte.
+                if let Ok(json) = serde_json::to_string(&receipt) {
+                    let _ = crate::db::set_vault_info(
+                        conn,
+                        &response_receipt_key(&answer.base, &profile_id),
+                        &json,
+                    );
+                }
+            }
+        }
+        return Err(token.to_string());
     }
     if !(200..300).contains(&answer.status) {
         return Err(format!("server returned {}: {}", answer.status, answer.body));
@@ -1179,7 +1422,118 @@ pub fn submit_profile_response(
     if intake_id.is_none() {
         return Err("the server did not confirm the response was stored".to_string());
     }
+
+    // WRITE SITE 1 — THE SERVER'S CONFIRMATION, AND NOTHING EARLIER.
+    //
+    // Deliberately BELOW both halves of the check above and above `Ok(ack)`: a
+    // 2xx without `delivered` or without an `intake_id` is already a failure on
+    // this surface, and a receipt written before those two lines would turn it
+    // into a delivery that never happened. Nothing local — the press, a
+    // response id, a timeout — reaches this point.
+    //
+    // The lock is taken here, after the request, for these two statements only.
+    {
+        let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(conn) = lock.as_ref() {
+            let receipt = receipt_from_acknowledgement(
+                &answer,
+                &ack,
+                &profile_id,
+                &response_id,
+                &vault_user_id,
+                &public_seafarer_id,
+            );
+            // A vault that cannot be written is NOT a failed delivery. The
+            // server has the response, and the one thing this surface must
+            // never do is tell a seafarer otherwise — so the write is best
+            // effort and the fallback is today's screen, byte for byte.
+            if let Ok(json) = serde_json::to_string(&receipt) {
+                let _ = crate::db::set_vault_info(
+                    conn,
+                    &response_receipt_key(&answer.base, &profile_id),
+                    &json,
+                );
+            }
+        }
+    }
     Ok(ack)
+}
+
+/// WHAT THIS DEVICE ALREADY KNOWS ABOUT RESPONSES IT HAS DELIVERED — read from
+/// the vault, and from nowhere else. No network, no parameters beyond the ids on
+/// the screen, no writes.
+///
+/// This is the half of №605 that was missing: the response id survived a cold
+/// start and so did the server's row, but the screen had no way to learn either,
+/// so the card came back with an active irreversible button on a response
+/// already delivered.
+///
+/// FAIL-CLOSED BY CONSTRUCTION. A receipt reaches the WebView only when all five
+/// of `accepted_response_receipt`'s conditions hold; a locked vault, an
+/// unparsable row, another vault's receipt, another registry's, another
+/// profile's or a lost response id all mean the same thing — no receipt, and a
+/// screen that behaves exactly as it does today.
+///
+/// THE ONLY THING TAKEN FROM THE ENDPOINT IS `base`. Not `stand`, not `pilot`,
+/// not anything derived from them: BACKLOG №603 is a class of four inline copies
+/// of "unknown -> production", and a decision here with a predicate of its own
+/// would have moved that class onto a new call site. `identity_vault_key` is
+/// called for the identity row because it is THE ONE PLACE that answers "which
+/// row holds this registry's answer" — reusing it is the opposite of a second
+/// copy of the predicate.
+#[tauri::command]
+pub fn jobs_response_receipts(
+    state: tauri::State<crate::AppState>,
+    profile_ids: Vec<String>,
+) -> Result<std::collections::HashMap<String, ResponseReceipt>, String> {
+    let endpoint = jobs_response_endpoint();
+    let base = endpoint.base.clone();
+    // The vault's own id, derived from the signing key of the OPEN vault by the
+    // same call the delivery path makes. A receipt another vault wrote cannot
+    // pass this, and a closed vault produces no answer at all.
+    let vault = {
+        let guard = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
+        guard.as_ref().cloned().ok_or("No vault open")?
+    };
+    let signing = crate::identity::vault_signing_key(&vault)?;
+    let vault_user_id = crate::identity::user_id_for_pubkey(&signing.verifying_key().to_bytes());
+
+    let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = lock.as_ref().ok_or("No vault open")?;
+    let subject_id = vault_text(conn, &identity_vault_key(&endpoint, KEY_PUBLIC_SEAFARER_ID));
+
+    let mut out: std::collections::HashMap<String, ResponseReceipt> =
+        std::collections::HashMap::new();
+    for raw in &profile_ids {
+        let profile_id = raw.trim();
+        if profile_id.is_empty() {
+            continue;
+        }
+        let stored = match crate::db::get_vault_info_value(
+            conn,
+            &response_receipt_key(&base, profile_id),
+        ) {
+            Some(value) => value,
+            None => continue,
+        };
+        let response_id = crate::db::get_vault_info_value(
+            conn,
+            &format!("{RESPONSE_ID_KEY_PREFIX}{profile_id}"),
+        )
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
+        if let Some(receipt) = accepted_response_receipt(
+            &stored,
+            &base,
+            &vault_user_id,
+            &subject_id,
+            profile_id,
+            &response_id,
+        ) {
+            out.insert(profile_id.to_string(), receipt);
+        }
+    }
+    Ok(out)
 }
 
 /// Challenge → sign → session, all on ONE host, and the token never leaves Rust.
