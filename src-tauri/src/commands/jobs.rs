@@ -1436,8 +1436,29 @@ pub(crate) struct ResponseSummary {
 ///
 /// Half-open `[on, off)`, so periods that merely touch add up to the same total
 /// whether they are merged or not, and a day is never counted twice.
-fn merged_interval_days(_periods: &[(chrono::NaiveDate, chrono::NaiveDate)]) -> i64 {
-    0
+fn merged_interval_days(periods: &[(chrono::NaiveDate, chrono::NaiveDate)]) -> i64 {
+    let mut sorted: Vec<(chrono::NaiveDate, chrono::NaiveDate)> = periods.to_vec();
+    sorted.sort();
+    let mut total: i64 = 0;
+    let mut open: Option<(chrono::NaiveDate, chrono::NaiveDate)> = None;
+    for (on, off) in sorted {
+        match open {
+            // The next period starts before the open one has ended (or exactly
+            // when it does): one stretch, extended to whichever end is later.
+            Some((start, end)) if on <= end => {
+                open = Some((start, if off > end { off } else { end }));
+            }
+            Some((start, end)) => {
+                total = total.saturating_add((end - start).num_days());
+                open = Some((on, off));
+            }
+            None => open = Some((on, off)),
+        }
+    }
+    if let Some((start, end)) = open {
+        total = total.saturating_add((end - start).num_days());
+    }
+    total
 }
 
 /// A period this client is willing to measure — and the one place where "no
@@ -1475,18 +1496,154 @@ fn present(value: &Option<String>) -> Option<String> {
 
 /// The ten values from what the vault holds. Total: no input produces an error.
 fn build_response_summary(
-    _personal: &SummaryPersonal,
-    _rows: &[SummaryWorkRow],
-    _today: chrono::NaiveDate,
+    personal: &SummaryPersonal,
+    rows: &[SummaryWorkRow],
+    today: chrono::NaiveDate,
 ) -> ResponseSummary {
-    ResponseSummary::default()
+    let (age_years, age_precision) = age_with_precision(personal.dob.as_deref(), today);
+
+    // EXPERIENCE IN THE RANK THIS RESPONSE IS FOR. The rank must be known
+    // before any of it means anything, and the days and the rank are sent as a
+    // pair or not at all: a number of days that does not say what they are days
+    // OF is not information, it is a number on a stranger's screen.
+    let experience_rank = present(&personal.rank);
+    let experience_days = experience_rank.as_deref().and_then(|rank| {
+        let periods: Vec<(chrono::NaiveDate, chrono::NaiveDate)> = rows
+            .iter()
+            .filter(|row| row.position.trim() == rank)
+            .filter_map(measurable_period)
+            .collect();
+        // EMPTY IS NOT ZERO. No measurable period means this client cannot say
+        // how long he served in the rank, and it says nothing rather than "0".
+        // One period of no length means he served zero days, and it says zero.
+        if periods.is_empty() {
+            None
+        } else {
+            Some(merged_interval_days(&periods))
+        }
+    });
+    let experience_rank = experience_rank.filter(|_| experience_days.is_some());
+
+    let last = last_vessel(rows);
+
+    ResponseSummary {
+        first_name: present(&personal.first_name),
+        surname: present(&personal.surname),
+        age_years,
+        age_precision,
+        citizenship: present(&personal.nationality),
+        citizenship_code: present(&personal.nationality_code),
+        experience_rank,
+        experience_days,
+        last_vessel_name: last.as_ref().and_then(|row| present(&Some(row.vessel_name.clone()))),
+        last_vessel_sign_off: last.as_ref().and_then(|row| present(&row.sign_off)),
+    }
+}
+
+/// How old he is, and HOW WELL THIS CLIENT KNOWS IT — never the date of birth.
+///
+/// A full date gives completed years and `exact`. A bare year gives the years
+/// that year has turned and `year`, because saying "34" to the day when only
+/// the year is written would be inventing a birthday. Anything else, and a date
+/// in the future, give NEITHER — and neither half is ever sent without the
+/// other, since a number without its precision is a claim this client cannot
+/// support.
+///
+/// THE DATE ITSELF NEVER LEAVES. The server neither needs nor stores it, and a
+/// field derived from the current clock would make a legitimate retry of the
+/// same `response_id` disagree with the stored row for ever.
+fn age_with_precision(
+    dob: Option<&str>,
+    today: chrono::NaiveDate,
+) -> (Option<i64>, Option<&'static str>) {
+    let raw = match dob.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(value) => value,
+        None => return (None, None),
+    };
+    // The comparative profile's own age function, reused rather than repeated.
+    if let Some(years) = crate::commands::profile::age_years_on(raw, today) {
+        return (Some(i64::from(years)), Some("exact"));
+    }
+    // A bare year. The vault value is free text — account sync can bring in a
+    // profile this app did not type — so the year-only form is a state that
+    // reaches here, and the honest answer names its own coarseness.
+    if raw.len() == 4 && raw.bytes().all(|b| b.is_ascii_digit()) {
+        if let Ok(year) = raw.parse::<i32>() {
+            let years = i64::from(chrono::Datelike::year(&today)) - i64::from(year);
+            if (0..=130).contains(&years) {
+                return (Some(years), Some("year"));
+            }
+        }
+    }
+    (None, None)
+}
+
+/// The ship he came off LAST — by time, not by where the row sits in the table.
+///
+/// Ordered by sign-off where there is one and by sign-on where there is not, so
+/// a vessel he is still serving on is correctly the last one and simply has no
+/// sign-off to report. A row this client cannot place in time is not a
+/// candidate: "the latest" would then be a guess. Equal keys keep the later row
+/// as the table returns them.
+///
+/// NOT filtered by the responded rank: the contract field is `last_vessel_name`
+/// and the crewing is being told which ship he came off, whatever he was rated
+/// as on it.
+fn last_vessel(rows: &[SummaryWorkRow]) -> Option<SummaryWorkRow> {
+    let parse = |s: &Option<String>| -> Option<chrono::NaiveDate> {
+        chrono::NaiveDate::parse_from_str(s.as_deref()?.trim(), "%Y-%m-%d").ok()
+    };
+    rows.iter()
+        .filter_map(|row| {
+            parse(&row.sign_off)
+                .or_else(|| parse(&row.sign_on))
+                .map(|key| (key, row))
+        })
+        .max_by(|a, b| a.0.cmp(&b.0))
+        .map(|(_, row)| row.clone())
 }
 
 /// Write the computed values into the body under the ten contract names, and
 /// write NOTHING ELSE. An absent value is an absent key, never `null` and never
 /// an empty string: the server tells "he did not say" from "he said nothing"
 /// by the key not being there.
-fn apply_summary_to_body(_body: &mut serde_json::Value, _summary: &ResponseSummary) {}
+fn apply_summary_to_body(body: &mut serde_json::Value, summary: &ResponseSummary) {
+    let mut put = |name: &str, value: serde_json::Value| {
+        debug_assert!(
+            RESPONSE_SUMMARY_FIELDS.contains(&name),
+            "{name} is not one of the ten the server's schema declares"
+        );
+        body[name] = value;
+    };
+    if let Some(v) = summary.first_name.as_deref() {
+        put("seafarer_first_name", serde_json::Value::from(v));
+    }
+    if let Some(v) = summary.surname.as_deref() {
+        put("seafarer_surname", serde_json::Value::from(v));
+    }
+    // The pair travels whole or not at all, on this side as on the server's.
+    if let (Some(years), Some(precision)) = (summary.age_years, summary.age_precision) {
+        put("seafarer_age_years", serde_json::Value::from(years));
+        put("seafarer_age_precision", serde_json::Value::from(precision));
+    }
+    if let Some(v) = summary.citizenship.as_deref() {
+        put("seafarer_citizenship", serde_json::Value::from(v));
+    }
+    if let Some(v) = summary.citizenship_code.as_deref() {
+        put("seafarer_citizenship_code", serde_json::Value::from(v));
+    }
+    if let (Some(rank), Some(days)) = (summary.experience_rank.as_deref(), summary.experience_days)
+    {
+        put("rank_experience_rank", serde_json::Value::from(rank));
+        put("rank_experience_days", serde_json::Value::from(days));
+    }
+    if let Some(v) = summary.last_vessel_name.as_deref() {
+        put("last_vessel_name", serde_json::Value::from(v));
+    }
+    if let Some(v) = summary.last_vessel_sign_off.as_deref() {
+        put("last_vessel_sign_off", serde_json::Value::from(v));
+    }
+}
 
 /// The four `work_history` columns this summary reads, and no join.
 ///
@@ -3440,16 +3597,21 @@ mod live_published_profiles_contract {
             }
         }
     }
-}
 
 // ════════════════════════════════════════════════════════════════════════════
 // №623 S2 — the ten values a response carries, and the five ways they must not
 // behave. Every test here is about a property the card names; none of them
 // reaches a network, a vault file or a clock it did not set itself.
 // ════════════════════════════════════════════════════════════════════════════
-#[cfg(test)]
+// NESTED, AND NOT A SECOND TEST MODULE OF ITS OWN. Every `.rs` in this tree
+// carries at most one cfg-test marker, because the harness cuts each file at
+// that marker to tell production code from test code, and a second one would
+// leave production code below the cut unread
+// (`bundled_plugin_isolation_harness.mjs`). So these tests live inside the
+// module that already holds this file's one marker. The harness matches the
+// marker's literal text, so it is not spelled out anywhere in this comment.
 mod response_summary {
-    use super::*;
+    use super::super::*;
     use chrono::NaiveDate;
 
     fn d(s: &str) -> NaiveDate {
@@ -4061,4 +4223,5 @@ mod response_summary {
         assert_eq!(s.experience_days, Some(31));
         assert_eq!(s.last_vessel_name.as_deref(), Some("MV Alpha"));
     }
+}
 }
