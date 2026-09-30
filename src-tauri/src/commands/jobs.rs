@@ -3859,6 +3859,20 @@ mod response_summary {
     }
 
     #[test]
+    fn a_year_only_date_of_birth_in_the_future_sends_no_age_either() {
+        // The exact branch is refused by `years_since` itself; the year branch
+        // has to refuse on its own, and a negative age would otherwise be sent
+        // as a number with a straight face.
+        for dob in ["2030", "9999"] {
+            let mut p = master();
+            p.dob = Some(dob.into());
+            let s = build_response_summary(&p, &[], today());
+            assert_eq!(s.age_years, None, "{dob:?} is not an age");
+            assert_eq!(s.age_precision, None);
+        }
+    }
+
+    #[test]
     fn the_age_pair_is_all_or_nothing_on_every_input() {
         for dob in ["1992-07-15", "1992", "", "rubbish", "2030-01-01", "1800-01-01"] {
             let mut p = master();

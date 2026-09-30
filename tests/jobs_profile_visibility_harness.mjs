@@ -4224,6 +4224,106 @@ for (const [state, receipt] of [['acknowledgement', RECEIPT_ACK], ['already_on_r
 }
 console.log('  --- end evidence ---');
 
+// ════════════════════════════════════════════════════════════════════════════
+// S623. THE TEN VALUES A RESPONSE CARRIES — and the rule that outranks them.
+//
+// The server does not check five of these: what a crewing reads on its screen
+// is what this client put in the body. The only thing that makes that name
+// evidence of a real person is that it was READ FROM THE VAULT and could not be
+// named by a caller — so that is asserted here on the bytes, not assumed.
+//
+// And the rule the manager vetoed twice for: none of the ten may make a
+// response undeliverable. A field that cannot be computed is simply not sent.
+// ════════════════════════════════════════════════════════════════════════════
+
+section('S623. the response summary is read from the vault and cannot cost a delivery');
+
+const s623Submit = withoutLineComments(String(rustFnBody(jobsRs, 'submit_profile_response') || ''));
+ok(s623Submit.length > 0, 'S623-0 submit_profile_response is still readable');
+
+// (1) NOT A PARAMETER. The command signature is the whole attack surface: if a
+// caller can name the first name, the name on the crewing's screen proves
+// nothing. The ten names must not appear in the parameter list at all.
+const s623Sig = (/pub fn submit_profile_response\s*\(([\s\S]*?)\)\s*->/.exec(jobsRs) || [])[1] || '';
+ok(s623Sig.length > 0, 'S623-1 the signature is readable');
+const S623_FIELDS = [
+  'seafarer_first_name', 'seafarer_surname',
+  'seafarer_age_years', 'seafarer_age_precision',
+  'seafarer_citizenship', 'seafarer_citizenship_code',
+  'rank_experience_rank', 'rank_experience_days',
+  'last_vessel_name', 'last_vessel_sign_off',
+];
+S623_FIELDS.forEach((f) => {
+  const camel = f.replace(/_([a-z])/g, (m, c) => c.toUpperCase());
+  ok(!s623Sig.includes(f) && !s623Sig.includes(camel),
+    `S623-2 ${f} is not a parameter of submit_profile_response — it is read from the vault`);
+});
+
+// (2) THE TEN NAMES, EXACTLY. extra="forbid" on the server means an unknown
+// field NAME rejects the whole body, CV included.
+const s623Const = (/RESPONSE_SUMMARY_FIELDS:\s*\[&str;\s*10\]\s*=\s*\[([\s\S]*?)\];/.exec(jobsRs) || [])[1] || '';
+const s623Declared = (s623Const.match(/"([a-z_]+)"/g) || []).map((x) => x.replace(/"/g, '')).sort();
+ok(s623Declared.length === 10, `S623-3 the client declares ten names (found ${s623Declared.length})`);
+ok(JSON.stringify(s623Declared) === JSON.stringify([...S623_FIELDS].sort()),
+  `S623-4 and they are the ten the server's schema knows (got ${JSON.stringify(s623Declared)})`);
+
+// (3) THE DELIVERY RULE, on the bytes of the call site. The summary is computed
+// before the request and copied in; nothing about it may be fallible, so the
+// two calls that carry it must not be followed by `?` and must not be `unwrap`.
+ok(/let summary = read_response_summary\(conn\);/.test(s623Submit),
+  'S623-5 the summary is read from the connection the identity was read from');
+ok(!/read_response_summary\([^)]*\)\s*\?/.test(s623Submit),
+  'S623-6 and that read is not fallible — a `?` here would cost a seafarer his response');
+ok(/apply_summary_to_body\(&mut body, &summary\);/.test(s623Submit),
+  'S623-7 the values are copied into the body');
+ok(!/apply_summary_to_body\([^)]*\)\s*\?/.test(s623Submit),
+  'S623-8 and that copy is not fallible either');
+ok(!/summary[^;]*\.unwrap\(\)/.test(s623Submit) && !/summary[^;]*\.expect\(/.test(s623Submit),
+  'S623-9 nothing about the summary is unwrapped on the response path');
+
+// (4) THE FOUR FUNCTIONS BEHIND IT ARE TOTAL. Read as source, because "it
+// returns a struct" is only true while nobody adds a `?` inside.
+['read_response_summary', 'read_summary_work_rows', 'build_response_summary', 'apply_summary_to_body']
+  .forEach((fn) => {
+    const body = withoutLineComments(String(rustFnBody(jobsRs, fn) || ''));
+    ok(body.length > 0, `S623-10 ${fn} is present`);
+    ok(!/\.unwrap\(\)/.test(body), `S623-11 ${fn} contains no unwrap()`);
+    ok(!/\.expect\(/.test(body), `S623-12 ${fn} contains no expect()`);
+    ok(!/\breturn Err\b/.test(body) && !/-> Result</.test(body),
+      `S623-13 ${fn} cannot return an error at all`);
+  });
+
+// (5) THE DATE OF BIRTH NEVER TRAVELS. The server neither needs nor stores it,
+// and a value derived from the current clock would make a legitimate retry of
+// the same response_id disagree with the stored row for ever.
+ok(!/"personal_dob"/.test(s623Submit) && !/date_of_birth/.test(s623Submit),
+  'S623-14 the response body names no date of birth');
+ok(!S623_FIELDS.some((f) => /dob|birth/.test(f)),
+  'S623-15 and not one of the ten names is a date of birth');
+
+// (6) THE RANK IS THE ONE THE SERVER ALREADY MATCHED ON — vault, same fallback
+// order as get_seafarer_personal, which is what the Jobs screen sent as the
+// filter that selected this profile.
+const s623Read = withoutLineComments(String(rustFnBody(jobsRs, 'read_response_summary') || ''));
+ok(/get\("personal_rank"\)\.or_else\(\|\| get\("rank"\)\)/.test(s623Read),
+  'S623-16 the rank is personal_rank with rank as the fallback, exactly as the Jobs screen reads it');
+['personal_first_name', 'personal_surname', 'personal_dob', 'personal_nationality', 'personal_nationality_code']
+  .forEach((key) => {
+    ok(s623Read.includes(`"${key}"`), `S623-17 ${key} is read from the vault`);
+  });
+
+// (7) NO SECOND LOCK. The summary shares the critical section that produced the
+// identity, so the two cannot come from different vaults — and I18c above,
+// which pins that count at three, keeps holding.
+ok(!/state\.conn\.lock\(\)/.test(s623Read),
+  'S623-18 read_response_summary takes no lock of its own — the caller already holds it');
+
+// (8) NO RANK NORMALISATION. №622 is not open, and deciding it here, on the
+// client, in passing, is exactly how it would get decided by nobody.
+const s623Build = withoutLineComments(String(rustFnBody(jobsRs, 'build_response_summary') || ''));
+ok(!/to_lowercase|to_uppercase|to_ascii_lowercase|to_ascii_uppercase|eq_ignore_ascii_case/.test(s623Build),
+  'S623-19 ranks are compared as written — no case folding anywhere in the summary');
+
 console.log('');
 if (fail > 0) {
   console.error(`FAILURES (${fail}):`);
