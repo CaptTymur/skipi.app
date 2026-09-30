@@ -1355,8 +1355,11 @@ pub fn ensure_profile_response_id(
 //     compares is a STOP on this card.
 //
 // Neither can answer "days in THIS rank, overlaps merged, absent when unknown",
-// so this block answers it — and the AGE question, which does have a reusable
-// answer, reuses it (`profile::age_years_on`) rather than inventing a second.
+// so this block answers it. The AGE question is a different case and is told
+// straight in `age_years_on` below: `profile::compute_age_bucket` counts the
+// same way, sharing it was written and then WITHDRAWN because that diff has no
+// guard route, and the copy that remains is held to the original by a drill
+// that compares the whole computation, not a symbol that does not exist.
 // ════════════════════════════════════════════════════════════════════════════
 
 /// The ten names, and the complete list of what this client may add to a

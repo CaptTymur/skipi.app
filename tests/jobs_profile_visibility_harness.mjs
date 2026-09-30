@@ -4289,8 +4289,16 @@ ok(!/summary[^;]*\.unwrap\(\)/.test(s623Submit) && !/summary[^;]*\.expect\(/.tes
     ok(body.length > 0, `S623-10 ${fn} is present`);
     ok(!/\.unwrap\(\)/.test(body), `S623-11 ${fn} contains no unwrap()`);
     ok(!/\.expect\(/.test(body), `S623-12 ${fn} contains no expect()`);
-    ok(!/\breturn Err\b/.test(body) && !/-> Result</.test(body),
-      `S623-13 ${fn} cannot return an error at all`);
+    // `-> Result<` USED TO BE TESTED HERE AND COULD NOT FAIL: `rustFnBody`
+    // returns what is BETWEEN the braces, so a return type is never in it. The
+    // condition was dead weight that read like a guarantee. The return type is
+    // now read off the SIGNATURE, where it actually lives.
+    ok(!/\breturn Err\b/.test(body), `S623-13 ${fn} has no return Err`);
+    const sig = (new RegExp('fn\\s+' + fn + '\\s*\\(([\\s\\S]*?)\\)\\s*(->[^{]*)?\\{').exec(jobsRs) || []);
+    ok(sig.length > 0, `S623-13a ${fn}'s signature is readable`);
+    const ret = String(sig[2] || '').trim();
+    ok(!/Result\s*</.test(ret),
+      `S623-13b ${fn} does not return a Result — a fallible summary is a lost delivery (return type: ${JSON.stringify(ret || 'none')})`);
   });
 
 // (5) THE DATE OF BIRTH NEVER TRAVELS. The server neither needs nor stores it,
@@ -4318,26 +4326,74 @@ ok(/get\("personal_rank"\)\.or_else\(\|\| get\("rank"\)\)/.test(s623Read),
 ok(!/state\.conn\.lock\(\)/.test(s623Read),
   'S623-18 read_response_summary takes no lock of its own — the caller already holds it');
 
-// (9) THE AGE COPY, AND THE DRIFT IT BUYS. `profile::compute_age_bucket`
-// counts age the same way and is NOT called from here: a diff that touches
-// commands/profile.rs matches no guard route for this area, falls back to
-// plugin-host and is refused, and widening that route is an owner-gated change
-// to the allowlist. So the arithmetic is duplicated on purpose — and this is
-// the drill that makes the duplication safe rather than merely admitted. It
-// reds the moment either copy stops counting the same way.
+// (9) THE AGE COPY, AND THE DRIFT IT BUYS — COMPARED AS A COMPUTATION, NOT AS
+// A BAG OF TOKENS.
+//
+// WHAT THIS REPLACED AND WHY, because the ledger must not promise more than it
+// checks. The first version of this drill asserted that three lexemes
+// (`parse_from_str`, `"%Y-%m-%d"`, `years_since`) appeared in both copies. That
+// reds when a token is DELETED and never when the two copies return DIFFERENT
+// ANSWERS: the Supervisor made `profile::compute_age_bucket` count one year
+// more than `jobs::age_years_on` and got 991/0 here and 241/0 in cargo. A whole
+// year of divergence walked through it. That is the fourth check of this class
+// on this card, and the worst kind of defect — a protection that is recorded
+// but cannot fire.
+//
+// WHY THIS IS NOT A LIST OF DATES EITHER. `compute_age_bucket` is private to
+// `commands/profile.rs`; nothing outside that module can call it, and giving it
+// a `pub(crate)` face is exactly the diff that has no guard route (see
+// `age_years_on`). So the two answers cannot be put side by side in one process
+// without a change that cannot be pushed. What CAN be established in-route is
+// stronger than a finite list of dates rather than weaker: if the two copies
+// run the SAME STATEMENTS, they agree on EVERY input, not just on the dates
+// somebody remembered to list.
+//
+// So the comparison is over the exact statement sequence that turns a written
+// date into a number of years — contiguous, normalised for whitespace and
+// comments only. An inserted line, a changed format, a shifted operand or a
+// `+ 1` all break it. The calibration is the Supervisor's own mutation and it
+// is asserted below, not assumed.
 const s623Profile = fs.readFileSync(path.join(ROOT, 'src-tauri/src/commands/profile.rs'), 'utf8');
-const s623Bucket = withoutLineComments(String(rustFnBody(s623Profile, 'compute_age_bucket') || ''));
-const s623Age = withoutLineComments(String(rustFnBody(jobsRs, 'age_years_on') || ''));
+const s623Flat = (src) => withoutLineComments(String(src || ''))
+  .replace(/\/\*[\s\S]*?\*\//g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+const s623Bucket = s623Flat(rustFnBody(s623Profile, 'compute_age_bucket'));
+const s623Age = s623Flat(rustFnBody(jobsRs, 'age_years_on'));
 ok(s623Bucket.length > 0, 'S623-20a the other copy (profile::compute_age_bucket) is readable');
 ok(s623Age.length > 0, 'S623-20b this copy (jobs::age_years_on) is readable');
-[
-  ['NaiveDate::parse_from_str', 'the same parse'],
-  ['"%Y-%m-%d"', 'the same format'],
-  ['years_since', 'the same completed-years call'],
-].forEach(([needle, why]) => {
-  ok(s623Bucket.includes(needle) && s623Age.includes(needle),
-    `S623-20 both copies of the age count use ${why} (${needle})`);
-});
+
+// The whole computation, as one contiguous run of statements in each copy.
+const S623_PROFILE_AGE_STEPS =
+  'let parsed = chrono::NaiveDate::parse_from_str(dob, "%Y-%m-%d").ok()?; '
+  + 'let today = chrono::Utc::now().date_naive(); '
+  + 'let years = today.years_since(parsed)? as u32;';
+const S623_JOBS_AGE_STEPS =
+  'let parsed = chrono::NaiveDate::parse_from_str(dob, "%Y-%m-%d").ok()?; '
+  + 'today.years_since(parsed)';
+ok(s623Bucket.includes(S623_PROFILE_AGE_STEPS),
+  'S623-20 the other copy still turns a date into years by exactly these steps — any inserted line, '
+  + 'changed format or shifted operand reds here (got: ' + JSON.stringify(s623Bucket.slice(0, 200)) + ')');
+ok(s623Age.includes(S623_JOBS_AGE_STEPS),
+  'S623-20d and this copy runs the same two, so the two agree on EVERY date and not merely on a listed few '
+  + '(got: ' + JSON.stringify(s623Age.slice(0, 200)) + ')');
+
+// CALIBRATION, and the whole point of rewriting this drill: the exact mutation
+// that walked through the old one must red through this one. The bytes are
+// mutated in memory here, never on disk.
+const s623Drifted = s623Bucket.replace(
+  'let years = today.years_since(parsed)? as u32;',
+  'let years = today.years_since(parsed)? as u32 + 1;');
+ok(s623Drifted !== s623Bucket,
+  'S623-20e the calibration really changes the bytes it mutates — if this reds, the other copy has '
+  + 'ALREADY drifted away from the statement the calibration mutates, and S623-20 above says how');
+ok(!s623Drifted.includes(S623_PROFILE_AGE_STEPS),
+  'S623-20f CALIBRATION: one copy counting a year more than the other turns this drill RED — '
+  + 'the divergence the token version let through');
+const s623Reworded = s623Bucket.replace('%Y-%m-%d', '%d-%m-%Y');
+ok(s623Reworded === s623Bucket || !s623Reworded.includes(S623_PROFILE_AGE_STEPS),
+  'S623-20g CALIBRATION: reading the date in another format turns it RED too');
+
 ok(!/\.trim\(\)/.test(s623Age) && !/\.trim\(\)/.test(s623Bucket),
   'S623-20c neither copy trims — what the comparative profile buckets must not shift because of this card');
 
