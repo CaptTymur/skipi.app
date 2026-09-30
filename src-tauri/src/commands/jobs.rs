@@ -1540,6 +1540,32 @@ fn build_response_summary(
     }
 }
 
+/// COMPLETED YEARS between a written date of birth and a reference day.
+///
+/// THE SAME ARITHMETIC AS `profile::compute_age_bucket`, AND DELIBERATELY A
+/// COPY OF IT RATHER THAN A SHARED CALL. Sharing it is the better code and it
+/// was written that way first: `compute_age_bucket` gave up these three lines
+/// as a `pub(crate)` helper and both callers used it. That diff cannot be
+/// pushed. The guard routes this area through `jobs-profile-visibility-s2`,
+/// whose file set is `dist/index.html`, `commands/jobs.rs`, `lib.rs` and this
+/// area's harness; a diff that also touches `commands/profile.rs` matches no
+/// route, falls back to `plugin-host` and is refused. Widening that route is an
+/// owner-gated change to the guard's allowlist, and spending an owner decision
+/// on de-duplicating three lines is the wrong trade — so the duplication is
+/// made VISIBLE here instead of being quietly convenient.
+///
+/// The drift this buys is real and is drilled, not hoped about: `S623-20` in
+/// the harness reds if either copy stops using the same two calls.
+///
+/// No `trim`, for the same reason the other copy has none: what the comparative
+/// profile buckets must not start changing because of this card. Callers trim
+/// on their own side. `today` is a parameter so a test can state an age instead
+/// of deriving it from the clock it is checking.
+fn age_years_on(dob: &str, today: chrono::NaiveDate) -> Option<u32> {
+    let parsed = chrono::NaiveDate::parse_from_str(dob, "%Y-%m-%d").ok()?;
+    today.years_since(parsed)
+}
+
 /// How old he is, and HOW WELL THIS CLIENT KNOWS IT — never the date of birth.
 ///
 /// A full date gives completed years and `exact`. A bare year gives the years
@@ -1561,7 +1587,7 @@ fn age_with_precision(
         None => return (None, None),
     };
     // The comparative profile's own age function, reused rather than repeated.
-    if let Some(years) = crate::commands::profile::age_years_on(raw, today) {
+    if let Some(years) = age_years_on(raw, today) {
         return (Some(i64::from(years)), Some("exact"));
     }
     // A bare year. The vault value is free text — account sync can bring in a
@@ -3887,15 +3913,24 @@ mod response_summary {
     }
 
     #[test]
-    fn the_age_answer_is_the_one_the_comparative_profile_already_uses() {
-        // Reuse, asserted rather than claimed: the number this card sends and
-        // the number the matchable profile buckets come from ONE function.
-        for dob in ["1992-07-15", "1970-01-01", "2008-02-29"] {
-            let reused = crate::commands::profile::age_years_on(dob, today()).map(|y| y as i64);
+    fn the_age_is_completed_years_exactly_as_the_other_copy_counts_them() {
+        // `profile::compute_age_bucket` counts the same way and cannot be
+        // called from here — see `age_years_on` for why the copy exists. What
+        // is pinned here is the ANSWER: completed years, leap day included,
+        // measured on a stated day and never on the clock.
+        for (dob, expected) in [
+            ("1992-07-15", 34),
+            ("1970-01-01", 56),
+            ("2008-02-29", 18),
+            ("2026-09-30", 0),
+        ] {
             let mut p = master();
             p.dob = Some(dob.into());
-            let mine = build_response_summary(&p, &[], today()).age_years;
-            assert_eq!(mine, reused, "the two answers about {dob:?} must be one answer");
+            assert_eq!(
+                build_response_summary(&p, &[], today()).age_years,
+                Some(expected),
+                "{dob} on 2026-09-30"
+            );
         }
     }
 

@@ -954,26 +954,11 @@ pub fn create_demo_vault_auto(
 
 const MATCHABLE_VERSION: u32 = 1;
 
-/// COMPLETED YEARS between a written date of birth and a reference day — the
-/// ONE answer this product gives to "how old is this seafarer".
-///
-/// Lifted out of `compute_age_bucket` below, which is its other caller, and it
-/// leaves that function byte for byte what it was: the same
-/// `parse_from_str(.., "%Y-%m-%d")`, the same `years_since`, and DELIBERATELY NO
-/// `trim`. A `trim` here would make a stored " 1990-01-01" start producing a
-/// bucket the comparative profile does not produce today, and what that profile
-/// compares is not this card's to change. Callers that want trimming do it on
-/// their own side of this call.
-///
-/// `today` is a parameter rather than `Utc::now()` so that a test can state an
-/// age instead of deriving it from the very clock it is trying to check.
-pub(crate) fn age_years_on(dob: &str, today: chrono::NaiveDate) -> Option<u32> {
-    let parsed = chrono::NaiveDate::parse_from_str(dob, "%Y-%m-%d").ok()?;
-    today.years_since(parsed)
-}
-
 fn compute_age_bucket(dob: Option<&str>) -> Option<String> {
-    let years = age_years_on(dob?, chrono::Utc::now().date_naive())?;
+    let dob = dob?;
+    let parsed = chrono::NaiveDate::parse_from_str(dob, "%Y-%m-%d").ok()?;
+    let today = chrono::Utc::now().date_naive();
+    let years = today.years_since(parsed)? as u32;
     let bucket = match years {
         0..=17 => "under-18",
         18..=24 => "18-24",

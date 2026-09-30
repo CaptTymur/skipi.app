@@ -4318,6 +4318,29 @@ ok(/get\("personal_rank"\)\.or_else\(\|\| get\("rank"\)\)/.test(s623Read),
 ok(!/state\.conn\.lock\(\)/.test(s623Read),
   'S623-18 read_response_summary takes no lock of its own — the caller already holds it');
 
+// (9) THE AGE COPY, AND THE DRIFT IT BUYS. `profile::compute_age_bucket`
+// counts age the same way and is NOT called from here: a diff that touches
+// commands/profile.rs matches no guard route for this area, falls back to
+// plugin-host and is refused, and widening that route is an owner-gated change
+// to the allowlist. So the arithmetic is duplicated on purpose — and this is
+// the drill that makes the duplication safe rather than merely admitted. It
+// reds the moment either copy stops counting the same way.
+const s623Profile = fs.readFileSync(path.join(ROOT, 'src-tauri/src/commands/profile.rs'), 'utf8');
+const s623Bucket = withoutLineComments(String(rustFnBody(s623Profile, 'compute_age_bucket') || ''));
+const s623Age = withoutLineComments(String(rustFnBody(jobsRs, 'age_years_on') || ''));
+ok(s623Bucket.length > 0, 'S623-20a the other copy (profile::compute_age_bucket) is readable');
+ok(s623Age.length > 0, 'S623-20b this copy (jobs::age_years_on) is readable');
+[
+  ['NaiveDate::parse_from_str', 'the same parse'],
+  ['"%Y-%m-%d"', 'the same format'],
+  ['years_since', 'the same completed-years call'],
+].forEach(([needle, why]) => {
+  ok(s623Bucket.includes(needle) && s623Age.includes(needle),
+    `S623-20 both copies of the age count use ${why} (${needle})`);
+});
+ok(!/\.trim\(\)/.test(s623Age) && !/\.trim\(\)/.test(s623Bucket),
+  'S623-20c neither copy trims — what the comparative profile buckets must not shift because of this card');
+
 // (8) NO RANK NORMALISATION. №622 is not open, and deciding it here, on the
 // client, in passing, is exactly how it would get decided by nobody.
 const s623Build = withoutLineComments(String(rustFnBody(jobsRs, 'build_response_summary') || ''));
