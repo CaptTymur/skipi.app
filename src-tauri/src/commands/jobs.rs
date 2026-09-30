@@ -2724,8 +2724,18 @@ mod live_published_profiles_contract {
             // and on the pilot the list is ONE base, so the equality holds
             // identically there and no test on those surfaces could ever tell
             // the difference. This is that test.
-            let first = "https://api-ru.skipi.app";
-            let second = "https://api.skipi.app";
+            // THE TWO VALUES ARE CHOSEN SO THAT THIS TEST IS THE ONE THAT
+            // CATCHES THE MUTATION. `tried_first` is deliberately the base
+            // `jobs_response_endpoint()` returns in a unit build — no
+            // `option_env!` is set, so it answers the production host. A
+            // builder that reached for the endpoint instead of the answer
+            // would therefore produce exactly `tried_first`, and this
+            // assertion is what sees it. Measured: with the mutation applied
+            // the first version of this test stayed GREEN because both values
+            // were production spellings, and three sibling tests caught it
+            // instead.
+            let tried_first = "https://api.skipi.app";
+            let second = "https://api.skipi.app:8444";
             let answered = answer_from(second);
             let r = receipt_from_acknowledgement(
                 &answered, &ack(), PROFILE, RESPONSE, VAULT_USER, SUBJECT,
@@ -2736,9 +2746,9 @@ mod live_published_profiles_contract {
             );
             let json = stored(&r);
             assert!(
-                accepted_response_receipt(&json, first, VAULT_USER, SUBJECT, PROFILE, RESPONSE)
+                accepted_response_receipt(&json, tried_first, VAULT_USER, SUBJECT, PROFILE, RESPONSE)
                     .is_none(),
-                "and a reader pointed at the FIRST base must refuse it"
+                "and a reader pointed at the base that was TRIED must refuse it"
             );
             assert!(
                 accepted_response_receipt(&json, second, VAULT_USER, SUBJECT, PROFILE, RESPONSE)
