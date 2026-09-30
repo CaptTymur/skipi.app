@@ -1322,6 +1322,223 @@ pub fn ensure_profile_response_id(
     Ok(fresh)
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// THE TEN VALUES THAT TRAVEL WITH A RESPONSE — №623 S2.
+//
+// A crewing that opens a response sees WHO responded. The five things it needs
+// — name, age, citizenship, experience in the rank, last vessel — live in this
+// seafarer's vault and in his `work_history`, and they are read FROM THERE and
+// from nowhere else. Not one of them is a parameter of `submit_profile_response`
+// and not one of them can become one: the moment a caller can name the first
+// name on a response, the name on the crewing's screen stops being evidence of
+// anything. This is the same rule the contact and the identity already follow
+// one function below — "a response is delivered as the seafarer whose key signs
+// for it" — and these ten go the same way for the same reason.
+//
+// THE RULE THAT OUTRANKS ALL TEN: none of them may make a response
+// undeliverable. Every function in this block is total. There is no `?`, no
+// `unwrap`, no `expect` and no arithmetic that can overflow on any input a
+// vault can hold; a value that cannot be computed honestly is simply `None` and
+// the field is then not sent at all. A response carries a living person's CV,
+// and a defect in a metadata field has no right to destroy it.
+//
+// WHY A SEPARATE EXPERIENCE CALCULATION EXISTS, stated here because a reader
+// will otherwise reach for one of the two that already exist:
+//
+//   * `cv::experience_by_position` sums `+=` per position without merging
+//     overlaps and calls itself `rough`. It is NOT touched: its consumers are
+//     the CV PDF and the assistant, and changing it changes both.
+//   * `profile::compute_years_experience` sums EVERY position together, again
+//     without merging, divides by 365, and always answers `Some` — so "no data"
+//     and "zero" are one value there. It is NOT touched either: its result
+//     leaves in the comparative profile, and changing what that profile
+//     compares is a STOP on this card.
+//
+// Neither can answer "days in THIS rank, overlaps merged, absent when unknown",
+// so this block answers it — and the AGE question, which does have a reusable
+// answer, reuses it (`profile::age_years_on`) rather than inventing a second.
+// ════════════════════════════════════════════════════════════════════════════
+
+/// The ten names, and the complete list of what this client may add to a
+/// response body.
+///
+/// The server's `ProfileResponseSubmit` is `extra="forbid"`: an unknown field
+/// NAME does not get ignored, it rejects the whole body — the CV with it. So
+/// this list is not documentation, it is the contract, and the test below
+/// asserts that nothing outside it is ever written.
+pub(crate) const RESPONSE_SUMMARY_FIELDS: [&str; 10] = [
+    "seafarer_first_name",
+    "seafarer_surname",
+    "seafarer_age_years",
+    "seafarer_age_precision",
+    "seafarer_citizenship",
+    "seafarer_citizenship_code",
+    "rank_experience_rank",
+    "rank_experience_days",
+    "last_vessel_name",
+    "last_vessel_sign_off",
+];
+
+/// What the vault says about this seafarer. Every field optional because a
+/// half-filled profile is the normal state of a real one.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SummaryPersonal {
+    pub first_name: Option<String>,
+    pub surname: Option<String>,
+    pub dob: Option<String>,
+    pub nationality: Option<String>,
+    pub nationality_code: Option<String>,
+    /// THE RANK THIS RESPONSE IS FOR, and the reason it is not a parameter.
+    ///
+    /// The Jobs screen asks the server for published profiles with
+    /// `rank: jobsProfilesOwnRank(sp)` (`dist/index.html:14983`), which is
+    /// `String(sp.rank).trim()` over `get_seafarer_personal`, whose `rank` is
+    /// the vault's `personal_rank` with `rank` as the fallback
+    /// (`commands/profile.rs`). The profile being responded to was SELECTED BY
+    /// THE SERVER on that exact string. Reading the same value here sends the
+    /// server back the string it already matched on, and no caller is given a
+    /// say in it.
+    pub rank: Option<String>,
+}
+
+/// One `work_history` row, reduced to the four columns this summary reads.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SummaryWorkRow {
+    pub position: String,
+    pub vessel_name: String,
+    pub sign_on: Option<String>,
+    pub sign_off: Option<String>,
+}
+
+/// The ten values. `None` means "this client could not say it honestly", and a
+/// `None` is never sent — which is how the crewing's screen can tell "he did
+/// not fill this in" from a real value, and why a zero here is a real zero.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ResponseSummary {
+    pub first_name: Option<String>,
+    pub surname: Option<String>,
+    pub age_years: Option<i64>,
+    pub age_precision: Option<&'static str>,
+    pub citizenship: Option<String>,
+    pub citizenship_code: Option<String>,
+    pub experience_rank: Option<String>,
+    pub experience_days: Option<i64>,
+    pub last_vessel_name: Option<String>,
+    pub last_vessel_sign_off: Option<String>,
+}
+
+/// Total days covered by a set of periods WITH OVERLAPS MERGED, never summed.
+///
+/// Two contracts that overlap in time are one stretch of a life, not two: a man
+/// who signed on 1 January and off 1 July, and signed on 1 April and off 1
+/// October, served nine months and not twelve. `cv::work_entry_days` summed by
+/// `+=` is what this exists instead of, and it is left where it is.
+///
+/// Half-open `[on, off)`, so periods that merely touch add up to the same total
+/// whether they are merged or not, and a day is never counted twice.
+fn merged_interval_days(_periods: &[(chrono::NaiveDate, chrono::NaiveDate)]) -> i64 {
+    0
+}
+
+/// A period this client is willing to measure — and the one place where "no
+/// data" is told apart from "zero".
+///
+/// Both dates must parse, and `off` must not be BEFORE `on`. Note `>=` and not
+/// `>`: signing on and off on the same day is a real contract that lasted zero
+/// days, which is a fact, whereas a missing or unparsable date is not a fact at
+/// all. `cv::work_entry_days` collapses both to `0` and cannot tell them apart;
+/// that is exactly what this card was told to fix, and why that function is
+/// left alone rather than changed under its own consumers.
+fn measurable_period(row: &SummaryWorkRow) -> Option<(chrono::NaiveDate, chrono::NaiveDate)> {
+    let parse =
+        |s: &Option<String>| -> Option<chrono::NaiveDate> {
+            chrono::NaiveDate::parse_from_str(s.as_deref()?.trim(), "%Y-%m-%d").ok()
+        };
+    let on = parse(&row.sign_on)?;
+    let off = parse(&row.sign_off)?;
+    if off >= on {
+        Some((on, off))
+    } else {
+        None
+    }
+}
+
+/// A vault string that is worth sending: trimmed, and absent when it is blank.
+fn present(value: &Option<String>) -> Option<String> {
+    let trimmed = value.as_deref()?.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+/// The ten values from what the vault holds. Total: no input produces an error.
+fn build_response_summary(
+    _personal: &SummaryPersonal,
+    _rows: &[SummaryWorkRow],
+    _today: chrono::NaiveDate,
+) -> ResponseSummary {
+    ResponseSummary::default()
+}
+
+/// Write the computed values into the body under the ten contract names, and
+/// write NOTHING ELSE. An absent value is an absent key, never `null` and never
+/// an empty string: the server tells "he did not say" from "he said nothing"
+/// by the key not being there.
+fn apply_summary_to_body(_body: &mut serde_json::Value, _summary: &ResponseSummary) {}
+
+/// The four `work_history` columns this summary reads, and no join.
+///
+/// A missing table, a failed statement or a row that will not map is an EMPTY
+/// LIST and never an error — see the rule at the top of this block.
+fn read_summary_work_rows(conn: &rusqlite::Connection) -> Vec<SummaryWorkRow> {
+    let mut stmt =
+        match conn.prepare("SELECT position, vessel_name, sign_on, sign_off FROM work_history") {
+            Ok(stmt) => stmt,
+            Err(_) => return Vec::new(),
+        };
+    let mapped = stmt.query_map([], |row| {
+        Ok(SummaryWorkRow {
+            position: row.get::<_, Option<String>>(0)?.unwrap_or_default(),
+            vessel_name: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+            sign_on: row.get::<_, Option<String>>(2)?,
+            sign_off: row.get::<_, Option<String>>(3)?,
+        })
+    });
+    match mapped {
+        Ok(rows) => rows.flatten().collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// The ten values, read out of THIS vault connection.
+///
+/// IT DOES NOT TAKE THE LOCK, and that is deliberate twice over. The caller is
+/// already inside the critical section that produced the identity, so the
+/// summary and the identity come from ONE vault and cannot be split by a vault
+/// swap mid-flight. And `jobs_profile_visibility_harness.mjs` (I18c) counts
+/// `state.conn.lock()` inside `submit_profile_response` and requires exactly
+/// three; a fourth lock here would break that gate while making the code worse.
+///
+/// Total on every input, including a vault with no tables at all.
+pub(crate) fn read_response_summary(conn: &rusqlite::Connection) -> ResponseSummary {
+    let get = |key: &str| crate::db::get_vault_info_value(conn, key);
+    let personal = SummaryPersonal {
+        first_name: get("personal_first_name"),
+        surname: get("personal_surname"),
+        dob: get("personal_dob"),
+        nationality: get("personal_nationality"),
+        nationality_code: get("personal_nationality_code"),
+        // The same order `get_seafarer_personal` answers in, because the value
+        // it answers with is the one the Jobs screen sent as the server's rank
+        // filter — the filter that selected the profile being responded to.
+        rank: get("personal_rank").or_else(|| get("rank")),
+    };
+    let rows = read_summary_work_rows(conn);
+    build_response_summary(&personal, &rows, chrono::Utc::now().date_naive())
+}
+
 /// Deliver ONE response to ONE published matching profile.
 ///
 /// Success is the SERVER'S acknowledgement and nothing earlier. This function
@@ -1359,7 +1576,7 @@ pub fn submit_profile_response(
     // `vault_db` is the file this identity was read OUT OF, captured in the very
     // same critical section as the identity itself — see `same_vault_db` for the
     // swap it exists to refuse.
-    let (vault_user_id, public_seafarer_id, contact, vault_db) = {
+    let (vault_user_id, public_seafarer_id, contact, vault_db, summary) = {
         let vault = {
             let guard = state
                 .vault_path
@@ -1387,7 +1604,13 @@ pub fn submit_profile_response(
         // Asked of THIS connection, while the lock that produced the identity
         // above is still held. Anything read later would be read of whatever
         // connection is open by then, which is the problem and not the check.
-        (user_id, public_id, contact, vault_db_file(conn))
+        // THE TEN VALUES OF №623, read from THIS connection inside THIS
+        // critical section — the same one that produced the identity above, so
+        // the name on the crewing's screen and the key that signs for it can
+        // never come from two different vaults. Total: it returns a summary for
+        // every vault, including an unreadable one, and cannot fail a delivery.
+        let summary = read_response_summary(conn);
+        (user_id, public_id, contact, vault_db_file(conn), summary)
     };
 
     let cv_bytes = std::fs::read(&cv_path).map_err(|e| format!("could not read the CV: {e}"))?;
@@ -1417,6 +1640,11 @@ pub fn submit_profile_response(
     if let Some(text) = message.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
         body["message"] = serde_json::Value::String(text.to_string());
     }
+    // The ten of №623, each one written only if the vault could answer it.
+    // Nothing here can fail: the summary is already computed and this only
+    // copies what is present. A field that is absent is an absent KEY, which is
+    // how the crewing tells "he did not fill it in" from a value.
+    apply_summary_to_body(&mut body, &summary);
 
     let answer = send_on_response_bases(
         &client,
@@ -3211,5 +3439,626 @@ mod live_published_profiles_contract {
                 );
             }
         }
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// №623 S2 — the ten values a response carries, and the five ways they must not
+// behave. Every test here is about a property the card names; none of them
+// reaches a network, a vault file or a clock it did not set itself.
+// ════════════════════════════════════════════════════════════════════════════
+#[cfg(test)]
+mod response_summary {
+    use super::*;
+    use chrono::NaiveDate;
+
+    fn d(s: &str) -> NaiveDate {
+        NaiveDate::parse_from_str(s, "%Y-%m-%d").expect("the test's own date must parse")
+    }
+
+    fn today() -> NaiveDate {
+        d("2026-09-30")
+    }
+
+    fn row(position: &str, vessel: &str, on: Option<&str>, off: Option<&str>) -> SummaryWorkRow {
+        SummaryWorkRow {
+            position: position.to_string(),
+            vessel_name: vessel.to_string(),
+            sign_on: on.map(|s| s.to_string()),
+            sign_off: off.map(|s| s.to_string()),
+        }
+    }
+
+    fn master() -> SummaryPersonal {
+        SummaryPersonal {
+            first_name: Some("Adrian".into()),
+            surname: Some("Seaborne".into()),
+            dob: Some("1992-07-15".into()),
+            nationality: Some("Ukrainian".into()),
+            nationality_code: Some("UKR".into()),
+            rank: Some("Master".into()),
+        }
+    }
+
+    fn built(rows: &[SummaryWorkRow]) -> ResponseSummary {
+        build_response_summary(&master(), rows, today())
+    }
+
+    // ── overlaps merge, they do not add up ──────────────────────────────────
+
+    #[test]
+    fn calibration_one_period_is_worth_exactly_its_own_days() {
+        // Without this, "merging works" would be satisfied by a function that
+        // returns zero for everything — which is precisely the stub this test
+        // was written against.
+        let days = merged_interval_days(&[(d("2020-01-01"), d("2020-07-01"))]);
+        assert_eq!(days, 182, "1 Jan to 1 Jul 2020 is 182 days");
+    }
+
+    #[test]
+    fn two_overlapping_periods_merge_into_one_stretch() {
+        // 1 Jan–1 Jul and 1 Apr–1 Oct. Summed that is 182 + 183 = 365; merged
+        // it is 1 Jan–1 Oct, which is what the man actually served.
+        let days = merged_interval_days(&[
+            (d("2020-01-01"), d("2020-07-01")),
+            (d("2020-04-01"), d("2020-10-01")),
+        ]);
+        assert_eq!(days, 274, "merged, not summed (summing would give 365)");
+    }
+
+    #[test]
+    fn a_period_wholly_inside_another_adds_nothing() {
+        let days = merged_interval_days(&[
+            (d("2020-01-01"), d("2021-01-01")),
+            (d("2020-03-01"), d("2020-04-01")),
+        ]);
+        assert_eq!(days, 366, "2020 is a leap year; the inner period is already inside");
+    }
+
+    #[test]
+    fn disjoint_periods_do_add_up() {
+        let days = merged_interval_days(&[
+            (d("2020-01-01"), d("2020-02-01")),
+            (d("2021-01-01"), d("2021-02-01")),
+        ]);
+        assert_eq!(days, 62, "31 + 31, nothing overlaps");
+    }
+
+    #[test]
+    fn periods_that_merely_touch_never_count_the_boundary_twice() {
+        let days = merged_interval_days(&[
+            (d("2020-01-01"), d("2020-02-01")),
+            (d("2020-02-01"), d("2020-03-01")),
+        ]);
+        assert_eq!(days, 60, "31 + 29 with the shared day counted once");
+    }
+
+    #[test]
+    fn the_order_the_rows_arrive_in_changes_nothing() {
+        let forward = merged_interval_days(&[
+            (d("2020-01-01"), d("2020-07-01")),
+            (d("2020-04-01"), d("2020-10-01")),
+        ]);
+        let backward = merged_interval_days(&[
+            (d("2020-04-01"), d("2020-10-01")),
+            (d("2020-01-01"), d("2020-07-01")),
+        ]);
+        assert_eq!(forward, backward, "merging must not depend on table order");
+    }
+
+    // ── "no data" and "zero" are different answers ──────────────────────────
+
+    #[test]
+    fn no_rows_in_the_rank_at_all_sends_no_experience_pair() {
+        let s = built(&[row("Chief Officer", "MV Alpha", Some("2020-01-01"), Some("2020-07-01"))]);
+        assert_eq!(s.experience_days, None, "nothing measurable in this rank");
+        assert_eq!(s.experience_rank, None, "and the rank goes with it — half a pair is never sent");
+    }
+
+    #[test]
+    fn rows_in_the_rank_with_no_usable_dates_send_no_experience_pair() {
+        let s = built(&[
+            row("Master", "MV Alpha", None, None),
+            row("Master", "MV Beta", Some("not-a-date"), Some("also-not")),
+        ]);
+        assert_eq!(s.experience_days, None, "unparsable is not zero, it is unknown");
+        assert_eq!(s.experience_rank, None);
+    }
+
+    #[test]
+    fn a_contract_that_began_and_ended_on_one_day_is_data_and_it_is_zero() {
+        // THE DISTINCTION THE CARD IS ABOUT. `cv::work_entry_days` returns 0
+        // here and 0 for a missing date, and cannot tell the two apart.
+        let s = built(&[row("Master", "MV Alpha", Some("2020-05-05"), Some("2020-05-05"))]);
+        assert_eq!(s.experience_days, Some(0), "zero days, and it IS sent");
+        assert_eq!(s.experience_rank.as_deref(), Some("Master"));
+    }
+
+    #[test]
+    fn a_sign_off_before_its_sign_on_is_not_measurable() {
+        let s = built(&[row("Master", "MV Alpha", Some("2020-07-01"), Some("2020-01-01"))]);
+        assert_eq!(s.experience_days, None, "backwards dates are not a zero-day contract");
+    }
+
+    #[test]
+    fn one_unusable_row_does_not_poison_the_usable_ones() {
+        let s = built(&[
+            row("Master", "MV Alpha", Some("2020-01-01"), Some("2020-02-01")),
+            row("Master", "MV Beta", None, Some("2021-01-01")),
+        ]);
+        assert_eq!(s.experience_days, Some(31), "the measurable row still counts");
+    }
+
+    // ── the rank decides which rows count, and nothing is normalised ────────
+
+    #[test]
+    fn only_rows_of_the_responded_rank_count() {
+        let s = built(&[
+            row("Master", "MV Alpha", Some("2020-01-01"), Some("2020-02-01")),
+            row("Chief Officer", "MV Beta", Some("2021-01-01"), Some("2021-12-01")),
+        ]);
+        assert_eq!(s.experience_days, Some(31), "the Chief Officer contract is not Master time");
+    }
+
+    #[test]
+    fn a_different_spelling_is_a_different_rank_because_622_is_not_open() {
+        // The server compares this string to the frozen snapshot byte for byte
+        // and answers `other_rank`. Normalising here would decide №622 in
+        // passing, on the client, where nobody agreed to decide it.
+        let s = built(&[row("MASTER", "MV Alpha", Some("2020-01-01"), Some("2020-02-01"))]);
+        assert_eq!(s.experience_days, None, "MASTER is not Master");
+    }
+
+    #[test]
+    fn surrounding_whitespace_in_the_stored_position_still_matches() {
+        // The same key `cv::experience_by_position` already groups by
+        // (`w.position.trim()`), so this is the product's existing grouping and
+        // not a new normalisation of rank names.
+        let s = built(&[row("  Master  ", "MV Alpha", Some("2020-01-01"), Some("2020-02-01"))]);
+        assert_eq!(s.experience_days, Some(31));
+    }
+
+    #[test]
+    fn with_no_rank_in_the_vault_neither_half_of_the_pair_is_sent() {
+        let mut p = master();
+        p.rank = None;
+        let s = build_response_summary(
+            &p,
+            &[row("Master", "MV Alpha", Some("2020-01-01"), Some("2020-02-01"))],
+            today(),
+        );
+        assert_eq!(s.experience_rank, None);
+        assert_eq!(s.experience_days, None, "days without a rank they are days OF is meaningless");
+    }
+
+    #[test]
+    fn the_experience_pair_is_all_or_nothing_on_every_input() {
+        let cases: Vec<Vec<SummaryWorkRow>> = vec![
+            vec![],
+            vec![row("Master", "A", Some("2020-01-01"), Some("2020-02-01"))],
+            vec![row("Master", "A", None, None)],
+            vec![row("Bosun", "A", Some("2020-01-01"), Some("2020-02-01"))],
+            vec![row("Master", "A", Some("2020-05-05"), Some("2020-05-05"))],
+        ];
+        for rows in cases {
+            let s = built(&rows);
+            assert_eq!(
+                s.experience_rank.is_some(),
+                s.experience_days.is_some(),
+                "a half pair was produced for {rows:?}"
+            );
+        }
+    }
+
+    // ── age: a number and its honesty, never a date of birth ────────────────
+
+    #[test]
+    fn a_full_date_of_birth_gives_an_exact_age() {
+        let s = built(&[]);
+        assert_eq!(s.age_years, Some(34), "born 1992-07-15, measured on 2026-09-30");
+        assert_eq!(s.age_precision, Some("exact"));
+    }
+
+    #[test]
+    fn the_day_before_a_birthday_is_still_the_younger_age() {
+        let mut p = master();
+        p.dob = Some("1992-10-01".into());
+        let s = build_response_summary(&p, &[], today());
+        assert_eq!(s.age_years, Some(33), "the birthday has not happened yet in 2026");
+    }
+
+    #[test]
+    fn a_year_only_date_of_birth_says_so_instead_of_inventing_a_day() {
+        let mut p = master();
+        p.dob = Some("1992".into());
+        let s = build_response_summary(&p, &[], today());
+        assert_eq!(s.age_years, Some(34));
+        assert_eq!(s.age_precision, Some("year"), "not 'exact' — the day is not known");
+    }
+
+    #[test]
+    fn an_unreadable_date_of_birth_sends_no_age_at_all() {
+        for bad in ["", "   ", "15/07/1992", "nineteen ninety two", "1992-13-45"] {
+            let mut p = master();
+            p.dob = Some(bad.into());
+            let s = build_response_summary(&p, &[], today());
+            assert_eq!(s.age_years, None, "{bad:?} must not produce an age");
+            assert_eq!(s.age_precision, None, "{bad:?} must not produce a precision");
+        }
+    }
+
+    #[test]
+    fn a_date_of_birth_in_the_future_sends_no_age() {
+        let mut p = master();
+        p.dob = Some("2030-01-01".into());
+        let s = build_response_summary(&p, &[], today());
+        assert_eq!(s.age_years, None);
+        assert_eq!(s.age_precision, None);
+    }
+
+    #[test]
+    fn the_age_pair_is_all_or_nothing_on_every_input() {
+        for dob in ["1992-07-15", "1992", "", "rubbish", "2030-01-01", "1800-01-01"] {
+            let mut p = master();
+            p.dob = Some(dob.into());
+            let s = build_response_summary(&p, &[], today());
+            assert_eq!(
+                s.age_years.is_some(),
+                s.age_precision.is_some(),
+                "a half pair was produced for {dob:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_age_answer_is_the_one_the_comparative_profile_already_uses() {
+        // Reuse, asserted rather than claimed: the number this card sends and
+        // the number the matchable profile buckets come from ONE function.
+        for dob in ["1992-07-15", "1970-01-01", "2008-02-29"] {
+            let reused = crate::commands::profile::age_years_on(dob, today()).map(|y| y as i64);
+            let mut p = master();
+            p.dob = Some(dob.into());
+            let mine = build_response_summary(&p, &[], today()).age_years;
+            assert_eq!(mine, reused, "the two answers about {dob:?} must be one answer");
+        }
+    }
+
+    // ── last vessel: the latest one, not a random one ───────────────────────
+
+    #[test]
+    fn the_last_vessel_is_the_latest_in_time_not_the_last_in_the_table() {
+        let s = built(&[
+            row("Master", "MV Newest", Some("2024-01-01"), Some("2024-06-01")),
+            row("Master", "MV Oldest", Some("2019-01-01"), Some("2019-06-01")),
+        ]);
+        assert_eq!(s.last_vessel_name.as_deref(), Some("MV Newest"));
+        assert_eq!(s.last_vessel_sign_off.as_deref(), Some("2024-06-01"));
+    }
+
+    #[test]
+    fn the_last_vessel_is_not_filtered_by_the_responded_rank() {
+        // The contract field is `last_vessel_name`, not "last vessel in rank":
+        // the crewing is being told which ship he came off, and he came off
+        // that one whatever he was rated as on it.
+        let s = built(&[
+            row("Master", "MV Older", Some("2019-01-01"), Some("2019-06-01")),
+            row("Deck Cadet", "MV Newest", Some("2024-01-01"), Some("2024-06-01")),
+        ]);
+        assert_eq!(s.last_vessel_name.as_deref(), Some("MV Newest"));
+    }
+
+    #[test]
+    fn a_vessel_still_being_served_on_is_the_last_one_and_has_no_sign_off() {
+        let s = built(&[
+            row("Master", "MV Ashore", Some("2023-01-01"), Some("2023-06-01")),
+            row("Master", "MV Aboard", Some("2025-02-01"), None),
+        ]);
+        assert_eq!(s.last_vessel_name.as_deref(), Some("MV Aboard"));
+        assert_eq!(s.last_vessel_sign_off, None, "he has not signed off — say nothing, not ''");
+    }
+
+    #[test]
+    fn with_no_datable_row_there_is_no_last_vessel() {
+        let s = built(&[row("Master", "MV Nowhere", None, None)]);
+        assert_eq!(s.last_vessel_name, None, "nothing can be called the LATEST here");
+        assert_eq!(s.last_vessel_sign_off, None);
+    }
+
+    #[test]
+    fn a_row_with_no_vessel_name_sends_no_vessel_name() {
+        let s = built(&[row("Master", "   ", Some("2024-01-01"), Some("2024-06-01"))]);
+        assert_eq!(s.last_vessel_name, None, "blank is absent, never an empty string");
+    }
+
+    #[test]
+    fn the_sign_off_is_the_text_the_seafarer_wrote() {
+        let s = built(&[row("Master", "MV Alpha", Some("2024-01-01"), Some("2024-06-01"))]);
+        assert_eq!(
+            s.last_vessel_sign_off.as_deref(),
+            Some("2024-06-01"),
+            "not reformatted, not re-rendered in some other calendar"
+        );
+    }
+
+    // ── identity and citizenship come out of the vault as they are ──────────
+
+    #[test]
+    fn the_identity_and_citizenship_values_are_carried() {
+        let s = built(&[]);
+        assert_eq!(s.first_name.as_deref(), Some("Adrian"));
+        assert_eq!(s.surname.as_deref(), Some("Seaborne"));
+        assert_eq!(s.citizenship.as_deref(), Some("Ukrainian"));
+        assert_eq!(s.citizenship_code.as_deref(), Some("UKR"));
+    }
+
+    #[test]
+    fn blank_and_missing_vault_values_are_absent_and_never_empty_strings() {
+        let p = SummaryPersonal {
+            first_name: Some("   ".into()),
+            surname: None,
+            dob: None,
+            nationality: Some(String::new()),
+            nationality_code: None,
+            rank: None,
+        };
+        let s = build_response_summary(&p, &[], today());
+        assert_eq!(s.first_name, None);
+        assert_eq!(s.surname, None);
+        assert_eq!(s.citizenship, None);
+        assert_eq!(s.citizenship_code, None);
+    }
+
+    #[test]
+    fn an_empty_vault_produces_not_one_of_the_ten() {
+        let s = build_response_summary(&SummaryPersonal::default(), &[], today());
+        assert_eq!(s, ResponseSummary::default(), "nothing known, nothing claimed");
+    }
+
+    // ── the body: exactly the ten names, and never a date of birth ──────────
+
+    fn body_keys(summary: &ResponseSummary) -> Vec<String> {
+        let mut body = serde_json::json!({});
+        apply_summary_to_body(&mut body, summary);
+        let mut keys: Vec<String> = body
+            .as_object()
+            .expect("the body stays an object")
+            .keys()
+            .cloned()
+            .collect();
+        keys.sort();
+        keys
+    }
+
+    #[test]
+    fn the_list_of_names_is_the_ten_the_server_declared() {
+        let mut declared = RESPONSE_SUMMARY_FIELDS.to_vec();
+        declared.sort();
+        assert_eq!(
+            declared,
+            vec![
+                "last_vessel_name",
+                "last_vessel_sign_off",
+                "rank_experience_days",
+                "rank_experience_rank",
+                "seafarer_age_precision",
+                "seafarer_age_years",
+                "seafarer_citizenship",
+                "seafarer_citizenship_code",
+                "seafarer_first_name",
+                "seafarer_surname",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_full_summary_writes_all_ten_and_nothing_else() {
+        let s = built(&[row("Master", "MV Alpha", Some("2020-01-01"), Some("2020-02-01"))]);
+        let keys = body_keys(&s);
+        assert_eq!(keys.len(), 10, "got {keys:?}");
+        for k in &keys {
+            assert!(
+                RESPONSE_SUMMARY_FIELDS.contains(&k.as_str()),
+                "{k} is not one of the ten the server's extra=\"forbid\" schema knows"
+            );
+        }
+    }
+
+    #[test]
+    fn an_empty_summary_writes_no_keys_at_all() {
+        // Not nulls, not empty strings: the key is simply not there, which is
+        // how "he did not fill this in" reaches the crewing's screen.
+        assert_eq!(body_keys(&ResponseSummary::default()), Vec::<String>::new());
+    }
+
+    #[test]
+    fn the_existing_five_fields_are_left_exactly_as_they_were() {
+        let mut body = serde_json::json!({
+            "response_id": "r-1",
+            "contact": "a@b.test",
+            "cv_content_type": "application/pdf",
+            "cv_base64": "AAAA",
+            "message": "hello",
+        });
+        let before = body.clone();
+        apply_summary_to_body(&mut body, &built(&[]));
+        for key in ["response_id", "contact", "cv_content_type", "cv_base64", "message"] {
+            assert_eq!(body[key], before[key], "{key} must not be touched");
+        }
+    }
+
+    #[test]
+    fn the_date_of_birth_never_reaches_the_body_under_any_name() {
+        let s = built(&[row("Master", "MV Alpha", Some("2020-01-01"), Some("2020-02-01"))]);
+        let mut body = serde_json::json!({});
+        apply_summary_to_body(&mut body, &s);
+        let text = serde_json::to_string(&body).expect("a JSON object serialises");
+        assert!(!text.contains("1992-07-15"), "the date of birth itself leaked: {text}");
+        for key in body.as_object().expect("object").keys() {
+            assert!(!key.contains("dob"), "{key} names a date of birth");
+            assert!(!key.contains("birth"), "{key} names a date of birth");
+        }
+    }
+
+    #[test]
+    fn the_numbers_are_sent_as_numbers_and_the_precision_as_a_closed_word() {
+        let s = built(&[row("Master", "MV Alpha", Some("2020-01-01"), Some("2020-02-01"))]);
+        let mut body = serde_json::json!({});
+        apply_summary_to_body(&mut body, &s);
+        assert!(body["seafarer_age_years"].is_i64(), "age is a number, not a string");
+        assert!(body["rank_experience_days"].is_i64(), "days are a number, not a string");
+        let precision = body["seafarer_age_precision"].as_str().unwrap_or_default();
+        assert!(
+            precision == "exact" || precision == "year",
+            "the server's closed set is exact|year, got {precision:?}"
+        );
+    }
+
+    // ── nothing here may ever cost a delivery ───────────────────────────────
+
+    #[test]
+    fn no_input_a_vault_can_hold_makes_this_panic() {
+        let nasty = [
+            "",
+            "   ",
+            "\u{0}",
+            "0000-00-00",
+            "9999-12-31",
+            "-0001-01-01",
+            "Master\u{0}",
+            &"x".repeat(5000),
+        ];
+        for value in nasty {
+            let p = SummaryPersonal {
+                first_name: Some(value.to_string()),
+                surname: Some(value.to_string()),
+                dob: Some(value.to_string()),
+                nationality: Some(value.to_string()),
+                nationality_code: Some(value.to_string()),
+                rank: Some(value.to_string()),
+            };
+            let rows = vec![
+                row(value, value, Some(value), Some(value)),
+                row(value, value, None, Some(value)),
+            ];
+            let s = build_response_summary(&p, &rows, today());
+            let mut body = serde_json::json!({});
+            apply_summary_to_body(&mut body, &s);
+            assert!(body.is_object(), "the body survived {value:?}");
+        }
+    }
+
+    #[test]
+    fn a_thousand_periods_still_answer_and_answer_correctly() {
+        // Ten years of back-to-back month-long contracts, every one of them
+        // overlapping its neighbour, in reverse order.
+        let mut periods = Vec::new();
+        let start = d("2010-01-01");
+        for i in (0..120).rev() {
+            let on = start + chrono::Duration::days(i * 30);
+            let off = on + chrono::Duration::days(45);
+            periods.push((on, off));
+        }
+        let days = merged_interval_days(&periods);
+        assert_eq!(days, 119 * 30 + 45, "one continuous stretch, merged once");
+    }
+
+    // ── read out of a real vault, not out of a parameter ────────────────────
+
+    fn vault() -> rusqlite::Connection {
+        let conn = rusqlite::Connection::open_in_memory().expect("in-memory vault");
+        conn.execute_batch(
+            "CREATE TABLE vault_info (key TEXT PRIMARY KEY, value TEXT);
+             CREATE TABLE work_history (
+                id TEXT PRIMARY KEY, vessel_name TEXT NOT NULL, vessel_type TEXT, imo TEXT,
+                flag TEXT, company TEXT, position TEXT, sign_on TEXT, sign_off TEXT,
+                notes TEXT, created_at TEXT NOT NULL);",
+        )
+        .expect("the test's own schema");
+        conn
+    }
+
+    fn put(conn: &rusqlite::Connection, key: &str, value: &str) {
+        crate::db::set_vault_info(conn, key, value).expect("the test's own write");
+    }
+
+    fn add_row(conn: &rusqlite::Connection, id: &str, pos: &str, vessel: &str, on: &str, off: &str) {
+        conn.execute(
+            "INSERT INTO work_history (id, vessel_name, position, sign_on, sign_off, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, '2020-01-01')",
+            rusqlite::params![id, vessel, pos, on, off],
+        )
+        .expect("the test's own row");
+    }
+
+    #[test]
+    fn every_value_comes_out_of_the_vault_this_connection_holds() {
+        let conn = vault();
+        put(&conn, "personal_first_name", "Adrian");
+        put(&conn, "personal_surname", "Seaborne");
+        put(&conn, "personal_dob", "1992-07-15");
+        put(&conn, "personal_nationality", "Ukrainian");
+        put(&conn, "personal_nationality_code", "UKR");
+        put(&conn, "personal_rank", "Master");
+        add_row(&conn, "w1", "Master", "MV Alpha", "2020-01-01", "2020-07-01");
+        add_row(&conn, "w2", "Master", "MV Beta", "2020-04-01", "2020-10-01");
+
+        let s = read_response_summary(&conn);
+        assert_eq!(s.first_name.as_deref(), Some("Adrian"));
+        assert_eq!(s.surname.as_deref(), Some("Seaborne"));
+        assert_eq!(s.citizenship.as_deref(), Some("Ukrainian"));
+        assert_eq!(s.citizenship_code.as_deref(), Some("UKR"));
+        assert_eq!(s.experience_rank.as_deref(), Some("Master"));
+        assert_eq!(s.experience_days, Some(274), "merged, not 365");
+        assert_eq!(s.last_vessel_name.as_deref(), Some("MV Beta"));
+        assert_eq!(s.age_precision, Some("exact"));
+        assert!(s.age_years.is_some());
+    }
+
+    #[test]
+    fn the_rank_falls_back_the_same_way_the_jobs_screen_reads_it() {
+        // `get_seafarer_personal` answers `personal_rank` or `rank`, and the
+        // Jobs screen sends THAT to the server as the filter. Reading it any
+        // other way here would send a rank the response was not matched on.
+        let conn = vault();
+        put(&conn, "rank", "Bosun");
+        add_row(&conn, "w1", "Bosun", "MV Alpha", "2020-01-01", "2020-02-01");
+        assert_eq!(read_response_summary(&conn).experience_rank.as_deref(), Some("Bosun"));
+
+        put(&conn, "personal_rank", "Master");
+        add_row(&conn, "w2", "Master", "MV Beta", "2021-01-01", "2021-02-01");
+        let s = read_response_summary(&conn);
+        assert_eq!(s.experience_rank.as_deref(), Some("Master"), "personal_rank wins");
+        assert_eq!(s.experience_days, Some(31), "and the Bosun time is not Master time");
+    }
+
+    #[test]
+    fn a_vault_with_nothing_in_it_yields_nothing_and_does_not_fail() {
+        let conn = vault();
+        assert_eq!(read_response_summary(&conn), ResponseSummary::default());
+    }
+
+    #[test]
+    fn a_vault_whose_tables_are_missing_yields_nothing_and_does_not_fail() {
+        // THE DELIVERY RULE, at the lowest level it can be tested: a broken
+        // vault makes the summary empty, never an error, because an error here
+        // would travel up and cost a seafarer his response.
+        let conn = rusqlite::Connection::open_in_memory().expect("in-memory");
+        assert_eq!(read_response_summary(&conn), ResponseSummary::default());
+    }
+
+    #[test]
+    fn a_row_whose_position_is_null_does_not_stop_the_others_being_read() {
+        let conn = vault();
+        put(&conn, "personal_rank", "Master");
+        conn.execute(
+            "INSERT INTO work_history (id, vessel_name, position, sign_on, sign_off, created_at)
+             VALUES ('w0', 'MV Null', NULL, '2019-01-01', '2019-02-01', '2019-01-01')",
+            [],
+        )
+        .expect("the test's own row");
+        add_row(&conn, "w1", "Master", "MV Alpha", "2020-01-01", "2020-02-01");
+        let s = read_response_summary(&conn);
+        assert_eq!(s.experience_days, Some(31));
+        assert_eq!(s.last_vessel_name.as_deref(), Some("MV Alpha"));
     }
 }
