@@ -812,17 +812,30 @@ fn vault_db_file(conn: &rusqlite::Connection) -> Option<String> {
 ///
 /// The hazard is real and not hypothetical: `submit_profile_response` reads the
 /// identity, RELEASES the lock to speak to the server for up to 45 seconds, and
-/// takes it again to write. Four production sites replace the open vault
-/// (`commands/profile.rs:166`, `:898`, `:910`, `:949`) and nothing forbids one
-/// of them running inside that window. The receipt would then carry vault A's
-/// `vault_user_id` and land in vault B's file: the reader refuses it afterwards,
-/// which is right, but vault A — the one that actually delivered — would be left
-/// without its receipt while a stranger's file held its metadata.
+/// takes it again to write, and nothing forbids the open vault being replaced
+/// inside that window. The receipt would then carry vault A's `vault_user_id`
+/// and land in vault B's file: the reader refuses it afterwards, which is right,
+/// but vault A — the one that actually delivered — would be left without its
+/// receipt while a stranger's file held its metadata.
 ///
-/// WHY THE FILE OF THE CONNECTION AND NOT `state.vault_path`. Those same four
-/// sites set `vault_path` FIRST and `conn` SECOND, under two separate locks, so
-/// `vault_path` LAGS behind the connection during a swap and a comparison
-/// against it can be wrong in both directions. Asking the connection is exact:
+/// TWO NUMBERS, AND THEY MEAN DIFFERENT THINGS. An earlier version of this
+/// comment said "four production sites replace the open vault" and that was
+/// simply wrong — it named the second quantity while claiming the first.
+/// Counted, not recalled:
+///
+///   * NINE sites replace the open vault: `commands/vault.rs:591`, `:616`,
+///     `:626`, `:727`, `:1067` and `commands/profile.rs:166`, `:898`, `:910`,
+///     `:949`. (A tenth, `restore_account_profile`, guards itself by refusing
+///     while the vault is closed.) That is the size of the hazard.
+///   * FOUR of them — the `profile.rs` ones — update `vault_path` and release
+///     its lock BEFORE taking `conn`'s. The five in `vault.rs` hold both locks
+///     together and have no lag at all.
+///
+/// WHY THE FILE OF THE CONNECTION AND NOT `state.vault_path`. Those four
+/// lagging sites set `vault_path` FIRST and `conn` SECOND, under two separate
+/// locks, so `vault_path` trails the connection during a swap and a comparison
+/// against it can be wrong in both directions — including refusing a write to
+/// the CORRECT vault. Asking the connection is exact:
 /// the object being checked is the object about to be written, inside one
 /// critical section, so the window is closed by construction instead of made
 /// smaller. `state.vault_path` is also a DIRECTORY (`identity::vault_signing_key`

@@ -1837,10 +1837,10 @@ ok(submitBody !== null && /"response_id"/.test(submitBody) && /"contact"/.test(s
   'P4 the request carries exactly the fields the server\'s schema declares');
 ok(/published_version/.test(respondBody || ''),
   'P5 the client reads published_version FROM the acknowledgement');
-ok(/delivered against published version 7|доставлен для опубликованной версии 7/.test(okRun.statusHtml),
+ok(/Delivered against published version 7|Доставлен для опубликованной версии 7/.test(okRun.statusHtml),
   `P6 and shows it on screen after a confirmed delivery (${okRun.statusHtml.replace(/<[^>]+>/g, '').slice(0, 90)})`);
 const ruOk = await runRespond({ lang: 'ru' });
-ok(/доставлен для опубликованной версии 7/.test(ruOk.statusHtml), 'P7 in RU as well');
+ok(/Доставлен для опубликованной версии 7/.test(ruOk.statusHtml), 'P7 in RU as well');
 
 // Contact and identity are the vault's, not the caller's: a client that could
 // name the contact could deliver a CV under someone else's address.
@@ -3645,7 +3645,7 @@ const RECEIPT_ACK_NO_VERSION = { ...RECEIPT_ACK, published_version: null };
 const mapOf = (r) => ({ [PROFILE_MATCH.profile_id]: r });
 
 const EN_OK = 'The agency received your response.';
-const EN_VERSION = 'delivered against published version';
+const EN_VERSION = 'Delivered against published version';
 const EN_ALREADY = 'Your response has already been delivered. Pressing again sends nothing new.';
 const EN_IRREVERSIBLE = 'A response cannot be withdrawn. Once it is delivered, the agency keeps it.';
 const RU_OK = 'Агентство получило ваш отклик.';
@@ -3979,9 +3979,9 @@ for (const [what, region, id] of [
     `${id} (D18/D19/D20) ${what} is guarded between its own lock and its own receipt (found ${n})`);
   // AND IN THE GATING POSITION. Without this, `let _ = same_vault_db(..);`
   // dropped after the lock would satisfy the count while gating nothing — the
-  // D23 drill.
+  // D25 drill.
   ok(tight(String(region || '')).includes('.filter(|conn|same_vault_db('),
-    `${id}b (D23) and the comparison is what BINDS the connection, not a value computed beside it`);
+    `${id}b (D25) and the comparison is what BINDS the connection, not a value computed beside it`);
 }
 // THE COMPARISON IS OF THE CONNECTION'S OWN FILE, not of `state.vault_path`.
 // Those four sites set `vault_path` FIRST and `conn` SECOND under two separate
@@ -4185,6 +4185,36 @@ ok(countOf(html, 'function jobsRespondAlreadyText(') === 1
 // ---- THE FOUR RENDERED LINES, PRINTED AS EVIDENCE --------------------------
 // Taken from the rendered screen, not retyped: this is what goes to the
 // counsellor before merge.
+// ---- D23: A SENTENCE AFTER A FULL STOP STARTS WITH A CAPITAL --------------
+// Found on live frames in BOTH locales, not by reading: `respond_ok` ends in a
+// full stop and `respond_ack_version` began in lower case, so the screen read
+// "The agency received your response. delivered against published version 1".
+// Fixed AT THE DICTIONARY, in both locales, because that one string is
+// concatenated in TWO places — the live-success line in `jobsRespondToProfile`
+// and the receipt line in `jobsRespondReceiptText` — and fixing the joins
+// separately would have put two spellings of one phrase on one screen.
+// NO PROGRAMMATIC CAPITALISATION: it would be wrong in a locale where it is
+// wrong, and this is a property of the sentence, not of the renderer.
+ok(/\.\s+\p{Ll}/u.test('Done. delivered against published version 1'),
+  'RV7cal CALIBRATION — the probe really does detect a lower-case sentence start');
+for (const [state, receipt] of [['acknowledgement', RECEIPT_ACK], ['already_on_record', RECEIPT_ALREADY]]) {
+  for (const lang of ['en', 'ru']) {
+    const r = await renderJobsScreen({ profiles: [RV_CARD], receipts: mapOf(receipt), lang });
+    const line = statusTextOf(r.sectionHtml);
+    ok(!/\.\s+\p{Ll}/u.test(line),
+      `RV7 (${state} / ${lang}) (D23) no sentence in the status line begins in lower case (line: ${JSON.stringify(line)})`);
+  }
+}
+// And the live-success line, which shares the same dictionary string.
+for (const [lang, needle] of [['en', 'Delivered against published version'], ['ru', 'Доставлен для опубликованной версии']]) {
+  const r = await runRespond({ lang });
+  const line = String(r.statusHtml).replace(/<[^>]*>/g, '').trim();
+  ok(line.includes(needle),
+    `RV8 (${lang}) (D23) the live-success line carries the SAME capitalised phrase — one string, one spelling`);
+  ok(!/\.\s+\p{Ll}/u.test(line),
+    `RV8b (${lang}) and it too has no lower-case sentence start (line: ${JSON.stringify(line)})`);
+}
+
 console.log('\n  --- RENDERED STATUS LINES (evidence, both states x both locales) ---');
 for (const [state, receipt] of [['acknowledgement', RECEIPT_ACK], ['already_on_record', RECEIPT_ALREADY]]) {
   for (const lang of ['en', 'ru']) {
