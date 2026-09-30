@@ -553,6 +553,20 @@ function makeInvoke(state) {
         }
         return VAULT_RESPONSE_IDS.get(pid);
       }
+      // WHAT THE VAULT ALREADY HOLDS ABOUT DELIVERED RESPONSES (№605). The
+      // five conditions that make a receipt this vault's, this registry's,
+      // this profile's and this response's are checked IN RUST — this stub
+      // stands for a command that has already applied them, and the JS side's
+      // own contract is what it does with the answer.
+      //
+      // `receiptsThrow` is a REAL state and not decoration: the command is new,
+      // so a build whose WebView is newer than its binary answers "not
+      // registered", and the loader must then draw today's screen rather than
+      // no screen.
+      case 'jobs_response_receipts':
+        state.receiptCalls.push((args && args.profileIds) || null);
+        if (state.receiptsThrow) throw new Error('command not registered');
+        return JSON.parse(JSON.stringify(state.receipts));
       case 'get_downloads_dir': return '/tmp/jobs-harness-downloads';
       case 'export_redacted_cv_pdf':
         if (state.cvThrows) throw new Error('vault locked');
@@ -651,6 +665,12 @@ function boot(opts = {}) {
       ? { delivered: true, response_id: 'r', profile_id: 'p', crewing_id: 'c', published_version: 7, intake_id: 'intake-0001', content_sha256: 'abc', created_at: '2026-09-28T00:00:00Z' }
       : opts.submitAck,
     submitThrows: opts.submitThrows || '',
+    // The receipts the vault holds. EMPTY BY DEFAULT, so every assertion
+    // written before this card is answered exactly as it was: no receipt is the
+    // state of every vault that has not delivered anything.
+    receipts: opts.receipts === undefined ? {} : opts.receipts,
+    receiptsThrow: !!opts.receiptsThrow,
+    receiptCalls: [],
     cvThrows: !!opts.cvThrows,
     responseIdThrows: !!opts.responseIdThrows,
     identity: opts.identity === undefined ? { ...IDENTITY_READY } : { ...opts.identity },
@@ -1817,10 +1837,10 @@ ok(submitBody !== null && /"response_id"/.test(submitBody) && /"contact"/.test(s
   'P4 the request carries exactly the fields the server\'s schema declares');
 ok(/published_version/.test(respondBody || ''),
   'P5 the client reads published_version FROM the acknowledgement');
-ok(/delivered against published version 7|доставлен для опубликованной версии 7/.test(okRun.statusHtml),
+ok(/Delivered against published version 7|Доставлен для опубликованной версии 7/.test(okRun.statusHtml),
   `P6 and shows it on screen after a confirmed delivery (${okRun.statusHtml.replace(/<[^>]+>/g, '').slice(0, 90)})`);
 const ruOk = await runRespond({ lang: 'ru' });
-ok(/доставлен для опубликованной версии 7/.test(ruOk.statusHtml), 'P7 in RU as well');
+ok(/Доставлен для опубликованной версии 7/.test(ruOk.statusHtml), 'P7 in RU as well');
 
 // Contact and identity are the vault's, not the caller's: a client that could
 // name the contact could deliver a CV under someone else's address.
@@ -2217,7 +2237,10 @@ function locksSpanningNetwork(body) {
   }
   return out;
 }
-['ensure_seafarer_identity', 'submit_profile_response'].forEach((fn) => {
+// `jobs_response_receipts` is in this list from the day it was written, and it
+// has no request in it at all. That is the point of pinning it here: the reader
+// of №605 answers from the vault, and the invariant says it will stay that way.
+['ensure_seafarer_identity', 'submit_profile_response', 'jobs_response_receipts'].forEach((fn) => {
   const body = rustFnBody(jobsRs, fn) || '';
   const bad = locksSpanningNetwork(body);
   ok(bad.length === 0,
@@ -2226,8 +2249,21 @@ function locksSpanningNetwork(body) {
 const identityLocks = countOf(withoutLineComments(String(identityRustBody || '')), 'state.conn.lock()');
 ok(identityLocks === 3,
   `I18b it takes that lock three separate times — read, the claim answer, the marker (found ${identityLocks})`);
-ok(countOf(withoutLineComments(String(rustFnBody(jobsRs, 'submit_profile_response') || '')), 'state.conn.lock()') === 1,
-  'I18c and the command it copies takes it once, before the network — the shape is the file\'s, not this function\'s');
+// THREE, and each one is named, for the same reason `I18b` counts three next
+// door: №605 added two vault writes to this command and a count of one would
+// have been red on an honest implementation.
+//
+// THE COUNT IS NOT COSMETIC AND IT IS NOT WEAKENED BY BEING RAISED. The
+// tempting way to keep this green at one was to move `lock()` + `set_vault_info`
+// into a helper function — and `rustFnBody` does not follow a call, so BOTH I18
+// and I18c would have gone blind while reading green. That is exactly "do the
+// card honestly and break the guard", so the writes stay INLINE here, each in
+// its own narrow block after the request, and this number rises to say so.
+// Mutation D15 is the proof: move either write into a helper and this drops to
+// one.
+const submitLocks = countOf(withoutLineComments(String(rustFnBody(jobsRs, 'submit_profile_response') || '')), 'state.conn.lock()');
+ok(submitLocks === 3,
+  `I18c it takes that lock three separate times — the identity read before the network, the receipt on the server's acknowledgement, the receipt on the classified 409 (found ${submitLocks})`);
 
 // ════════════════════════════════════════════════════════════════════════════
 // N. A SERVICE BUILD WRITES NOTHING INTO THE LIVE PRODUCT — S4e.
@@ -3554,6 +3590,639 @@ ok(r16pilot.nonprod === true,
   'R16f a pilot build still answers true — the third state is untouched by this delta');
 ok(r16pilot.html !== null && !r16pilot.html.includes('claimSkipiIdentity()'),
   'R16g and still draws no button, as test 14 already required');
+
+// ════════════════════════════════════════════════════════════════════════════
+// RC. A DELIVERY THAT HAPPENED IS STILL VISIBLE AFTER A COLD START — №605.
+//
+// WHAT WAS MEASURED BROKEN, not deduced: on 2026-09-29 a response was delivered
+// to the pilot, the app was force-stopped and started cold, and the card came
+// back BYTE FOR BYTE the card from before — an active "Respond with Skipi" and
+// no trace of the delivery. The server's row survived and so did the response id
+// in the vault; only the SCREEN did not, and it could not have: the
+// acknowledgement was handed to the WebView and written nowhere.
+//
+// MEASUREMENT BOUNDARY, stated rather than implied. This section runs the real
+// inline scripts in a DOM shim over a stubbed `jobs_response_receipts`. It
+// therefore proves WHAT THE SCREEN DOES WITH A RECEIPT and what the handler
+// refuses; it compiles nothing, opens no vault and does not prove the five
+// conditions that decide whether a receipt is this vault's — those are Rust's,
+// pinned by the unit tests in `jobs.rs` and by the source claims at the end of
+// this section.
+// ════════════════════════════════════════════════════════════════════════════
+
+section('RC. the receipt of a delivered response, restored on the screen (№605)');
+
+const RECEIPT_ACK = {
+  source: 'acknowledgement',
+  response_id: '11111111-2222-4333-8444-000000000001',
+  profile_id: PROFILE_MATCH.profile_id,
+  base: 'https://api.skipi.app',
+  vault_user_id: 'harness-vault-user',
+  subject_id: 'SKP-HARNESS-0001',
+  intake_id: 'intake-0001',
+  published_version: 7,
+  crewing_id: CREWING_ALPHA_ID,
+  content_sha256: 'abc',
+  server_created_at: '2026-09-28T00:00:00Z',
+};
+// The 409 receipt, and every optional field really is absent: a conflict body
+// carries no intake id, no version and no timestamp, so there is nothing else
+// honest to record.
+const RECEIPT_ALREADY = {
+  source: 'already_on_record',
+  response_id: RECEIPT_ACK.response_id,
+  profile_id: PROFILE_MATCH.profile_id,
+  base: RECEIPT_ACK.base,
+  vault_user_id: RECEIPT_ACK.vault_user_id,
+  subject_id: RECEIPT_ACK.subject_id,
+  intake_id: null,
+  published_version: null,
+  crewing_id: null,
+  content_sha256: null,
+  server_created_at: null,
+};
+const RECEIPT_ACK_NO_VERSION = { ...RECEIPT_ACK, published_version: null };
+const mapOf = (r) => ({ [PROFILE_MATCH.profile_id]: r });
+
+const EN_OK = 'The agency received your response.';
+const EN_VERSION = 'Delivered against published version';
+const EN_ALREADY = 'Your response has already been delivered. Pressing again sends nothing new.';
+const EN_IRREVERSIBLE = 'A response cannot be withdrawn. Once it is delivered, the agency keeps it.';
+const RU_OK = 'Агентство получило ваш отклик.';
+const RU_ALREADY = 'Ваш отклик уже доставлен. Повторное нажатие ничего нового не отправит.';
+
+// ---- CALIBRATION FIRST. Without this pair the whole section could be green
+// over a driver that cannot see the button at all, and "the receipt hides it"
+// would be a claim about nothing.
+const rc0 = await renderJobsScreen({ profiles: [PROFILE_MATCH] });
+ok(rc0.sectionHtml.includes('data-qa="jobs-respond-btn"')
+  && !/data-qa="jobs-respond-btn"[^>]*\sdisabled/.test(rc0.sectionHtml),
+  'RC0 CALIBRATION — with NO receipt the button is drawn and LIVE, exactly as today');
+ok(rc0.sectionHtml.includes(EN_IRREVERSIBLE),
+  'RC0b CALIBRATION — and the sentence about irreversibility is printed, exactly as today');
+ok(rc0.sectionHtml.includes('data-qa="jobs-respond-status"')
+  && !rc0.sectionHtml.includes(EN_OK) && !rc0.sectionHtml.includes(EN_ALREADY),
+  'RC0c CALIBRATION — and the status line is EMPTY: nothing claims a delivery');
+ok(!rc0.sectionHtml.includes('data-receipt-source'),
+  'RC0d CALIBRATION — and no receipt marker is on the card');
+
+// ---- D10: the screen after a cold start on a CONFIRMED delivery -------------
+const rc1 = await renderJobsScreen({ profiles: [PROFILE_MATCH], receipts: mapOf(RECEIPT_ACK) });
+ok(/data-qa="jobs-respond-btn"[^>]*\sdisabled/.test(rc1.sectionHtml),
+  'RC1 (D10) with a receipt the button is DEAD — drawn and disabled, at the place where he pressed');
+ok(/data-qa="jobs-respond-btn"[^>]*aria-disabled="true"/.test(rc1.sectionHtml),
+  'RC1b and it says so to a screen reader too');
+ok(!rc1.sectionHtml.includes(EN_IRREVERSIBLE),
+  'RC1c (D10) and the irreversibility warning is NOT printed — that sentence is for a choice still open');
+ok(rc1.sectionHtml.includes(EN_OK),
+  'RC1d and the status line is PRE-FILLED with the sentence the delivery already earned');
+ok(rc1.sectionHtml.includes(EN_VERSION + ' 7'),
+  'RC1e and it names the published version the server acknowledged — from the receipt, not from a guess');
+ok(rc1.sectionHtml.includes('data-respond-state="ok"'),
+  'RC1f and the line carries the same state attribute the handler writes on a delivery');
+ok(rc1.sectionHtml.includes('data-receipt-source="acknowledgement"'),
+  'RC1g and the card says which kind of receipt restored it');
+// The version is the server's or it is absent — never a substitute.
+const rc1n = await renderJobsScreen({ profiles: [PROFILE_MATCH], receipts: mapOf(RECEIPT_ACK_NO_VERSION) });
+ok(rc1n.sectionHtml.includes(EN_OK) && !rc1n.sectionHtml.includes(EN_VERSION),
+  'RC1h a receipt without a version says so by SAYING NOTHING — no invented number');
+
+// ---- the same screen in Russian ---------------------------------------------
+const rc2 = await renderJobsScreen({ profiles: [PROFILE_MATCH], receipts: mapOf(RECEIPT_ACK), lang: 'ru' });
+ok(rc2.sectionHtml.includes(RU_OK) && /data-qa="jobs-respond-btn"[^>]*\sdisabled/.test(rc2.sectionHtml),
+  'RC2 and the restored screen is in Russian for a Russian seafarer, button equally dead');
+
+// ---- the 409 receipt: the sentence the product ALREADY says ------------------
+const rc3 = await renderJobsScreen({ profiles: [PROFILE_MATCH], receipts: mapOf(RECEIPT_ALREADY) });
+ok(rc3.sectionHtml.includes(EN_ALREADY),
+  'RC3 an already_on_record receipt shows the sentence a repeat press shows today — no new claim');
+ok(!rc3.sectionHtml.includes(EN_OK),
+  'RC3b and NOT the confirmation sentence: a 409 is not an acknowledgement');
+ok(rc3.sectionHtml.includes('data-respond-state="gone"'),
+  'RC3c and it keeps the non-retryable state of that refusal');
+ok(/data-qa="jobs-respond-btn"[^>]*\sdisabled/.test(rc3.sectionHtml) && !rc3.sectionHtml.includes(EN_IRREVERSIBLE),
+  'RC3d dead button, no irreversibility warning');
+const rc3ru = await renderJobsScreen({ profiles: [PROFILE_MATCH], receipts: mapOf(RECEIPT_ALREADY), lang: 'ru' });
+ok(rc3ru.sectionHtml.includes(RU_ALREADY),
+  'RC3e and in Russian it is the Russian sentence that already exists');
+
+// ---- fail-closed on every shape that is NOT a receipt -----------------------
+// A stub that answered "yes" to anything would make every assertion above
+// vacuous, so the refusals are enumerated rather than assumed.
+const NOT_RECEIPTS = [
+  ['null', null],
+  ['undefined — the command answered nothing', undefined],
+  ['{} — no row for any profile', {}],
+  ['a string', 'delivered'],
+  ['an array', []],
+  ['a row that is not an object', { [PROFILE_MATCH.profile_id]: 'delivered' }],
+  ['a row with no source', { [PROFILE_MATCH.profile_id]: { response_id: 'r' } }],
+  ['a source this build does not know', { [PROFILE_MATCH.profile_id]: { source: 'assumed' } }],
+  ['a source that LOOKS right but is not', { [PROFILE_MATCH.profile_id]: { source: 'acknowledged' } }],
+  ['a receipt for ANOTHER profile', { [PROFILE_OTHER_AGENCY.profile_id]: RECEIPT_ACK }],
+];
+for (const [what, receipts] of NOT_RECEIPTS) {
+  const r = await renderJobsScreen({ profiles: [PROFILE_MATCH], receipts });
+  ok(r.sectionHtml.includes('data-qa="jobs-respond-btn"')
+    && !/data-qa="jobs-respond-btn"[^>]*\sdisabled/.test(r.sectionHtml)
+    && r.sectionHtml.includes(EN_IRREVERSIBLE)
+    && !r.sectionHtml.includes(EN_OK),
+    `RC4 (${what}) is NOT a receipt: today's screen, live button, warning printed, no claim of delivery`);
+}
+// And a build whose WebView is newer than its binary: the command is not
+// registered at all.
+const rc5 = await renderJobsScreen({ profiles: [PROFILE_MATCH], receiptsThrow: true });
+ok(rc5.sectionHtml.includes('data-qa="jobs-respond-btn"')
+  && !/data-qa="jobs-respond-btn"[^>]*\sdisabled/.test(rc5.sectionHtml)
+  && rc5.sectionHtml.includes(EN_IRREVERSIBLE),
+  'RC5 a command that is not registered leaves TODAY\'S screen, not a broken one');
+
+// ---- the loader really asks, and asks for the rows it is drawing ------------
+const rc6 = await renderJobsScreen({ profiles: [PROFILE_MATCH, PROFILE_OTHER_AGENCY], receipts: {} });
+ok(rc6.state.receiptCalls.length === 1,
+  `RC6 the loader asks the vault ONCE per render (found ${rc6.state.receiptCalls.length})`);
+ok(Array.isArray(rc6.state.receiptCalls[0])
+  && rc6.state.receiptCalls[0].includes(PROFILE_MATCH.profile_id)
+  && rc6.state.receiptCalls[0].includes(PROFILE_OTHER_AGENCY.profile_id),
+  'RC6b and it asks about the profiles it is about to draw, not about a fixed one');
+// U1/U2 already prove a hidden row is not drawn; this proves it is not asked
+// about either — the ids that leave the WebView are the ids on the screen.
+const rc6h = await renderJobsScreen({ profiles: [PROFILE_NO_RANK, PROFILE_MATCH], receipts: {} });
+ok(Array.isArray(rc6h.state.receiptCalls[0])
+  && !rc6h.state.receiptCalls[0].includes(PROFILE_NO_RANK.profile_id),
+  'RC6c and a row that is not shown is not asked about');
+
+// ---- D11: THE HANDLER REFUSES, and the grey button is only the visible half --
+const rc7 = await runRespond({ receipts: mapOf(RECEIPT_ACK) });
+ok(rc7.submits.length === 0,
+  `RC7 (D11) a press with a receipt sends NOTHING (found ${rc7.submits.length} submits)`);
+const rc7cmds = rc7.state.calls.map((c) => c[0]);
+ok(!rc7cmds.includes('export_redacted_cv_pdf'),
+  'RC7b (D11) and writes no privacy-reduced CV into the downloads folder — the refusal is before the file');
+ok(!rc7cmds.includes('ensure_profile_response_id'),
+  'RC7c (D11) and mints nothing in the vault — the refusal is the FIRST block of the handler');
+ok(rc7.statusState === 'ok' && rc7.statusHtml.includes(EN_OK),
+  'RC7d and the seafarer is told what is true: the agency has his response');
+ok(rc7.buttonDisabled === true,
+  'RC7e and the button is left dead');
+const rc7a = await runRespond({ receipts: mapOf(RECEIPT_ALREADY) });
+ok(rc7a.submits.length === 0 && rc7a.statusState === 'gone' && rc7a.statusHtml.includes(EN_ALREADY),
+  'RC7f the same for an already_on_record receipt — nothing sent, the existing sentence shown');
+// CALIBRATION of the four refusals above: with no receipt this same driver DOES
+// reach the network, so RC7 measures the receipt and not a broken driver.
+const rc7cal = await runRespond({});
+ok(rc7cal.submits.length === 1 && rc7cal.state.calls.map((c) => c[0]).includes('export_redacted_cv_pdf'),
+  'RC7g CALIBRATION — without a receipt this driver demonstrably does submit and does write the CV');
+
+// ---- D12: the receipt survives the redraw after an identity claim ------------
+const rc8 = boot({ profiles: [PROFILE_MATCH], receipts: mapOf(RECEIPT_ACK), identity: IDENTITY_NONE });
+try { await rc8.sandbox.showJobs(); } catch (e) { /* section V's claim, not this one */ }
+await settle();
+ok(/data-qa="jobs-respond-btn"[^>]*\sdisabled/.test(rc8.profilesHost.innerHTML)
+  && rc8.profilesHost.innerHTML.includes(EN_OK),
+  'RC8 a vault with NO identity still shows the delivery it already made — the receipt is read BEFORE the identity step');
+ok(!rc8.profilesHost.innerHTML.includes('data-qa="jobs-identity-step"'),
+  'RC8b and it is not asked for a Skipi ID for a response the server already holds');
+const rc8redrawn = rc8.sandbox.jobsProfilesRerenderIdentity(IDENTITY_READY);
+ok(rc8redrawn === true, 'RC8c the identity redraw really ran');
+ok(/data-qa="jobs-respond-btn"[^>]*\sdisabled/.test(rc8.profilesHost.innerHTML)
+  && rc8.profilesHost.innerHTML.includes(EN_OK),
+  'RC8d (D12) and AFTER that redraw the receipt is still there — the state does not live only until the first claim');
+// And a receipt is read before the OTHER early return too: an answer that can no
+// longer name the agency does not erase a delivery that already happened.
+const rc8blank = await renderJobsScreen({
+  profiles: [{ ...PROFILE_BLANK_NAME, profile_id: PROFILE_MATCH.profile_id }],
+  receipts: mapOf(RECEIPT_ACK),
+});
+ok(rc8blank.sectionHtml.includes(EN_OK)
+  && !rc8blank.sectionHtml.includes('data-qa="jobs-respond-blocked"'),
+  'RC8e a blank agency name does not un-deliver a delivered response either');
+
+// ---- D17: the same session, without any restart -----------------------------
+// THE MIRROR OF №605 AND THE HALF A COLD START HIDES. After a successful
+// delivery the vault has a receipt but `jobsProfilesLastRender` was built before
+// it existed, so any redraw in the same session would hand back a LIVE
+// irreversible button on a response already delivered.
+const rc9 = boot({ profiles: [PROFILE_MATCH], receipts: {}, respondFor: [PROFILE_MATCH.profile_id] });
+try { await rc9.sandbox.showJobs(); } catch (e) { /* not this claim */ }
+await settle();
+ok(!/data-qa="jobs-respond-btn"[^>]*\sdisabled/.test(rc9.profilesHost.innerHTML),
+  'RC9 CALIBRATION — before the press the button of this very render is live');
+await rc9.sandbox.jobsRespondToProfile(PROFILE_MATCH.profile_id);
+await settle();
+ok(rc9.state.submits.length === 1, 'RC9b the press really delivered (the driver is not inert)');
+ok(rc9.sandbox.jobsProfilesRerenderIdentity(IDENTITY_READY) === true, 'RC9c and a redraw ran afterwards');
+ok(/data-qa="jobs-respond-btn"[^>]*\sdisabled/.test(rc9.profilesHost.innerHTML)
+  && rc9.profilesHost.innerHTML.includes(EN_OK),
+  'RC9d (D17) and the redraw shows the delivery — a receipt learned in this session is not lost by a redraw');
+// The same for the 409 that produces a receipt, and NOT for the conflict whose
+// reason this build does not know.
+const rc9c = boot({
+  profiles: [PROFILE_MATCH], receipts: {}, respondFor: [PROFILE_MATCH.profile_id],
+  submitThrows: 'RESPONSE_ALREADY_DELIVERED',
+});
+try { await rc9c.sandbox.showJobs(); } catch (e) { /* not this claim */ }
+await settle();
+await rc9c.sandbox.jobsRespondToProfile(PROFILE_MATCH.profile_id);
+await settle();
+rc9c.sandbox.jobsProfilesRerenderIdentity(IDENTITY_READY);
+ok(/data-qa="jobs-respond-btn"[^>]*\sdisabled/.test(rc9c.profilesHost.innerHTML)
+  && rc9c.profilesHost.innerHTML.includes(EN_ALREADY),
+  'RC9e (D17) an already-delivered 409 also survives a redraw in the same session');
+const rc9u = boot({
+  profiles: [PROFILE_MATCH], receipts: {}, respondFor: [PROFILE_MATCH.profile_id],
+  submitThrows: 'RESPONSE_CONFLICT_UNKNOWN',
+});
+try { await rc9u.sandbox.showJobs(); } catch (e) { /* not this claim */ }
+await settle();
+await rc9u.sandbox.jobsRespondToProfile(PROFILE_MATCH.profile_id);
+await settle();
+rc9u.sandbox.jobsProfilesRerenderIdentity(IDENTITY_READY);
+ok(!rc9u.profilesHost.innerHTML.includes(EN_OK) && !rc9u.profilesHost.innerHTML.includes(EN_ALREADY),
+  'RC9f (D3) a conflict whose reason this build does not know remembers NOTHING — it is not a delivery');
+const rc9t = boot({
+  profiles: [PROFILE_MATCH], receipts: {}, respondFor: [PROFILE_MATCH.profile_id],
+  submitThrows: 'network: connection refused',
+});
+try { await rc9t.sandbox.showJobs(); } catch (e) { /* not this claim */ }
+await settle();
+await rc9t.sandbox.jobsRespondToProfile(PROFILE_MATCH.profile_id);
+await settle();
+rc9t.sandbox.jobsProfilesRerenderIdentity(IDENTITY_READY);
+ok(!rc9t.profilesHost.innerHTML.includes(EN_OK) && !rc9t.profilesHost.innerHTML.includes(EN_ALREADY),
+  'RC9g (D9) a transport failure remembers NOTHING either — a network error is not a delivery');
+// A 2xx that is NOT a confirmation must not be remembered as one.
+const rc9p = boot({
+  profiles: [PROFILE_MATCH], receipts: {}, respondFor: [PROFILE_MATCH.profile_id],
+  submitAck: { delivered: true, intake_id: '   ' },
+});
+try { await rc9p.sandbox.showJobs(); } catch (e) { /* not this claim */ }
+await settle();
+await rc9p.sandbox.jobsRespondToProfile(PROFILE_MATCH.profile_id);
+await settle();
+rc9p.sandbox.jobsProfilesRerenderIdentity(IDENTITY_READY);
+ok(!rc9p.profilesHost.innerHTML.includes(EN_OK),
+  'RC9h (D2) an answer with no intake id is not a delivery on the screen either');
+
+// ---- NOT ONE NEW STRING IN THE DICTIONARY -----------------------------------
+// The card's PRESERVE line, measured rather than promised: both sentences the
+// restored screen shows already existed in RU and EN before this card.
+['jobs.profiles.respond_ok', 'jobs.profiles.respond_already', 'jobs.profiles.respond_ack_version']
+  .forEach((k) => {
+    ok(enBlock.includes(`'${k}'`) && ruBlock.includes(`'${k}'`),
+      `RC10 the sentence the receipt shows is the EXISTING key ${k}, in both languages`);
+  });
+ok(!/jobs\.profiles\.receipt/.test(html),
+  'RC10b and no `jobs.profiles.receipt*` key was invented — zero new dictionary lines');
+
+// ---- SOURCE CLAIMS. What the DOM shim cannot see ----------------------------
+//
+// BOUNDARY: these read jobs.rs AS TEXT. A property that holds only by the order
+// of lines is asserted here AND has an executable unit test in `jobs.rs`, because
+// text is not execution — see the receipt module at the foot of that file.
+section('RC. the receipt is written only on the server\'s word (source contract)');
+
+const submitSrc = withoutLineComments(String(rustFnBody(jobsRs, 'submit_profile_response') || ''));
+ok(submitSrc.length > 0, 'RS0 submit_profile_response found');
+
+// D2 — POSITIONAL: both halves of the check, then the write, then Ok(ack).
+const atDelivered = submitSrc.indexOf('"delivered"');
+const atIntake = submitSrc.indexOf('intake_id.is_none()');
+const atAckWrite = submitSrc.indexOf('receipt_from_acknowledgement');
+const atOk = submitSrc.lastIndexOf('Ok(ack)');
+ok(atDelivered > 0 && atIntake > atDelivered,
+  'RS1 both halves of the confirmation are still checked, in order');
+ok(atAckWrite > atIntake,
+  'RS2 (D2) the receipt is built AFTER both halves — a 2xx without them writes nothing');
+ok(atOk > atAckWrite,
+  'RS3 and BEFORE the acknowledgement is returned');
+const atSend = submitSrc.indexOf('send_on_response_bases');
+ok(atSend > 0 && atAckWrite > atSend,
+  'RS4 (D9) and after the request — a transport error leaves through the `?` and never reaches it');
+
+// D3 — the 409 write is under RESPONSE_ALREADY_DELIVERED and nowhere else.
+const conflictBlock = withoutLineComments(String(blockAfter(submitSrc, 'if answer.status == 409') || ''));
+ok(conflictBlock.length > 0, 'RS5 the 409 branch was found');
+ok(conflictBlock.includes('receipt_already_on_record'),
+  'RS6 the 409 receipt is written inside that branch');
+const alreadyBlock = withoutLineComments(String(blockAfter(conflictBlock, 'if token == RESPONSE_ALREADY_DELIVERED') || ''));
+ok(alreadyBlock.includes('receipt_already_on_record') && alreadyBlock.includes('set_vault_info'),
+  'RS7 (D3) and only inside the RESPONSE_ALREADY_DELIVERED arm of the classifier');
+ok(countOf(conflictBlock, 'set_vault_info') === 1
+  && countOf(alreadyBlock, 'set_vault_info') === 1,
+  'RS8 (D3) which is the ONLY write in that branch — RESPONSE_CONFLICT_UNKNOWN writes nothing');
+ok(!conflictBlock.includes('RESPONSE_CONFLICT_UNKNOWN'),
+  'RS8b and the unknown token is not even named on a write path');
+
+// D15 — the writes are INLINE. A helper would make RS1-RS8 and I18/I18c blind,
+// because rustFnBody does not follow a call.
+ok(countOf(submitSrc, 'set_vault_info') === 2,
+  `RS9 (D15) both receipt writes are INLINE in this command (found ${countOf(submitSrc, 'set_vault_info')}) — moved into a helper, every positional claim above goes blind`);
+
+// D18/D19 — NEITHER WRITE MAY LAND IN A VAULT THAT WAS SWAPPED MID-REQUEST.
+//
+// The command reads the identity, RELEASES the vault lock to speak to the server
+// for up to 45 seconds, and takes it again to write. Nothing forbids the open
+// vault being replaced inside that window — so the receipt could carry vault A's
+// identity into vault B's file. The reader would refuse it afterwards, which is
+// right, but vault A would be left without the receipt it earned while a
+// stranger's file held its metadata.
+//
+// TWO NUMBERS, AND THEY MEAN DIFFERENT THINGS — counted rather than recalled,
+// because one of them was written here as the other and was simply wrong.
+//   * NINE production sites replace the open vault: `commands/vault.rs:591`,
+//     `:616`, `:626`, `:727`, `:1067` and `commands/profile.rs:166`, `:898`,
+//     `:910`, `:949`. (A tenth, `restore_account_profile`, guards itself by
+//     refusing while the vault is closed.) THAT is the size of the hazard.
+//   * FOUR of them — the `profile.rs` ones — update `vault_path` and release
+//     its lock BEFORE taking `conn`'s, so `vault_path` LAGS the connection
+//     during the swap. Those four are why comparing `state.vault_path` instead
+//     would be wrong in both directions, including refusing a write to the
+//     CORRECT vault. The five in `vault.rs` hold both locks together and have
+//     no lag at all.
+// The guard is indifferent to which kind a site is, because it asks the
+// connection and not the state beside it.
+const atCapture = submitSrc.indexOf('vault_db_file(conn)');
+ok(atCapture > 0,
+  'RS24 the file of the connection the identity was read out of is captured');
+ok(atCapture < atSend,
+  'RS24b (D18/D19) and captured BEFORE the request — anything read later is read of whatever connection is open by then');
+// THE ADDRESS, NOT THE COUNT — and this line reads the way it does because the
+// count was tried first and failed in an auditor's hands.
+//
+// MEASURED 2026-09-30, reproduced by me before changing anything:
+// `countOf(submitSrc, 'same_vault_db') === 2` was green over a COMPLETELY
+// UNGUARDED acknowledgement write. Remove the guard from that write and add one
+// mention of `same_vault_db` anywhere else in the command — which is exactly
+// what a legitimate third guarded write would look like — and the harness read
+// 899 passed / 0 failed. `cargo test` cannot see it by construction: these
+// blocks need a `tauri::State` no unit test has. A count cannot express "THIS
+// write is guarded". The region from the lock that opens one write to the
+// receipt that write builds can, and a legitimate third write no longer reds it.
+function guardRegionBefore(marker) {
+  const at = submitSrc.indexOf(marker);
+  if (at < 0) return null;
+  const lockAt = submitSrc.lastIndexOf('state.conn.lock()', at);
+  if (lockAt < 0) return null;
+  return submitSrc.slice(lockAt, at);
+}
+const ackGuardRegion = guardRegionBefore('receipt_from_acknowledgement');
+const alreadyGuardRegion = guardRegionBefore('receipt_already_on_record');
+ok(ackGuardRegion !== null && alreadyGuardRegion !== null,
+  'RS24c both write regions were located (each write\'s own lock, up to its own receipt)');
+for (const [what, region, id] of [
+  ['the acknowledgement write', ackGuardRegion, 'RS24d'],
+  ['the classified-409 write', alreadyGuardRegion, 'RS24e'],
+]) {
+  const n = countOf(String(region || ''), 'same_vault_db');
+  ok(n === 1,
+    `${id} (D18/D19/D20) ${what} is guarded between its own lock and its own receipt (found ${n})`);
+  // AND IN THE GATING POSITION. Without this, `let _ = same_vault_db(..);`
+  // dropped after the lock would satisfy the count while gating nothing — the
+  // D25 drill.
+  ok(tight(String(region || '')).includes('.filter(|conn|same_vault_db('),
+    `${id}b (D25) and the comparison is what BINDS the connection, not a value computed beside it`);
+}
+// THE COMPARISON IS OF THE CONNECTION'S OWN FILE, not of `state.vault_path`.
+// Those four sites set `vault_path` FIRST and `conn` SECOND under two separate
+// locks, so `vault_path` LAGS the connection during a swap and a comparison
+// against it can be wrong in both directions; and it is a DIRECTORY, not the
+// database file. Asking the connection puts the check and the write in one
+// critical section on one object.
+const sameVaultSrc = withoutLineComments(String(rustFnBody(jobsRs, 'same_vault_db') || ''));
+ok(sameVaultSrc.length > 0, 'RS25 same_vault_db found');
+ok(!/vault_path|state\./.test(sameVaultSrc),
+  'RS25b and the decision never reaches for state.vault_path — the lagging half of the swap');
+const dbFileSrc = withoutLineComments(String(rustFnBody(jobsRs, 'vault_db_file') || ''));
+ok(/conn\.path\(\)/.test(dbFileSrc),
+  'RS25c the file is asked of the sqlite handle itself');
+ok(/is_empty\(\)|filter/.test(dbFileSrc),
+  'RS25d and an empty answer (an in-memory database) is folded into unknown, which every caller refuses');
+ok(!/canonicalize/.test(dbFileSrc + sameVaultSrc),
+  'RS25e and nothing touches the filesystem while the vault lock is held');
+
+// D4 — the base is part of the key ALWAYS, and no flag decides it.
+const keySrc = withoutLineComments(String(rustFnBody(jobsRs, 'response_receipt_key') || ''));
+ok(keySrc.includes('normalized_response_base') && keySrc.includes('RESPONSE_RECEIPT_KEY_PREFIX'),
+  'RS10 (D4) the row name is built from the normalised base and the profile id');
+ok(!/endpoint|stand|pilot|if\s/.test(keySrc),
+  'RS10b (D4) with NO branch in it — production is not an exception here, unlike the identity rows');
+
+// D13 — not one non-production predicate reaches the reader's decision.
+const readerSrc = withoutLineComments(String(rustFnBody(jobsRs, 'jobs_response_receipts') || ''));
+ok(readerSrc.length > 0, 'RS11 jobs_response_receipts found');
+ok(!/\.stand|\.pilot|jobs_non_production_base|jobs_test_api_base|jobs_pilot_api_base/.test(readerSrc),
+  'RS11b (D13) and it reads NO non-production predicate — BACKLOG №603 does not get a new call site');
+ok(/endpoint\.base/.test(readerSrc),
+  'RS11c only the base is taken from the endpoint');
+const decideSrc = withoutLineComments(String(rustFnBody(jobsRs, 'accepted_response_receipt') || ''));
+ok(decideSrc.length > 0, 'RS12 accepted_response_receipt found');
+ok(!/\.stand|\.pilot|endpoint|jobs_response_endpoint/.test(decideSrc),
+  'RS12b (D13) and the deciding function cannot even see an endpoint — it takes strings');
+// D4-D8 — all five conditions, in the one function that decides.
+[['base', 'RS13'], ['vault_user_id', 'RS14'], ['subject_id', 'RS15'], ['profile_id', 'RS16'], ['response_id', 'RS17']]
+  .forEach(([field, id]) => {
+    ok(decideSrc.includes(field),
+      `${id} (D4-D8) the decision compares ${field} — remove it and another vault's receipt reads as this one's`);
+  });
+ok(decideSrc.includes('RECEIPT_SOURCE_ACKNOWLEDGEMENT') && decideSrc.includes('RECEIPT_SOURCE_ALREADY_ON_RECORD'),
+  'RS18 and a `source` this build did not write is refused');
+ok(readerSrc.includes('RESPONSE_ID_KEY_PREFIX'),
+  'RS19 (D7) the response id it compares against is the one in THIS vault');
+
+// D16 — the receipt names the host that ANSWERED. Text here, execution in the
+// unit test: on a stand and on the pilot the list is one base, so equality holds
+// identically and no screen-level test could ever tell the difference.
+const ackBuildSrc = withoutLineComments(String(rustFnBody(jobsRs, 'receipt_from_acknowledgement') || ''));
+ok(ackBuildSrc.includes('answer.base'),
+  'RS20 (D16) the receipt takes its base from the ANSWER, not from the endpoint');
+ok(!/jobs_response_endpoint/.test(ackBuildSrc),
+  'RS20b and the builder cannot reach the endpoint at all');
+const walkSrc = withoutLineComments(String(rustFnBody(jobsRs, 'send_on_response_bases') || ''));
+ok(/base:\s*base\.clone\(\)/.test(walkSrc),
+  'RS20c (D16) and the walk records the loop variable — the step that actually answered');
+ok(submitSrc.includes('&answer.base') || /response_receipt_key\(&answer\.base/.test(submitSrc),
+  'RS20d (D16) and the row it is stored under names that same host');
+// AND THE UNIT TEST THAT PROVES D16 MUST BE ABLE TO SEE D16. Measured on
+// 2026-09-30: a first version of that test used a production spelling for BOTH
+// of its bases, and since `jobs_response_endpoint()` answers the production host
+// in a unit build, substituting the endpoint produced a value the test was
+// content with — it stayed GREEN under the mutation it is named for, and three
+// sibling tests caught it instead. The pilot spelling on the answering side is
+// what makes the substitution visible, so it is pinned here rather than left to
+// the next person's memory.
+const d16Body = String(rustFnBody(jobsRs, 'd16_the_receipt_names_the_host_that_answered_not_the_first_one_tried') || '');
+ok(d16Body.length > 0, 'RS20e the unit test named for D16 exists');
+// PINNED ON THE ANSWERING SIDE, and this is the SECOND attempt at this line.
+// MEASURED 2026-09-30: a version asserting only that both spellings were PRESENT
+// in the body stayed green after the two literals were merely SWAPPED — both are
+// present either way — and under the D16 mutation the test named for it went
+// back to being non-discriminating. Presence is not a property; WHICH base
+// answered is. The D24 drill is that swap.
+//
+// Read out of the source rather than hard-coded by name, so renaming the
+// variables reds nothing (verified) and changing which base answers reds this.
+const d16AnsweringVar = (d16Body.match(/answer_from\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)/) || [])[1];
+ok(!!d16AnsweringVar, 'RS20f the test builds its HttpAnswer from a named base');
+const d16AnsweringLiteral = d16AnsweringVar
+  ? (d16Body.match(new RegExp('let\\s+' + d16AnsweringVar + '\\s*=\\s*"([^"]+)"')) || [])[1]
+  : undefined;
+ok(/:\d+$/.test(String(d16AnsweringLiteral || '')),
+  `RS20g (D16/D24) and the base that ANSWERED carries a port — a production spelling there is what jobs_response_endpoint() returns in a unit build, so the substitution would be invisible (got ${JSON.stringify(d16AnsweringLiteral)})`);
+ok(/"https:\/\/api\.skipi\.app"/.test(d16Body),
+  'RS20h while the base that was merely TRIED is the bare production host, so the mutation has something to substitute');
+
+// D14 — the exact bytes the whole of write site 2 hangs on.
+ok(jobsRs.includes('const INTAKE_CONTENT_CONFLICT: &str = "event already accepted with different content";'),
+  'RS21 (D14) the server sentence write site 2 depends on is pinned character for character');
+// BOUNDARY, said out loud: this pins the CLIENT's copy. It cannot see the server
+// change its wording — provenance is `candidate_intake_service.py:105` at
+// `ed6627e3`, and if the server changes it, write site 2 stops firing rather
+// than starting to lie.
+// Over the PRODUCT half with the prose removed: a comment that names the
+// constant is not a second reader of it, and counting comments would make this
+// line fail on documentation.
+ok(countOf(jobsRsProduct, 'INTAKE_CONTENT_CONFLICT') === 2,
+  `RS21b and that literal has exactly one user in the product code — the classifier (found ${countOf(jobsRsProduct, 'INTAKE_CONTENT_CONFLICT') - 1})`);
+
+// PRESERVE — the delivery path and the id minting are untouched by this card.
+const ensureIdSrc = withoutLineComments(String(rustFnBody(jobsRs, 'ensure_profile_response_id') || ''));
+ok(ensureIdSrc.length > 0 && !/receipt/i.test(ensureIdSrc),
+  'RS22 PRESERVE — ensure_profile_response_id knows nothing about receipts');
+ok(libRs.includes('jobs::jobs_response_receipts'),
+  'RS23 the reader is registered, so the WebView can actually call it');
+ok(countOf(libRs, 'jobs::jobs_response_receipts') === 1,
+  'RS23b exactly once');
+
+// ════════════════════════════════════════════════════════════════════════════
+// RV. THE RESTORED SCREEN DOES NOT ATTRIBUTE AN EARLIER DELIVERY TO THE VERSION
+//     THE PERSON IS LOOKING AT.
+//
+// The false signature was introduced BY THIS CARD, which is why it is closed in
+// it. A 409 carries no version, so an `already_on_record` receipt has none —
+// and the bare sentence "your response has already been delivered", printed
+// beside a card headed "criteria as published, version 2", reads as a claim
+// about version 2 that nothing supports. The `acknowledgement` branch is a
+// different case and is deliberately untouched: the server named the version
+// there and the number is printed, so a v1 delivery beside a v2 heading is a
+// plain historical fact.
+// ════════════════════════════════════════════════════════════════════════════
+
+section('RV. an earlier delivery is not attributed to the version on screen');
+
+// The status line only, tags stripped — the `style` attribute carries digits
+// (font-weight:600) and would otherwise answer the "no digits" question for us.
+function statusLineHtmlOf(html) {
+  const m = String(html || '').match(/data-qa="jobs-respond-status"[^>]*>([\s\S]*?)<\/div>/);
+  return m ? m[1] : '';
+}
+function statusTextOf(html) {
+  return statusLineHtmlOf(html).replace(/<[^>]*>/g, '').trim();
+}
+
+const EN_EARLIER = 'It was delivered earlier: Skipi Seafarer cannot say which published version that response answered.';
+const RU_EARLIER = 'Он был доставлен ранее: Скипи Моряк не может назвать, какой опубликованной версии тот отклик отвечал.';
+
+ok(enBlock.includes("'jobs.profiles.respond_already_version_unknown'"),
+  'RV0 the one new dictionary key exists in EN');
+ok(ruBlock.includes("'jobs.profiles.respond_already_version_unknown'"),
+  'RV0b and in RU — the single deliberate exception to "no new dictionary lines", taken because minimality must not cost the screen its honesty');
+
+// PROFILE_MATCH is published_version 7, so "the version on screen" is a real
+// number the status line could have borrowed.
+const RV_CARD = PROFILE_MATCH;
+
+for (const [lang, already, earlier] of [['en', EN_ALREADY, EN_EARLIER], ['ru', RU_ALREADY, RU_EARLIER]]) {
+  const r = await renderJobsScreen({ profiles: [RV_CARD], receipts: mapOf(RECEIPT_ALREADY), lang });
+  const line = statusTextOf(r.sectionHtml);
+  ok(line.includes(already), `RV1 (${lang}) the existing sentence is still there`);
+  ok(line.includes(earlier), `RV2 (${lang}) (D21) and the second sentence says the delivery was EARLIER and that this build cannot name its version`);
+  ok(!/\d/.test(line),
+    `RV3 (${lang}) (D22) and the line carries NOT ONE DIGIT — an unknown version is not guessed (line: ${JSON.stringify(line)})`);
+  ok(!r.sectionHtml.includes('data-respond-state="ok"'),
+    `RV3b (${lang}) and it is not dressed as a confirmation`);
+  // The card heading DOES name the current version; the status line must not
+  // have borrowed it. Without this the "no digit" check could pass over a
+  // screen where the heading was missing too.
+  ok(/data-qa="jobs-respond-status"/.test(r.sectionHtml) && r.sectionHtml.includes(String(RV_CARD.published_version)),
+    `RV3c (${lang}) CALIBRATION — the version the line refuses to borrow is on the card, so there was something to borrow`);
+  ok(!statusLineHtmlOf(r.sectionHtml).includes('published version')
+     && !statusLineHtmlOf(r.sectionHtml).includes('опубликованной версии ')
+     || !/\d/.test(line),
+    `RV3d (${lang}) and no "delivered against published version N" phrasing reaches this branch`);
+  // THE BUTTON STAYS DEAD. This branch decides nothing about responding again.
+  ok(/data-qa="jobs-respond-btn"[^>]*\sdisabled/.test(r.sectionHtml)
+    && /data-qa="jobs-respond-btn"[^>]*aria-disabled="true"/.test(r.sectionHtml),
+    `RV4 (${lang}) (D10) and the button is still drawn and DEAD — no version disagreement revives it`);
+}
+
+// CALIBRATION of the whole section: the acknowledgement branch MUST still print
+// the version. Without this pair, RV1-RV3 would be green over a build that had
+// simply stopped printing versions anywhere.
+for (const [lang, okSentence] of [['en', EN_OK], ['ru', RU_OK]]) {
+  const r = await renderJobsScreen({ profiles: [RV_CARD], receipts: mapOf(RECEIPT_ACK), lang });
+  const line = statusTextOf(r.sectionHtml);
+  ok(line.includes(okSentence), `RV5 (${lang}) CALIBRATION — the acknowledgement branch still shows its confirmation`);
+  ok(/\d/.test(line) && line.includes(String(RECEIPT_ACK.published_version)),
+    `RV5b (${lang}) CALIBRATION — and still names the version THE SERVER gave (${RECEIPT_ACK.published_version}), which is why that branch is untouched`);
+  ok(!line.includes(EN_EARLIER) && !line.includes(RU_EARLIER),
+    `RV5c (${lang}) and does NOT carry the "cannot say which version" sentence — there the version is known`);
+  ok(/data-qa="jobs-respond-btn"[^>]*\sdisabled/.test(r.sectionHtml),
+    `RV5d (${lang}) (D10) the button is dead in this branch too`);
+}
+
+// One sentence pair, one function: the pressed screen and the restored screen
+// must not drift into two claims about one card.
+const pressed = await runRespond({ submitThrows: 'RESPONSE_ALREADY_DELIVERED' });
+ok(pressed.statusHtml.includes(EN_ALREADY) && pressed.statusHtml.includes(EN_EARLIER),
+  'RV6 a FRESH 409 press says the same two things as the restored screen — one function, no drift');
+ok(!/\d/.test(String(pressed.statusHtml).replace(/<[^>]*>/g, '')),
+  'RV6b and no digit there either');
+ok(countOf(html, 'function jobsRespondAlreadyText(') === 1
+  && countOf(html, 'jobsRespondAlreadyText()') === 3,
+  `RV6c and that pair is built in exactly ONE place, used by both (found ${countOf(html, 'jobsRespondAlreadyText()') - 1} uses)`);
+
+// ---- THE FOUR RENDERED LINES, PRINTED AS EVIDENCE --------------------------
+// Taken from the rendered screen, not retyped: this is what goes to the
+// counsellor before merge.
+// ---- D23: A SENTENCE AFTER A FULL STOP STARTS WITH A CAPITAL --------------
+// Found on live frames in BOTH locales, not by reading: `respond_ok` ends in a
+// full stop and `respond_ack_version` began in lower case, so the screen read
+// "The agency received your response. delivered against published version 1".
+// Fixed AT THE DICTIONARY, in both locales, because that one string is
+// concatenated in TWO places — the live-success line in `jobsRespondToProfile`
+// and the receipt line in `jobsRespondReceiptText` — and fixing the joins
+// separately would have put two spellings of one phrase on one screen.
+// NO PROGRAMMATIC CAPITALISATION: it would be wrong in a locale where it is
+// wrong, and this is a property of the sentence, not of the renderer.
+ok(/\.\s+\p{Ll}/u.test('Done. delivered against published version 1'),
+  'RV7cal CALIBRATION — the probe really does detect a lower-case sentence start');
+for (const [state, receipt] of [['acknowledgement', RECEIPT_ACK], ['already_on_record', RECEIPT_ALREADY]]) {
+  for (const lang of ['en', 'ru']) {
+    const r = await renderJobsScreen({ profiles: [RV_CARD], receipts: mapOf(receipt), lang });
+    const line = statusTextOf(r.sectionHtml);
+    ok(!/\.\s+\p{Ll}/u.test(line),
+      `RV7 (${state} / ${lang}) (D23) no sentence in the status line begins in lower case (line: ${JSON.stringify(line)})`);
+  }
+}
+// And the live-success line, which shares the same dictionary string.
+for (const [lang, needle] of [['en', 'Delivered against published version'], ['ru', 'Доставлен для опубликованной версии']]) {
+  const r = await runRespond({ lang });
+  const line = String(r.statusHtml).replace(/<[^>]*>/g, '').trim();
+  ok(line.includes(needle),
+    `RV8 (${lang}) (D23) the live-success line carries the SAME capitalised phrase — one string, one spelling`);
+  ok(!/\.\s+\p{Ll}/u.test(line),
+    `RV8b (${lang}) and it too has no lower-case sentence start (line: ${JSON.stringify(line)})`);
+}
+
+console.log('\n  --- RENDERED STATUS LINES (evidence, both states x both locales) ---');
+for (const [state, receipt] of [['acknowledgement', RECEIPT_ACK], ['already_on_record', RECEIPT_ALREADY]]) {
+  for (const lang of ['en', 'ru']) {
+    const r = await renderJobsScreen({ profiles: [RV_CARD], receipts: mapOf(receipt), lang });
+    console.log(`  [${state} / ${lang}] ${statusTextOf(r.sectionHtml)}`);
+  }
+}
+console.log('  --- end evidence ---');
 
 console.log('');
 if (fail > 0) {
