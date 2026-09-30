@@ -4063,6 +4063,54 @@ mod response_summary {
     }
 
     #[test]
+    fn a_half_pair_that_reaches_the_body_layer_is_still_not_written() {
+        // FOUND BY A SURVIVING MUTATION. Splitting the two pairs in
+        // `apply_summary_to_body` into four independent writes left every test
+        // green, because `build_response_summary` never produces a half pair —
+        // so the body layer's own half of the rule was asserted nowhere, and a
+        // later change that produced one would have sent a number of days that
+        // says nothing about which rank they are days of. Both layers are
+        // drilled now, and the summaries here are hand-made on purpose.
+        let halves = [
+            ResponseSummary { age_years: Some(30), ..Default::default() },
+            ResponseSummary { age_precision: Some("exact"), ..Default::default() },
+            ResponseSummary { experience_days: Some(31), ..Default::default() },
+            ResponseSummary { experience_rank: Some("Master".into()), ..Default::default() },
+        ];
+        for half in halves {
+            assert_eq!(
+                body_keys(&half),
+                Vec::<String>::new(),
+                "half a pair reached the body: {half:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_whole_pair_that_reaches_the_body_layer_is_written_whole() {
+        // The calibration for the test above: without it, an
+        // `apply_summary_to_body` that wrote nothing at all would pass it.
+        let age = ResponseSummary {
+            age_years: Some(30),
+            age_precision: Some("exact"),
+            ..Default::default()
+        };
+        assert_eq!(
+            body_keys(&age),
+            vec!["seafarer_age_precision".to_string(), "seafarer_age_years".to_string()]
+        );
+        let exp = ResponseSummary {
+            experience_days: Some(31),
+            experience_rank: Some("Master".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            body_keys(&exp),
+            vec!["rank_experience_days".to_string(), "rank_experience_rank".to_string()]
+        );
+    }
+
+    #[test]
     fn the_date_of_birth_never_reaches_the_body_under_any_name() {
         let s = built(&[row("Master", "MV Alpha", Some("2020-01-01"), Some("2020-02-01"))]);
         let mut body = serde_json::json!({});
