@@ -3979,9 +3979,9 @@ for (const [what, region, id] of [
     `${id} (D18/D19/D20) ${what} is guarded between its own lock and its own receipt (found ${n})`);
   // AND IN THE GATING POSITION. Without this, `let _ = same_vault_db(..);`
   // dropped after the lock would satisfy the count while gating nothing — the
-  // D21 drill.
+  // D23 drill.
   ok(tight(String(region || '')).includes('.filter(|conn|same_vault_db('),
-    `${id}b (D21) and the comparison is what BINDS the connection, not a value computed beside it`);
+    `${id}b (D23) and the comparison is what BINDS the connection, not a value computed beside it`);
 }
 // THE COMPARISON IS OF THE CONNECTION'S OWN FILE, not of `state.vault_path`.
 // Those four sites set `vault_path` FIRST and `conn` SECOND under two separate
@@ -4058,7 +4058,7 @@ ok(d16Body.length > 0, 'RS20e the unit test named for D16 exists');
 // in the body stayed green after the two literals were merely SWAPPED — both are
 // present either way — and under the D16 mutation the test named for it went
 // back to being non-discriminating. Presence is not a property; WHICH base
-// answered is. The D22 drill is that swap.
+// answered is. The D24 drill is that swap.
 //
 // Read out of the source rather than hard-coded by name, so renaming the
 // variables reds nothing (verified) and changing which base answers reds this.
@@ -4068,7 +4068,7 @@ const d16AnsweringLiteral = d16AnsweringVar
   ? (d16Body.match(new RegExp('let\\s+' + d16AnsweringVar + '\\s*=\\s*"([^"]+)"')) || [])[1]
   : undefined;
 ok(/:\d+$/.test(String(d16AnsweringLiteral || '')),
-  `RS20g (D16/D22) and the base that ANSWERED carries a port — a production spelling there is what jobs_response_endpoint() returns in a unit build, so the substitution would be invisible (got ${JSON.stringify(d16AnsweringLiteral)})`);
+  `RS20g (D16/D24) and the base that ANSWERED carries a port — a production spelling there is what jobs_response_endpoint() returns in a unit build, so the substitution would be invisible (got ${JSON.stringify(d16AnsweringLiteral)})`);
 ok(/"https:\/\/api\.skipi\.app"/.test(d16Body),
   'RS20h while the base that was merely TRIED is the bare production host, so the mutation has something to substitute');
 
