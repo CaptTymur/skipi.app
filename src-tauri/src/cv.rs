@@ -1330,7 +1330,6 @@ pub fn build_redacted_extras(conn: &Connection) -> RedactedExtras {
         if positions.len() >= 2 {
             let parts: Vec<String> = positions
                 .iter()
-                .rev()
                 .take(3)
                 .map(|(pos, n)| {
                     format!("{} contract{} as {}", n, if *n > 1 { "s" } else { "" }, pos)
@@ -2068,5 +2067,230 @@ mod tests {
 
         drop(conn);
         let _ = fs::remove_dir_all(&vault_path);
+    }
+
+    mod career_pattern_302 {
+        use super::*;
+
+        fn fixture(ranks: &[&str]) -> Connection {
+            let conn = Connection::open_in_memory().unwrap();
+            conn.execute_batch("CREATE TABLE vault_info (key TEXT PRIMARY KEY, value TEXT);
+                CREATE TABLE work_history (id TEXT PRIMARY KEY, vessel_name TEXT NOT NULL,
+                vessel_type TEXT, imo TEXT, flag TEXT, company TEXT, position TEXT,
+                sign_on TEXT, sign_off TEXT, notes TEXT, created_at TEXT NOT NULL,
+                evidence_folder TEXT, dwt TEXT, teu TEXT);
+                CREATE TABLE vessel_review_receipts (work_history_id TEXT, overall_rating REAL,
+                summary_json TEXT, submitted_at TEXT, lock_until TEXT);").unwrap();
+            // Insert oldest first: insertion order must not accidentally satisfy the contract.
+            for (i, rank) in ranks.iter().enumerate().rev() {
+                conn.execute("INSERT INTO work_history (id,vessel_name,position,sign_on,created_at)
+                    VALUES (?1,?1,?2,?3,?4)", rusqlite::params![i.to_string(), rank,
+                    format!("{:04}-01-01", 2026-i), format!("{:04}-12-01", 2000+i)]).unwrap();
+            }
+            conn
+        }
+
+        #[test]
+        fn exact_group_matrix() {
+            let cases: &[(&[&str], Option<&str>)] = &[
+                (&[], None),
+                (&["Master"], Some("1 contract as Master")),
+                (&["Master", "Master"], Some("2 contracts as Master")),
+                (&["Master", "Chief Officer"], Some("1 contract as Master, 1 contract as Chief Officer")),
+                (&["Master", "Chief Officer", "Second Officer"], Some("1 contract as Master, 1 contract as Chief Officer, 1 contract as Second Officer")),
+                (&["Master", "Master", "Chief Officer", "Second Officer", "Third Officer"], Some("2 contracts as Master, 1 contract as Chief Officer, 1 contract as Second Officer")),
+                (&["Master", "Chief Officer", "Second Officer", "Third Officer", "Cadet", "Trainee"], Some("1 contract as Master, 1 contract as Chief Officer, 1 contract as Second Officer")),
+                (&["Master", "Chief Officer", "Master", "Third Officer"], Some("1 contract as Master, 1 contract as Chief Officer, 1 contract as Master")),
+                (&["Master", "", "Master"], Some("2 contracts as Master")),
+                (&["", ""], None),
+                (&["Master", "Chief Officer", "Chief Officer", "Second Officer", "Second Officer", "Second Officer", "Cadet"], Some("1 contract as Master, 2 contracts as Chief Officer, 3 contracts as Second Officer")),
+            ];
+            for (ranks, expected) in cases {
+                let conn = fixture(ranks);
+                let rows = db::get_work_history(&conn).unwrap();
+                assert_eq!(rows.iter().map(|r| r["position"].as_str().unwrap()).collect::<Vec<_>>(), *ranks);
+                let extras = build_redacted_extras(&conn);
+                assert_eq!(extras.career_pattern.as_deref(), *expected, "ranks: {ranks:?}");
+                assert_eq!(extras.contract_count, ranks.len());
+                assert_eq!(extras.salary_currency.as_deref(), Some("USD"));
+            }
+        }
+
+        #[test]
+        fn undated_rows_follow_dated_and_preserve_extras() {
+            let conn = fixture(&["Master", "Chief Officer", "Second Officer", "Cadet"]);
+            conn.execute("UPDATE work_history SET sign_on=NULL,created_at='2099-01-01' WHERE id='3'", []).unwrap();
+            conn.execute("UPDATE work_history SET sign_off='2026-09-01' WHERE id='0'", []).unwrap();
+            for (k,v) in [("personal_english_level","Advanced"),("personal_min_salary","12345"),("personal_min_salary_currency","EUR")] {
+                db::set_vault_info(&conn,k,v).unwrap();
+            }
+            let extras = build_redacted_extras(&conn);
+            assert_eq!(db::get_work_history(&conn).unwrap().iter().map(|r|r["id"].as_str().unwrap()).collect::<Vec<_>>(), ["0","1","2","3"]);
+            assert_eq!(extras.career_pattern.as_deref(), Some("1 contract as Master, 1 contract as Chief Officer, 1 contract as Second Officer"));
+            assert_eq!(extras.contract_count,4);
+            assert_eq!(extras.last_contract_end.as_deref(),Some("2026-09-01"));
+            assert_eq!(extras.english_level.as_deref(),Some("Advanced"));
+            assert_eq!(extras.min_salary.as_deref(),Some("12345"));
+            assert_eq!(extras.salary_currency.as_deref(),Some("EUR"));
+        }
+        struct UiCapture302 {
+            root: std::path::PathBuf,
+        }
+
+        #[tauri::command]
+        async fn capture_302(
+            state: tauri::State<'_, UiCapture302>,
+            payload: serde_json::Value,
+        ) -> Result<(), String> {
+            let name = payload["name"].as_str().ok_or("capture name missing")?;
+            if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') {
+                return Err("invalid capture name".to_owned());
+            }
+            let out = state.root.join(format!("{name}.json"));
+            let ack = state.root.join(format!("{name}.ack"));
+            std::fs::write(
+                out,
+                serde_json::to_vec_pretty(&payload).map_err(|e| e.to_string())?,
+            )
+            .map_err(|e| e.to_string())?;
+            tauri::async_runtime::spawn_blocking(move || {
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+                while !ack.exists() {
+                    if std::time::Instant::now() >= deadline {
+                        return Err("capture acknowledgement timeout".to_owned());
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+                Ok(())
+            })
+            .await
+            .map_err(|e| e.to_string())?
+        }
+
+
+        // Explicit opt-in only: synthetic vault, isolated display and audited effect stubs.
+        #[test]
+        #[ignore = "requires reviewed isolated UI driver, display and effect stubs"]
+        fn real_cv_runtime() {
+            use std::sync::Mutex;
+            use tauri::Manager;
+            let scratch = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join("scratchpad/302");
+            let root = std::path::PathBuf::from(env::var("SKIPI_302_RUNTIME_DIR").unwrap());
+            assert!(root.is_absolute() && root.starts_with(&scratch));
+            assert_eq!(env::var("DISPLAY").unwrap(), ":194");
+            for key in ["HOME","TMPDIR","XDG_CONFIG_HOME","XDG_CACHE_HOME","XDG_DATA_HOME"] {
+                assert!(Path::new(&env::var(key).unwrap()).starts_with(&scratch), "{key}");
+            }
+            for key in ["HTTP_PROXY","HTTPS_PROXY","ALL_PROXY","http_proxy","https_proxy","all_proxy"] {
+                assert!(env::var_os(key).is_none());
+            }
+            assert_eq!(env::var("NO_PROXY").unwrap(), "*");
+            let stub_dir = std::path::PathBuf::from(env::var("PATH").unwrap());
+            assert_eq!(stub_dir, scratch.join("bin"));
+            for name in ["which","thunderbird","xdg-email","xdg-open"] {
+                assert!(fs::read_to_string(stub_dir.join(name)).unwrap().contains("SKIPI_302_NO_EXTERNAL_EFFECT_STUB"));
+            }
+            assert!(Path::new(&env::var("SKIPI_302_STUB_LOG").unwrap()).starts_with(&scratch));
+            assert!(dirs::download_dir().unwrap().starts_with(&scratch));
+            fs::create_dir_all(&root).unwrap();
+            let conn = db::open_db(&root).unwrap();
+            for (key,value) in [("name","Synthetic Private Person"),("rank","Master"),
+                ("personal_surname","SECRET-SURNAME"),("personal_first_name","SECRET-FIRSTNAME"),
+                ("personal_email","secret@example.invalid"),("personal_phones","SECRET-PHONE"),
+                ("personal_home_address","SECRET-ADDRESS"),("personal_dob","1979-12-31"),
+                ("personal_english_level","Advanced"),("personal_min_salary","12345"),
+                ("personal_min_salary_currency","EUR"),("account_type","seafarer")] {
+                db::set_vault_info(&conn,key,value).unwrap();
+            }
+            // Deliberately scrambled insertion; undated newest-created still sorts last.
+            for (id,rank,on,off) in [
+                ("3","Second Officer",Some("2022-01-01"),Some("2022-06-01")),
+                ("5","Trainee",None,None),
+                ("0","Master",Some("2026-01-01"),Some("2026-06-01")),
+                ("4","Third Officer",Some("2021-01-01"),Some("2021-06-01")),
+                ("2","Chief Officer",Some("2023-01-01"),Some("2023-06-01")),
+                ("1","Master",Some("2025-01-01"),Some("2025-06-01")),
+            ] {
+                db::add_work_entry(&conn,id,&format!("SECRET-VESSEL-{id}"),Some("Container Ship"),
+                    Some("9000001"),Some("Liberia"),Some("SECRET-COMPANY"),rank,on,off,None,None,None).unwrap();
+                conn.execute("UPDATE work_history SET created_at=?1 WHERE id=?2",rusqlite::params![format!("2099-01-0{}",id.parse::<u32>().unwrap()+1),id]).unwrap();
+            }
+            let mut cert = test_doc("synthetic-cert","Synthetic Certificate");
+            cert.doc_number=Some("SECRET-CERT-NUMBER".to_owned());
+            cert.valid_from=Some("2026-01-01".to_owned());
+            cert.valid_to=Some("2031-01-01".to_owned());
+            db::insert_doc(&conn,&cert).unwrap();
+            let rows=db::get_work_history(&conn).unwrap();
+            assert_eq!(rows.iter().map(|r|r["id"].as_str().unwrap()).collect::<Vec<_>>(),["0","1","2","3","4","5"]);
+            fs::write(root.join("db-rows.json"),serde_json::to_vec_pretty(&rows).unwrap()).unwrap();
+            fs::write(root.join("extras.json"),serde_json::to_vec_pretty(&build_redacted_extras(&conn)).unwrap()).unwrap();
+            let mut context = tauri::generate_context!();
+            context.config_mut().app.windows.clear();
+            context.config_mut().plugins.0.clear();
+            let csp="default-src 'self' tauri: asset: http://tauri.localhost; connect-src 'none'; img-src 'self' asset: data: blob: http://tauri.localhost; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; worker-src 'none'";
+            context.config_mut().app.security.csp=Some(tauri::utils::config::Csp::Policy(csp.to_owned()));
+            context.config_mut().app.security.dev_csp=Some(tauri::utils::config::Csp::Policy(csp.to_owned()));
+            context.config_mut().app.security.dangerous_disable_asset_csp_modification=
+                tauri::utils::config::DisabledCspModificationKind::List(vec!["script-src".to_owned(),"style-src".to_owned()]);
+            let mut app=tauri::Builder::default().any_thread()
+                .manage(crate::AppState{conn:Mutex::new(Some(conn)),vault_path:Mutex::new(Some(root.clone())),login_pending:Mutex::new(None)})
+                .manage(UiCapture302{root:root.clone()})
+                .invoke_handler(tauri::generate_handler![
+                    crate::commands::cv_commands::get_cv_data,
+                    crate::commands::cv_commands::export_redacted_cv_pdf,
+                    crate::commands::profile::get_seafarer_personal,
+                    crate::commands::profile::get_profile_photo_data_url,
+                    crate::commands::profile::get_profile_status,
+                    crate::commands::documents::get_documents,
+                    crate::commands::work_history::get_work_history,
+                    crate::commands::work_history::get_work_files,
+                    capture_302])
+                .build(context).unwrap();
+            let isolation=r#"
+                window.__fixture302Blocked=[];window.__fixture302Csp=[];
+                window.addEventListener('securitypolicyviolation',e=>window.__fixture302Csp.push({directive:e.effectiveDirective,blocked:e.blockedURI}));
+                const denied=k=>{window.__fixture302Blocked.push(k);return new Error('isolated fixture: '+k)};
+                window.fetch=()=>Promise.reject(denied('fetch'));
+                XMLHttpRequest.prototype.open=function(){throw denied('XHR')};
+                window.WebSocket=function(){throw denied('WebSocket')};window.EventSource=function(){throw denied('EventSource')};
+                navigator.sendBeacon=()=>{denied('sendBeacon');return false};window.open=()=>{denied('open');return null};
+            "#;
+            let driver=fs::read_to_string(scratch.join("ui-driver.js")).unwrap()
+                .replace("__OUTPUT_ROOT_JSON__",&serde_json::to_string(root.to_str().unwrap()).unwrap());
+            let window=tauri::WebviewWindowBuilder::new(&app,"main",tauri::WebviewUrl::App("index.html".into()))
+                .title("Synthetic Seafarer 302 fixture").inner_size(1180.0,860.0).data_directory(root.join("webview"))
+                .initialization_script(isolation)
+                .on_navigation(|url|url.port().is_none()&&url.username().is_empty()&&url.password().is_none()&&
+                    ((url.scheme()=="tauri"&&url.host_str()==Some("localhost"))||
+                    (url.scheme()=="http"&&url.host_str()==Some("tauri.localhost"))))
+                .on_new_window(|_,_|tauri::webview::NewWindowResponse::Deny).build().unwrap();
+            let started=std::time::Instant::now();let mut injected=false;
+            while started.elapsed()<std::time::Duration::from_secs(90) {
+                #[allow(deprecated)] app.run_iteration(|_,_|{});
+                if !injected&&started.elapsed()>std::time::Duration::from_secs(4) {window.eval(&driver).unwrap();injected=true;}
+                if root.join("done.ack").exists()||root.join("error.json").exists(){break;}
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            assert!(root.join("done.ack").exists(),"UI export driver failed or timed out");
+            assert!(!root.join("error.json").exists());
+            window.close().unwrap();
+            let data=crate::commands::cv_commands::get_cv_data(app.state()).unwrap();
+            assert_eq!(data.work_history.len(),6);
+            assert_eq!(data.personal.date_of_birth.as_deref(),Some("1979-12-31"));
+            fs::write(root.join("cv-data.json"),serde_json::to_vec_pretty(&data).unwrap()).unwrap();
+            crate::commands::cv_commands::export_cv_pdf(app.state(),root.join("ordinary.pdf").to_str().unwrap().to_owned()).unwrap();
+            crate::commands::cv_commands::export_cv_docx(app.state(),root.join("ordinary.docx").to_str().unwrap().to_owned()).unwrap();
+            let attachments=crate::commands::packages::prepare_dispatch_attachments(app.state(),None,Some(true),Some(true)).unwrap();
+            assert_eq!(attachments.len(),1);
+            assert!(Path::new(&attachments[0]).starts_with(&root));
+            fs::copy(&attachments[0],root.join("attachment-private.pdf")).unwrap();
+            crate::commands::packages::dispatch_package(app.state(),None,vec!["synthetic@example.invalid".to_owned()],
+                "SYNTHETIC LOCAL TEST".to_owned(),"No real mail".to_owned(),Some(true),Some(true),None).unwrap();
+            let log=env::var("SKIPI_302_STUB_LOG").unwrap();let deadline=std::time::Instant::now()+std::time::Duration::from_secs(5);
+            loop {let text=fs::read_to_string(&log).unwrap_or_default();
+                if text.contains("\"thunderbird\"")&&text.contains("\"xdg-open\""){break;}
+                assert!(std::time::Instant::now()<deadline,"effect stubs did not finish");
+                std::thread::sleep(std::time::Duration::from_millis(20));}
+        }
     }
 }
