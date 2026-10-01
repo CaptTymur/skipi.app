@@ -4044,7 +4044,7 @@ mod response_summary {
     }
 
     #[test]
-    fn the_list_of_names_is_the_ten_the_server_declared() {
+    fn the_list_of_names_is_the_eleven_the_server_declared() {
         let mut declared = RESPONSE_SUMMARY_FIELDS.to_vec();
         declared.sort();
         assert_eq!(
@@ -4053,6 +4053,8 @@ mod response_summary {
                 "last_vessel_name",
                 "last_vessel_sign_off",
                 "rank_experience_days",
+                // No.632. The eleventh, and the ONLY spelling the server knows.
+                "rank_experience_days_by_rank",
                 "rank_experience_rank",
                 "seafarer_age_precision",
                 "seafarer_age_years",
@@ -4065,14 +4067,14 @@ mod response_summary {
     }
 
     #[test]
-    fn a_full_summary_writes_all_ten_and_nothing_else() {
+    fn a_full_summary_writes_all_eleven_and_nothing_else() {
         let s = built(&[row("Master", "MV Alpha", Some("2020-01-01"), Some("2020-02-01"))]);
         let keys = body_keys(&s);
-        assert_eq!(keys.len(), 10, "got {keys:?}");
+        assert_eq!(keys.len(), 11, "got {keys:?}");
         for k in &keys {
             assert!(
                 RESPONSE_SUMMARY_FIELDS.contains(&k.as_str()),
-                "{k} is not one of the ten the server's extra=\"forbid\" schema knows"
+                "{k} is not one of the eleven the server's extra=\"forbid\" schema knows"
             );
         }
     }
@@ -4322,6 +4324,335 @@ mod response_summary {
         let s = read_response_summary(&conn);
         assert_eq!(s.experience_days, Some(31));
         assert_eq!(s.last_vessel_name.as_deref(), Some("MV Alpha"));
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // No.632: THE WHOLE CAREER AS "rank -> days", AND THE OLD PAIR STAYS
+    //
+    // EVERY ONE OF THESE READS THE BODY, not the struct. What a crewing sees -
+    // and what the server compares its two numbers on - is the body, and a
+    // value that is computed correctly and then not written is not a fact about
+    // anybody. The struct is an implementation detail; the eleven names are the
+    // contract.
+    // ════════════════════════════════════════════════════════════════════════
+
+    /// The ONE name the server's `extra="forbid"` schema declares for the map.
+    /// Any other spelling is a 422 over the whole body, the CV with it.
+    const MAP: &str = "rank_experience_days_by_rank";
+
+    fn body_of(summary: &ResponseSummary) -> serde_json::Value {
+        let mut body = serde_json::json!({});
+        apply_summary_to_body(&mut body, summary);
+        body
+    }
+
+    /// The map AS IT TRAVELS.
+    fn career(summary: &ResponseSummary) -> serde_json::Map<String, serde_json::Value> {
+        body_of(summary)
+            .get(MAP)
+            .and_then(|v| v.as_object())
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    fn has_map(summary: &ResponseSummary) -> bool {
+        body_of(summary).get(MAP).is_some()
+    }
+
+    fn days_in(summary: &ResponseSummary, rank: &str) -> Option<i64> {
+        career(summary).get(rank).and_then(|v| v.as_i64())
+    }
+
+    #[test]
+    fn preserve_the_old_pair_is_still_computed_and_still_travels() {
+        // SENTINEL, green on this card's base. No.623's pair is the number the
+        // server compares the map against
+        // (`candidate_intake_service.experience_days_for_rank`), so a card that
+        // moved it would make every response disagree with itself and show the
+        // crewing no experience at all.
+        let s = built(&[
+            row("Master", "MV Alpha", Some("2020-01-01"), Some("2020-07-01")),
+            row("Master", "MV Beta", Some("2020-04-01"), Some("2020-10-01")),
+        ]);
+        assert_eq!(s.experience_rank.as_deref(), Some("Master"));
+        assert_eq!(s.experience_days, Some(274), "merged, not the summed 365");
+        let body = body_of(&s);
+        assert_eq!(body["rank_experience_rank"], serde_json::json!("Master"));
+        assert_eq!(body["rank_experience_days"], serde_json::json!(274));
+    }
+
+    #[test]
+    fn the_career_travels_as_a_map_of_every_rank_with_a_measurable_period() {
+        let s = built(&[
+            row("Master", "MV Alpha", Some("2020-01-01"), Some("2020-07-01")),
+            row("Master", "MV Beta", Some("2020-04-01"), Some("2020-10-01")),
+            row("Bosun", "MV Gamma", Some("2019-01-01"), Some("2019-03-01")),
+        ]);
+        assert_eq!(days_in(&s, "Master"), Some(274));
+        assert_eq!(days_in(&s, "Bosun"), Some(59));
+        assert_eq!(career(&s).len(), 2, "two ranks, and no third invented");
+    }
+
+    #[test]
+    fn every_rank_of_the_map_merges_its_overlaps_and_not_one_of_them_is_summed() {
+        // THE REASON THIS SLICE EXISTS. `cv::experience_by_position` adds
+        // `+=` without merging and calls itself rough: it would say 365 for
+        // these Master rows and 90 for the Bosun ones. A letter carrying those
+        // would tell a customer a LONGER career than the man served, and the
+        // candidate card beside it would say something else. The server holds
+        // both numbers for the rank of this response and returns NEITHER when
+        // they disagree - so a map counted that way costs the seafarer his
+        // experience on the screen.
+        let s = built(&[
+            row("Master", "MV Alpha", Some("2020-01-01"), Some("2020-07-01")),
+            row("Master", "MV Beta", Some("2020-04-01"), Some("2020-10-01")),
+            row("Bosun", "MV Gamma", Some("2019-01-01"), Some("2019-03-01")),
+            row("Bosun", "MV Delta", Some("2019-01-15"), Some("2019-02-15")),
+        ]);
+        assert_eq!(days_in(&s, "Master"), Some(274), "1 Jan to 1 Oct");
+        assert_ne!(days_in(&s, "Master"), Some(365), "182 + 183 is the summed answer");
+        assert_eq!(days_in(&s, "Bosun"), Some(59), "the second contract is INSIDE the first");
+        assert_ne!(days_in(&s, "Bosun"), Some(90), "59 + 31 is the summed answer");
+    }
+
+    #[test]
+    fn a_measured_zero_is_a_zero_and_it_travels_as_one() {
+        // Signed on and off the same day is a contract that lasted zero days,
+        // and that is a FACT. `cv::work_entry_days` cannot tell it from a date
+        // it could not read - both are `0` there - which is the second defect
+        // this slice was given. `measurable_period` answers `Some((d, d))` for
+        // the fact and `None` for the unreadable date, and the two must stay
+        // different all the way onto the wire.
+        let s = built(&[row("Master", "MV Alpha", Some("2021-05-04"), Some("2021-05-04"))]);
+        assert_eq!(days_in(&s, "Master"), Some(0), "a measured zero is a zero");
+        assert!(career(&s).contains_key("Master"), "and the key is there to carry it");
+        assert_eq!(s.experience_days, Some(0), "the pair says zero too, not nothing");
+    }
+
+    #[test]
+    fn a_rank_whose_dates_cannot_be_read_has_no_key_at_all() {
+        let s = built(&[
+            row("Master", "MV Alpha", Some("2021-05-04"), Some("2021-05-04")),
+            row("Cook", "MV Beta", Some("not-a-date"), Some("2019-02-01")),
+            row("Cook", "MV Gamma", None, None),
+            row("Cook", "MV Delta", Some("2019-03-01"), None),
+            // Off BEFORE on: not a period this client is willing to measure.
+            row("Cook", "MV Epsilon", Some("2019-04-01"), Some("2019-03-01")),
+        ]);
+        assert_eq!(days_in(&s, "Cook"), None, "no data is not zero days");
+        assert!(!career(&s).contains_key("Cook"), "and absence is the key not being there");
+        // CALIBRATION: without it this test passes over an EMPTY map, which is
+        // exactly the map the base of this card sends.
+        let s2 = built(&[
+            row("Master", "MV Alpha", Some("2021-05-04"), Some("2021-05-04")),
+            row("Cook", "MV Zeta", Some("2019-01-01"), Some("2019-02-01")),
+        ]);
+        assert_eq!(days_in(&s2, "Cook"), Some(31), "CALIBRATION: a readable Cook does get a key");
+    }
+
+    #[test]
+    fn zero_days_and_no_data_are_two_different_states_on_the_wire() {
+        let s = built(&[
+            row("Master", "MV Alpha", Some("2021-05-04"), Some("2021-05-04")),
+            row("Cook", "MV Beta", Some(""), Some("")),
+        ]);
+        let map = career(&s);
+        assert_eq!(map.get("Master"), Some(&serde_json::json!(0)), "a measured zero");
+        assert_eq!(map.get("Cook"), None, "absence: the key, not a 0 under it");
+        assert_eq!(map.len(), 1, "got {map:?}");
+    }
+
+    #[test]
+    fn a_rank_with_no_name_is_not_sent_and_never_becomes_unspecified() {
+        // `cv::experience_by_position` labels those rows "Unspecified". Sent
+        // from here, the server could not tell that invention from a rank a man
+        // really holds under that word - so the row is simply not named at all.
+        let s = built(&[
+            row("", "MV Alpha", Some("2020-01-01"), Some("2020-02-01")),
+            row("   ", "MV Beta", Some("2020-03-01"), Some("2020-04-01")),
+            row("Master", "MV Gamma", Some("2020-05-01"), Some("2020-06-01")),
+        ]);
+        let map = career(&s);
+        assert_eq!(map.len(), 1, "only the named rank travels: {map:?}");
+        assert!(map.contains_key("Master"));
+        let text = serde_json::to_string(&body_of(&s)).unwrap_or_default();
+        assert!(!text.contains("Unspecified"), "the invention reached the wire: {text}");
+    }
+
+    #[test]
+    fn the_spelling_is_sent_as_written_and_622_stays_shut() {
+        let s = built(&[
+            row("Master", "MV Alpha", Some("2020-01-01"), Some("2020-02-01")),
+            row(" Master ", "MV Beta", Some("2020-02-01"), Some("2020-03-01")),
+            row("master", "MV Gamma", Some("2021-01-01"), Some("2021-02-01")),
+            row("MASTER", "MV Delta", Some("2022-01-01"), Some("2022-02-01")),
+        ]);
+        let mut keys: Vec<String> = career(&s).keys().cloned().collect();
+        keys.sort();
+        assert_eq!(
+            keys,
+            vec!["MASTER".to_string(), "Master".to_string(), "master".to_string()],
+            "three spellings are three ranks here: deciding they are one is card No.622"
+        );
+        // Trimming is not normalisation - the vault's own rank is read trimmed
+        // (`present`), so a padded row is the same rank written the same way and
+        // its days belong with it. 1 Jan to 1 Mar 2020, the two rows touching.
+        assert_eq!(days_in(&s, "Master"), Some(60));
+    }
+
+    #[test]
+    fn the_pair_and_the_map_can_never_disagree_about_the_rank_of_this_response() {
+        // THE SERVER HOLDS BOTH NUMBERS AND COMPARES THEM. When they disagree
+        // it returns NO number and says `disagrees_with_response_pair`, because
+        // one of them was then counted the other way round and the larger must
+        // not reach a customer. For this client they cannot disagree: the pair
+        // is READ OUT OF the map rather than counted a second time, and this is
+        // the test that holds that shape in place.
+        let shapes: Vec<Vec<SummaryWorkRow>> = vec![
+            vec![],
+            vec![row("Master", "MV A", Some("2020-01-01"), Some("2020-07-01"))],
+            vec![
+                row("Master", "MV A", Some("2020-01-01"), Some("2020-07-01")),
+                row("Master", "MV B", Some("2020-04-01"), Some("2020-10-01")),
+                row("Master", "MV C", Some("2021-01-01"), Some("2021-02-01")),
+            ],
+            vec![row("Master", "MV A", Some("2021-05-04"), Some("2021-05-04"))],
+            vec![row("Master", "MV A", None, None)],
+            vec![row("Bosun", "MV A", Some("2020-01-01"), Some("2020-02-01"))],
+            vec![
+                row("master", "MV A", Some("2020-01-01"), Some("2020-02-01")),
+                row("Master", "MV B", Some("2020-03-01"), Some("2020-04-01")),
+            ],
+        ];
+        let mut numbers = 0;
+        for rows in shapes {
+            let s = built(&rows);
+            let pair = body_of(&s).get("rank_experience_days").and_then(|v| v.as_i64());
+            let from_map = days_in(&s, "Master");
+            assert_eq!(pair, from_map, "the two numbers the server compares disagree on {rows:?}");
+            if pair.is_some() {
+                numbers += 1;
+            }
+        }
+        assert!(numbers >= 4, "CALIBRATION: both halves were absent everywhere ({numbers})");
+    }
+
+    #[test]
+    fn the_map_travels_under_the_one_name_the_server_declares_and_as_numbers() {
+        let s = built(&[
+            row("Master", "MV Alpha", Some("2020-01-01"), Some("2020-07-01")),
+            row("Bosun", "MV Beta", Some("2019-01-01"), Some("2019-03-01")),
+        ]);
+        let body = body_of(&s);
+        assert!(body.get(MAP).is_some(), "the map is sent under {MAP}");
+        assert!(body[MAP].is_object(), "an object of rank -> days, not a list and not a string");
+        for (rank, days) in career(&s) {
+            assert!(days.is_i64(), "{rank} carries {days}, which is not a number");
+            assert!(!rank.trim().is_empty(), "a blank rank reached the wire");
+        }
+        // AND NOT ONE NAME BESIDE IT: an unknown field name is a 422 over the
+        // whole body, with the CV inside it.
+        let keys: Vec<String> = body
+            .as_object()
+            .map(|o| o.keys().cloned().collect())
+            .unwrap_or_default();
+        for key in keys {
+            assert!(
+                RESPONSE_SUMMARY_FIELDS.contains(&key.as_str()),
+                "{key} is not one of the eleven the server's schema knows"
+            );
+        }
+    }
+
+    #[test]
+    fn a_career_with_nothing_measurable_in_it_sends_no_map_key_at_all() {
+        // Not `{}`: an empty object would read on the card as "he sent his
+        // ranks and there are none", which is not what happened. The server
+        // stores a map whose every entry it dropped as NOTHING for the same
+        // reason, and the two ends agree.
+        assert!(!has_map(&built(&[])), "an empty career sends no key");
+        assert!(!has_map(&ResponseSummary::default()));
+        assert!(!has_map(&built(&[row("Master", "MV A", None, None)])));
+        assert!(
+            has_map(&built(&[row("Master", "MV A", Some("2020-01-01"), Some("2020-02-01"))])),
+            "CALIBRATION: a measurable career does send the key"
+        );
+    }
+
+    #[test]
+    fn a_career_wider_than_the_servers_ceiling_is_sent_whole_and_never_sliced() {
+        // The server drops a map of more than forty ranks ENTIRE and says why:
+        // keeping a slice would be somebody choosing which of a man's positions
+        // a customer gets to see. This client holds NO SECOND COPY of that
+        // ceiling - two copies of a limit are two limits - it counts honestly
+        // and lets the one place that decides decide. What it must never do is
+        // pick forty out of forty-five.
+        let rows: Vec<SummaryWorkRow> = (0..45)
+            .map(|i| row(&format!("Rank {i:02}"), "MV Alpha", Some("2020-01-01"), Some("2020-02-01")))
+            .collect();
+        assert_eq!(career(&built(&rows)).len(), 45, "the client neither trims nor chooses");
+    }
+
+    #[test]
+    fn a_rank_wider_than_the_servers_column_is_sent_whole_and_never_cut() {
+        // A cut rank is a WRONG rank, exactly as a cut surname is a wrong
+        // surname. The server drops that one entry and keeps the career.
+        let long = "A".repeat(70);
+        let s = built(&[row(&long, "MV Alpha", Some("2020-01-01"), Some("2020-02-01"))]);
+        assert!(career(&s).contains_key(&long), "the rank was cut instead of being sent");
+    }
+
+    #[test]
+    fn no_career_a_vault_can_hold_makes_the_map_cost_a_delivery() {
+        // THE RULE THAT OUTRANKS THE WHOLE BLOCK: not one field may make a
+        // response undeliverable. A career that cannot be computed is simply
+        // not sent.
+        let nasty = ["", "   ", "\u{0}", "Master\u{0}", "0000-00-00", "9999-12-31", "-0001-01-01"];
+        for value in nasty {
+            let rows = vec![
+                row(value, value, Some(value), Some(value)),
+                row(value, value, None, Some(value)),
+                row("Master", value, Some("2020-01-01"), Some("2020-02-01")),
+            ];
+            let body = body_of(&build_response_summary(&master(), &rows, today()));
+            assert!(body.is_object(), "the body survived {value:?}");
+            assert!(serde_json::to_string(&body).is_ok(), "and it serialises {value:?}");
+        }
+        // A thousand overlapping contracts in one rank, in reverse order.
+        let mut many: Vec<SummaryWorkRow> = Vec::new();
+        for i in (0i64..1000).rev() {
+            let on = (d("2000-01-01") + chrono::Duration::days(i * 10)).to_string();
+            let off = (d("2000-01-01") + chrono::Duration::days(i * 10 + 20)).to_string();
+            many.push(row("Master", "MV Alpha", Some(on.as_str()), Some(off.as_str())));
+        }
+        let s = build_response_summary(&master(), &many, today());
+        assert_eq!(days_in(&s, "Master"), Some(999 * 10 + 20), "one continuous stretch");
+    }
+
+    #[test]
+    fn the_map_is_keyed_by_rank_and_never_by_a_ship_or_a_date_of_birth() {
+        let s = built(&[row("Master", "MV Alpha", Some("2020-01-01"), Some("2020-02-01"))]);
+        let map = career(&s);
+        assert!(map.contains_key("Master"));
+        assert!(!map.contains_key("MV Alpha"), "a vessel is not a rank");
+        let text = serde_json::to_string(&serde_json::Value::Object(map)).unwrap_or_default();
+        assert!(!text.contains("1992-07-15"), "the date of birth reached the map: {text}");
+        assert!(!text.contains("MV Alpha"), "a vessel name reached the map: {text}");
+    }
+
+    #[test]
+    fn the_map_comes_out_of_the_vault_and_out_of_no_parameter() {
+        let conn = vault();
+        put(&conn, "personal_rank", "Master");
+        add_row(&conn, "w1", "Master", "MV Alpha", "2020-01-01", "2020-07-01");
+        add_row(&conn, "w2", "Master", "MV Beta", "2020-04-01", "2020-10-01");
+        add_row(&conn, "w3", "Bosun", "MV Gamma", "2019-01-01", "2019-03-01");
+        add_row(&conn, "w4", "Cook", "MV Delta", "not-a-date", "2019-02-01");
+        let s = read_response_summary(&conn);
+        assert_eq!(days_in(&s, "Master"), Some(274), "merged, not 365");
+        assert_eq!(days_in(&s, "Bosun"), Some(59));
+        assert_eq!(days_in(&s, "Cook"), None, "an unreadable date is not zero days");
+        assert_eq!(s.experience_days, Some(274), "and the pair is the map's own Master number");
     }
 }
 }

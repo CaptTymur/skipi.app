@@ -4252,6 +4252,9 @@ const S623_FIELDS = [
   'seafarer_citizenship', 'seafarer_citizenship_code',
   'rank_experience_rank', 'rank_experience_days',
   'last_vessel_name', 'last_vessel_sign_off',
+  // No.632: the whole career as a map, added BY NAME because extra="forbid"
+  // refuses an unknown one together with the CV.
+  'rank_experience_days_by_rank',
 ];
 S623_FIELDS.forEach((f) => {
   const camel = f.replace(/_([a-z])/g, (m, c) => c.toUpperCase());
@@ -4261,11 +4264,11 @@ S623_FIELDS.forEach((f) => {
 
 // (2) THE TEN NAMES, EXACTLY. extra="forbid" on the server means an unknown
 // field NAME rejects the whole body, CV included.
-const s623Const = (/RESPONSE_SUMMARY_FIELDS:\s*\[&str;\s*10\]\s*=\s*\[([\s\S]*?)\];/.exec(jobsRs) || [])[1] || '';
+const s623Const = (/RESPONSE_SUMMARY_FIELDS:\s*\[&str;\s*11\]\s*=\s*\[([\s\S]*?)\];/.exec(jobsRs) || [])[1] || '';
 const s623Declared = (s623Const.match(/"([a-z_]+)"/g) || []).map((x) => x.replace(/"/g, '')).sort();
-ok(s623Declared.length === 10, `S623-3 the client declares ten names (found ${s623Declared.length})`);
+ok(s623Declared.length === 11, `S623-3 the client declares eleven names (found ${s623Declared.length})`);
 ok(JSON.stringify(s623Declared) === JSON.stringify([...S623_FIELDS].sort()),
-  `S623-4 and they are the ten the server's schema knows (got ${JSON.stringify(s623Declared)})`);
+  `S623-4 and they are the eleven the server's schema knows (got ${JSON.stringify(s623Declared)})`);
 
 // (3) THE DELIVERY RULE, on the bytes of the call site. The summary is computed
 // before the request and copied in; nothing about it may be fallible, so the
@@ -4283,7 +4286,8 @@ ok(!/summary[^;]*\.unwrap\(\)/.test(s623Submit) && !/summary[^;]*\.expect\(/.tes
 
 // (4) THE FOUR FUNCTIONS BEHIND IT ARE TOTAL. Read as source, because "it
 // returns a struct" is only true while nobody adds a `?` inside.
-['read_response_summary', 'read_summary_work_rows', 'build_response_summary', 'apply_summary_to_body']
+['read_response_summary', 'read_summary_work_rows', 'build_response_summary', 'apply_summary_to_body',
+  'merged_days_by_position']
   .forEach((fn) => {
     const body = withoutLineComments(String(rustFnBody(jobsRs, fn) || ''));
     ok(body.length > 0, `S623-10 ${fn} is present`);
@@ -4400,8 +4404,44 @@ ok(!/\.trim\(\)/.test(s623Age) && !/\.trim\(\)/.test(s623Bucket),
 // (8) NO RANK NORMALISATION. №622 is not open, and deciding it here, on the
 // client, in passing, is exactly how it would get decided by nobody.
 const s623Build = withoutLineComments(String(rustFnBody(jobsRs, 'build_response_summary') || ''));
+const s632Map = withoutLineComments(String(rustFnBody(jobsRs, 'merged_days_by_position') || ''));
 ok(!/to_lowercase|to_uppercase|to_ascii_lowercase|to_ascii_uppercase|eq_ignore_ascii_case/.test(s623Build),
   'S623-19 ranks are compared as written — no case folding anywhere in the summary');
+
+// ── No.632: THE WHOLE CAREER AS "rank -> days", counted ONCE ───────────────
+//
+// The server keeps TWO numbers for the rank this response answered - the old
+// pair and this map's entry for it - and returns NEITHER when they disagree,
+// because a disagreement means one of them was counted the other way and the
+// larger must not reach a customer. On this side they cannot disagree, and
+// these sensors are what keeps that true: ONE computation, read twice.
+ok(s632Map.length > 0, 'S632-1 merged_days_by_position is present and readable');
+ok(/measurable_period/.test(s632Map),
+  'S632-2 the periods come from measurable_period — the one place a measured zero is told from no data');
+ok((s632Map.match(/merged_interval_days\s*\(/g) || []).length === 1,
+  'S632-3 and the days are merged exactly once, by the function whose comment says a day is never counted twice');
+ok((s623Build.match(/merged_interval_days\s*\(/g) || []).length === 0,
+  'S632-4 build_response_summary holds NO second count of its own — a second count is a second number');
+ok((s623Build.match(/merged_days_by_position\s*\(/g) || []).length === 1,
+  'S632-5 it asks for the career once');
+ok(/by_rank\s*\.\s*get\s*\(/.test(s623Build) || /by_rank\.get\(/.test(s623Build),
+  'S632-6 and READS THE PAIR OUT OF the map rather than counting the rank a second time');
+// The five functions of the summary block, read as ONE text: scoped on purpose
+// rather than over the whole file, so that a TEST naming a function it forbids
+// cannot satisfy or break a sensor about the product.
+const s632Block = ['read_response_summary', 'read_summary_work_rows', 'build_response_summary',
+  'apply_summary_to_body', 'merged_days_by_position']
+  .map((fn) => withoutLineComments(String(rustFnBody(jobsRs, fn) || ''))).join('\n');
+ok(s632Block.length > 0, 'S632-7a the summary block is readable as one text');
+ok(!/experience_by_position|work_entry_days/.test(s632Block),
+  'S632-7 neither rough counter is reached for from here: cv::experience_by_position sums overlaps '
+  + 'and cv::work_entry_days collapses a measured zero into no data — their consumers keep them as they are');
+ok(s632Map.length > 0 && !/"Unspecified"/.test(s632Map),
+  'S632-8 a rank with no name is not sent under an invented word — the server could not tell that '
+  + 'invention from a rank a man really holds (and this is asserted on a function that EXISTS)');
+ok(s632Map.length > 0
+  && !/to_lowercase|to_uppercase|to_ascii_lowercase|to_ascii_uppercase|eq_ignore_ascii_case/.test(s632Map),
+  'S632-9 and the map normalises no spelling either — card No.622 is not decided here in passing');
 
 console.log('');
 if (fail > 0) {
