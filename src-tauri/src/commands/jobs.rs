@@ -1369,7 +1369,7 @@ pub fn ensure_profile_response_id(
 /// NAME does not get ignored, it rejects the whole body — the CV with it. So
 /// this list is not documentation, it is the contract, and the test below
 /// asserts that nothing outside it is ever written.
-pub(crate) const RESPONSE_SUMMARY_FIELDS: [&str; 10] = [
+pub(crate) const RESPONSE_SUMMARY_FIELDS: [&str; 11] = [
     "seafarer_first_name",
     "seafarer_surname",
     "seafarer_age_years",
@@ -1380,6 +1380,13 @@ pub(crate) const RESPONSE_SUMMARY_FIELDS: [&str; 10] = [
     "rank_experience_days",
     "last_vessel_name",
     "last_vessel_sign_off",
+    // No.632. The whole career, and the pair above STAYS. The pair is one
+    // number for ONE rank - the rank of the profile this response answered -
+    // and a candidate is shortlisted into several profiles, so the letter of a
+    // profile he did not answer would otherwise print the days of a position he
+    // never applied for. The server already accepts this name and compares its
+    // entry for the answered rank against the pair.
+    "rank_experience_days_by_rank",
 ];
 
 /// What the vault says about this seafarer. Every field optional because a
@@ -1428,6 +1435,13 @@ pub(crate) struct ResponseSummary {
     pub experience_days: Option<i64>,
     pub last_vessel_name: Option<String>,
     pub last_vessel_sign_off: Option<String>,
+    /// No.632. Every rank this vault can measure, with its days MERGED.
+    ///
+    /// `None` and never an empty map: an empty object would read on the
+    /// agency's card as "he sent his ranks and there are none", which is a
+    /// different sentence from "he sent none". A `BTreeMap` so that the body of
+    /// a replayed `response_id` is byte for byte the body of the first attempt.
+    pub experience_days_by_rank: Option<std::collections::BTreeMap<String, i64>>,
 }
 
 /// Total days covered by a set of periods WITH OVERLAPS MERGED, never summed.
@@ -1487,6 +1501,58 @@ fn measurable_period(row: &SummaryWorkRow) -> Option<(chrono::NaiveDate, chrono:
     }
 }
 
+/// Every rank this vault can MEASURE, with the days of it merged - the career
+/// as "rank -> days", and the only place in this client those days are counted.
+///
+/// THREE RULES, each of them bought by a defect:
+///
+///   * OVERLAPS MERGE. `merged_interval_days` is called here and nowhere else,
+///     so the pair below cannot acquire a second count of its own. Two numbers
+///     for one rank that disagree are not a number: the server holds both for
+///     the answered rank and returns NEITHER, naming the disagreement, because
+///     the larger of them is a longer career than the man served and it would be
+///     the one that reached a customer.
+///   * A MEASURED ZERO IS A ZERO, AND NO DATA IS NOT. Periods come from
+///     `measurable_period`, which answers `Some((d, d))` for a contract signed
+///     on and off one day and `None` for dates it cannot read. A rank with no
+///     measurable period gets NO ENTRY AT ALL - not a `0`, which would be a
+///     statement nobody made. `cv::work_entry_days` collapses the two into `0`
+///     and is left exactly where it is.
+///   * A RANK WITH NO NAME IS NOT SENT. `cv::experience_by_position` files those
+///     rows under "Unspecified"; sent from here, the server could not tell that
+///     invention from a rank a man really holds under that word.
+///
+/// The spelling is NOT touched - no trim beyond the one that reads the column,
+/// no casefold, no synonyms: what counts as one rank written two ways is card
+/// No.622, and deciding it here would decide it by an implementation detail.
+///
+/// Total, like everything in this block: no vault contents produce an error, and
+/// a career that cannot be measured is an empty map rather than a failure.
+fn merged_days_by_position(
+    rows: &[SummaryWorkRow],
+) -> std::collections::BTreeMap<String, i64> {
+    let mut periods: std::collections::BTreeMap<
+        String,
+        Vec<(chrono::NaiveDate, chrono::NaiveDate)>,
+    > = std::collections::BTreeMap::new();
+    for row in rows {
+        let rank = row.position.trim();
+        if rank.is_empty() {
+            continue;
+        }
+        // Only a measurable period creates an entry. A rank whose every row is
+        // unreadable therefore never appears, which is how "not stated" reaches
+        // the agency as the key being absent.
+        if let Some(period) = measurable_period(row) {
+            periods.entry(rank.to_string()).or_default().push(period);
+        }
+    }
+    periods
+        .into_iter()
+        .map(|(rank, dates)| (rank, merged_interval_days(&dates)))
+        .collect()
+}
+
 /// A vault string that is worth sending: trimmed, and absent when it is blank.
 fn present(value: &Option<String>) -> Option<String> {
     let trimmed = value.as_deref()?.trim();
@@ -1509,22 +1575,20 @@ fn build_response_summary(
     // before any of it means anything, and the days and the rank are sent as a
     // pair or not at all: a number of days that does not say what they are days
     // OF is not information, it is a number on a stranger's screen.
+    // No.632. THE CAREER IS COUNTED ONCE AND REPORTED TWICE. The pair is READ
+    // OUT OF the map rather than counted again beside it: the server keeps both
+    // figures for the answered rank and, when they differ, shows the agency
+    // neither - so a second count here would not be a second opinion, it would
+    // be a seafarer whose experience silently disappears from the screen.
+    //
+    // EMPTY IS STILL NOT ZERO, and now it is the same statement on both: a rank
+    // with no measurable period has no entry, so the pair is absent too. One
+    // period of no length is an entry worth `0`, and the pair says zero.
+    let by_rank = merged_days_by_position(rows);
     let experience_rank = present(&personal.rank);
-    let experience_days = experience_rank.as_deref().and_then(|rank| {
-        let periods: Vec<(chrono::NaiveDate, chrono::NaiveDate)> = rows
-            .iter()
-            .filter(|row| row.position.trim() == rank)
-            .filter_map(measurable_period)
-            .collect();
-        // EMPTY IS NOT ZERO. No measurable period means this client cannot say
-        // how long he served in the rank, and it says nothing rather than "0".
-        // One period of no length means he served zero days, and it says zero.
-        if periods.is_empty() {
-            None
-        } else {
-            Some(merged_interval_days(&periods))
-        }
-    });
+    let experience_days = experience_rank
+        .as_deref()
+        .and_then(|rank| by_rank.get(rank).copied());
     let experience_rank = experience_rank.filter(|_| experience_days.is_some());
 
     let last = last_vessel(rows);
@@ -1540,6 +1604,10 @@ fn build_response_summary(
         experience_days,
         last_vessel_name: last.as_ref().and_then(|row| present(&Some(row.vessel_name.clone()))),
         last_vessel_sign_off: last.as_ref().and_then(|row| present(&row.sign_off)),
+        // NEVER an empty map - see the field's own note. The server stores a map
+        // it has emptied as nothing for the same reason, and the two ends of
+        // this agree on what absence looks like.
+        experience_days_by_rank: (!by_rank.is_empty()).then_some(by_rank),
     }
 }
 
@@ -1671,6 +1739,25 @@ fn apply_summary_to_body(body: &mut serde_json::Value, summary: &ResponseSummary
     }
     if let Some(v) = summary.last_vessel_sign_off.as_deref() {
         put("last_vessel_sign_off", serde_json::Value::from(v));
+    }
+    // No.632. The career, under the ONE name the server's schema declares, as
+    // an object of rank -> days. Written only when there is one: an absent
+    // career is an absent key, exactly as every value above.
+    //
+    // NOTHING HERE IS LIMITED. The server bounds the map - forty ranks, a rank
+    // of sixty-four characters, days inside nought to thirty-six thousand five
+    // hundred - and drops what will not fit while the response goes through. A
+    // second copy of those bounds on this side would be a second set of bounds:
+    // this client sends what it measured, whole and never cut, and the one place
+    // that decides decides. What it must never do is pick forty ranks of
+    // forty-five, which would be this client choosing which of a man's
+    // positions a customer gets to see.
+    if let Some(by_rank) = summary.experience_days_by_rank.as_ref() {
+        let mut career = serde_json::Map::new();
+        for (rank, days) in by_rank {
+            career.insert(rank.clone(), serde_json::Value::from(*days));
+        }
+        put("rank_experience_days_by_rank", serde_json::Value::Object(career));
     }
 }
 
