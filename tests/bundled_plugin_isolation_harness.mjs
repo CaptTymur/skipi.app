@@ -6769,5 +6769,126 @@ for(const lang of ['en','ru']){
 }
 
 
+// ---------------------------------------------------------------------------
+// №268-b — the mobile document card speaks ONE language (owner 05.10, BACKLOG №268).
+//
+// After 268-a the card mixed languages: the Delete control and its dialog were
+// RU/EN through mobileSetupText, while Back / Replace scan / Open / Recognize /
+// More / Take one photo / Choose file / Loading preview... / Document No. /
+// Issued By / Issue Date / Expiry Date / Permanent certificate and the two
+// placeholders stayed hard-coded English at a Russian UI. This block measures
+// the card at both languages and probes renderMobileDoc for bare literals.
+//
+// Cancel condition (AGENTS «Дисциплина негативных дриллов»): drill-INVARIANT —
+// it protects the user's own language on the screen. Removed only together with
+// the mobile card itself, or by the owner's word. No later slice may weaken it
+// to go green; a label may only move INTO mobileSetupText, never out of it.
+// ---------------------------------------------------------------------------
+{
+  section('№268-b mobile document card — every label through mobileSetupText, RU at a RU UI, EN at an EN UI');
+
+  const ACTIVE_268B = ['flag_seamans_book'];
+  const DOC_FILE = { id: 'doc-268b-file', title: 'Medical Fitness', category: 'Medical', file_name: 'med.pdf', template_id: null, sync_revision: null, doc_number: 'MC-1', issued_by: 'Port Clinic', valid_from: '2026-01-01', valid_to: '2027-01-01' };
+  const DOC_NOFILE = { id: 'doc-268b-nofile', title: 'Yellow Fever', category: 'Medical', file_name: null, template_id: null, sync_revision: null };
+  const DOC_PERM = { id: 'doc-268b-perm', title: 'Basic Safety', category: 'Certificates', file_name: 'bst.pdf', template_id: null, sync_revision: null, is_permanent: true };
+
+  // Same boot as 268-a (that helper is block-scoped there), with the preview
+  // render stubbed: it replaces #mobile-preview asynchronously, and this drill
+  // measures the card as renderMobileDoc paints it.
+  async function docBoot268b(o = {}) {
+    const app = bootMobile({ seed: {} });
+    await settleVm();
+    app.sandbox.getUiLang = () => o.lang;
+    const docs = [DOC_FILE, DOC_NOFILE, DOC_PERM].map((d) => ({ ...d }));
+    app.sandbox.invoke = async (cmd) => {
+      if (cmd === 'get_documents') return docs.map((d) => ({ ...d }));
+      if (cmd === 'get_active_template_ids') return ACTIVE_268B;
+      if (cmd === 'get_conditional_template_ids') return [];
+      if (cmd === 'get_optional_categories') return [];
+      if (cmd === 'get_platform') return 'android';
+      return {};
+    };
+    await app.sandbox.loadActiveTemplateIds();
+    await app.sandbox.loadOptionalCategories();
+    app.sandbox.allDocs = docs.map((d) => ({ ...d }));
+    app.sandbox.mobileRenderPreview = async () => {};
+    app.sandbox.selectedDocId = o.open || DOC_FILE.id;
+    app.sandbox.mobileView = 'doc';
+    app.sandbox.mobileDocActionsExpanded = true;
+    app.sandbox.renderMobileShell();
+    await settleVm();
+    return app;
+  }
+
+  // --- source probe: no bare EN literal in renderMobileDoc outside mobileSetupText
+  const RMD = fnSource('renderMobileDoc');
+  ok(RMD.length > 0, '268-b: renderMobileDoc is a top-level function the probe can read');
+  const WRAPPED = /mobileSetupText\((?:'[^']*'|"[^"]*")\s*,\s*(?:'[^']*'|"[^"]*")\)/g;
+  const stripped = RMD.replace(WRAPPED, 'mobileSetupText(…)');
+  const reEsc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // A label counts as BARE when it stands as its own string or its own text node:
+  // quoted, or between a tag close and a tag open. Identifier fragments
+  // (mobileOpenDocumentFile) are not labels.
+  const bare = (src, label) => new RegExp("(?:['\">]|\\s)" + reEsc(label) + "(?:['\"<]|\\s*<)").test(src);
+  // Probe calibration on a KNOWN wrapped label (268-a's Delete): present before
+  // the strip, gone after it — so a green «no bare label» below is a measurement.
+  ok(bare(RMD, 'Delete') && !bare(stripped, 'Delete'), '268-b probe: the wrapped label Delete is seen before the strip and gone after it');
+  ok(bare('<button>Back</button>', 'Back') && bare("?'Replace scan':'Scan to PDF'", 'Scan to PDF') && bare('placeholder="YYYY-MM-DD"', 'YYYY-MM-DD') && bare('> Permanent certificate</label>', 'Permanent certificate'), '268-b probe: a text node, a quoted branch, an attribute value and a space-led text node all count as bare');
+  ok(!bare('mobileOpenDocumentFile(', 'Open') && !bare('mobileStartOcr(', 'Recognize'), '268-b probe: identifier fragments are not labels');
+  const CARD_LABELS = ['Back', 'Replace scan', 'Scan to PDF', 'Open', 'Recognize', 'More', 'Take one photo', 'Choose file', 'Loading preview...', 'Document No.', 'Issued By', 'Issue Date', 'Expiry Date', 'Permanent certificate', 'YYYY-MM-DD', 'Permanent'];
+  for (const label of CARD_LABELS) {
+    ok(!bare(stripped, label), '268-b: renderMobileDoc carries no bare "' + label + '" outside mobileSetupText');
+  }
+  ok(!/\btr\(/.test(RMD), '268-b: no second mechanism (tr()) sneaks into the mobile card — mobileSetupText only');
+  ok(/mobileSetupText\('Delete','Удалить'\)/.test(RMD) && /canDeleteDoc\(d\)/.test(RMD), '268-b/PRESERVE: the 268-a Delete control is untouched');
+
+  // --- the rendered card at both languages -----------------------------------
+  const L = {
+    en: { back: 'Back', replace: 'Replace scan', scan: 'Scan to PDF', open: 'Open', recognize: 'Recognize', more: 'More', photo: 'Take one photo', file: 'Choose file', preview: 'Loading preview...', number: 'Document No.', issuer: 'Issued By', issued: 'Issue Date', expiry: 'Expiry Date', permanentCert: 'Permanent certificate', dateHint: 'YYYY-MM-DD', permanentHint: 'Permanent', del: 'Delete' },
+    ru: { back: 'Назад', replace: 'Заменить скан', scan: 'Сканировать в PDF', open: 'Открыть', recognize: 'Распознать', more: 'Ещё', photo: 'Сделать фото', file: 'Выбрать файл', preview: 'Загрузка превью...', number: 'Номер документа', issuer: 'Кем выдан', issued: 'Дата выдачи', expiry: 'Действителен до', permanentCert: 'Бессрочный сертификат', dateHint: 'ГГГГ-ММ-ДД', permanentHint: 'Бессрочно', del: 'Удалить' },
+  };
+  for (const lang of ['en', 'ru']) {
+    const t = L[lang], other = L[lang === 'en' ? 'ru' : 'en'];
+    try {
+      const app = await docBoot268b({ lang: lang, open: DOC_FILE.id });
+      const h = mobileHtml(app.doc);
+      ok(h.includes('onclick="mobileShow(\'docs\')" style="margin-bottom:10px;">' + t.back + '</button>'), '268-b (' + lang + '): Back reads "' + t.back + '"');
+      ok(h.includes('mobileStartPdfBuilder(\'doc-268b-file\')">' + t.replace + '</button>'), '268-b (' + lang + '): with a file the scan button reads "' + t.replace + '"');
+      ok(h.includes('mobileOpenDocumentFile(\'doc-268b-file\')">' + t.open + '</button>'), '268-b (' + lang + '): Open reads "' + t.open + '"');
+      ok(h.includes('btn-outline" onclick="mobileStartOcr(\'doc-268b-file\')">' + t.recognize + '</button>'), '268-b (' + lang + '): the card\'s Recognize button reads "' + t.recognize + '"');
+      ok(h.includes('onclick="mobileToggleDocActions()">' + t.more + '</button>'), '268-b (' + lang + '): More reads "' + t.more + '"');
+      ok(h.includes('mobilePickFile(\'doc-268b-file\',true)">' + t.photo + '</button>'), '268-b (' + lang + '): Take one photo reads "' + t.photo + '"');
+      ok(h.includes('mobilePickFile(\'doc-268b-file\',false)">' + t.file + '</button>'), '268-b (' + lang + '): Choose file reads "' + t.file + '"');
+      ok(h.includes('class="mobile-preview">' + t.preview + '</div>'), '268-b (' + lang + '): the preview placeholder reads "' + t.preview + '"');
+      ok(h.includes('<label>' + t.number + '</label>'), '268-b (' + lang + '): Document No. reads "' + t.number + '"');
+      ok(h.includes('<label>' + t.issuer + '</label>'), '268-b (' + lang + '): Issued By reads "' + t.issuer + '"');
+      ok(h.includes('<label>' + t.issued + '</label>'), '268-b (' + lang + '): Issue Date reads "' + t.issued + '"');
+      ok(h.includes('<label>' + t.expiry + '</label>'), '268-b (' + lang + '): Expiry Date reads "' + t.expiry + '"');
+      ok(h.includes('> ' + t.permanentCert + '</label>'), '268-b (' + lang + '): the checkbox reads "' + t.permanentCert + '"');
+      ok((h.match(new RegExp('placeholder="' + reEsc(t.dateHint) + '"', 'g')) || []).length === 2, '268-b (' + lang + '): both date inputs hint "' + t.dateHint + '"');
+      ok(h.includes('data-qa="mobile-doc-delete"') && h.includes('>' + t.del + '</button>'), '268-b/PRESERVE (' + lang + '): Delete still renders as "' + t.del + '"');
+      // and NOTHING of the other language on the card's own labels
+      for (const k of ['back', 'replace', 'open', 'recognize', 'more', 'photo', 'file', 'preview', 'del']) {
+        ok(!h.includes('>' + other[k] + '</'), '268-b (' + lang + '): no "' + other[k] + '" text node from the other language');
+      }
+      for (const k of ['number', 'issuer', 'issued', 'expiry']) {
+        ok(!h.includes('<label>' + other[k] + '</label>'), '268-b (' + lang + '): no "' + other[k] + '" field label from the other language');
+      }
+      ok(!h.includes(other.permanentCert) && !h.includes('placeholder="' + other.dateHint + '"'), '268-b (' + lang + '): no "' + other.permanentCert + '" and no "' + other.dateHint + '" hint from the other language');
+      ok(app.sandbox.mobileView === 'doc' && app.sandbox.selectedDocId === DOC_FILE.id, '268-b (' + lang + '): the render changed no state — still the same open card');
+
+      const nofile = await docBoot268b({ lang: lang, open: DOC_NOFILE.id });
+      const hn = mobileHtml(nofile.doc);
+      ok(hn.includes('mobileStartPdfBuilder(\'doc-268b-nofile\')">' + t.scan + '</button>'), '268-b (' + lang + '): without a file the scan button reads "' + t.scan + '"');
+      ok(!hn.includes('mobileOpenDocumentFile(') && !hn.includes('btn-outline" onclick="mobileStartOcr(') && !hn.includes('class="mobile-preview"'), '268-b (' + lang + '): without a file there is no Open, no Recognize and no preview — behaviour unchanged');
+
+      const perm = await docBoot268b({ lang: lang, open: DOC_PERM.id });
+      const hp = mobileHtml(perm.doc);
+      ok(hp.includes('id="mobile-expiry" inputmode="numeric" maxlength="10" placeholder="' + t.permanentHint + '"') && hp.includes('disabled'), '268-b (' + lang + '): a permanent certificate hints "' + t.permanentHint + '" in its disabled expiry input');
+      ok(!hp.includes('placeholder="' + other.permanentHint + '"'), '268-b (' + lang + '): and not "' + other.permanentHint + '"');
+    } catch (e) { ok(false, '268-b rendered card (' + lang + ') crashed before it could assert: ' + e.message); }
+  }
+}
+
 console.log('\n' + (fail === 0 ? 'ALL GREEN' : 'FAILURES') + ': ' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail === 0 ? 0 : 1);
