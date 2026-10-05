@@ -8113,7 +8113,7 @@ function mobileOcrPanel(d){
     if(!d||!d.file_name)return '';
     var st=mobileOcrState&&mobileOcrState.docId===d.id?mobileOcrState:null;
     if(!st||st.status==='offer'){
-        return '<div class="mobile-card mobile-ocr-card"><div class="mobile-row"><div><div class="mobile-card-title">Recognize fields</div><div class="mobile-card-sub">Extract document number, issue date and expiry date from this scan. You confirm before anything is saved.</div></div><span class="mobile-ocr-chip">AI</span></div><div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-accent" onclick="mobileStartOcr(\''+jsString(d.id)+'\')">Recognize</button></div></div>';
+        return '<div class="mobile-card mobile-ocr-card"><div class="mobile-row"><div><div class="mobile-card-title">'+mobileSetupText('Recognize fields','Распознать поля')+'</div><div class="mobile-card-sub">'+mobileSetupText('Extract document number, issue date and expiry date from this scan. You confirm before anything is saved.','Найдём номер документа, дату выдачи и срок действия на этом скане. Ничего не сохранится без вашего подтверждения.')+'</div></div><span class="mobile-ocr-chip">AI</span></div><div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-accent" onclick="mobileStartOcr(\''+jsString(d.id)+'\')">'+mobileSetupText('Recognize','Распознать')+'</button></div></div>';
     }
     if(st.status==='working'){
         return '<div class="mobile-card mobile-ocr-card"><div class="mobile-card-title">Recognizing document...</div><div class="mobile-card-sub">Reading the scan and looking for printed fields. Keep the app open.</div></div>';
@@ -8219,15 +8219,15 @@ function renderMobileDoc(){
     if(!d){mobileView='docs';return renderMobileDocs();}
     oneAccountCapture('document',d,true);
     mobileSetBottomNav(true);
-    var h='<button class="btn btn-outline btn-sm" onclick="mobileShow(\'docs\')" style="margin-bottom:10px;">Back</button>';
+    var h='<button class="btn btn-outline btn-sm" onclick="mobileShow(\'docs\')" style="margin-bottom:10px;">'+mobileSetupText('Back','Назад')+'</button>';
     h+='<div class="mobile-card"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title">'+mobileEsc(d.title)+'</div><div class="mobile-card-sub">'+mobileEsc(d.category)+'</div></div>'+mobileStatusPill(d)+'</div>';
     h+='<div class="mobile-actions" style="margin-top:12px;">';
-    h+='<button class="btn btn-accent" onclick="mobileStartPdfBuilder(\''+jsString(d.id)+'\')">'+(d.file_name?'Replace scan':'Scan to PDF')+'</button>';
-    if(d.file_name)h+='<button class="btn btn-outline" onclick="mobileOpenDocumentFile(\''+jsString(d.id)+'\')">Open</button>';
-    if(d.file_name)h+='<button class="btn btn-outline" onclick="mobileStartOcr(\''+jsString(d.id)+'\')">Recognize</button>';
-    h+='<button class="btn btn-outline" onclick="mobileToggleDocActions()">More</button></div>';
+    h+='<button class="btn btn-accent" onclick="mobileStartPdfBuilder(\''+jsString(d.id)+'\')">'+(d.file_name?mobileSetupText('Replace scan','Заменить скан'):mobileSetupText('Scan to PDF','Сканировать в PDF'))+'</button>';
+    if(d.file_name)h+='<button class="btn btn-outline" onclick="mobileOpenDocumentFile(\''+jsString(d.id)+'\')">'+mobileSetupText('Open','Открыть')+'</button>';
+    if(d.file_name)h+='<button class="btn btn-outline" onclick="mobileStartOcr(\''+jsString(d.id)+'\')">'+mobileSetupText('Recognize','Распознать')+'</button>';
+    h+='<button class="btn btn-outline" onclick="mobileToggleDocActions()">'+mobileSetupText('More','Ещё')+'</button></div>';
     if(mobileDocActionsExpanded){
-        h+='<div class="mobile-actions" style="margin-top:8px;"><button class="btn btn-outline" onclick="mobilePickFile(\''+jsString(d.id)+'\',true)">Take one photo</button><button class="btn btn-outline" onclick="mobilePickFile(\''+jsString(d.id)+'\',false)">Choose file</button>'
+        h+='<div class="mobile-actions" style="margin-top:8px;"><button class="btn btn-outline" onclick="mobilePickFile(\''+jsString(d.id)+'\',true)">'+mobileSetupText('Take one photo','Сделать фото')+'</button><button class="btn btn-outline" onclick="mobilePickFile(\''+jsString(d.id)+'\',false)">'+mobileSetupText('Choose file','Выбрать файл')+'</button>'
           // 268-a: the destructive action lives here, inside the «More» disclosure, and
           // only for a document the active framework does not require (canDeleteDoc).
           // Visibility is computed from the LOADED template sets: before they load
@@ -8237,14 +8237,14 @@ function renderMobileDoc(){
           +'</div>';
     }
     h+='</div>';
-    if(d.file_name)h+='<div id="mobile-preview" class="mobile-preview">Loading preview...</div>';
+    if(d.file_name)h+='<div id="mobile-preview" class="mobile-preview">'+mobileSetupText('Loading preview...','Загрузка превью...')+'</div>';
     h+=mobileOcrPanel(d);
     h+='<div class="mobile-card">';
-    h+='<div class="mobile-field"><label>Document No.</label><input value="'+mobileEsc(d.doc_number||'')+'" onchange="mobileSaveField(\''+jsString(d.id)+'\',\'doc_number\',this.value)"></div>';
-    h+='<div class="mobile-field"><label>Issued By</label><input value="'+mobileEsc(d.issued_by||'')+'" onchange="mobileSaveField(\''+jsString(d.id)+'\',\'issued_by\',this.value)"></div>';
-    h+='<div class="mobile-field"><label>Issue Date</label><input inputmode="numeric" maxlength="10" placeholder="YYYY-MM-DD" value="'+mobileEsc(d.valid_from||'')+'" oninput="autoFormatDate(this)" onchange="mobileSaveField(\''+jsString(d.id)+'\',\'valid_from\',this.value)"></div>';
-    h+='<div class="mobile-field"><label>Expiry Date</label><input id="mobile-expiry" inputmode="numeric" maxlength="10" placeholder="'+(d.is_permanent?'Permanent':'YYYY-MM-DD')+'" value="'+(d.is_permanent?'':mobileEsc(d.valid_to||''))+'" '+(d.is_permanent?'disabled':'')+' oninput="autoFormatDate(this)" onchange="mobileSaveExpiry(\''+jsString(d.id)+'\',this.value)"></div>';
-    h+='<label style="display:flex;align-items:center;gap:8px;font-size:13px;"><input type="checkbox" '+(d.is_permanent?'checked':'')+' onchange="mobileSetPermanent(\''+jsString(d.id)+'\',this.checked)"> Permanent certificate</label>';
+    h+='<div class="mobile-field"><label>'+mobileSetupText('Document No.','Номер документа')+'</label><input value="'+mobileEsc(d.doc_number||'')+'" onchange="mobileSaveField(\''+jsString(d.id)+'\',\'doc_number\',this.value)"></div>';
+    h+='<div class="mobile-field"><label>'+mobileSetupText('Issued By','Кем выдан')+'</label><input value="'+mobileEsc(d.issued_by||'')+'" onchange="mobileSaveField(\''+jsString(d.id)+'\',\'issued_by\',this.value)"></div>';
+    h+='<div class="mobile-field"><label>'+mobileSetupText('Issue Date','Дата выдачи')+'</label><input inputmode="numeric" maxlength="10" placeholder="'+mobileSetupText('YYYY-MM-DD','ГГГГ-ММ-ДД')+'" value="'+mobileEsc(d.valid_from||'')+'" oninput="autoFormatDate(this)" onchange="mobileSaveField(\''+jsString(d.id)+'\',\'valid_from\',this.value)"></div>';
+    h+='<div class="mobile-field"><label>'+mobileSetupText('Expiry Date','Действителен до')+'</label><input id="mobile-expiry" inputmode="numeric" maxlength="10" placeholder="'+(d.is_permanent?mobileSetupText('Permanent','Бессрочно'):mobileSetupText('YYYY-MM-DD','ГГГГ-ММ-ДД'))+'" value="'+(d.is_permanent?'':mobileEsc(d.valid_to||''))+'" '+(d.is_permanent?'disabled':'')+' oninput="autoFormatDate(this)" onchange="mobileSaveExpiry(\''+jsString(d.id)+'\',this.value)"></div>';
+    h+='<label style="display:flex;align-items:center;gap:8px;font-size:13px;"><input type="checkbox" '+(d.is_permanent?'checked':'')+' onchange="mobileSetPermanent(\''+jsString(d.id)+'\',this.checked)"> '+mobileSetupText('Permanent certificate','Бессрочный сертификат')+'</label>';
     h+='</div>';
     mobileMainHtml(h);
     if(d.file_name)mobileRenderPreview(d);
