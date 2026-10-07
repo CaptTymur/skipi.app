@@ -6551,5 +6551,223 @@ for(const lang of ['en','ru']){
   await runRemoteInstallOfflineHarness();
 }
 
+// ---------------------------------------------------------------------------
+// №268-a — deleting a document from the MOBILE card (owner 05.10, BACKLOG №268).
+//
+// The desktop card has had a Delete control for a long time (deleteDocFromView);
+// the mobile card had none, so a phone-only user could never remove a wrong or
+// duplicated slot. This block drills the mobile path against the eight negatives
+// the Supervisor measured on 05.10 before the slice started.
+//
+// Cancel condition (AGENTS «Дисциплина негативных дриллов»): this is a
+// drill-INVARIANT, not a slice boundary — it protects the user's own files. It is
+// removed only together with the mobile delete action itself, or by the owner's
+// word. No later slice may weaken it to go green.
+// ---------------------------------------------------------------------------
+{
+  section('№268-a mobile document card — Delete behind «More», gated by canDeleteDoc, staying in the mobile shell');
+
+  const DOC_FREE = { id: 'doc-free-268', title: 'Yellow Fever', category: 'Medical', file_name: 'yf.pdf', template_id: null, sync_revision: null };
+  const DOC_HIST = { id: 'doc-hist-268', title: 'Old GMDSS', category: 'Certificates', file_name: 'gmdss.pdf', template_id: 'gmdss_legacy', sync_revision: null };
+  const DOC_REQ = { id: 'doc-req-268', title: 'Seaman Book', category: 'Identity', file_name: 'sb.pdf', template_id: 'flag_seamans_book', sync_revision: null };
+  const ACTIVE_IDS = ['flag_seamans_book'];
+  const DEL_QA = 'data-qa="mobile-doc-delete"';
+
+  // Boot the NATIVE mobile shell with an open document card and a controlled
+  // backend. init() has settled by then, so recorded calls belong to the card.
+  async function docBoot(o = {}) {
+    const app = bootMobile({ seed: {} });
+    await settleVm();
+    if (o.lang) app.sandbox.getUiLang = () => o.lang;
+    let docs = (o.docs || [DOC_FREE, DOC_HIST, DOC_REQ]).map((d) => ({ ...d }));
+    const calls = [];
+    app.sandbox.invoke = async (cmd, args) => {
+      calls.push([cmd, args]);
+      if (cmd === 'get_documents') return docs.map((d) => ({ ...d }));
+      if (cmd === 'delete_doc') {
+        if (o.deleteFails) throw new Error('Vault is read-only');
+        docs = docs.filter((d) => d.id !== args.id);
+        return null;
+      }
+      if (cmd === 'get_active_template_ids') return o.activeIds || ACTIVE_IDS;
+      if (cmd === 'get_conditional_template_ids') return [];
+      if (cmd === 'get_optional_categories') return o.optional || [];
+      if (cmd === 'get_platform') return 'android';
+      return {};
+    };
+    // Production loads the template sets inside loadVault() BEFORE the first
+    // mobile render. Do the same — unless a drill explicitly wants the pre-load
+    // state, where isActiveTemplateId() answers TRUE for every template_id and
+    // the card must therefore HIDE Delete (fail-closed), not show it.
+    if (!o.templatesUnloaded) {
+      await app.sandbox.loadActiveTemplateIds();
+      await app.sandbox.loadOptionalCategories();
+    }
+    app.sandbox.allDocs = docs.map((d) => ({ ...d }));
+    const toasts = [];
+    app.sandbox.showToast = (msg, kind) => { toasts.push([String(msg), kind]); };
+    app.sandbox.selectedDocId = o.open || DOC_FREE.id;
+    app.sandbox.mobileView = 'doc';
+    app.sandbox.mobileDocActionsExpanded = o.expanded !== false;
+    app.sandbox.renderMobileShell();
+    await settleVm();
+    app.calls = calls;
+    app.toasts = toasts;
+    app.docs = () => docs;
+    return app;
+  }
+  const docCalls = (app, cmd) => app.calls.filter(([c]) => c === cmd);
+
+  // --- shape: the control lives inside the «More» disclosure, gated -----------
+  const RMD = fnSource('renderMobileDoc');
+  const expandedBlock = /if\(mobileDocActionsExpanded\)\{([\s\S]*?)\n    \}/.exec(RMD);
+  ok(!!expandedBlock, '268-a: renderMobileDoc still has an identifiable mobileDocActionsExpanded block');
+  const inside = expandedBlock ? expandedBlock[1] : '';
+  const outside = expandedBlock ? RMD.replace(inside, '') : RMD;
+  ok(/mobileDeleteDoc\(/.test(inside), '268-a: the delete control is inside the «More» disclosure');
+  ok(/canDeleteDoc\(d\)/.test(inside), '268-a: and the disclosure gates it on canDeleteDoc(d)');
+  ok(!/mobileDeleteDoc\(/.test(outside), '268-a: the primary action row carries no delete button');
+
+  const MDD = fnSource('mobileDeleteDoc');
+  ok(MDD.length > 0, '268-a: mobileDeleteDoc exists as a top-level function');
+  ok(/mobileReloadDocs\(/.test(MDD) && /mobileShow\('docs'\)/.test(MDD), '268-a/N1: after deletion the path is mobileReloadDocs → mobileShow(docs)');
+  ok(!/deleteDocFromView|renderTree\(|showDashboard\(/.test(MDD), '268-a/N1: the desktop capture (deleteDocFromView/renderTree/showDashboard) is NOT reused');
+  ok(/uiConfirm\(/.test(MDD), '268-a/N3: the confirmation really is uiConfirm');
+  ok(/confirmLabel:/.test(MDD) && /cancelLabel:/.test(MDD) && /danger:\s*true/.test(MDD), '268-a/N3: both labels are passed explicitly (uiConfirm defaults to EN OK/Cancel) and the dialog is danger');
+  ok(!/\balert\s*\(/.test(MDD) && !/\bconfirm\s*\(/.test(MDD.replace(/uiConfirm\s*\(/g, '')), '268-a/N3: no alert() and no bare window.confirm()');
+  ok((MDD.match(/mobileSetupText\(/g) || []).length >= 4, '268-a: dialog text, both labels and the toasts go through mobileSetupText (RU/EN)');
+  ok(MDD.indexOf('uiConfirm(') >= 0 && MDD.indexOf("invoke('delete_doc'") > MDD.indexOf('uiConfirm('), '268-a: uiConfirm is asked BEFORE invoke(delete_doc)');
+  ok(/canDeleteDoc\(/.test(MDD), '268-a: the action re-checks canDeleteDoc itself — a stale card cannot delete a required document');
+
+  const DFV = fnSource('deleteDocFromView');
+  ok(/renderTree\(\)/.test(DFV) && /showDashboard\(\)/.test(DFV) && /canDeleteDoc\(d\)/.test(DFV), '268-a/PRESERVE: the desktop deleteDocFromView still takes the desktop path');
+  ok(/delete_doc/.test(LIB_RS), '268-a/PRESERVE: delete_doc is still registered on the Rust side');
+
+  // --- the rendered card, EN and RU ------------------------------------------
+  for (const pair of [['en', 'Delete'], ['ru', 'Удалить']]) {
+    const lang = pair[0], label = pair[1];
+    try {
+      const app = await docBoot({ lang: lang, open: DOC_FREE.id });
+      const h = mobileHtml(app.doc);
+      ok(h.includes(DEL_QA), '268-a (' + lang + '): the open card shows the delete control');
+      ok(h.includes(label), '268-a (' + lang + '): labelled "' + label + '"');
+      ok(/onclick="mobileDeleteDoc\('doc-free-268'\)"/.test(h), '268-a (' + lang + '): it calls mobileDeleteDoc with that document id');
+      const collapsed = await docBoot({ lang: lang, open: DOC_FREE.id, expanded: false });
+      ok(!mobileHtml(collapsed.doc).includes(DEL_QA), '268-a (' + lang + '): with «More» collapsed the control is not on screen at all');
+    } catch (e) { ok(false, '268-a rendered card (' + lang + ') crashed before it could assert: ' + e.message); }
+  }
+
+  try {
+    const app = await docBoot({ open: DOC_HIST.id });
+    ok(mobileHtml(app.doc).includes(DEL_QA), '268-a: a historical document (template no longer active) can be deleted');
+  } catch (e) { ok(false, '268-a historical card crashed before it could assert: ' + e.message); }
+
+  // --- N6: an active REQUIRED document has no control, and the action refuses --
+  try {
+    const app = await docBoot({ open: DOC_REQ.id });
+    ok(!mobileHtml(app.doc).includes(DEL_QA), '268-a/N6: the card of a document required by the active framework shows NO delete control');
+    let asked = 0;
+    app.sandbox.uiConfirm = async () => { asked++; return true; };
+    await app.sandbox.mobileDeleteDoc(DOC_REQ.id);
+    await settleVm();
+    ok(asked === 0 && docCalls(app, 'delete_doc').length === 0, '268-a/N6: a scripted tap on the action (stale card) asks nothing and deletes nothing');
+    ok(app.toasts.length === 0, '268-a/N6: and says nothing — the control simply does not exist for that document');
+  } catch (e) { ok(false, '268-a/N6 crashed before it could assert: ' + e.message); }
+
+  // --- N2: the template-load race, and the repaint of an OPEN card ------------
+  try {
+    const app = await docBoot({ open: DOC_HIST.id, templatesUnloaded: true });
+    ok(app.sandbox.activeTemplateIdsLoaded === false, '268-a/N2: precondition — the template sets are not loaded yet');
+    ok(!mobileHtml(app.doc).includes(DEL_QA), '268-a/N2: before the sets load the card hides Delete — a historical document is indistinguishable from a required one, so it fails closed');
+    // renderTree / updateStatus / updateProfileCompletionChip / showDashboard are
+    // the DESKTOP half of refreshDocsAfterFrameworkChange and are irrelevant here;
+    // stubbing them keeps this drill measuring the mobile repaint and nothing else.
+    app.sandbox.renderTree = () => {};
+    app.sandbox.updateStatus = () => {};
+    app.sandbox.updateProfileCompletionChip = () => {};
+    app.sandbox.showDashboard = async () => {};
+    await app.sandbox.refreshDocsAfterFrameworkChange();
+    await settleVm();
+    ok(app.sandbox.activeTemplateIdsLoaded === true, '268-a/N2: the framework change loaded the template sets');
+    ok(mobileHtml(app.doc).includes(DEL_QA), '268-a/N2: and the OPEN card repainted — the control appears without the user leaving the card');
+  } catch (e) { ok(false, '268-a/N2 crashed before it could assert: ' + e.message); }
+
+  // --- N5: cancel changes nothing --------------------------------------------
+  try {
+    const app = await docBoot({ open: DOC_FREE.id });
+    let asked = 0;
+    app.sandbox.uiConfirm = async () => { asked++; return false; };
+    await app.sandbox.mobileDeleteDoc(DOC_FREE.id);
+    await settleVm();
+    ok(asked === 1, '268-a/N5: cancelling asks for confirmation exactly once');
+    ok(docCalls(app, 'delete_doc').length === 0, '268-a/N5: and deletes NOTHING');
+    ok(app.sandbox.mobileView === 'doc' && app.sandbox.selectedDocId === DOC_FREE.id, '268-a/N5: the user stays on the same card');
+    ok(app.toasts.length === 0, '268-a/N5: and is not told that something happened');
+  } catch (e) { ok(false, '268-a/N5 crashed before it could assert: ' + e.message); }
+
+  // --- accept: the document goes, the list returns, one toast, EN and RU ------
+  for (const pair of [['en', 'deleted'], ['ru', 'удал']]) {
+    const lang = pair[0], word = pair[1];
+    try {
+      const app = await docBoot({ lang: lang, open: DOC_FREE.id });
+      app.sandbox.uiConfirm = async () => true;
+      await app.sandbox.mobileDeleteDoc(DOC_FREE.id);
+      await settleVm();
+      const del = docCalls(app, 'delete_doc');
+      ok(del.length === 1 && del[0][1] && del[0][1].id === DOC_FREE.id, '268-a (' + lang + '): exactly that document id reaches Rust (got ' + JSON.stringify(del.map((d) => d[1])) + ')');
+      ok(!app.docs().some((d) => d.id === DOC_FREE.id), '268-a (' + lang + '): the backend no longer holds it');
+      ok(!(app.sandbox.allDocs || []).some((d) => d.id === DOC_FREE.id), '268-a (' + lang + '): and the reloaded in-app list no longer holds it');
+      ok(app.sandbox.mobileView === 'docs', '268-a/N1 (' + lang + '): the user lands on the mobile document LIST, not in a desktop view');
+      ok(app.sandbox.selectedDocId === null && app.sandbox.mobileDocActionsExpanded === false, '268-a (' + lang + '): the stale selection and the open disclosure are cleared');
+      ok(app.toasts.length === 1 && app.toasts[0][1] === 'success', '268-a (' + lang + '): exactly one success toast (got ' + JSON.stringify(app.toasts) + ')');
+      ok(app.toasts.length === 1 && app.toasts[0][0].toLowerCase().includes(word), '268-a (' + lang + '): the toast is in the user language, asserted by its words not its kind');
+      ok(!mobileHtml(app.doc).includes('Yellow Fever'), '268-a (' + lang + '): the rendered list no longer shows the deleted document');
+      await app.sandbox.mobileDeleteDoc(DOC_FREE.id);
+      await settleVm();
+      ok(docCalls(app, 'delete_doc').length === 1 && app.toasts.length === 1, '268-a/N8 (' + lang + '): repeating the action on the deleted id does nothing and does not speak twice');
+    } catch (e) { ok(false, '268-a accept (' + lang + ') crashed before it could assert: ' + e.message); }
+  }
+
+  // --- N4: the double tap. The confirmation is deliberately held open: this is
+  // exactly the race the in-flight flag exists for, so the drill is a real race
+  // drill and not a comment. ---------------------------------------------------
+  try {
+    const app = await docBoot({ open: DOC_FREE.id });
+    let asked = 0, release = null;
+    app.sandbox.uiConfirm = () => { asked++; return new Promise((r) => { release = r; }); };
+    const first = app.sandbox.mobileDeleteDoc(DOC_FREE.id);
+    const second = app.sandbox.mobileDeleteDoc(DOC_FREE.id);
+    await settleVm();
+    ok(asked === 1, '268-a/N4: while the confirmation is open a second tap is ignored (asked ' + asked + ' times)');
+    if (release) release(true);
+    await first;
+    await second;
+    await settleVm();
+    ok(docCalls(app, 'delete_doc').length === 1, '268-a/N4: and exactly one delete_doc reaches Rust, not two');
+    ok(app.toasts.filter((t) => t[1] === 'success').length === 1, '268-a/N4: and the user sees one confirmation, not two');
+  } catch (e) { ok(false, '268-a/N4 crashed before it could assert: ' + e.message); }
+
+  // --- N7: a backend refusal is surfaced in the user's language, card stays ---
+  for (const pair of [['en', 'could not'], ['ru', 'не удалось']]) {
+    const lang = pair[0], word = pair[1];
+    try {
+      const app = await docBoot({ lang: lang, open: DOC_FREE.id, deleteFails: true });
+      app.sandbox.uiConfirm = async () => true;
+      await app.sandbox.mobileDeleteDoc(DOC_FREE.id);
+      await settleVm();
+      const last = app.toasts.length ? app.toasts[app.toasts.length - 1] : ['', ''];
+      ok(app.toasts.length >= 1 && last[1] === 'error', '268-a/N7 (' + lang + '): the refusal is an error toast');
+      ok(String(last[0]).toLowerCase().includes(word), '268-a/N7 (' + lang + '): worded in the user language, not merely flagged by kind (got ' + JSON.stringify(app.toasts) + ')');
+      ok(String(last[0]).toLowerCase().includes('read-only'), '268-a/N7 (' + lang + '): and the backend reason is carried verbatim, not swallowed');
+      ok(app.sandbox.mobileView === 'doc' && app.sandbox.selectedDocId === DOC_FREE.id, '268-a/N7 (' + lang + '): the user stays on the card');
+      ok(app.docs().some((d) => d.id === DOC_FREE.id), '268-a/N7 (' + lang + '): and the document is still there');
+      await app.sandbox.mobileDeleteDoc(DOC_FREE.id);
+      await settleVm();
+      ok(docCalls(app, 'delete_doc').length === 2, '268-a/N7 (' + lang + '): the in-flight guard is released after an error, so a retry is possible');
+    } catch (e) { ok(false, '268-a/N7 (' + lang + ') crashed before it could assert: ' + e.message); }
+  }
+}
+
+
 console.log('\n' + (fail === 0 ? 'ALL GREEN' : 'FAILURES') + ': ' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail === 0 ? 0 : 1);

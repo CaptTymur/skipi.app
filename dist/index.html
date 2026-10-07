@@ -8227,7 +8227,14 @@ function renderMobileDoc(){
     if(d.file_name)h+='<button class="btn btn-outline" onclick="mobileStartOcr(\''+jsString(d.id)+'\')">Recognize</button>';
     h+='<button class="btn btn-outline" onclick="mobileToggleDocActions()">More</button></div>';
     if(mobileDocActionsExpanded){
-        h+='<div class="mobile-actions" style="margin-top:8px;"><button class="btn btn-outline" onclick="mobilePickFile(\''+jsString(d.id)+'\',true)">Take one photo</button><button class="btn btn-outline" onclick="mobilePickFile(\''+jsString(d.id)+'\',false)">Choose file</button></div>';
+        h+='<div class="mobile-actions" style="margin-top:8px;"><button class="btn btn-outline" onclick="mobilePickFile(\''+jsString(d.id)+'\',true)">Take one photo</button><button class="btn btn-outline" onclick="mobilePickFile(\''+jsString(d.id)+'\',false)">Choose file</button>'
+          // 268-a: the destructive action lives here, inside the «More» disclosure, and
+          // only for a document the active framework does not require (canDeleteDoc).
+          // Visibility is computed from the LOADED template sets: before they load
+          // isActiveTemplateId() answers true for every template_id, so the control is
+          // hidden rather than offered on a guess.
+          +(canDeleteDoc(d)?'<button class="btn btn-outline btn-red" data-qa="mobile-doc-delete" onclick="mobileDeleteDoc(\''+jsString(d.id)+'\')">'+mobileSetupText('Delete','Удалить')+'</button>':'')
+          +'</div>';
     }
     h+='</div>';
     if(d.file_name)h+='<div id="mobile-preview" class="mobile-preview">Loading preview...</div>';
@@ -8245,6 +8252,33 @@ function renderMobileDoc(){
 function mobileToggleDocActions(){
     mobileDocActionsExpanded=!mobileDocActionsExpanded;
     renderMobileDoc();
+}
+// 268-a: deleting a document from the MOBILE card. The desktop deleteDocFromView()
+// is deliberately NOT reused: it ends in renderTree()/showDashboard(), which would
+// drag a phone user into the desktop views. The mobile path returns to the mobile
+// document list instead.
+var mobileDocDeleteBusy=false;
+async function mobileDeleteDoc(id){
+    if(mobileDocDeleteBusy)return;
+    var d=allDocs.find(function(x){return x.id===id;});
+    // Re-checked here, not only at render time: a card drawn before a framework
+    // change can still be on screen carrying a stale control.
+    if(!canDeleteDoc(d))return;
+    mobileDocDeleteBusy=true;
+    try{
+        var confirmed=await uiConfirm(mobileSetupText('Delete the document "','Удалить документ «')+String(d.title||'')+mobileSetupText('"? The file is removed from this vault and cannot be restored.','»? Файл будет удалён из этого хранилища без возможности восстановления.'),
+            {confirmLabel:mobileSetupText('Delete','Удалить'),cancelLabel:mobileSetupText('Cancel','Отмена'),danger:true});
+        if(!confirmed)return;
+        await invoke('delete_doc',{id:id});
+        await mobileReloadDocs();
+        selectedDocId=null;
+        mobileDocActionsExpanded=false;
+        mobileShow('docs');
+        showToast(mobileSetupText('Document deleted','Документ удалён'),'success');
+    }catch(e){
+        showToast(mobileSetupText('Could not delete the document: ','Не удалось удалить документ: ')+e,'error');
+        logError('mobileDeleteDoc',e);
+    }finally{mobileDocDeleteBusy=false;}
 }
 async function mobileSaveField(id,field,value){
     await saveF(id,field,value);
@@ -18553,6 +18587,12 @@ async function refreshDocsAfterFrameworkChange(){
     updateStatus();
     updateProfileCompletionChip();
     if(currentView==='dashboard')await showDashboard();
+    // 268-a: the mobile document card decides whether «Delete» may be shown from the
+    // LOADED template sets, so an OPEN card must repaint after a framework change -
+    // otherwise it keeps a control the framework no longer allows. Only the document
+    // card: repainting the whole mobile shell here would also repaint screens the
+    // user may be typing into (see the typing note on #mobile-main).
+    if(typeof mobileView!=='undefined'&&mobileView==='doc'&&typeof shouldUseMobileShell==='function'&&shouldUseMobileShell()&&typeof renderMobileDoc==='function')renderMobileDoc();
 }
 
 function requirementChangeRows(items,kind){
