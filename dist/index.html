@@ -6889,11 +6889,27 @@ var mobileAssistantConvKey='skipi-assistant-conv';
 (function(){try{var raw=localStorage.getItem(mobileAssistantConvKey);if(raw)mobileAssistantMessages=JSON.parse(raw)||[];}catch(e){mobileAssistantMessages=[];}})();
 function mobileAssistantSaveConv(){try{localStorage.setItem(mobileAssistantConvKey,JSON.stringify(mobileAssistantMessages.slice(-40)));}catch(e){}}
 function mobileAssistantConsented(){try{return localStorage.getItem(mobileAssistantConsentKey)==='1';}catch(e){return false;}}
-// Re-render the chat IN PLACE for whichever view hosts it (native home or the explicit assistant
-// view) without touching mobileView — Back stack and ⌂ active state stay consistent (Supervisor Н2).
-// On the non-native shell home is the module grid, so only the assistant view re-renders there.
+// Re-render IN PLACE whichever view carries assistant-owned markup — the assistant view (chat), or the
+// native home (the demo banner above the grid, owner 07.10) — without touching mobileView, so the Back
+// stack and ⌂ active state stay consistent (Supervisor Н2). Home never renders the chat.
 function mobileAssistantRerender(){
-    if(mobileView==='assistant'||(mobileView==='home'&&isNativeMobile()))mobileRenderAssistantChat();
+    if(mobileView==='assistant')return mobileRenderAssistantChat();
+    if(mobileView==='home'&&isNativeMobile())renderMobileHome();
+}
+// Late demo flag (loadVault async get_profile_status): one self-check shared by the chat and the native
+// home; re-render in place when the flag changes.
+function mobileDemoFlagSelfCheck(){
+    try{invoke('get_profile_status').then(function(sp){
+        var d=String((sp&&sp.is_demo)||'')==='1';
+        if(d!==mobileIsDemo){mobileIsDemo=d;mobileAssistantRerender();}
+    }).catch(function(){});}catch(e){}
+}
+// The demo banner — «Create my profile» (ONB1) and, natively, «Sign in» back to the fork (D7/D11) —
+// one markup source for the chat and the native home grid.
+function mobileAssistantDemoBannerHtml(){
+    var ru=getUiLang()==='ru';
+    return '<div class="mobile-assistant-banner" data-qa="assistant-demo-banner">'+mobileEsc(ru?'Это демо-профиль: ассистент отвечает по демо-данным. Создайте свой профиль, чтобы он знал ваши документы, сертификаты и опыт.':'This is a demo profile: the assistant answers on demo data. Create your own profile so it knows your documents, certificates and experience.')+'<button class="btn btn-accent btn-sm" type="button" data-qa="assistant-demo-create-profile" onclick="mobileCreateProfile()">'+mobileEsc(ru?'Создать свой профиль':'Create my profile')+'</button>'
+        +(isNativeMobile()?'<button class="btn btn-outline btn-sm" type="button" data-qa="assistant-demo-signin" onclick="entryForkLeaveDemo()">'+mobileEsc(ru?'Войти':'Sign in')+'</button>':'')+'</div>';
 }
 function mobileAssistantSetConsent(){try{localStorage.setItem(mobileAssistantConsentKey,'1');}catch(e){}mobileAssistantRerender();}
 function mobileAssistantClear(){if(mobileAssistantBusy)return;mobileAssistantMessages=[];mobileAssistantSaveConv();mobileAssistantRerender();}
@@ -6917,8 +6933,9 @@ function mobileAssistantBubbles(){
     if(mobileAssistantBusy)h+='<div class="mobile-msg ai typing"><span class="mobile-typing"><span></span><span></span><span></span></span></div>';
     return h;
 }
-// ☰ — the single navigation control of the native home (DIRECTIVE 01.09, sketch 1). Rendered on EVERY
-// home state (consent card, demo banner, offline, chat) so the user is never locked in (Supervisor Н1).
+// ☰ — rendered under the chat on EVERY chat state (consent card, demo banner, offline, chat) so the user
+// is never locked in (Supervisor Н1). Since owner 07.10 the chat is the Assistant section, not the home;
+// ☰ keeps opening the same grid (view 'menu') there.
 function mobileMenuButtonHtml(){
     if(!isNativeMobile())return '';
     var ru=getUiLang()==='ru';
@@ -6928,12 +6945,9 @@ function mobileMenuButtonHtml(){
 // (mobileView 'assistant'). Never touches mobileView itself.
 function mobileRenderAssistantChat(){
     var ru=getUiLang()==='ru';
-    // Self-correcting demo check: the flag may arrive after the first render (loadVault async path);
-    // re-render in place when it changes.
-    try{invoke('get_profile_status').then(function(sp){
-        var d=String((sp&&sp.is_demo)||'')==='1';
-        if(d!==mobileIsDemo){mobileIsDemo=d;mobileAssistantRerender();}
-    }).catch(function(){});}catch(e){}
+    // Self-correcting demo check (shared with the native home): the flag may arrive after the first
+    // render (loadVault async path); re-render in place when it changes.
+    mobileDemoFlagSelfCheck();
     if(!mobileAssistantConsented()){
         var c='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(ru?'AI-ассистент моряка':'Seafarer AI assistant')+'</div>'
             +'<div class="mobile-card-sub" style="margin-top:8px;">'+mobileEsc(ru?'AI-ассистент по карьере и документам. Использует ваш профиль и сертификаты из приложения, чтобы отвечать точнее.':'An AI assistant for your maritime career and documents. It uses your profile and certificates from the app to answer more precisely.')+'</div>'
@@ -6942,8 +6956,7 @@ function mobileRenderAssistantChat(){
         mobileMainHtml('<div class="mobile-assistant-wrap">'+c+mobileMenuButtonHtml()+'</div>');
         return;
     }
-    var demo=mobileIsDemo?'<div class="mobile-assistant-banner" data-qa="assistant-demo-banner">'+mobileEsc(ru?'Это демо-профиль: ассистент отвечает по демо-данным. Создайте свой профиль, чтобы он знал ваши документы, сертификаты и опыт.':'This is a demo profile: the assistant answers on demo data. Create your own profile so it knows your documents, certificates and experience.')+'<button class="btn btn-accent btn-sm" type="button" data-qa="assistant-demo-create-profile" onclick="mobileCreateProfile()">'+mobileEsc(ru?'Создать свой профиль':'Create my profile')+'</button>'
-        +(isNativeMobile()?'<button class="btn btn-outline btn-sm" type="button" data-qa="assistant-demo-signin" onclick="entryForkLeaveDemo()">'+mobileEsc(ru?'Войти':'Sign in')+'</button>':'')+'</div>':'';
+    var demo=mobileIsDemo?mobileAssistantDemoBannerHtml():'';
     var offline=false; try{offline=(navigator.onLine===false);}catch(e){}
     var off=offline?'<div class="mobile-assistant-banner" data-qa="assistant-offline">'+mobileEsc(ru?'Нет сети — ассистент недоступен. Меню и модули работают.':'No network — the assistant is unavailable. The menu and modules keep working.')+'</div>':'';
     var head='<div class="mobile-assistant-head"><div style="min-width:0;"><div class="mobile-card-title">'+mobileEsc(ru?'Ассистент':'Assistant')+'</div>'
@@ -7115,8 +7128,8 @@ if(typeof window!=='undefined'&&window.addEventListener){
         mobileNavStepBack(!!(st&&st.skipiMobileNav));
     });
 }
-// Owner 05.09: the native home chat shows an honest offline banner; refresh it in place on
-// connectivity changes (the unsent draft is preserved by mobileRenderAssistantChat).
+// Owner 05.09: the chat (the Assistant section since owner 07.10) shows an honest offline banner;
+// refresh it in place on connectivity changes (the unsent draft is preserved by mobileRenderAssistantChat).
 if(typeof window!=='undefined'&&window.addEventListener){
     ['online','offline'].forEach(function(evt){
         window.addEventListener(evt,function(){ try{ if(shouldUseMobileShell())mobileAssistantRerender(); }catch(e){} });
@@ -7173,10 +7186,18 @@ function mobileMenuIconTile(qa,onclick,label,hint,svg,sub){
       +'</button>';
 }
 function renderMobileHome(){
-    // Owner 05.09 (DIRECTIVE 01.09): on the NATIVE mobile build the home screen IS the assistant chat;
-    // the module grid lives on the menu screen (renderMobileMenu). Non-native mobile shells
-    // (web-Моряк ≤720px, harnesses) keep the family home below.
-    if(isNativeMobile())return mobileRenderAssistantChat();
+    // Owner 07.10 (DECISIONS 1015): on the NATIVE mobile build the home screen IS the module grid —
+    // the menu screen. renderMobileMenu is the single source of that markup, so home delegates to it;
+    // the 01.09/05.09 assistant home is retired and Assistant is an ordinary tile on the grid.
+    // Kept from 05.09 (DECISIONS 249) / ONB1: a demo vault's way out — «Create my profile» / «Sign in» —
+    // stays on the FIRST screen, as the same banner above the grid (one markup source with the chat).
+    // Non-native mobile shells (web-Моряк ≤720px, harnesses) keep the family home below.
+    if(isNativeMobile()){
+        mobileDemoFlagSelfCheck();
+        renderMobileMenu();
+        if(mobileIsDemo){var main=document.getElementById('mobile-main');if(main)main.innerHTML=mobileAssistantDemoBannerHtml()+main.innerHTML;}
+        return;
+    }
     // Family mobile home (card 12): hero + the 11-module grid. The grid markup
     // comes verbatim from #mobile-home-modules-tpl (single source of truth the
     // presence contract also reads); localization and honest per-module status

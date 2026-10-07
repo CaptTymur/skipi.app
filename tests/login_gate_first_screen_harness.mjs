@@ -217,8 +217,10 @@ const popstates = [...html.matchAll(/addEventListener\(\s*['"]popstate['"]\s*,\s
 ok(popstates.some((m) => /_efHistMark/.test(m[1]) && /entryForkGateBack\(\)/.test(m[1])), 'G7: a popstate listener on our marker returns from the gate to the fork (Android Back)');
 const leave = fnBody(html, 'entryForkLeaveDemo') || '';
 ok(/close_vault',\s*\{\s*forget\s*:\s*true\s*\}/.test(leave) && /_loginGatePending\s*=\s*null/.test(leave) && /showEntryFork\(\)/.test(leave) && !/showLoginGate\(\)/.test(leave), 'G7: leaving the demo closes + forgets it and lands on the fork with NO vault parked (the token is never written into the demo)');
-const banner = fnBody(html, 'mobileRenderAssistantChat') || '';
+// Owner 07.10 (1015): the banner moved into one builder shared by the chat and the native home grid.
+const banner = fnBody(html, 'mobileAssistantDemoBannerHtml') || '';
 ok(/isNativeMobile\(\)\s*\?[^:]*data-qa="assistant-demo-signin"[^:]*entryForkLeaveDemo\(\)/.test(banner), 'G7: the demo banner offers the way back (assistant-demo-signin → entryForkLeaveDemo) natively only');
+ok(/mobileAssistantDemoBannerHtml\(\)/.test(fnBody(html, 'mobileRenderAssistantChat') || '') && /mobileAssistantDemoBannerHtml\(\)/.test(fnBody(html, 'renderMobileHome') || ''), 'G7: that single banner is what both the chat and the native home grid render (one source, owner 07.10)');
 const logout = fnBody(html, 'appLogoutToGate') || '';
 ok(/if\s*\(\s*isNativeMobile\(\)\s*\)\s*\{[\s\S]*?showEntryFork\(\);[\s\S]*?return;[\s\S]*?\}[\s\S]*?showLoginGate\(\)/.test(logout), 'G7: Sign out → fork natively (one rule: no session → fork), the gate on desktop');
 ok(/_efOpenVaultIsDemo\(\)/.test(logout) && /close_vault',\s*\{\s*forget\s*:\s*true\s*\}/.test(logout), 'G7: Sign out while the demo is open closes + forgets it (no token into the demo)');
