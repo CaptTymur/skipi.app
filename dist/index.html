@@ -836,6 +836,8 @@ body.mobile-mode .skipi-assistant-panel { width:100vw; height:100dvh; max-width:
 .welcome h1 { font-size:32px; color:var(--accent); margin-bottom:8px; }
 .welcome p { color:var(--text2); margin-bottom:32px; font-size:14px; }
 .welcome .btn { margin:0 6px; padding:8px 20px; font-size:14px; }
+/* №707 S1: while the account restore offer is on screen the wide welcome hides its static choice */
+#scr-welcome.account-restoring>.btn,#scr-welcome.account-restoring>#welcome-recent,#scr-welcome.account-restoring>#welcome-folder-hint,#scr-welcome.account-restoring>#welcome-demo-link,#scr-welcome.account-restoring>div[style*="flex"]{display:none !important;}
 
 /* Setup */
 .setup { max-width:360px; margin:40px auto; }
@@ -4016,11 +4018,63 @@ async function init() {
     initNoVaultLanding(hadVaultPath);
 }
 // Startup landing when no vault could be opened (runs only once signed in).
-function initNoVaultLanding(hadVaultPath){
-    // A signed-in account and a local profile are separate. Keep the create/open
-    // choice visible; login alone must not start a form or imply cloud consent.
+async function initNoVaultLanding(hadVaultPath){
+    // A signed-in account and a local profile are separate: login alone must not
+    // start a form or imply cloud consent — consent is asked explicitly before restore
+    // (№193). One account — one profile (OWNER (1023), 08.10, №707 S1): with a live
+    // session and no open profile the landing itself offers the account restore
+    // (consent → download, or profile setup when the account is empty); the
+    // create/open/demo choice stays the fallback — consent declined, download failed,
+    // web shell, or no live restore context.
+    var outcome=await accountRestoreLanding();
+    if(outcome==='restored'||outcome==='empty')return;
     showWelcome();
     // Jobs polling still starts only after opening an opted-in seafarer profile.
+}
+// №707 S1: the automatic restore offer. Returns the restore outcome ('restored' |
+// 'empty' | 'cancel' | 'error') or null when the auto path does not apply. The trigger is
+// the STATE logged_in && !profile_open with a live restore_context (N4) — not the login
+// event — so a cached session on a fresh device gets the same offer at startup.
+var _accountRestoreAutoTried=null;
+async function accountRestoreLanding(){
+    if(window.__SKIPI_WEBDESKTOP__)return null;
+    var status=null;
+    try{status=await invoke('get_account_sync_status');}catch(e){logError('account_restore_landing',e);return null;}
+    if(!status||status.logged_in!==true||status.profile_open!==false||!status.restore_context)return null;
+    // D7: one automatic attempt per sign-in context per process. A declined consent or a
+    // failed download hands the explicit «Connect account data» button back — never a loop
+    // of consent prompts, and never a server token per app start.
+    if(_accountRestoreAutoTried===status.restore_context)return null;
+    _accountRestoreAutoTried=status.restore_context;
+    showAccountRestoreLanding(status);
+    return await restoreAccountProfile();
+}
+// The waiting screen behind the consent dialog and the download. RU/EN, no "vault" wording.
+function showAccountRestoreLanding(status){
+    var ru=getUiLang()==='ru';
+    var title=ru?'Загружаю профиль из аккаунта…':'Downloading your profile from the account…';
+    var sub=ru?'После вашего согласия профиль и документы появятся на этом устройстве. Если в аккаунте ещё нет данных, откроется создание профиля.':'After your consent your profile and documents appear on this device. If the account has no data yet, profile setup opens.';
+    show('scr-welcome');hide('scr-setup');hide('scr-content');hide('ribbon');hide('left-panel');hide('tabs');hide('statusbar');
+    var mb=document.getElementById('modules-bar');if(mb)mb.style.display='none';
+    var html='<div class="mobile-hero" data-account-restore-landing><h1>'+esc(title)+'</h1><p>'+esc(sub)+'</p>'+appAccountControlsHtml()+'</div>';
+    if(shouldUseMobileShell()){
+        mobileView='home';
+        try{updateTitlebar();}catch(e){}
+        mobileSetSub(ru?'Профиль моряка':'Seafarer profile');
+        mobileSetBottomNav(false);
+        mobileMainHtml(html);
+    }else{
+        var welcome=document.getElementById('scr-welcome');
+        if(welcome)welcome.classList.add('account-restoring');
+        var account=document.getElementById('welcome-account-controls');
+        if(!account&&welcome){account=document.createElement('div');account.setAttribute('id','welcome-account-controls');account.style.cssText='max-width:520px;margin:20px auto;text-align:left;';welcome.appendChild(account);}
+        if(account)account.innerHTML=html;
+    }
+    refreshAppAccountControls();
+}
+function accountRestoreLandingReset(){
+    var welcome=document.getElementById('scr-welcome');
+    if(welcome)welcome.classList.remove('account-restoring');
 }
 
 // ========== Profile taxonomy (STCW levels, vessel tree, positions) ==========
@@ -4342,7 +4396,7 @@ async function onType(v){
     // All other entity types are disabled in v0.4.11; no-op.
     showToast('This entity type is coming soon — only Seafarer is available right now.','info');
 }
-function showWelcome(){show('scr-welcome');hide('scr-setup');hide('scr-content');hide('ribbon');hide('left-panel');hide('tabs');hide('statusbar');var mb=document.getElementById('modules-bar');if(mb)mb.style.display='none';renderWelcomeRecent();renderMobileWelcome();renderWelcomeAccount();}
+function showWelcome(){accountRestoreLandingReset();show('scr-welcome');hide('scr-setup');hide('scr-content');hide('ribbon');hide('left-panel');hide('tabs');hide('statusbar');var mb=document.getElementById('modules-bar');if(mb)mb.style.display='none';renderWelcomeRecent();renderMobileWelcome();renderWelcomeAccount();}
 
 function mobileViewportLikely(){return window.matchMedia&&window.matchMedia('(max-width: 720px)').matches;}
 function shouldUseMobileShell(){return hostPlatform==='android'||hostPlatform==='ios'||mobileViewportLikely();}
@@ -18030,33 +18084,41 @@ function accountSyncSectionHtml(){
     return '<div class="settings-section"><section id="one-account-sync" style="padding:12px 0;">'+(getUiLang()==='ru'?'Проверяю состояние…':'Checking status…')+'</section></div>';
 }
 var accountRestoreBusy=false;
+var accountRestoreLastError='';
 async function restoreAccountProfile(){
-    if(accountRestoreBusy||window.__SKIPI_WEBDESKTOP__)return;
-    var ru=getUiLang()==='ru';accountRestoreBusy=true;
+    if(accountRestoreBusy||window.__SKIPI_WEBDESKTOP__)return null;
+    var ru=getUiLang()==='ru';accountRestoreBusy=true;accountRestoreLastError='';
     try{
         var before=await invoke('get_account_sync_status');
         if(before.logged_in!==true)throw new Error(ru?'Войдите в аккаунт, чтобы подключить его данные.':'Sign in to connect your account data.');
         if(before.profile_open!==false)throw new Error(ru?'Закройте текущий профиль перед загрузкой данных в новый профиль.':'Close the current profile before downloading data into a new profile.');
         if(!before.restore_context)throw new Error(oneAccountSyncTexts().contextChanged);
         var consent=await oneAccountSyncRequestConsent('restore',before);
-        if(!consent)return;
+        if(!consent)return 'cancel';
         var after=await invoke('get_account_sync_status');
         if(after.restore_context!==before.restore_context||after.profile_open!==false||after.logged_in!==true||after.consent_notice_version!==consent.notice_version)throw new Error(oneAccountSyncTexts().contextChanged);
         var result=await invoke('restore_account_profile',{consent:true,restoreContext:before.restore_context,consentNotice:consent});
         if(result.outcome==='empty'){
             showToast(ru?'В аккаунте пока нет данных профиля. Создайте профиль на этом устройстве.':'This account has no profile data yet. Create a profile on this device.','info');
             if(shouldUseMobileShell())await mobileCreateProfile();else await startSeafarerWizard();
+            return 'empty';
         }else if(result.outcome==='restored'){
             await loadVault(result.vault);
             showToast(ru?'Данные аккаунта загружены. Состояние доступно во вкладке «Синхронизация».':'Account data downloaded. Check its status in the Sync tab.','success');
+            return 'restored';
         }else throw new Error(ru?'Не удалось подтвердить результат восстановления.':'Could not verify the restoration result.');
-    }catch(e){logError('account_restore',e);showToast(String(e),'error');}
+    }catch(e){
+        // D3/D6: a failure is a failure — shown beside the action on the landing, never read as
+        // «the account is empty» and never turned into the wizard.
+        logError('account_restore',e);accountRestoreLastError=String((e&&e.message)||e||'');showToast(String(e),'error');return 'error';
+    }
     finally{accountRestoreBusy=false;}
 }
 function accountRestoreActionHtml(){
     if(window.__SKIPI_WEBDESKTOP__)return '';
     var ru=getUiLang()==='ru';
-    return '<button class="btn btn-accent" type="button" onclick="restoreAccountProfile()">'+(ru?'Подключить данные аккаунта':'Connect account data')+'</button><p class="section-desc">'+(ru?'Если вы уже пользовались этим аккаунтом, загрузите профиль и документы без повторного заполнения анкеты.':'If you have used this account before, download your profile and documents without filling in the form again.')+'</p>';
+    return '<button class="btn btn-accent" type="button" onclick="restoreAccountProfile()">'+(ru?'Подключить данные аккаунта':'Connect account data')+'</button><p class="section-desc">'+(ru?'Если вы уже пользовались этим аккаунтом, загрузите профиль и документы без повторного заполнения анкеты.':'If you have used this account before, download your profile and documents without filling in the form again.')+'</p>'
+        +(accountRestoreLastError?'<p class="section-desc" data-account-restore-error style="color:var(--red);">'+esc((ru?'Не удалось загрузить данные аккаунта: ':'Could not download account data: ')+accountRestoreLastError)+'</p>':'');
 }
 function renderWelcomeAccount(){
     var welcome=document.getElementById('scr-welcome');if(!welcome)return;
