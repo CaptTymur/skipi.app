@@ -6428,8 +6428,8 @@ for(const lang of ['en','ru']){
   doc.getElementById('lg-email').value='synthetic@example.invalid';doc.getElementById('lg-password').value='synthetic-only';
   await s.doAppLogin();ok(welcome===1,'193: successful sign-in without a saved continuation has reachable profile actions');
   s.setTimeout=(f)=>{f();return 1;};welcome=0;
-  s.initNoVaultLanding(false);
-  ok(welcome===1&&create===0,'193: fresh login keeps create/open choice visible until the user chooses');
+  await s.initNoVaultLanding(false);
+  ok(welcome===1&&create===0,'193: fresh login keeps create/open choice visible until the user chooses (status without restore context → the choice, as before)');
 }
 {
   section('193 account journey — sign-out closes either settings shell and preserves profile data');
@@ -6558,6 +6558,147 @@ for(const lang of ['en','ru']){
   releaseStatus({enabled:true});await sync;
   ok(!calls.includes('sync_account_now'),'193: a late status response cannot issue sync while restore is active');
   s.accountRestoreBusy=false;
+}
+
+// №707 S1 «one account — one profile» (OWNER (1023), 08.10; TASKCARD-2026-10-08-seafarer-707-s1-auto-sync).
+// The signed-in landing WITHOUT an open profile offers the account restore itself through the
+// existing restoreAccountProfile() flow: one explicit consent (№193) → 'restored' loads the
+// profile, 'empty' opens the wizard; consent declined / download failed / web shell / no live
+// restore context → the create/open/demo landing as before (the error beside the restore action).
+// Call sites covered (Supervisor audit B.1): init() → initNoVaultLanding (S1-1), doAppLogin →
+// _loginGateNext (S1-2), accountFirstSignIn's own continuation (S1-7), the welcome renderers behind
+// the fallback (S1-3/S1-4), the wide (desktop) welcome (S1-10). Cancel condition of these drills: S1b
+// or a later owner slice that moves the landing again; until then they are drill-invariants.
+const S1_NOTICE_VERSION = (HTML.match(/var accountSyncNotice=\{"version":"([^"]+)"/) || [])[1] || '';
+const s1Status = (extra) => Object.assign({ consent_notice_version: S1_NOTICE_VERSION, enabled: false, state: 'disabled', conflicts: [], profile_open: false, logged_in: true, restore_context: 'synthetic-restore-context', account_email: 'synthetic@example.invalid' }, extra || {});
+// efBoot + a consent stub installed BEFORE init() resumes (the VM DOM has no insertBefore for the
+// real two-checkbox dialog; the real dialog is covered by the 193 restore matrix below).
+async function s1Boot(map, consent, opts) {
+  const app = bootMobile(opts || {});
+  const calls = [];
+  const base = efInvoke(map || {}, 'android');
+  app.sandbox.invoke = async (cmd, args) => { calls.push([cmd, args]); return base(cmd, args); };
+  app.sandbox.showDashboard = async () => {};
+  const consents = [];
+  app.sandbox.uiConfirm = async (...a) => { consents.push(a); return consent(a); };
+  const spies = {};
+  for (const name of ['showEntryFork', 'showLoginGate', 'renderMobileShell', 'showWelcome', 'initNoVaultLanding', 'mobileStartVaultWizard', 'showToast', 'err', 'loadVault']) {
+    spies[name] = [];
+    const orig = app.sandbox[name];
+    if (typeof orig !== 'function') continue;
+    app.sandbox[name] = function (...a) { spies[name].push(a); return orig.apply(this, a); };
+  }
+  await efSettle();
+  return Object.assign(app, { calls, spies, consents });
+}
+{
+  section('707 S1 — signed-in start without a profile: the landing itself opens the account restore (init path)');
+  let release = null;
+  const app = await s1Boot({ app_login_status: { logged_in: true, pending: true, email: 'synthetic@example.invalid' }, get_account_sync_status: () => s1Status(), restore_account_profile: { outcome: 'restored', vault: EF_REAL } }, () => new Promise((r) => { release = r; }));
+  const { doc, spies, calls } = app;
+  ok(spies.initNoVaultLanding.length === 1, 'S1-1: init() reached initNoVaultLanding exactly once (the G8 sites are untouched)');
+  ok(spies.showEntryFork.length === 0 && spies.showLoginGate.length === 0, 'S1-1: no fork, no gate — the session is live');
+  ok(spies.showWelcome.length === 0 && !mobileHtml(doc).includes('mobileCreateProfile()'), 'S1-1: no create/open/demo fork before the consent decision');
+  ok(mobileHtml(doc).includes('Downloading your profile from the account'), 'S1-1: the waiting screen is the first screen a signed-in seafarer sees');
+  ok(mobileHtml(doc).includes('appLogoutToGate()'), 'S1-1: sign-out stays reachable on the waiting screen');
+  ok(app.consents.length === 1 && calls.some(([c]) => c === 'get_account_sync_status') && !calls.some(([c]) => c === 'restore_account_profile'), 'S1-1: status read and ONE consent dialog open, no restoration request before explicit consent');
+  ok(!calls.some(([c]) => c === 'enable_account_sync' || c === 'sync_account_now'), 'S1-1 (№193): sign-in is still not sync consent');
+  ok(typeof release === 'function', 'S1-1: the consent dialog was opened by the landing'); if (typeof release === 'function') release(true); await efSettle();
+  const req = calls.find(([c]) => c === 'restore_account_profile');
+  ok(!!req && req[1].consent === true && req[1].restoreContext === 'synthetic-restore-context' && req[1].consentNotice && req[1].consentNotice.sync === true && req[1].consentNotice.health === true && req[1].consentNotice.notice_version === S1_NOTICE_VERSION, 'S1-1: after consent the EXISTING restore caller sends the real consent binding');
+  ok(spies.loadVault.length === 1 && spies.renderMobileShell.length >= 1 && spies.showWelcome.length === 0 && spies.mobileStartVaultWizard.length === 0, 'S1-1: a populated account lands on the native home — no fork, no wizard');
+}
+{
+  section('707 S1 — sign-in from the fork without a profile: the continuation restores, never shows the fork (doAppLogin path)');
+  let signedIn = false;
+  const app = await s1Boot({ app_login: () => { signedIn = true; return {}; }, app_login_status: () => ({ logged_in: signedIn, pending: signedIn, email: signedIn ? 'synthetic@example.invalid' : '' }), get_account_sync_status: () => s1Status({ logged_in: signedIn }), restore_account_profile: { outcome: 'restored', vault: EF_REAL } }, () => true);
+  const { sandbox: s, doc, spies, calls } = app;
+  ok(efForkShown(doc), 'S1-2: cold start without a session shows the entry fork (canon (295))');
+  s.entryForkSignIn();
+  doc.getElementById('lg-email').value = 'synthetic@example.invalid';
+  doc.getElementById('lg-password').value = 'synthetic-only';
+  await s.doAppLogin(); await efSettle();
+  ok(!efGateShown(doc), 'S1-2: successful sign-in closes the gate');
+  ok(spies.initNoVaultLanding.length === 1 && app.consents.length === 1, 'S1-2: the saved continuation runs the landing once → one consent dialog');
+  ok(calls.filter(([c]) => c === 'restore_account_profile').length === 1 && spies.loadVault.length === 1, 'S1-2: one restoration request, the profile is loaded');
+  ok(spies.showWelcome.length === 0 && !mobileHtml(doc).includes('mobileCreateProfile()'), 'S1-2: the create/open/demo fork never appeared');
+  ok(!calls.some(([c]) => c === 'enable_account_sync' || c === 'sync_account_now'), 'S1-2 (№193): sign-in is not sync consent');
+}
+{
+  section('707 S1 — consent declined: the previous landing with every door, no request, no retry loop (D7)');
+  const app = await s1Boot({ app_login_status: { logged_in: true, pending: true, email: 'synthetic@example.invalid' }, get_account_sync_status: () => s1Status(), restore_account_profile: { outcome: 'restored', vault: EF_REAL } }, () => false);
+  const { sandbox: s, doc, spies, calls } = app;
+  ok(app.consents.length === 1 && !calls.some(([c]) => c === 'restore_account_profile'), 'S1-3: declined consent sends no restoration request');
+  const h = mobileHtml(doc);
+  ok(spies.showWelcome.length === 1 && h.includes('mobileCreateProfile()') && h.includes('mobileOpenExistingVault()') && h.includes('loadDemoVault()') && h.includes('restoreAccountProfile()'), 'S1-3: the landing falls back to create / open / demo / connect-account — every door reachable');
+  ok(spies.loadVault.length === 0 && spies.mobileStartVaultWizard.length === 0, 'S1-3: declining is neither a restore nor a wizard');
+  ok(!calls.some(([c]) => c === 'enable_account_sync' || c === 'sync_account_now'), 'S1-3 (№193): declining never enables sync');
+  await s.initNoVaultLanding(false); await efSettle();
+  ok(app.consents.length === 1 && spies.showWelcome.length === 2 && !calls.some(([c]) => c === 'restore_account_profile'), 'S1-3 (D7): the same sign-in context is not asked again automatically — the explicit button is the retry');
+  const t0 = app.consents.length;
+  app.sandbox.invoke = async (cmd, args) => { calls.push([cmd, args]); return cmd === 'get_account_sync_status' ? s1Status({ restore_context: 'synthetic-restore-context-2' }) : efInvoke({ app_login_status: { logged_in: true, pending: true }, restore_account_profile: { outcome: 'restored', vault: EF_REAL } })(cmd, args); };
+  await s.initNoVaultLanding(false); await efSettle();
+  ok(app.consents.length === t0 + 1, 'S1-3 (D7): a NEW sign-in context (fresh login) is offered the restore again');
+}
+{
+  section('707 S1 — download failed (offline / 429 / server): landing with the error beside the action, NEVER the wizard (D3/D6/W5)');
+  for (const lang of ['en', 'ru']) {
+    const app = await s1Boot({ app_login_status: { logged_in: true, pending: true, email: 'synthetic@example.invalid' }, get_account_sync_status: () => s1Status(), restore_account_profile: () => { throw new Error('synthetic offline'); } }, () => true, { seed: { 'skipi-ui-lang': lang } });
+    const { doc, spies, calls } = app;
+    ok(calls.filter(([c]) => c === 'restore_account_profile').length === 1, 'S1-4 ' + lang + ': one restoration request was made');
+    const h = mobileHtml(doc);
+    ok(spies.showWelcome.length === 1 && h.includes('mobileCreateProfile()') && h.includes('restoreAccountProfile()'), 'S1-4 ' + lang + ': failure falls back to the landing with the explicit restore action');
+    ok(h.includes('data-account-restore-error') && h.includes('synthetic offline'), 'S1-4 ' + lang + ': the error text sits beside the action, not only in a toast');
+    ok(spies.mobileStartVaultWizard.length === 0 && spies.loadVault.length === 0 && !calls.some(([c]) => c === 'create_vault' || c === 'create_profile_vault'), 'S1-4 ' + lang + ': a failed download never masquerades as an empty account (no wizard, no scaffold)');
+  }
+}
+{
+  section('707 S1 — genuinely empty account: straight into profile setup, no fork');
+  const app = await s1Boot({ app_login_status: { logged_in: true, pending: true, email: 'synthetic@example.invalid' }, get_account_sync_status: () => s1Status(), restore_account_profile: { outcome: 'empty' } }, () => true);
+  const { spies, calls } = app;
+  ok(calls.filter(([c]) => c === 'restore_account_profile').length === 1, 'S1-5: the empty verdict comes from a real restoration result');
+  ok(spies.mobileStartVaultWizard.length === 1 && spies.loadVault.length === 0, 'S1-5: an empty account opens the wizard once (through mobileCreateProfile → live session)');
+  ok(spies.showWelcome.length === 0, 'S1-5: no create/open/demo fork on the way to the wizard');
+}
+{
+  section('707 S1 — "Create profile" chosen before sign-in keeps its own errand (accountFirstSignIn continuation)');
+  let signedIn = false;
+  const app = await s1Boot({ app_login: () => { signedIn = true; return {}; }, app_login_status: () => ({ logged_in: signedIn, pending: signedIn }), get_account_sync_status: () => s1Status({ logged_in: signedIn }), restore_account_profile: { outcome: 'restored', vault: EF_REAL } }, () => true);
+  const { sandbox: s, doc, spies, calls } = app;
+  s.setTimeout = (f) => { f(); return 1; };
+  await s.mobileCreateProfile(); await efSettle();
+  await s.accountFirstSignIn(); await efSettle();
+  doc.getElementById('lg-email').value = 'synthetic@example.invalid';
+  doc.getElementById('lg-password').value = 'synthetic-only';
+  await s.doAppLogin(); await efSettle();
+  ok(spies.mobileStartVaultWizard.length === 1 && spies.initNoVaultLanding.length === 0, 'S1-7: the explicit create errand finishes in the wizard, the auto restore landing is not involved');
+  ok(!calls.some(([c]) => c === 'restore_account_profile') && app.consents.length === 0, 'S1-7: no restoration request and no consent dialog on the create errand');
+}
+{
+  section('707 S1 — the auto path is off for the web shell and for a session without a live restore context');
+  const web = await s1Boot({ app_login_status: { logged_in: true, pending: true }, get_account_sync_status: () => s1Status() }, () => true);
+  web.sandbox.__SKIPI_WEBDESKTOP__ = true; web.calls.length = 0; web.consents.length = 0;
+  await web.sandbox.initNoVaultLanding(false); await efSettle();
+  ok(web.spies.showWelcome.length === 2 && web.consents.length === 0 && !web.calls.some(([c]) => c === 'get_account_sync_status' || c === 'restore_account_profile'), 'S1-8: the web shell shows the landing without touching the native sync commands');
+  const bare = await s1Boot({ app_login_status: { logged_in: true, pending: true } }, () => true);
+  ok(bare.spies.showWelcome.length === 1 && bare.consents.length === 0 && !bare.calls.some(([c]) => c === 'restore_account_profile') && mobileHtml(bare.doc).includes('mobileCreateProfile()'), 'S1-9: a parked login without restore_context lands on the choice as before (D5 shape)');
+}
+{
+  section('707 S1 — wide (desktop) welcome: the static fork is hidden behind the waiting screen and returns on fallback');
+  let release = null;
+  const app = bootApp({ platform: 'linux' });
+  const calls = [];
+  app.sandbox.invoke = async (cmd, args) => { calls.push([cmd, args]); return efInvoke({ app_login_status: { logged_in: true, pending: true, email: 'synthetic@example.invalid' }, get_account_sync_status: () => s1Status() }, 'linux')(cmd, args); };
+  app.sandbox.showDashboard = async () => {};
+  app.sandbox.uiConfirm = async () => new Promise((r) => { release = r; });
+  let welcomes = 0; const origWelcome = app.sandbox.showWelcome; app.sandbox.showWelcome = function (...a) { welcomes++; return origWelcome.apply(this, a); };
+  await efSettle();
+  const { doc, sandbox: s } = app;
+  const welcome = doc.getElementById('scr-welcome');
+  ok(welcome && welcome.classList.contains('account-restoring') && welcomes === 0, 'S1-10: the wide welcome is in the waiting state (static create/open/demo hidden by class) before the consent decision');
+  ok(String((doc.getElementById('welcome-account-controls') || {}).innerHTML || '').includes('Downloading your profile from the account'), 'S1-10: the waiting text is rendered in the account block');
+  ok(typeof release === 'function', 'S1-10: the consent dialog was opened by the wide landing'); if (typeof release === 'function') release(false); await efSettle();
+  ok(!welcome.classList.contains('account-restoring') && welcomes === 1 && !calls.some(([c]) => c === 'restore_account_profile'), 'S1-10: declining restores the full wide welcome (class cleared by showWelcome)');
 }
 {
   section('193 diagnostics — visible errors survive reload, redact credentials and travel in prepared drafts');
