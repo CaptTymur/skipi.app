@@ -386,6 +386,9 @@ pub fn position_id_from_rank_label(value: &str) -> Option<&'static str> {
         "chiefmate" | "1stofficer" | "firstofficer" | "1o" | "co" => Some("chief_officer"),
         "secondmate" | "2ndofficer" | "2officer" | "2o" => Some("second_officer"),
         "thirdmate" | "3rdofficer" | "3officer" | "3o" => Some("third_officer"),
+        "2ndengineer" | "2engineer" | "2e" => Some("second_engineer"),
+        "3rdengineer" | "3engineer" | "3e" => Some("third_engineer"),
+        "4thengineer" | "4engineer" | "4e" => Some("fourth_engineer"),
         "juniorofficer" | "jrofficer" | "juniordeckofficer" => Some("junior_officer"),
         "juniorengineer" | "jrengineer" | "juniorengineofficer" => Some("junior_engineer"),
         "cadet" | "trainee" => Some("cadet"),
@@ -926,6 +929,67 @@ mod tests {
         let pumpman: Vec<&str> = position_docs("pumpman").into_iter().map(|t| t.id).collect();
         assert!(pumpman.contains(&"able_seafarer_deck"));
         assert!(pumpman.contains(&"rating_navwatch"));
+    }
+
+    // №571 — the dropdown of the profile shows `position_display_label` («2nd
+    // Engineer»), and the readiness gate (commands/profile.rs
+    // `template_change_items`) resolves that very string back through
+    // `position_id_from_rank_label`. A label the list offers but the resolver
+    // does not know leaves the seafarer with a phantom document slot. Red on
+    // second/third/fourth_engineer until the alias table knows the numeric
+    // engineer forms.
+    #[test]
+    fn every_position_resolves_from_its_display_label() {
+        let mut unresolved: Vec<(&str, &str)> = Vec::new();
+        for p in positions() {
+            let shown = position_display_label(p.id).unwrap_or(p.label);
+            if position_id_from_rank_label(shown) != Some(p.id) {
+                unresolved.push((p.id, shown));
+            }
+        }
+        assert!(
+            unresolved.is_empty(),
+            "display labels that do not resolve back to their position: {unresolved:?}"
+        );
+    }
+
+    // The catalog half of the same invariant. The resolver walks `positions()`
+    // by label itself, so this cannot go red on its own today; it is kept so a
+    // future label that the normalisation mangles is caught, not as
+    // failing-first evidence.
+    #[test]
+    fn every_position_resolves_from_its_catalog_label() {
+        for p in positions() {
+            assert_eq!(
+                position_id_from_rank_label(p.label),
+                Some(p.id),
+                "catalog label {:?} of {:?}",
+                p.label,
+                p.id
+            );
+        }
+    }
+
+    // The three numeric engineer forms, in the spellings the list and the
+    // crewing side use. Nothing beyond the three mechanics (№571).
+    #[test]
+    fn numeric_engineer_forms_resolve_to_the_engineer_positions() {
+        for (spelling, id) in [
+            ("2nd Engineer", "second_engineer"),
+            ("2nd engineer", "second_engineer"),
+            ("2 Engineer", "second_engineer"),
+            ("2E", "second_engineer"),
+            ("3rd Engineer", "third_engineer"),
+            ("3 Engineer", "third_engineer"),
+            ("3E", "third_engineer"),
+            ("4th Engineer", "fourth_engineer"),
+            ("4 Engineer", "fourth_engineer"),
+            ("4E", "fourth_engineer"),
+        ] {
+            assert_eq!(position_id_from_rank_label(spelling), Some(id), "{spelling:?}");
+        }
+        // No new interpretations ride along: a first engineer is still unknown.
+        assert_eq!(position_id_from_rank_label("1st Engineer"), None);
     }
 }
 

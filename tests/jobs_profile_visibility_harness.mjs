@@ -4224,6 +4224,136 @@ for (const [state, receipt] of [['acknowledgement', RECEIPT_ACK], ['already_on_r
 }
 console.log('  --- end evidence ---');
 
+
+// =============================================================================
+// RA. the rank alias table — what the dropdown offers, the resolver knows (№571)
+// =============================================================================
+// The Rank field of the profile is a hard dropdown (`RANKS` in dist). What the
+// seafarer picks is sent as a string to the Rust side, where
+// `profiles::position_id_from_rank_label` turns it into a position id; the
+// readiness gate (`commands/profile.rs` `template_change_items`) builds the
+// document slots from THAT id. A label the list offers but the resolver does
+// not know is a seafarer without slots — «2nd Engineer» was exactly that.
+//
+// This is a SOURCE CONTRACT between two files that never meet at run time:
+// `dist/index.html` (the list) and `src-tauri/src/profiles.rs` (the resolver).
+// The resolver is reproduced here from its own source — the catalog labels,
+// the display-label overrides and the keys of the alias match-arms — and the
+// normalisation is a copy of `normalized_lookup_key` (ASCII alphanumerics,
+// lower-cased). A copy may drift; so it is calibrated name-by-name against the
+// expectations the Rust test module itself states (RA5), not against prose.
+section('RA. the rank alias table — what the dropdown offers, the resolver knows (№571)');
+
+const profilesRsSrc = (allRustSrc.find(([f]) => f.endsWith('src/profiles.rs')) || ['', ''])[1];
+const profilesRsTestAt = profilesRsSrc.indexOf('#[cfg(test)]');
+const profilesRsProduct = profilesRsTestAt >= 0 ? profilesRsSrc.slice(0, profilesRsTestAt) : profilesRsSrc;
+const profilesRsTests = profilesRsTestAt >= 0 ? profilesRsSrc.slice(profilesRsTestAt) : '';
+ok(profilesRsProduct.length > 1000 && profilesRsTests.length > 100,
+  'RA0 profiles.rs was found and its product half is separated from its test module');
+
+// --- the list, from dist --------------------------------------------------
+const ranksLiteral = (html.match(/var RANKS\s*=\s*\[([\s\S]*?)\];/) || [, ''])[1];
+const RANKS_DIST = (() => { try { return JSON.parse('[' + ranksLiteral.replace(/,\s*$/, '') + ']'); } catch (e) { return []; } })();
+ok(RANKS_DIST.length >= 30 && RANKS_DIST.includes('2nd Engineer') && RANKS_DIST.includes('Other'),
+  `RA1 the Rank dropdown is the one static list \`RANKS\` of dist (${RANKS_DIST.length} labels)`);
+
+// --- the resolver, from its source ------------------------------------------
+// positions(): every `id: "…", label: "…"` pair of the catalog.
+const positionsBody = String(rustFnBody(profilesRsProduct, 'positions') || '');
+const RA_CATALOG = [...positionsBody.matchAll(/id:\s*"([a-z_]+)",\s*label:\s*"([^"]+)"/g)].map((m) => ({ id: m[1], label: m[2] }));
+// position_display_label(): the explicit overrides, everything else is the catalog label.
+const displayBody = String(rustFnBody(profilesRsProduct, 'position_display_label') || '');
+const DISPLAY_OVERRIDE = Object.fromEntries([...displayBody.matchAll(/"([a-z_]+)"\s*=>\s*Some\("([^"]+)"\)/g)].map((m) => [m[1], m[2]]));
+// position_id_from_rank_label(): the alias match-arms `"k1" | "k2" => Some("id")`.
+const resolverBody = String(rustFnBody(profilesRsProduct, 'position_id_from_rank_label') || '');
+const ALIAS = {};
+for (const m of resolverBody.matchAll(/((?:"[a-z0-9]+"\s*\|\s*)*"[a-z0-9]+")\s*=>\s*Some\("([a-z_]+)"\)/g)) {
+  for (const k of m[1].match(/"([a-z0-9]+)"/g).map((q) => q.slice(1, -1))) ALIAS[k] = m[2];
+}
+ok(RA_CATALOG.length >= 20 && RA_CATALOG.some((p) => p.id === 'fourth_engineer'),
+  `RA2a the catalog positions() was read from source (${RA_CATALOG.length} positions)`);
+ok(DISPLAY_OVERRIDE.second_engineer === '2nd Engineer' && DISPLAY_OVERRIDE.second_officer === '2nd Officer',
+  `RA2b the display-label overrides were read from source (${Object.keys(DISPLAY_OVERRIDE).length} overrides)`);
+ok(Object.keys(ALIAS).length >= 20 && ALIAS['2ndofficer'] === 'second_officer',
+  `RA2c the alias match-arms were read from source (${Object.keys(ALIAS).length} keys)`);
+ok(resolverBody.includes('normalized_lookup_key(p.id) == key || normalized_lookup_key(p.label) == key'),
+  'RA2d the resolver still walks the catalog by id and by label before the alias table (the shape this contract reproduces)');
+
+// --- the normalisation, copied; then calibrated ----------------------------
+// `normalized_lookup_key`: trim, keep ASCII alphanumerics, lower-case.
+function rankKey(s) {
+  return String(s).trim().split('').filter((c) => /[A-Za-z0-9]/.test(c)).join('').toLowerCase();
+}
+function resolveRankLabel(s) {
+  const key = rankKey(s);
+  if (!key) return null;
+  for (const p of RA_CATALOG) if (rankKey(p.id) === key || rankKey(p.label) === key) return p.id;
+  return Object.prototype.hasOwnProperty.call(ALIAS, key) ? ALIAS[key] : null;
+}
+const displayLabelOf = (p) => DISPLAY_OVERRIDE[p.id] || p.label;
+
+// RA3 — the copy of the normalisation is run on EVERY real string (catalog
+// labels, display labels, the whole list) and must yield lower-case ASCII
+// alphanumerics only; a non-ASCII label would silently become a shorter key.
+const everyRealString = [...RA_CATALOG.map((p) => p.label), ...RA_CATALOG.map(displayLabelOf), ...RANKS_DIST];
+ok(everyRealString.every((s) => /^[a-z0-9]+$/.test(rankKey(s))),
+  `RA3 the normalisation copy yields a non-empty lower-case alphanumeric key for all ${everyRealString.length} real strings`);
+
+// RA5 — calibration against the Rust test module: every
+// `position_id_from_rank_label("X")` / `Some("y")` pair the Rust tests assert
+// must come out the same here. The Rust tests run under `cargo test`; this
+// pins the JS reproduction to them by name, string by string.
+const rustExpectations = [...profilesRsTests.matchAll(/position_id_from_rank_label\("([^"]+)"\)\s*,\s*Some\("([a-z_]+)"\)/g)].map((m) => [m[1], m[2]]);
+ok(rustExpectations.length >= 8,
+  `RA5a the Rust test module states resolver expectations to calibrate against (${rustExpectations.length} found)`);
+for (const [s, id] of rustExpectations) {
+  ok(resolveRankLabel(s) === id, `RA5 (${JSON.stringify(s)} → ${id}) the JS reproduction agrees with the Rust test expectation`);
+}
+
+// (a) list ⊇ resolver: every label the resolver shows is one the dropdown
+// offers — verbatim, or, for the KNOWN two below, in its short form. The
+// catalog labels of `ab` and `os` carry the abbreviation in brackets
+// («Able Seaman (AB)»); the dropdown carries the short form («Able Seaman»),
+// which resolves to the same position through the alias table. Pre-existing
+// and outside №571 (BACKLOG №706: the gate writes the bracketed label back
+// and `RANK_ALIASES` of dist does not know it). Named as an exact set of two,
+// so a widening or a narrowing of this remainder goes red.
+const KNOWN_DISPLAY_LABELS_NOT_VERBATIM_IN_RANKS = { 'Able Seaman (AB)': { id: 'ab', short: 'Able Seaman' }, 'Ordinary Seaman (OS)': { id: 'os', short: 'Ordinary Seaman' } };
+const notVerbatimNow = RA_CATALOG.map(displayLabelOf).filter((shown) => !RANKS_DIST.includes(shown)).sort();
+for (const p of RA_CATALOG) {
+  const shown = displayLabelOf(p);
+  const known = KNOWN_DISPLAY_LABELS_NOT_VERBATIM_IN_RANKS[shown];
+  ok(RANKS_DIST.includes(shown) || (known && known.id === p.id),
+    `RA6 (${p.id}) the dropdown offers the display label ${JSON.stringify(shown)}${known ? ' — in its known short form' : ''}`);
+}
+ok(JSON.stringify(notVerbatimNow) === JSON.stringify(Object.keys(KNOWN_DISPLAY_LABELS_NOT_VERBATIM_IN_RANKS).sort()),
+  `RA6b the display labels the dropdown does not carry verbatim are exactly the 2 known ones (now: ${JSON.stringify(notVerbatimNow)})`);
+for (const [shown, { id, short }] of Object.entries(KNOWN_DISPLAY_LABELS_NOT_VERBATIM_IN_RANKS)) {
+  ok(RANKS_DIST.includes(short) && resolveRankLabel(short) === id && resolveRankLabel(shown) === id,
+    `RA6c (${id}) the short form ${JSON.stringify(short)} is on the dropdown and both spellings resolve to ${id}`);
+}
+
+// (b) every display label resolves back to its own position — the failing-first
+// half: red on exactly second/third/fourth_engineer until the alias table
+// knows «2nd/3rd/4th Engineer».
+for (const p of RA_CATALOG) {
+  const shown = displayLabelOf(p);
+  ok(resolveRankLabel(shown) === p.id,
+    `RA7 (${p.id}) the display label ${JSON.stringify(shown)} resolves back to ${p.id} (got ${JSON.stringify(resolveRankLabel(shown))})`);
+}
+
+// (c) the KNOWN remainder of the list: labels the dropdown offers that no
+// position owns. Named one by one and asserted as an exact set, so that a new
+// unresolvable label goes red, and so does a quiet widening or narrowing of
+// this list. Making any of these a position is a product decision of the
+// owner (BACKLOG №705) — not an alias.
+const KNOWN_UNRESOLVED_RANKS = ['Apprentice', 'Cargo Engineer', 'Deck Boy', 'Gas Engineer', 'Other', 'Radio Officer', 'Reefer Engineer', 'Welder'];
+const unresolvedNow = RANKS_DIST.filter((s) => resolveRankLabel(s) === null).sort();
+ok(JSON.stringify(unresolvedNow) === JSON.stringify(KNOWN_UNRESOLVED_RANKS),
+  `RA8 the labels of the dropdown that resolve to no position are exactly the ${KNOWN_UNRESOLVED_RANKS.length} known ones (now: ${JSON.stringify(unresolvedNow)})`);
+ok(KNOWN_UNRESOLVED_RANKS.every((s) => RANKS_DIST.includes(s)),
+  'RA8b every name on the known-remainder list is really a label of the dropdown (the list cannot hide a stale name)');
+
 console.log('');
 if (fail > 0) {
   console.error(`FAILURES (${fail}):`);
