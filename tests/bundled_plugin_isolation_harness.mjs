@@ -6575,6 +6575,7 @@ const s1Status = (extra) => Object.assign({ consent_notice_version: S1_NOTICE_VE
 // real two-checkbox dialog; the real dialog is covered by the 193 restore matrix below).
 async function s1Boot(map, consent, opts) {
   const app = bootMobile(opts || {});
+  if (opts && typeof opts.pre === 'function') opts.pre(app.sandbox);
   const calls = [];
   const base = efInvoke(map || {}, 'android');
   app.sandbox.invoke = async (cmd, args) => { calls.push([cmd, args]); return base(cmd, args); };
@@ -6673,6 +6674,20 @@ async function s1Boot(map, consent, opts) {
   await s.doAppLogin(); await efSettle();
   ok(spies.mobileStartVaultWizard.length === 1 && spies.initNoVaultLanding.length === 0, 'S1-7: the explicit create errand finishes in the wizard, the auto restore landing is not involved');
   ok(!calls.some(([c]) => c === 'restore_account_profile') && app.consents.length === 0, 'S1-7: no restoration request and no consent dialog on the create errand');
+}
+{
+  section('707 S1 (N-A) — the waiting-screen render throws: full landing with the error beside the action, never an empty screen');
+  const app = await s1Boot({ app_login_status: { logged_in: true, pending: true, email: 'synthetic@example.invalid' }, get_account_sync_status: () => s1Status(), restore_account_profile: { outcome: 'restored', vault: EF_REAL } }, () => true, { pre: (s) => { s.showAccountRestoreLanding = () => { throw new Error('synthetic render failure'); }; } });
+  const { doc, spies, calls } = app;
+  ok(spies.initNoVaultLanding.length === 1, 'N-A: init() reached the landing once and the runner is still alive (no unhandled rejection)');
+  const h = mobileHtml(doc);
+  ok(spies.showWelcome.length === 1 && h.includes('mobileCreateProfile()') && h.includes('mobileOpenExistingVault()') && h.includes('loadDemoVault()') && h.includes('restoreAccountProfile()'), 'N-A: the render failure falls back to the full create / open / demo / connect-account landing');
+  ok(h.includes('data-account-restore-error') && h.includes('synthetic render failure'), 'N-A: the error text sits beside the explicit restore action');
+  ok(app.consents.length === 0 && !calls.some(([c]) => c === 'restore_account_profile' || c === 'enable_account_sync' || c === 'sync_account_now'), 'N-A: no consent dialog, no restoration request, no sync on a failed render');
+  const open = await s1Boot({ app_login_status: { logged_in: true, pending: false, email: 'synthetic@example.invalid' }, get_account_sync_status: () => s1Status({ profile_open: true }) }, () => true);
+  open.calls.length = 0; open.consents.length = 0; open.spies.showWelcome.length = 0;
+  await open.sandbox.initNoVaultLanding(true); await efSettle();
+  ok(open.spies.showWelcome.length === 1 && open.consents.length === 0 && !open.calls.some(([c]) => c === 'restore_account_profile'), 'N-B (D1): with a profile open the auto path returns null — old landing, no consent, no request');
 }
 {
   section('707 S1 — the auto path is off for the web shell and for a session without a live restore context');

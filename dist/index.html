@@ -4026,7 +4026,12 @@ async function initNoVaultLanding(hadVaultPath){
     // (consent → download, or profile setup when the account is empty); the
     // create/open/demo choice stays the fallback — consent declined, download failed,
     // web shell, or no live restore context.
-    var outcome=await accountRestoreLanding();
+    var outcome=null;
+    try{outcome=await accountRestoreLanding();}
+    catch(e){
+        // N-A: this landing is called without await from init() and _loginGateNext — it must never reject.
+        logError('account_restore_landing',e);accountRestoreLastError=String((e&&e.message)||e||'');
+    }
     if(outcome==='restored'||outcome==='empty')return;
     showWelcome();
     // Jobs polling still starts only after opening an opted-in seafarer profile.
@@ -4046,7 +4051,10 @@ async function accountRestoreLanding(){
     // of consent prompts, and never a server token per app start.
     if(_accountRestoreAutoTried===status.restore_context)return null;
     _accountRestoreAutoTried=status.restore_context;
-    showAccountRestoreLanding(status);
+    // N-A (Supervisor point 2): a DOM failure while painting the waiting screen must not leave an empty
+    // screen — fall back to the full landing with the error beside the explicit action.
+    try{showAccountRestoreLanding(status);}
+    catch(e){logError('account_restore_landing',e);accountRestoreLastError=String((e&&e.message)||e||'');return null;}
     return await restoreAccountProfile();
 }
 // The waiting screen behind the consent dialog and the download. RU/EN, no "vault" wording.

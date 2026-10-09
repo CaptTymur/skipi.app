@@ -327,8 +327,13 @@ if (landing !== null) {
   // Negative drills — the structural shape is what protects the user, so prove the probes bite.
   const drillA = landing.replace(/await\s+accountRestoreLanding\(\)/, 'null');
   ok(!/await\s+accountRestoreLanding\(\)/.test(drillA), 'G9 NEGATIVE A: dropping the await reddens the first G9 probe');
-  const drillB = auto.replace(/await\s+restoreAccountProfile\(\)/, "await invoke('restore_account_profile',{consent:true})");
-  ok(!/await\s+restoreAccountProfile\(\)/.test(drillB) && (drillB.match(/invoke\('restore_account_profile'/g) || []).length === 1, 'G9 NEGATIVE B: a parallel restore caller would be caught by the single-invoke-site probe');
+  const drillB = html.replace(/await\s+restoreAccountProfile\(\)/, "await invoke('restore_account_profile',{consent:true})");
+  ok((drillB.match(/invoke\('restore_account_profile'/g) || []).length === 2, 'G9 NEGATIVE B (N-D): a second restore_account_profile caller in dist makes the single-invoke-site probe count 2 — the probe bites');
+  // N-A (Supervisor point 2): the waiting-screen render is the only fail-open spot — a thrown DOM error must
+  // fall back to the full landing with the error beside the action, never an empty screen. Cancel condition: S1b or a later owner slice.
+  ok(/try\s*\{\s*showAccountRestoreLanding\(status\)\s*;?\s*\}\s*catch\s*\(/.test(auto), 'G9 (N-A): showAccountRestoreLanding(status) is wrapped in try/catch inside accountRestoreLanding()');
+  ok(/catch\s*\([^)]*\)\s*\{[^}]*accountRestoreLastError\s*=[^}]*return\s+null/.test(auto), 'G9 (N-A): a render failure records the error for the landing and returns null (old landing + error beside the action)');
+  ok(/try\s*\{[^}]*await\s+accountRestoreLanding\(\)[^}]*\}\s*catch\s*\(/.test(landing), 'G9 (N-A): initNoVaultLanding() itself never rejects — its un-awaited callers in init()/_loginGateNext cannot leave an unhandled rejection');
 }
 
 if (fail) {
