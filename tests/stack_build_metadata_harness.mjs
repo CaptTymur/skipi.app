@@ -15,13 +15,13 @@ const lock = fs.readFileSync('src-tauri/Cargo.lock', 'utf8');
 const tauri = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
 
 const iosPlist = JSON.parse(execFileSync('python3', ['-c', 'import plistlib,json; print(json.dumps(plistlib.load(open("src-tauri/gen/apple/skipi_iOS/Info.plist","rb"))))'], {encoding:'utf8'}));
-const validIosBuild = (plist) => plist.CFBundleShortVersionString === '0.4.194' && /^\d+$/.test(plist.CFBundleVersion) && plist.CFBundleVersion === '4195';
-ok(validIosBuild(iosPlist), 'actual tracked iOS plist carries version0.4.194 and integer build4195');
+const validIosBuild = (plist) => plist.CFBundleShortVersionString === '0.4.195' && /^\d+$/.test(plist.CFBundleVersion) && plist.CFBundleVersion === '4196';
+ok(validIosBuild(iosPlist), 'actual tracked iOS plist carries version0.4.195 and integer build4196');
 ok(!validIosBuild({...iosPlist, CFBundleVersion:'0.4.194'}), 'R330 mutation: semver in the iOS build field is rejected');
 
 console.log('# Stack v1 Stage 4 build metadata contract');
 ok(html.includes("component: 'Seafarer'"), 'one UI build-metadata input names Seafarer');
-ok(html.includes("component_version: '0.4.194'"), 'build-metadata input carries component version 0.4.194');
+ok(html.includes("component_version: '0.4.195'"), 'build-metadata input carries component version 0.4.195');
 ok(html.includes("stack_id: 'SKIPI-2026.08-R1'"), 'build-metadata input carries Stack ID');
 ok(html.includes("source_identifier: 'unknown'"), 'source identifier starts honest and is not a candidate SHA literal');
 ok(html.includes('function setBuildMetadata(info)'), 'runtime build metadata is accepted through one input function');
@@ -38,10 +38,10 @@ ok(rust.includes('pub stack_id: String'), 'native build metadata includes Stack 
 ok(rust.includes('pub source_identifier: String'), 'native build metadata includes source identifier');
 ok(rust.includes('pub verification_status: String'), 'native build metadata includes honest verification status');
 
-ok(cargo.includes('version = "0.4.194"'), 'Cargo package version is 0.4.194');
-ok(lock.includes('name = "skipi"\nversion = "0.4.194"'), 'Cargo lock root package version is 0.4.194');
-ok(tauri.version === '0.4.194', 'Tauri component version is 0.4.194');
-ok(tauri.bundle.android.versionCode === 4195 && tauri.bundle.iOS.bundleVersion === '4195', 'both mobile builds use fresh4195 under marketing0.4.194 (4194 is taken by the shipped 0.4.193)');
+ok(cargo.includes('version = "0.4.195"'), 'Cargo package version is 0.4.195');
+ok(lock.includes('name = "skipi"\nversion = "0.4.195"'), 'Cargo lock root package version is 0.4.195');
+ok(tauri.version === '0.4.195', 'Tauri component version is 0.4.195');
+ok(tauri.bundle.android.versionCode === 4196 && tauri.bundle.iOS.bundleVersion === '4196', 'both mobile builds use fresh4196 under marketing0.4.195 (4195 is taken by the shipped 0.4.194)');
 ok(tauri.identifier === 'app.skipi.desktop', 'desktop app identity is preserved');
 ok(!/devtools/.test(cargo), 'Cargo manifest never enables the tauri devtools feature, so release builds ship no WebView inspector (267)');
 
