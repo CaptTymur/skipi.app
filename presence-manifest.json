@@ -155,15 +155,6 @@
         "nav_selector": "[data-mview=\"apps\"]",
         "render_function": "renderMobileApps"
       }
-    },
-    {
-      "id": "assistant",
-      "name": "Assistant",
-      "mobile_navigation": {
-        "route": "assistant",
-        "nav_selector": "[data-mview=\"assistant\"]",
-        "render_function": "renderMobileAssistant"
-      }
     }
   ]
 }
