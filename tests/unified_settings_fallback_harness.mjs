@@ -45,6 +45,7 @@
 //   node tests/unified_settings_fallback_harness.mjs
 
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import vm from 'node:vm';
 import { execFileSync } from 'node:child_process';
@@ -794,6 +795,39 @@ await assertEscapeAndBackdropCloseRemain();
 await assertSeafarerSectionEmbedsFullEditor();
 await assertSeafarerDeepLinkRoutesUnified();
 await assertPhotoUploadPreservesUnsavedFields();
+
+// №740-a / №756 — the vendored settings bytes must match the sha256 that SETTINGS_VERSION declares.
+// Measured 2026-10-14: nothing in this house verified those three sums. SETTINGS_VERSION appeared in the
+// suite exactly once, as a FILENAME in an inventory list, so new bytes could land beside stale sums (or
+// stale bytes beside fresh sums) and every harness stayed green. The module's version string does not move
+// on a byte change either — 0.3.0 before and after this adoption — so the sums are the only trace there is.
+// CANCEL CONDITION: removed only when the gate or the owner contract verifies these sums itself; until then
+// this is the only thing that notices a vendoring that half-landed.
+{
+  const vdir = new URL('../dist/', import.meta.url);
+  const read = (f) => fs.readFileSync(new URL(f, vdir));
+  const sha = (b) => createHash('sha256').update(b).digest('hex');
+  const decl = read('SETTINGS_VERSION').toString('utf8');
+  const want = {};
+  for (const m of decl.matchAll(/^(?:(css|inline)-)?sha256:([0-9a-f]{64})$/gm)) want[m[1] || 'js'] = m[2];
+  ok(/^\d+\.\d+\.\d+$/m.test(decl.split('\n')[0] || ''), '740a: SETTINGS_VERSION opens with a semver line');
+  ok(!!want.js && !!want.css && !!want.inline, '740a: it declares all three sha256 lines (js, css, inline)');
+  ok(sha(read('skipi-settings.js')) === want.js,
+    '740a: the vendored skipi-settings.js matches the sha256 SETTINGS_VERSION declares (got ' + sha(read('skipi-settings.js')).slice(0, 16) + ', declared ' + String(want.js).slice(0, 16) + ')');
+  ok(sha(read('skipi-settings.css')) === want.css,
+    '740a: the vendored skipi-settings.css matches its declared sha256 (got ' + sha(read('skipi-settings.css')).slice(0, 16) + ', declared ' + String(want.css).slice(0, 16) + ')');
+  // The house does NOT vendor skipi-settings.inline.html. Say that out loud rather than pretend the third
+  // declared sum is checked: an unverifiable claim named is safer than one quietly skipped.
+  let inlinePresent = true;
+  try { read('skipi-settings.inline.html'); } catch (e) { inlinePresent = false; }
+  ok(inlinePresent === false,
+    '740a: skipi-settings.inline.html is deliberately NOT vendored here, so its declared inline-sha256 is unverifiable in this house (named, not skipped)');
+  // NEGATIVE CONTROL on a fixture, never on the live files: a control built from the live bytes would agree
+  // with itself exactly when the vendoring half-landed, which is the moment it has to be trusted.
+  const FIX_BYTES = Buffer.from('x');
+  ok(sha(FIX_BYTES) !== want.js && sha(FIX_BYTES) !== want.css,
+    '740a NEGATIVE: a byte that was never vendored does not match either declared sum, so the comparison is real');
+}
 
 console.log('');
 if (fail > 0) {
