@@ -945,6 +945,14 @@ body.mobile-native .mobile-brand-wrap, body.mobile-native #mobile-feedback-btn, 
 .mobile-assistant-banner .btn { margin-top:8px; width:100%; }
 .mobile-menu-extra { margin-top:10px; }
 /* /mobile-home-assistant */
+/* hide-assistant (owner 12.10) - the assistant's desktop module tab is hidden on every surface.
+   A rule in its own marked block, not an inline attribute: the tab sits inside the frozen desktop
+   markup region that the bundled harness pins byte-for-byte, and a sha pin is never re-based by the
+   card that breaks it. No !important: #mt-assistant carries an id, so it already outranks the only
+   competing rule (.modules-bar .mod-tab, two classes) on specificity alone. The module, the consent,
+   the server route, the SaaS chat and the bot stay. */
+#mt-assistant { display:none; }
+/* /hide-assistant */
 /* mobile-entry-fork (owner 06.09, canon (295)) — native-only first screen: Sign in · Register · Demo. Gate-class overlay (same z-index as #login-gate-overlay), rendered by JS. */
 .mobile-entry-fork { display:none; position:fixed; inset:0; z-index:100000; background:var(--bg); align-items:flex-start; justify-content:center; overflow:auto; padding:calc(32px + env(safe-area-inset-top,0px)) 20px calc(32px + env(safe-area-inset-bottom,0px)); }
 .mobile-entry-fork-card { width:100%; max-width:400px; }
@@ -1499,7 +1507,7 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
             </div>
         </div>
         <button class="fam-icon-btn mobile-feedback-btn" id="mobile-feedback-btn" type="button" data-qa="app-header-feedback" onclick="openMobileFeedbackMenu()" title="Отправить отзыв или сообщить о проблеме" aria-label="Отправить отзыв или сообщить о проблеме"><span class="mobile-feedback-mark">!</span><span class="mobile-feedback-text" style="display:none;"></span></button>
-        <button class="fam-icon-btn" type="button" data-qa="app-header-assistant" onclick="openAssistant()" title="Assistant" aria-label="Assistant">&#128172;</button>
+        <button class="fam-icon-btn" type="button" data-qa="app-header-assistant" style="display:none;" onclick="openAssistant()" title="Assistant" aria-label="Assistant">&#128172;</button>
         <button class="fam-icon-btn" type="button" data-qa="app-header-settings" onclick="openSettings()" title="Settings" aria-label="Settings">&#9881;</button>
     </div>
     <main class="mobile-main" id="mobile-main"></main>
@@ -1547,7 +1555,7 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
             <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-vessels" data-mview="vessels" onclick="mobileShow('vessels')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Known vessel records" title="Known vessel records" aria-label="Vessel DB"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 20.4c.8.6 1.5 1.1 2.6 1.1 2.3 0 2.3-2 4.6-2s2.3 2 4.6 2c1.1 0 1.8-.5 2.6-1.1"/><path d="M19.1 19.4A10.4 10.4 0 0021 13.3L12 9.7l-9 3.6c0 2.4.8 4.5 2.3 6.1"/><path d="M18.4 12.5V7.2a1.8 1.8 0 00-1.8-1.8H7.4a1.8 1.8 0 00-1.8 1.8v5.3"/><path d="M12 5.4V2.7"/></svg></span><span class="fam-app-label" id="mhn-vessels">Vessel DB</span></button>
             <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-myvessel" data-mview="myvessel" onclick="mobileShow('myvessel')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="On Board workspace" title="On Board workspace" aria-label="My Vessel"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="4.6" r="1.8"/><path d="M12 6.4V21"/><path d="M7 10h10"/><path d="M4.5 15a7.5 7.5 0 0015 0"/></svg></span><span class="fam-app-label" id="mhn-myvessel">My Vessel</span></button>
             <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-apps" data-mview="apps" onclick="mobileShow('apps')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Installed tools" title="Installed tools" aria-label="Apps"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg></span><span class="fam-app-label" id="mhn-apps">Apps</span></button>
-            <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-assistant" data-mview="assistant" onclick="mobileShow('assistant')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Drafts and help" title="Drafts and help" aria-label="Assistant"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 15a3 3 0 01-3 3H8l-4 3V7a3 3 0 013-3h10a3 3 0 013 3z"/><path d="M9 11h6"/><path d="M9 8h4"/></svg></span><span class="fam-app-label" id="mhn-assistant">Assistant</span></button>
+            <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-assistant" style="display:none;" data-mview="assistant" onclick="mobileShow('assistant')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Drafts and help" title="Drafts and help" aria-label="Assistant"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 15a3 3 0 01-3 3H8l-4 3V7a3 3 0 013-3h10a3 3 0 013 3z"/><path d="M9 11h6"/><path d="M9 8h4"/></svg></span><span class="fam-app-label" id="mhn-assistant">Assistant</span></button>
         </div>
     </template>
     <!-- ONE shared long-press hint bubble for the icon grid (owner 06.09):
