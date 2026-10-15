@@ -83,7 +83,7 @@ jobs:
           TAG_VERSION="${GITHUB_REF_NAME#v}"
           CARGO_VERSION="$(grep -m1 -E '^version = "' src-tauri/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
           CONF_VERSION="$(grep -m1 -E '"version"' src-tauri/tauri.conf.json | sed -E 's/.*"version"[^"]*"([^"]+)".*/\1/')"
-          HTML_VERSION="$(grep -m1 -E "var APP_VERSION='" dist/index.html | sed -E "s/.*APP_VERSION='([^']+)'.*/\1/")"
+          HTML_VERSION="$(grep -m1 -E "component_version: '" dist/index.html | sed -E "s/.*component_version: '([^']+)'.*/\1/")"
           echo "tag:           $TAG_VERSION"
           echo "Cargo.toml:    $CARGO_VERSION"
           echo "tauri.conf:    $CONF_VERSION"
