@@ -1707,7 +1707,7 @@ function installNavHistory(app) {
     sandbox.mobileShow('home'); app.runTimers(0);
     ok(sandbox.mobileView === 'home' && mobileHtml(doc).includes('data-qa="mobile-menu-screen"') && JSON.stringify(sandbox._mobileNavStack) === JSON.stringify(['home']), 'HG1b: ⌂ from a module lands on the home grid with the in-app stack collapsed');
     // (c) Assistant is a tile → an ordinary section; ‹ brings the grid back
-    ok(home.includes('data-mview="assistant"') && home.includes("mobileShow('assistant')"), 'HG1c: the Assistant tile sits on the home grid and routes through mobileShow');
+    ok(home.includes('data-mview="assistant"') && home.includes("mobileShow('assistant')"), 'HG1c: the Assistant tile is still in the home-grid MARKUP and still routes through mobileShow (hidden since 12.10 — visibility is measured by HA3, not here)');
     sandbox.mobileShow('assistant'); app.runTimers(0);
     const chat = mobileHtml(doc);
     ok(sandbox.mobileView === 'assistant' && chat.includes('id="mobile-assistant-input"') && chat.includes('data-qa="mobile-menu-btn"'), "HG1c: the tile opens the chat as a section (mobileView 'assistant') — composer and ☰ live there now");
@@ -6975,6 +6975,92 @@ async function s1Boot(map, consent, opts) {
   }
 }
 
+
+{
+  section('hide-assistant (owner 12.10, решение 1054) — PROOF: the AI assistant has no visible entry point on any surface, and the module itself stays alive');
+  // Measured at PREP: before these drills NOTHING in this suite noticed the hide. HG1c checks markup
+  // substrings that a hidden node keeps, so the suite was blind to three user-visible entry points
+  // disappearing. These drills are therefore the only thing that catches an un-hide or a silently
+  // failed hide. CANCEL CONDITION: only the owner's word reverses the hide; a later slice that
+  // deliberately brings the assistant back replaces each drill with its positive twin, never deletes it.
+
+  // --- axis 1: the hide, surface by surface, each node proved by the strongest instrument it allows ---
+  try {
+  const deskApp = bootApp({ seed: { 'skipi-assistant-consent': '1' } });
+  await settleVm();
+  const hdrBtns = deskApp.doc.querySelectorAll('[data-qa="app-header-assistant"]');
+  ok(hdrBtns.length === 1, 'HA1: the header chat button still exists in the markup — hidden, not deleted');
+  const hdr = hdrBtns[0];
+  ok(!!hdr && String((hdr.style || {}).display || hdr.getAttribute('style') || '').includes('none'),
+    'HA1: and it is hidden on the desktop surface (inline attribute — the instrument the house already uses for mt-contribution)');
+  ok(/data-qa="app-header-assistant"[^>]*style="[^"]*display:\s*none/.test(HTML),
+    'HA1: the hide travels with the markup, so every shell that ships this file gets it');
+
+  // The desktop module tab cannot take an inline attribute: it sits inside the frozen desktop region this
+  // file pins byte-for-byte ("desktop static markup region sha256"), and a sha pin is never re-based by the
+  // card that breaks it. So the tab is hidden by a rule and proved one level deeper — by the cascade.
+  const tabChain = () => [HTML_NODE, { tag: 'body', cls: [] },
+    { tag: 'div', cls: ['modules-bar'], id: 'modules-bar' },
+    { tag: 'div', cls: ['mod-tab'], id: 'mt-assistant' }];
+  const tabWin = cascadeWinner('display', tabChain());
+  ok(!!tabWin && tabWin.sel === '#mt-assistant' && String(tabWin.value).trim() === 'none',
+    'HA2: the winning display declaration for the desktop Assistant tab is #mt-assistant{display:none} (got «' + (tabWin ? tabWin.sel + ': ' + tabWin.value : 'nothing') + '»)');
+  ok(!!CSS_RULES.find((r) => r.sel === '.modules-bar .mod-tab' && declOf(r.body, 'display')),
+    'HA2: and it outranks a LIVE competitor — .modules-bar .mod-tab still sets display, so the drill is not measuring an empty cascade');
+  ok(/\/\* hide-assistant[\s\S]{0,600}?#mt-assistant \{ display:none; \}\s*\n\/\* \/hide-assistant \*\//.test(HTML),
+    'HA2: the rule lives in its OWN marked block, outside the frozen region and outside the mobile-only blocks');
+  ok(!/#mt-assistant[^{]*\{[^}]*!important/.test(HTML),
+    'HA2: and it wins on specificity, not on !important — an id already outranks two classes');
+
+  // The mobile tile: one template, two consumers (native menu grid + the family home), so both surfaces.
+  const tileHidden = (h) => /id="mhb-assistant"[^>]*style="[^"]*display:\s*none/.test(h);
+  const nat = installNavHistory(bootMobile({ seed: { 'skipi-assistant-consent': '1' } }));
+  await settleVm();
+  nat.sandbox.mobileShow('home'); nat.runTimers(0);
+  const natHome = mobileHtml(nat.doc);
+  ok(natHome.includes('id="mhb-assistant"') && tileHidden(natHome),
+    'HA3: on the native home grid the Assistant tile is rendered and hidden');
+  const web = bootApp({ platform: 'linux', seed: { 'skipi-assistant-consent': '1' } });
+  await settleVm();
+  web.sandbox.shouldUseMobileShell = () => true;
+  web.sandbox.applyMobileMode();
+  web.sandbox.mobileShow('home');
+  const webHome = mobileHtml(web.doc);
+  ok(webHome.includes('id="mhb-assistant"') && tileHidden(webHome),
+    'HA3: and on the non-native family home too — the template has two consumers, so both are measured');
+
+  // No fourth way in: the count of wired controls is pinned, so a NEW visible entry point breaks this.
+  ok((HTML.match(/onclick="openAssistant\(\)"/g) || []).length === 2,
+    'HA4: openAssistant() is wired to exactly two controls — both hidden above');
+  ok((HTML.match(/mobileShow\('assistant'\)/g) || []).length === 1,
+    "HA4: mobileShow('assistant') is wired to exactly one control — the hidden tile");
+
+  // --- NEGATIVE controls: prove each drill measures what its label claims ---
+  const unhid = HTML.replace('id="mhb-assistant" style="display:none;"', 'id="mhb-assistant"');
+  ok(unhid !== HTML && !tileHidden(unhid),
+    'HA5 NEGATIVE: stripping the inline hide really breaks the tile drill');
+  const noBlock = HTML.replace(/\/\* hide-assistant[\s\S]*?\/\* \/hide-assistant \*\/\n?/, '');
+  ok(noBlock !== HTML && !/#mt-assistant\s*\{[^}]*display:\s*none/.test(noBlock),
+    'HA5 NEGATIVE: deleting the marked block really breaks the tab drill');
+
+  // --- axis 2: PRESERVE — hidden is not removed. This absorbs what the presence contract stops checking. ---
+  ok(typeof deskApp.sandbox.openAssistant === 'function', 'HA6: openAssistant() is still defined and callable');
+  ok(typeof nat.sandbox.renderMobileAssistant === 'function', 'HA6: renderMobileAssistant is still a function');
+  ok(/function _showAssistantConsent\(/.test(HTML) && HTML.includes('skipi-assistant-consent'),
+    'HA6: the consent gate and its storage key are untouched');
+  nat.sandbox.mobileShow('assistant'); nat.runTimers(0);
+  ok(nat.sandbox.mobileView === 'assistant' && mobileHtml(nat.doc).includes('id="mobile-assistant-input"'),
+    "HA7: the route still works when called — mobileShow('assistant') renders the chat composer");
+  ok(nat.doc.getElementById('mobile-bottom-nav').style.display === 'none',
+    'HA7: and the assistant view still manages the bottom rail exactly as before');
+  nat.sandbox.mobileNavBack(); nat.runTimers(0);
+  ok(nat.sandbox.mobileView === 'home', 'HA7: ‹ from the assistant still returns to the home grid');
+  ok((natHome.match(/fam-app-tile/g) || []).length === 14,
+    'HA8: hiding changed no count — the menu grid still renders 14 tiles (11 modules + Profile + Feedback + Language)');
+  ok(/https:\/\/assistant\.skipi\.app\/register/.test(HTML),
+    'HA8: the SaaS side is untouched — the register route still points at assistant.skipi.app');
+  } catch (e) { ok(false, 'hide-assistant proof crashed before it could assert: ' + e.message); }
+}
 
 console.log('\n' + (fail === 0 ? 'ALL GREEN' : 'FAILURES') + ': ' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail === 0 ? 0 : 1);
