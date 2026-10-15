@@ -1355,23 +1355,6 @@
   appearance: none;
 }
 
-.skipi-settings.skipi-settings--mobile .skipi-settings__mobile-avatar-edit {
-  position: absolute;
-  right: -2px;
-  bottom: -1px;
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  border: 2px solid var(--ss-bg);
-  border-radius: 50%;
-  background: var(--ss-panel);
-  color: var(--ss-muted);
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
-}
-
 .skipi-settings.skipi-settings--mobile .skipi-settings__mobile-avatar-image {
   display: block;
   width: 100%;

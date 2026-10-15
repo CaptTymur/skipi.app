@@ -1127,7 +1127,7 @@
         ? '<img class="skipi-settings__mobile-avatar-image" src="' + escapeAttr(avatarUrl) + '" alt="" referrerpolicy="no-referrer">'
         : '<span aria-hidden="true">' + escapeHtml(avatarText) + '</span>';
       var avatarControl = linkedSection
-        ? '<button type="button" class="skipi-settings__mobile-avatar-action" data-settings-action="profile-section" data-settings-value="' + escapeAttr(sectionId) + '" aria-label="' + escapeAttr(sectionLabel(linkedSection)) + '"><span class="skipi-settings__mobile-avatar">' + avatar + '</span><span class="skipi-settings__mobile-avatar-edit" aria-hidden="true">✎</span></button>'
+        ? '<button type="button" class="skipi-settings__mobile-avatar-action" data-settings-action="profile-section" data-settings-value="' + escapeAttr(sectionId) + '" aria-label="' + escapeAttr(sectionLabel(linkedSection)) + '"><span class="skipi-settings__mobile-avatar">' + avatar + '</span></button>'
         : '<div class="skipi-settings__mobile-avatar">' + avatar + '</div>';
       return '<div class="skipi-settings__mobile-profile">'
         + avatarControl
