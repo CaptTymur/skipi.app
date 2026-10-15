@@ -1064,5 +1064,39 @@ section('mobile rail canon — 5 fixed slots, header home+gear, modules-first Ap
   ok(!/apps-icon-tile|apps-module-tiles/.test(menuTpl), 'no Apps-screen markup leaked into the module grid template');
 }
 
+section('hidden-but-alive: Assistant (owner 12.10, решение 1054) — the module left required_modules and nothing about it was removed');
+{
+  // The owner's word was «вычеркивай»: hide the entry points, keep the module. Taking `assistant` out of
+  // required_modules stops this contract from checking it — 11 assertions disappear, measured — so the
+  // module's life is re-asserted here explicitly, in the same change that removes it.
+  // INSTRUMENT NOTE: visibility is deliberately NOT asserted in this section. The hide itself is proved in
+  // tests/bundled_plugin_isolation_harness.mjs, which boots the real runtime, reads the inline attribute on
+  // the two nodes that may carry one, and resolves the CSS cascade for the desktop tab (which may not —
+  // it sits inside the frozen desktop region this suite pins byte-for-byte).
+  // CANCEL CONDITION: only the owner's word puts `assistant` back into required_modules; this section is
+  // then removed together with that change, never before it.
+  const ids = manifest.required_modules.map((m) => m.id);
+  ok(ids.length === 10, 'required_modules holds exactly 10 modules after the assistant left (got ' + ids.length + ')');
+  ok(!ids.includes('assistant'), '`assistant` is deliberately absent — hidden, not required');
+  ok(JSON.stringify(ids) === JSON.stringify(['documents', 'experience', 'cv', 'packages', 'mailings', 'jobs', 'information', 'vessel-db', 'my-vessel', 'apps']),
+    'the other ten are untouched and in order — the removal took exactly one entry');
+  const hb = installRuntime(html);
+  await settle();
+  ok(typeof hb.sandbox.renderMobileAssistant === 'function', 'renderMobileAssistant still exists');
+  ok(typeof hb.sandbox.openAssistant === 'function', 'openAssistant() still exists');
+  const tile = hb.document.querySelector('[data-mview="assistant"]');
+  ok(!!tile, 'the mobile rail button is still in the artifact');
+  ok(!!hb.document.getElementById('mt-assistant'), 'the desktop module tab is still in the artifact');
+  ok(!!hb.document.querySelector('[data-qa="app-header-assistant"]'), 'the header chat button is still in the artifact');
+  ok(!!tile && String(tile.getAttribute('onclick') || '').includes("mobileShow('assistant')"),
+    "the rail button still routes through mobileShow('assistant')");
+  hb.sandbox.mobileShow('assistant');
+  await settle();
+  ok(hb.sandbox.mobileView === 'assistant', "mobileShow('assistant') still switches the view");
+  ok(html.includes('skipi-assistant-consent') && /function _showAssistantConsent\(/.test(html),
+    'the consent gate and its storage key are untouched');
+  ok(/https:\/\/assistant\.skipi\.app\/register/.test(html), 'the SaaS side is untouched — the register route still points at assistant.skipi.app');
+}
+
 console.log('\n' + (fail === 0 ? 'ALL GREEN' : 'FAILURES') + `: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
