@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Skipi Seafarer",
-  "version": "0.4.195",
+  "version": "0.4.196",
   "identifier": "app.skipi.desktop",
   "build": {
     "frontendDist": "../dist"
@@ -50,10 +50,10 @@
       "minimumSystemVersion": "10.15"
     },
     "android": {
-      "versionCode": 4196
+      "versionCode": 4197
     },
     "iOS": {
-      "bundleVersion": "4196"
+      "bundleVersion": "4197"
     }
   }
 }
