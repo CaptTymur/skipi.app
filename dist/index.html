@@ -4109,6 +4109,14 @@ function securityCoveringIds(cid){
     Object.keys(SECURITY_COVERAGE).forEach(function(k){if(SECURITY_COVERAGE[k].indexOf(cid)!==-1)out.push(k);});
     return out;
 }
+// True when any document of a covering id has an attached file (resolved over
+// ALL docs, not only active-required ones — a Chief Officer's SSO is not
+// required but still covers DSD / security awareness).
+function securityCoveredByAttached(cid,docs){
+    var ids=securityCoveringIds(cid);
+    if(!ids.length)return false;
+    return (docs||[]).some(function(x){return !!(x&&x.template_id&&x.file_name)&&ids.indexOf(x.template_id)!==-1;});
+}
 var SERVER_CATALOG_URL = '/api/catalogs';
 var wizardState = {step:1,name:'',level:'',vessel_root:'',vessel_leaf:'',position:'',positionCustom:'',vault_path:'',recovery_key:''};
 
@@ -5204,7 +5212,7 @@ function mobileStats(){
 var documentThumbCache={};
 var documentThumbInFlight={};
 function mobileStatusPill(d){
-    if(!d.file_name&&isActiveRequiredDoc(d))return '<span class="mobile-pill bad">'+mobileSetupText('Missing','Недостающий')+'</span>';
+    if(!d.file_name&&isActiveRequiredDoc(d)&&!securityCoveredByAttached(d.template_id,allDocs))return '<span class="mobile-pill bad">'+mobileSetupText('Missing','Недостающий')+'</span>';
     if(!d.file_name)return '<span class="mobile-pill">'+mobileSetupText('No file','Без файла')+'</span>';
     if(d.is_permanent)return '<span class="mobile-pill ok">'+mobileSetupText('Permanent','Бессрочный')+'</span>';
     var s=classify(d),dl=days(d);
@@ -12563,7 +12571,9 @@ async function getSeaServiceUnlockState(){
     docs.forEach(function(d){
         if(d&&d.template_id&&d.file_name)byTemplate[d.template_id]=true;
     });
-    var missing=required.filter(function(r){return !byTemplate[r.id];});
+    // SECURITY_COVERAGE: a required id is also closed by an attached document
+    // of a covering id (same byTemplate rule applied to the covering id).
+    var missing=required.filter(function(r){return !byTemplate[r.id]&&!securityCoveredByAttached(r.id,docs);});
     return {
         ok:!error&&required.length>0&&missing.length===0,
         profile:profile,

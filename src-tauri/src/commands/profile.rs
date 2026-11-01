@@ -2039,4 +2039,48 @@ mod tests {
         drop(conn);
         let _ = std::fs::remove_dir_all(vault_path);
     }
+
+    /// Anti-drift (card №902 F16): the JS literal `var SECURITY_COVERAGE={...};`
+    /// in dist/index.html must equal the Rust table, key by key and in order,
+    /// and the table must involve exactly the three security template ids.
+    #[test]
+    fn security_coverage_js_literal_mirrors_rust_table() {
+        let dist = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../dist/index.html");
+        let src = std::fs::read_to_string(&dist).expect("dist/index.html readable from src-tauri");
+        let marker = "var SECURITY_COVERAGE=";
+        assert_eq!(src.matches(marker).count(), 1, "exactly one JS literal");
+        let rest = &src[src.find(marker).unwrap() + marker.len()..];
+        let end = rest.find("};").expect("literal terminated by `};`");
+        let body = rest[..end].trim().trim_start_matches('{');
+        let mut js: Vec<(String, Vec<String>)> = Vec::new();
+        for entry in body.split("],") {
+            let entry = entry.trim().trim_end_matches(']').trim();
+            if entry.is_empty() {
+                continue;
+            }
+            let (key, list) = entry.split_once(":[").expect("key:[list]");
+            let ids = list
+                .split(',')
+                .map(|v| v.trim().trim_matches('\'').trim_matches('"').to_string())
+                .filter(|v| !v.is_empty())
+                .collect();
+            js.push((key.trim().to_string(), ids));
+        }
+        let rust: Vec<(String, Vec<String>)> = SECURITY_COVERAGE
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.iter().map(|s| s.to_string()).collect()))
+            .collect();
+        assert_eq!(js, rust, "JS SECURITY_COVERAGE literal drifted from the Rust table");
+        let mut ids: Vec<&str> = SECURITY_COVERAGE
+            .iter()
+            .flat_map(|(k, v)| std::iter::once(*k).chain(v.iter().copied()))
+            .collect();
+        ids.sort();
+        ids.dedup();
+        assert_eq!(ids, ["dsd", "sec_awareness", "sso"]);
+        // Every id in the table is a real catalog template.
+        for id in ids {
+            assert!(profiles::doc_template_by_title_or_id(id).is_some(), "{id} is not a catalog template");
+        }
+    }
 }
