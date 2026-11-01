@@ -4098,6 +4098,17 @@ var profileTax = null; // loaded lazily
 var serverCatalog = null; // cached server catalog for future cert-matrix slices
 var SERVER_CATALOG_CACHE_KEY = 'skipi-catalog';
 var SERVER_CATALOG_TTL_MS = 60 * 60 * 1000;
+// STCW.7/Circ.22 §2–§4 — verbatim mirror of SECURITY_COVERAGE in
+// src-tauri/src/commands/profile.rs: key = covering template id, value = ids it
+// covers (sso ⊃ dsd, sec_awareness; dsd ⊃ sec_awareness). A required id counts
+// as satisfied when a valid document of a covering id exists. Transitivity is
+// written out explicitly, never derived.
+var SECURITY_COVERAGE={sso:['dsd','sec_awareness'],dsd:['sec_awareness']};
+function securityCoveringIds(cid){
+    var out=[];
+    Object.keys(SECURITY_COVERAGE).forEach(function(k){if(SECURITY_COVERAGE[k].indexOf(cid)!==-1)out.push(k);});
+    return out;
+}
 var SERVER_CATALOG_URL = '/api/catalogs';
 var wizardState = {step:1,name:'',level:'',vessel_root:'',vessel_leaf:'',position:'',positionCustom:'',vault_path:'',recovery_key:''};
 
@@ -4460,7 +4471,15 @@ function requiredDocumentSummary(){
     // The backend supplies the active required-template universe, including absent rows.
     var ids=Array.from(new Set(activeTemplateIds)),satisfied=new Set();
     (allDocs||[]).forEach(function(d){if(isActiveRequiredDoc(d)&&mobileDocHasAttachedFile(d))satisfied.add(d.template_id);});
-    var missing=ids.filter(function(id){return !satisfied.has(id);});
+    // Coverage (SECURITY_COVERAGE) is resolved over ALL attached documents, not
+    // only the active-required ones: a Chief Officer's SSO is not required but
+    // still covers DSD / security awareness.
+    var attached=new Set();
+    (allDocs||[]).forEach(function(d){if(d.template_id&&mobileDocHasAttachedFile(d))attached.add(d.template_id);});
+    var missing=ids.filter(function(id){
+        if(satisfied.has(id))return false;
+        return !securityCoveringIds(id).some(function(c){return attached.has(c);});
+    });
     return {loaded:true,required:ids.length,missing:missing.length,missingIds:missing};
 }
 function mobileCompletenessPercent(){
@@ -16193,6 +16212,9 @@ async function computeApplyGaps(vacancy) {
         var cid = requiredIds[i];
         var info = _slfBestStatus(docs, cid, today);
         if (info.status === 'ok') continue;
+        // SECURITY_COVERAGE: same matcher (_slfBestStatus) applied to the
+        // covering id, independently of requiredIds.
+        if (securityCoveringIds(cid).some(function(c){ return _slfBestStatus(docs, c, today).status === 'ok'; })) continue;
         var meta = _slfCertMeta(cid);
         var entry = {
             cert_id: cid,

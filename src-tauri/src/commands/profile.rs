@@ -367,6 +367,75 @@ fn document_matches_template(doc: &db::DocRecord, template: &profiles::DocTempla
             && doc.title.eq_ignore_ascii_case(template.title))
 }
 
+// STCW.7/Circ.22 (IMO, 25.02.2014) §2–§4: the higher security-training levels
+// include the competencies of the lower ones — SSO (A-VI/5) covers designated
+// security duties (A-VI/6-2) and security awareness (A-VI/6-1); DSD covers
+// security awareness. Key = covering template id, value = ids it covers.
+// Transitivity is written out explicitly (sso → sec_awareness), never derived.
+// Mirrored verbatim as SECURITY_COVERAGE in dist/index.html.
+const SECURITY_COVERAGE: &[(&str, &[&str])] = &[
+    ("sso", &["dsd", "sec_awareness"]),
+    ("dsd", &["sec_awareness"]),
+];
+
+/// Catalog templates whose valid document covers `template_id`. Resolved through
+/// the shared catalog, independently of the current required-template list, so a
+/// Chief Officer's SSO covers DSD even though SSO itself is not required.
+fn security_covering_templates(template_id: &str) -> Vec<profiles::DocTemplate> {
+    SECURITY_COVERAGE
+        .iter()
+        .filter(|(_, covered)| covered.contains(&template_id))
+        .filter_map(|(covering, _)| profiles::doc_template_by_title_or_id(covering))
+        .collect()
+}
+
+/// Gap reason for one template against the vault rows, in the gate's order:
+/// no matching row → "missing"; rows but none with a file → "no_file"; files
+/// but all expired → "expired"; otherwise None (satisfied).
+fn template_gap_reason(
+    docs: &[db::DocRecord],
+    template: &profiles::DocTemplate,
+    today: &str,
+) -> Option<&'static str> {
+    let matches: Vec<&db::DocRecord> = docs
+        .iter()
+        .filter(|doc| document_matches_template(doc, template))
+        .collect();
+    if matches.is_empty() {
+        return Some("missing");
+    }
+    let with_file: Vec<&db::DocRecord> = matches
+        .iter()
+        .copied()
+        .filter(|doc| {
+            doc.file_name
+                .as_deref()
+                .map(|s| !s.trim().is_empty())
+                .unwrap_or(false)
+        })
+        .collect();
+    if with_file.is_empty() {
+        Some("no_file")
+    } else if with_file.iter().all(|doc| {
+        doc.valid_to
+            .as_deref()
+            .map(|v| !v.trim().is_empty() && v < today)
+            .unwrap_or(false)
+    }) {
+        Some("expired")
+    } else {
+        None
+    }
+}
+
+/// True when a covering template (SECURITY_COVERAGE) is satisfied by the same
+/// missing/no_file/expired rules the gate applies to a direct match.
+fn security_covered(docs: &[db::DocRecord], template_id: &str, today: &str) -> bool {
+    security_covering_templates(template_id)
+        .iter()
+        .any(|covering| template_gap_reason(docs, covering, today).is_none())
+}
+
 fn required_document_gaps(conn: &Connection) -> Result<Vec<serde_json::Value>, String> {
     let templates = current_required_profile_templates(conn)?;
     if templates.is_empty() {
@@ -379,36 +448,10 @@ fn required_document_gaps(conn: &Connection) -> Result<Vec<serde_json::Value>, S
         .to_string();
     let mut gaps = Vec::new();
     for template in templates.iter() {
-        let matches: Vec<&db::DocRecord> = docs
-            .iter()
-            .filter(|doc| document_matches_template(doc, template))
-            .collect();
-        let reason = if matches.is_empty() {
-            Some("missing")
-        } else {
-            let with_file: Vec<&db::DocRecord> = matches
-                .iter()
-                .copied()
-                .filter(|doc| {
-                    doc.file_name
-                        .as_deref()
-                        .map(|s| !s.trim().is_empty())
-                        .unwrap_or(false)
-                })
-                .collect();
-            if with_file.is_empty() {
-                Some("no_file")
-            } else if with_file.iter().all(|doc| {
-                doc.valid_to
-                    .as_deref()
-                    .map(|v| !v.trim().is_empty() && v < today.as_str())
-                    .unwrap_or(false)
-            }) {
-                Some("expired")
-            } else {
-                None
-            }
-        };
+        let reason = template_gap_reason(&docs, template, &today);
+        if reason.is_some() && security_covered(&docs, template.id, &today) {
+            continue;
+        }
         if let Some(reason) = reason {
             gaps.push(serde_json::json!({
                 "kind": "document",
@@ -1550,7 +1593,13 @@ fn required_profile_status_from_docs(
     let required_json: Vec<serde_json::Value> = templates
         .iter()
         .map(|t| {
-            let has = have.contains(t.id);
+            // A template is also satisfied by an attached document of a covering
+            // template (SECURITY_COVERAGE); this place's own rule — attached file,
+            // no expiry check — applies to the covering document too.
+            let has = have.contains(t.id)
+                || security_covering_templates(t.id)
+                    .iter()
+                    .any(|covering| have.contains(covering.id));
             if !has {
                 missing_ids.push(t.id.to_string());
             }
@@ -1821,6 +1870,171 @@ mod tests {
         assert!(docs
             .iter()
             .any(|d| d.template_id.as_deref() == Some("ecdis")));
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(vault_path);
+    }
+
+    // ---- SECURITY_COVERAGE (STCW.7/Circ.22 §2–§4), card №902 ------------------
+
+    fn coverage_vault(level_id: &str, position: &str) -> (Connection, std::path::PathBuf) {
+        let vault_path = std::env::temp_dir().join(format!(
+            "skipi-security-coverage-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&vault_path).unwrap();
+        let conn = db::open_db(&vault_path).unwrap();
+        db::set_vault_info(&conn, "account_type", "seafarer").unwrap();
+        db::set_vault_info(&conn, "stcw_level", level_id).unwrap();
+        db::set_vault_info(&conn, "vessel_category", "bulker").unwrap();
+        db::set_vault_info(&conn, "position", position).unwrap();
+        // Every required template except the three security ones gets an
+        // attached, unexpired row, so the only gaps left are the ones under test.
+        let level = profiles::StcwLevel::from_id(level_id).unwrap();
+        for t in profiles::required_docs_for_profile(level, "bulker", position) {
+            if ["sso", "dsd", "sec_awareness"].contains(&t.id) {
+                continue;
+            }
+            db::insert_doc(&conn, &attached_doc(&t, None)).unwrap();
+        }
+        (conn, vault_path)
+    }
+
+    fn catalog_template(id: &str) -> profiles::DocTemplate {
+        profiles::doc_template_by_title_or_id(id).expect("catalog template")
+    }
+
+    fn attached_doc(t: &profiles::DocTemplate, valid_to: Option<&str>) -> db::DocRecord {
+        let mut rec = frameworks::record_from_profile_template(t);
+        rec.file_name = Some(format!("{}/{}.pdf", t.category, t.id));
+        rec.sha256 = Some("deadbeef".to_string());
+        rec.file_size = Some(1024);
+        if let Some(v) = valid_to {
+            rec.valid_to = Some(v.to_string());
+        }
+        rec
+    }
+
+    fn gap_reason(gaps: &[serde_json::Value], id: &str) -> Option<String> {
+        gaps.iter()
+            .find(|g| g["id"] == id)
+            .map(|g| g["reason"].as_str().unwrap().to_string())
+    }
+
+    fn completeness_missing(conn: &Connection, level_id: &str, position: &str) -> Vec<String> {
+        let level = profiles::StcwLevel::from_id(level_id).unwrap();
+        let templates = profiles::required_docs_for_profile(level, "bulker", position);
+        let docs = db::get_all_docs(conn).unwrap();
+        required_profile_status_from_docs(&templates, &docs).1
+    }
+
+    #[test]
+    fn security_coverage_sso_with_file_covers_dsd_and_awareness_for_master() {
+        let (conn, vault_path) = coverage_vault("management", "master");
+        // Positive control: without SSO the gate reports all three as missing.
+        let gaps = required_document_gaps(&conn).unwrap();
+        assert_eq!(gap_reason(&gaps, "sso").as_deref(), Some("missing"));
+        assert_eq!(gap_reason(&gaps, "dsd").as_deref(), Some("missing"));
+        assert_eq!(gap_reason(&gaps, "sec_awareness").as_deref(), Some("missing"));
+        let missing = completeness_missing(&conn, "management", "master");
+        assert!(missing.contains(&"dsd".to_string()) && missing.contains(&"sec_awareness".to_string()));
+
+        db::insert_doc(&conn, &attached_doc(&catalog_template("sso"), None)).unwrap();
+        let gaps = required_document_gaps(&conn).unwrap();
+        assert!(gaps.is_empty(), "unexpected gaps: {gaps:?}");
+        let level = profiles::StcwLevel::from_id("management").unwrap();
+        let templates = profiles::required_docs_for_profile(level, "bulker", "master");
+        let docs = db::get_all_docs(&conn).unwrap();
+        let (_, missing, pct) = required_profile_status_from_docs(&templates, &docs);
+        assert!(missing.is_empty(), "completeness missing: {missing:?}");
+        assert!((pct - 100.0).abs() < 0.0001);
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(vault_path);
+    }
+
+    #[test]
+    fn security_coverage_sso_covers_for_chief_officer_where_sso_is_not_required() {
+        let (conn, vault_path) = coverage_vault("management", "chief_officer");
+        let level = profiles::StcwLevel::from_id("management").unwrap();
+        let required = profiles::required_docs_for_profile(level, "bulker", "chief_officer");
+        assert!(!required.iter().any(|t| t.id == "sso"), "sso must not be required here");
+        assert!(required.iter().any(|t| t.id == "dsd") && required.iter().any(|t| t.id == "sec_awareness"));
+        // Positive control.
+        let gaps = required_document_gaps(&conn).unwrap();
+        assert_eq!(gap_reason(&gaps, "dsd").as_deref(), Some("missing"));
+        assert_eq!(gap_reason(&gaps, "sec_awareness").as_deref(), Some("missing"));
+
+        db::insert_doc(&conn, &attached_doc(&catalog_template("sso"), None)).unwrap();
+        let gaps = required_document_gaps(&conn).unwrap();
+        assert!(gaps.is_empty(), "unexpected gaps: {gaps:?}");
+        assert!(gap_reason(&gaps, "sso").is_none(), "sso must not appear as a gap");
+        assert!(completeness_missing(&conn, "management", "chief_officer").is_empty());
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(vault_path);
+    }
+
+    #[test]
+    fn security_coverage_sso_row_without_file_does_not_cover() {
+        let (conn, vault_path) = coverage_vault("management", "master");
+        // Seeded SSO slot without an attached file (sso has no expiry, so
+        // "no file" is the reachable negative — card F6).
+        db::insert_doc(&conn, &frameworks::record_from_profile_template(&catalog_template("sso"))).unwrap();
+        let gaps = required_document_gaps(&conn).unwrap();
+        assert_eq!(gap_reason(&gaps, "sso").as_deref(), Some("no_file"));
+        assert_eq!(gap_reason(&gaps, "dsd").as_deref(), Some("missing"));
+        assert_eq!(gap_reason(&gaps, "sec_awareness").as_deref(), Some("missing"));
+        let missing = completeness_missing(&conn, "management", "master");
+        for id in ["sso", "dsd", "sec_awareness"] {
+            assert!(missing.contains(&id.to_string()), "{id} must stay missing");
+        }
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(vault_path);
+    }
+
+    #[test]
+    fn security_coverage_dsd_covers_awareness_but_not_sso() {
+        let (conn, vault_path) = coverage_vault("management", "master");
+        db::insert_doc(&conn, &attached_doc(&catalog_template("dsd"), None)).unwrap();
+        let gaps = required_document_gaps(&conn).unwrap();
+        assert!(gap_reason(&gaps, "sec_awareness").is_none(), "awareness must be covered by DSD");
+        assert!(gap_reason(&gaps, "dsd").is_none());
+        assert_eq!(gap_reason(&gaps, "sso").as_deref(), Some("missing"));
+        assert_eq!(completeness_missing(&conn, "management", "master"), vec!["sso".to_string()]);
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(vault_path);
+    }
+
+    #[test]
+    fn security_coverage_expired_dsd_does_not_cover_awareness_in_the_gate() {
+        let (conn, vault_path) = coverage_vault("management", "master");
+        db::insert_doc(&conn, &attached_doc(&catalog_template("dsd"), Some("2020-01-01"))).unwrap();
+        let gaps = required_document_gaps(&conn).unwrap();
+        assert_eq!(gap_reason(&gaps, "dsd").as_deref(), Some("expired"));
+        assert_eq!(gap_reason(&gaps, "sec_awareness").as_deref(), Some("missing"));
+        assert_eq!(gap_reason(&gaps, "sso").as_deref(), Some("missing"));
+        // Completeness has no expiry rule of its own (existing behaviour, card
+        // F5 debt): an attached DSD counts there, so it covers awareness there.
+        assert_eq!(completeness_missing(&conn, "management", "master"), vec!["sso".to_string()]);
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(vault_path);
+    }
+
+    #[test]
+    fn security_coverage_awareness_does_not_cover_dsd_or_sso() {
+        let (conn, vault_path) = coverage_vault("management", "master");
+        db::insert_doc(&conn, &attached_doc(&catalog_template("sec_awareness"), None)).unwrap();
+        let gaps = required_document_gaps(&conn).unwrap();
+        assert!(gap_reason(&gaps, "sec_awareness").is_none());
+        assert_eq!(gap_reason(&gaps, "dsd").as_deref(), Some("missing"));
+        assert_eq!(gap_reason(&gaps, "sso").as_deref(), Some("missing"));
+        let missing = completeness_missing(&conn, "management", "master");
+        assert!(missing.contains(&"dsd".to_string()) && missing.contains(&"sso".to_string()));
+        assert!(!missing.contains(&"sec_awareness".to_string()));
 
         drop(conn);
         let _ = std::fs::remove_dir_all(vault_path);
