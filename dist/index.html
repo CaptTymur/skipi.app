@@ -442,6 +442,10 @@ body.mobile-mode .desktop-stack-label { display:none; }
 .tree-file { min-height:30px; display:flex; align-items:center; padding:2px 8px 2px 32px; gap:7px; font-size:12px; cursor:pointer; color:var(--text); }
 .tree-file:hover { background:var(--hover); }
 .tree-file.req { box-shadow:inset 3px 0 0 var(--accent); padding-left:29px; }
+/* security-covered-902b */
+.tree-file.covered { box-shadow:inset 3px 0 0 rgba(39,174,96,.55); padding-left:29px; color:var(--text2); }
+.kind-badge.covered { color:var(--green); border-color:rgba(39,174,96,.55); background:rgba(39,174,96,.08); }
+/* /security-covered-902b */
 .tree-file.conditional { box-shadow:inset 3px 0 0 #2aa198; padding-left:29px; }
 .tree-file.flagdoc { box-shadow:inset 3px 0 0 #4f9dff; padding-left:29px; }
 .tree-file.specific { box-shadow:inset 3px 0 0 #b887ff; padding-left:29px; color:var(--text2); }
@@ -4109,13 +4113,39 @@ function securityCoveringIds(cid){
     Object.keys(SECURITY_COVERAGE).forEach(function(k){if(SECURITY_COVERAGE[k].indexOf(cid)!==-1)out.push(k);});
     return out;
 }
-// True when any document of a covering id has an attached file (resolved over
-// ALL docs, not only active-required ones — a Chief Officer's SSO is not
-// required but still covers DSD / security awareness).
-function securityCoveredByAttached(cid,docs){
+// №902-b: the ONE live UI predicate of coverage. A covering document counts
+// when it is VALID by the same rule the Rust readiness gate applies
+// (profile.rs template_gap_reason): a non-empty file_name AND not expired
+// (valid_to empty or >= today, ISO date compare). is_permanent/has_expiry are
+// not consulted there either, so marker and gate go red together (expired
+// SSO with a file => DSD / security awareness are required again). Resolved
+// over ALL docs, not only active-required ones — a Chief Officer's SSO is not
+// required but still covers DSD / security awareness. Render-time, never
+// cached: attaching an SSO re-labels the covered rows on the next repaint.
+function securityCoveringDoc(cid,docs){
     var ids=securityCoveringIds(cid);
-    if(!ids.length)return false;
-    return (docs||[]).some(function(x){return !!(x&&x.template_id&&x.file_name)&&ids.indexOf(x.template_id)!==-1;});
+    if(!ids.length)return null;
+    var today=(new Date()).toISOString().slice(0,10);
+    var found=null;
+    (docs||[]).some(function(x){
+        if(!(x&&x.template_id&&String(x.file_name||'').trim()))return false;
+        if(ids.indexOf(x.template_id)===-1)return false;
+        var vt=String(x.valid_to||'').trim();
+        if(vt&&vt<today)return false;
+        found=x;return true;
+    });
+    return found;
+}
+function securityCoveredByAttached(cid,docs){
+    return !!securityCoveringDoc(cid,docs);
+}
+// The one RU/EN hint for a covered slot (badge + regulatory-basis text).
+function securityCoveredHint(d){
+    var c=securityCoveringDoc(d&&d.template_id,allDocs);
+    var title=c?String(c.title||c.template_id||''):'';
+    var ru=getUiLang()==='ru';
+    return {label:ru?'Покрыт':'Covered',
+            text:ru?('Покрыт приложенным сертификатом '+title+' (STCW.7/Circ.22)'):('Covered by the attached '+title+' certificate (STCW.7/Circ.22)')};
 }
 var SERVER_CATALOG_URL = '/api/catalogs';
 var wizardState = {step:1,name:'',level:'',vessel_root:'',vessel_leaf:'',position:'',positionCustom:'',vault_path:'',recovery_key:''};
@@ -4243,6 +4273,14 @@ function isActiveRequiredDoc(d){
     return !!(d&&d.template_id&&isActiveTemplateId(d.template_id)&&!isOptionalCategory(d.category));
 }
 
+// №902-b: an active-required slot without its own file that a VALID covering
+// document closes (SECURITY_COVERAGE). Still active-required for deletion and
+// grouping (canDeleteDoc / docTreeGroup unchanged); only the mandatory LOOK
+// and the required/no-file counts change.
+function isCoveredRequiredDoc(d){
+    return !!(isActiveRequiredDoc(d)&&!String(d.file_name||'').trim()&&securityCoveredByAttached(d.template_id,allDocs));
+}
+
 function docTreeGroup(d){
     if(isActiveRequiredDoc(d))return 0;
     if(d&&d.template_id&&isConditionalTemplateId(d.template_id))return 1;
@@ -4253,6 +4291,7 @@ function docTreeGroup(d){
 }
 
 function docKindClass(d){
+    if(isCoveredRequiredDoc(d))return ' covered';
     if(isActiveRequiredDoc(d))return ' req';
     if(d&&d.template_id&&isFlagTemplateId(d.template_id))return ' flagdoc';
     if(d&&d.template_id&&isConditionalTemplateId(d.template_id))return ' conditional';
@@ -4275,6 +4314,7 @@ function docKindBadgeHtml(d,label,cls,title){
 }
 
 function docKindBadge(d){
+    if(isCoveredRequiredDoc(d)){var ch=securityCoveredHint(d);return docKindBadgeHtml(d,ch.label,'covered',ch.text);}
     if(isActiveRequiredDoc(d))return docKindBadgeHtml(d,'REQ','req','Required by the active profile framework. Click to view the regulatory basis.');
     if(d&&d.template_id&&isFlagTemplateId(d.template_id))return docKindBadgeHtml(d,'FLAG','flagdoc','Known flag-state document. Click to view the regulatory basis.');
     if(d&&d.template_id&&isConditionalTemplateId(d.template_id))return docKindBadgeHtml(d,'STCW','conditional','Known STCW-specific certificate. Click to view the regulatory basis.');
@@ -4285,6 +4325,7 @@ function docKindBadge(d){
 }
 
 function docKindMeta(d){
+    if(isCoveredRequiredDoc(d)){var ch=securityCoveredHint(d);return ' '+docKindBadgeHtml(d,ch.label,'covered',ch.text);}
     if(isActiveRequiredDoc(d))return ' '+docKindBadgeHtml(d,'Required','req','Required by the active profile framework. Click to view the regulatory basis.');
     if(d&&d.template_id&&isFlagTemplateId(d.template_id))return ' '+docKindBadgeHtml(d,'Flag Document','flagdoc','Known flag-state document. Click to view the regulatory basis.');
     if(d&&d.template_id&&isConditionalTemplateId(d.template_id))return ' '+docKindBadgeHtml(d,'STCW Specific','conditional','Known STCW-specific certificate. Click to view the regulatory basis.');
@@ -4295,6 +4336,7 @@ function docKindMeta(d){
 }
 
 function docRequirementKind(d){
+    if(isCoveredRequiredDoc(d)){var ch=securityCoveredHint(d);return {label:ch.label,cls:'covered',text:ch.text};}
     if(isActiveRequiredDoc(d))return {label:'Required',cls:'req',text:'This slot is part of the active document framework for the current seafarer profile.'};
     if(d&&d.template_id&&isFlagTemplateId(d.template_id))return {label:'Flag document',cls:'flagdoc',text:'Known flag-state document. It is usually needed when the vessel flag differs from the seafarer national or issuing administration.'};
     if(d&&d.template_id&&isConditionalTemplateId(d.template_id))return {label:'STCW specific',cls:'conditional',text:'Known STCW-specific certificate. It is required only for certain vessel types, trades, areas or duties.'};
@@ -4479,16 +4521,12 @@ function requiredDocumentSummary(){
     // The backend supplies the active required-template universe, including absent rows.
     var ids=Array.from(new Set(activeTemplateIds)),satisfied=new Set();
     (allDocs||[]).forEach(function(d){if(isActiveRequiredDoc(d)&&mobileDocHasAttachedFile(d))satisfied.add(d.template_id);});
-    // Coverage (SECURITY_COVERAGE) is resolved over ALL attached documents, not
-    // only the active-required ones: a Chief Officer's SSO is not required but
-    // still covers DSD / security awareness.
-    var attached=new Set();
-    (allDocs||[]).forEach(function(d){if(d.template_id&&mobileDocHasAttachedFile(d))attached.add(d.template_id);});
-    var missing=ids.filter(function(id){
-        if(satisfied.has(id))return false;
-        return !securityCoveringIds(id).some(function(c){return attached.has(c);});
-    });
-    return {loaded:true,required:ids.length,missing:missing.length,missingIds:missing};
+    // №902-b: an id closed by a VALID covering document (securityCoveredByAttached,
+    // the one live predicate; resolved over ALL docs) is not mandatory: it leaves
+    // the required count and never reaches missing. Own-file ids stay required.
+    var covered=ids.filter(function(id){return !satisfied.has(id)&&securityCoveredByAttached(id,allDocs);});
+    var missing=ids.filter(function(id){return !satisfied.has(id)&&covered.indexOf(id)===-1;});
+    return {loaded:true,required:ids.length-covered.length,missing:missing.length,missingIds:missing,coveredIds:covered};
 }
 function mobileCompletenessPercent(){
     var summary=requiredDocumentSummary();
@@ -5212,7 +5250,8 @@ function mobileStats(){
 var documentThumbCache={};
 var documentThumbInFlight={};
 function mobileStatusPill(d){
-    if(!d.file_name&&isActiveRequiredDoc(d)&&!securityCoveredByAttached(d.template_id,allDocs))return '<span class="mobile-pill bad">'+mobileSetupText('Missing','Недостающий')+'</span>';
+    if(!d.file_name&&isCoveredRequiredDoc(d))return '<span class="mobile-pill ok">'+mobileSetupText('Covered','Покрыт')+'</span>';
+    if(!d.file_name&&isActiveRequiredDoc(d))return '<span class="mobile-pill bad">'+mobileSetupText('Missing','Недостающий')+'</span>';
     if(!d.file_name)return '<span class="mobile-pill">'+mobileSetupText('No file','Без файла')+'</span>';
     if(d.is_permanent)return '<span class="mobile-pill ok">'+mobileSetupText('Permanent','Бессрочный')+'</span>';
     var s=classify(d),dl=days(d);
@@ -5297,7 +5336,7 @@ function mobileDocRow(d, extraAction){
 function mobileFilteredDocs(kind){
     var docs=allDocs.slice();
     if(kind==='missing')docs=docs.filter(function(d){return isActiveRequiredDoc(d)&&requiredDocumentSummary().missingIds.indexOf(d.template_id)!==-1;});
-    else if(kind==='nofile')docs=docs.filter(function(d){return !d.file_name;});
+    else if(kind==='nofile')docs=docs.filter(function(d){return !d.file_name&&!isCoveredRequiredDoc(d);});
     else if(kind==='uploaded')docs=docs.filter(function(d){return !!d.file_name;});
     else if(kind==='expiring')docs=docs.filter(function(d){return d.file_name&&(classify(d)==='expired'||classify(d)==='critical'||classify(d)==='warning');});
     if(kind&&kind.indexOf('cat:')===0){
@@ -7813,7 +7852,7 @@ function mobileDocsBodyHtml(){
     // are computed here and not in the caller.
     var requiredSummary=requiredDocumentSummary();
     var missing=requiredSummary.loaded?requiredSummary.missing:'—';
-    var nofile=allDocs.filter(function(d){return !d.file_name;}).length;
+    var nofile=allDocs.filter(function(d){return !d.file_name&&!isCoveredRequiredDoc(d);}).length;
     var uploaded=allDocs.filter(function(d){return !!d.file_name;}).length;
     var expiring=mobileFilteredDocs('expiring').length;
     var h='<div class="mobile-filter-row">'
@@ -11071,7 +11110,7 @@ function days(d){if(!d||d.is_permanent||!d.valid_to)return null;return Math.floo
 function stColor(s){return{expired:'var(--red)',critical:'var(--orange)',warning:'#d4a017',valid:'var(--green)',none:'var(--text2)'}[s]||'var(--text2)';}
 // Numeric priority for aggregating worst-status per category in the sidebar.
 function docStatusRank(d){
-    var isReq = isActiveRequiredDoc(d);
+    var isReq = isActiveRequiredDoc(d) && !isCoveredRequiredDoc(d);
     if(!d.file_name && isReq) return 6;
     if(!d.file_name) return 0;
     if(d.is_permanent) return 1;
@@ -12017,7 +12056,7 @@ function docTreeFilterLabels(){
 }
 function docMatchesTreeFilter(d){
     if(!d)return false;
-    if(docTreeFilter==='required')return isActiveRequiredDoc(d);
+    if(docTreeFilter==='required')return isActiveRequiredDoc(d)&&!isCoveredRequiredDoc(d);
     if(docTreeFilter==='missing')return isActiveRequiredDoc(d)&&requiredDocumentSummary().missingIds.indexOf(d.template_id)!==-1;
     if(docTreeFilter==='expiring'){
         var s=classify(d);
@@ -12050,6 +12089,7 @@ function renderDocFilterBar(){
     }).join('');
 }
 function docTreeKindBadge(d){
+    if(isCoveredRequiredDoc(d))return docKindBadge(d);
     if(isActiveRequiredDoc(d))return '';
     return docKindBadge(d);
 }
