@@ -443,8 +443,8 @@ body.mobile-mode .desktop-stack-label { display:none; }
 .tree-file:hover { background:var(--hover); }
 .tree-file.req { box-shadow:inset 3px 0 0 var(--accent); padding-left:29px; }
 /* security-covered-902b */
-.tree-file.covered { box-shadow:inset 3px 0 0 rgba(39,174,96,.55); padding-left:29px; color:var(--text2); }
-.kind-badge.covered { color:var(--green); border-color:rgba(39,174,96,.55); background:rgba(39,174,96,.08); }
+.tree-file.covered { box-shadow:inset 3px 0 0 var(--green); padding-left:29px; color:var(--text2); }
+.kind-badge.covered { color:var(--green); border-color:var(--green); background:transparent; }
 /* /security-covered-902b */
 .tree-file.conditional { box-shadow:inset 3px 0 0 #2aa198; padding-left:29px; }
 .tree-file.flagdoc { box-shadow:inset 3px 0 0 #4f9dff; padding-left:29px; }
@@ -4139,13 +4139,20 @@ function securityCoveringDoc(cid,docs){
 function securityCoveredByAttached(cid,docs){
     return !!securityCoveringDoc(cid,docs);
 }
-// The one RU/EN hint for a covered slot (badge + regulatory-basis text).
+// The one RU/EN hint for a covered slot (badge + regulatory-basis text). The
+// covering certificate is named by a UI string keyed on the covering template
+// id (ui-lang), never by the vault row title (A5: no mixed-language text);
+// unknown id → neutral wording.
 function securityCoveredHint(d){
+    var names={en:{sso:'Ship Security Officer (SSO)',dsd:'Designated Security Duties (DSD)'},
+               ru:{sso:'Офицер охраны судна (SSO)',dsd:'Назначенные обязанности по охране (DSD)'}};
     var c=securityCoveringDoc(d&&d.template_id,allDocs);
-    var title=c?String(c.title||c.template_id||''):'';
     var ru=getUiLang()==='ru';
-    return {label:ru?'Покрыт':'Covered',
-            text:ru?('Покрыт приложенным сертификатом '+title+' (STCW.7/Circ.22)'):('Covered by the attached '+title+' certificate (STCW.7/Circ.22)')};
+    var name=c?(names[ru?'ru':'en'][c.template_id]||''):'';
+    var text;
+    if(name)text=ru?('Покрыт приложенным сертификатом '+name+' (STCW.7/Circ.22)'):('Covered by the attached '+name+' certificate (STCW.7/Circ.22)');
+    else text=ru?'Покрыт приложенным сертификатом более высокого уровня охраны (STCW.7/Circ.22)':'Covered by the attached higher security certificate (STCW.7/Circ.22)';
+    return {label:ru?'Покрыт':'Covered',text:text};
 }
 var SERVER_CATALOG_URL = '/api/catalogs';
 var wizardState = {step:1,name:'',level:'',vessel_root:'',vessel_leaf:'',position:'',positionCustom:'',vault_path:'',recovery_key:''};
@@ -4526,11 +4533,14 @@ function requiredDocumentSummary(){
     // the required count and never reaches missing. Own-file ids stay required.
     var covered=ids.filter(function(id){return !satisfied.has(id)&&securityCoveredByAttached(id,allDocs);});
     var missing=ids.filter(function(id){return !satisfied.has(id)&&covered.indexOf(id)===-1;});
-    return {loaded:true,required:ids.length-covered.length,missing:missing.length,missingIds:missing,coveredIds:covered};
+    // `required` = shown count (chips/filter: covered ids are not mandatory); `requiredTotal`
+    // = the full framework and `satisfied` counts covered as closed — the percent keeps the
+    // pin's denominator (A1: same number as №902 and as the Rust completeness, place 2).
+    return {loaded:true,required:ids.length-covered.length,requiredTotal:ids.length,satisfied:ids.length-missing.length,missing:missing.length,missingIds:missing,coveredIds:covered};
 }
 function mobileCompletenessPercent(){
     var summary=requiredDocumentSummary();
-    return summary.loaded&&summary.required?Math.round((summary.required-summary.missing)/summary.required*100):0;
+    return summary.loaded&&summary.requiredTotal?Math.round(summary.satisfied/summary.requiredTotal*100):0;
 }
 function mobileSetProfileMeterPct(pct){
     pct=Math.max(0,Math.min(100,Math.round(Number(pct)||0)));
