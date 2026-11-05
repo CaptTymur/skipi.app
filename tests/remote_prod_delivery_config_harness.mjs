@@ -88,13 +88,18 @@ function verifySignature(entry, publicJwk) {
 
 function testOffOverrideFailClosed() {
   const bootCode = fs.readFileSync(BOOT_FILE, 'utf8');
+  // SKI No.380 (2026-11-05): the interception moved from window.pluginMountInto to
+  // window.SkipiPluginHost.mount, because the product mounts through the module's
+  // CLOSURE-local pluginMountInto and never through the global. This drill therefore
+  // watches the seam that is really patched. The previous fixture guarded the global —
+  // a seam the product never calls, so it could not have observed a patch either way.
+  const origMount = function () { throw new Error('boot must not reach the host mount when the flag is off'); };
   const ctx = {
     console,
     window: {
       FEATURE_REMOTE_PLUGIN_DELIVERY: false,
       SKIPI_REMOTE_CONFIG: {},
-      pluginMountInto: function pluginMountInto() { throw new Error('boot should not patch pluginMountInto when flag is off'); },
-      SkipiPluginHost: {}
+      SkipiPluginHost: { mount: origMount, unmount() {} }
     }
   };
   ctx.window.window = ctx.window;
@@ -102,21 +107,63 @@ function testOffOverrideFailClosed() {
   vm.runInContext(bootCode, ctx, { filename: BOOT_FILE });
   ok(!ctx.window.SkipiRemoteRuntime, 'flag OFF path does not create remote runtime');
   ok(!ctx.window.SkipiRemoteList, 'flag OFF path does not create remote catalog list helper');
+  ok(ctx.window.SkipiPluginHost.mount === origMount, 'flag OFF leaves the host mount seam UNPATCHED (identity, not behaviour)');
+}
+
+// New mechanism, new drill: the dependency gate now requires the seam it actually patches.
+// Without it the boot must stay inert instead of half-installing.
+function testGateRequiresHostMountSeam() {
+  const bootCode = fs.readFileSync(BOOT_FILE, 'utf8');
+  const ctx = {
+    console,
+    window: {
+      FEATURE_REMOTE_PLUGIN_DELIVERY: true,
+      SKIPI_REMOTE_CONFIG: { remoteSlugs: [] },
+      SkipiPluginLoader: { create: () => ({ getCatalog: () => Promise.resolve({ source: 'network', catalog: {} }) }) },
+      SkipiPluginRuntime: { create: () => ({ open() {}, close() {} }) },
+      SkipiPluginHost: { unmount() {} } // the mount seam is ABSENT
+    },
+    document: { getElementById: () => ({ innerHTML: '' }) }
+  };
+  ctx.window.window = ctx.window;
+  vm.createContext(ctx);
+  vm.runInContext(bootCode, ctx, { filename: BOOT_FILE });
+  ok(!ctx.window.SkipiRemoteInstall, 'host without .mount keeps remote delivery inert (dependency gate)');
+  ok(!ctx.window.SkipiRemoteRuntime, 'inert gate constructs no remote runtime');
 }
 
 async function testCentralCatalogKillSwitchFallsBackBundled() {
   const bootCode = fs.readFileSync(BOOT_FILE, 'utf8');
+  const SLUG = 'navigation-calculators';
+  const VER = '0.2.1';
   let bundledMounts = 0;
   let runtimeOpens = 0;
+  // Seeded registry + verified skpd.* cache. WITHOUT them the boot takes its
+  // «no remote record» early return, and this drill used to assert the kill-switch
+  // routing while never reaching the kill-switch branch at all (measured 2026-11-05,
+  // SKI No.380): the record is what makes the slug a remote one in the first place.
+  const entry = { slug: SLUG, id: 'app.skipi.plugins.' + SLUG, name: 'Navigation Calculators', version: VER };
+  const store = new Map([
+    ['skipi_remote_plugins_state', JSON.stringify({ [SLUG]: { installed: true, enabled: true, slug: SLUG, id: entry.id, name: entry.name, version: VER, entry } })],
+    ['skpd.entry:' + SLUG, JSON.stringify(entry)],
+    ['skpd.pack:' + SLUG + '@' + VER, JSON.stringify({ slug: SLUG, version: VER })]
+  ]);
+  const el = { innerHTML: '' };
+  const origMount = (id) => { bundledMounts += 1; return Promise.resolve({ ok: true }); };
   const ctx = {
     console,
     setTimeout,
     clearTimeout,
+    localStorage: {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => store.set(k, String(v)),
+      removeItem: (k) => store.delete(k)
+    },
     window: {
       FEATURE_REMOTE_PLUGIN_DELIVERY: true,
       SKIPI_REMOTE_CONFIG: {
         catalogUrl: 'https://unit.test/catalog.json',
-        remoteSlugs: ['navigation-calculators'],
+        remoteSlugs: [SLUG],
         host: { id: 'seafarer', version: EXPECTED_VERSION },
         policy: {},
         pinnedPublicKeys: { 'skipi-firstparty-prod-v1': { kid: 'skipi-firstparty-prod-v1' } },
@@ -137,12 +184,12 @@ async function testCentralCatalogKillSwitchFallsBackBundled() {
           close: () => {}
         })
       },
-      pluginMountInto: () => { bundledMounts += 1; },
-      SkipiPluginHost: { unmount() {} }
+      SkipiPluginHost: { mount: origMount, unmount() {} }
     },
-    document: { getElementById: () => ({ innerHTML: '' }) }
+    document: { getElementById: () => el }
   };
   ctx.window.window = ctx.window;
+  ctx.window.localStorage = ctx.localStorage;
   vm.createContext(ctx);
   vm.runInContext(bootCode, ctx, { filename: BOOT_FILE });
   await Promise.resolve();
@@ -150,10 +197,20 @@ async function testCentralCatalogKillSwitchFallsBackBundled() {
   ok(ctx.window.SkipiRemoteDeliveryStatus().enabled === false, 'central catalog delivery_enabled=false is observed');
   const list = await ctx.window.SkipiRemoteList();
   ok(Array.isArray(list) && list.length === 0, 'central kill-switch hides remote catalog list');
-  ctx.window.pluginMountInto('navigation-calculators');
+  ok(ctx.window.SkipiPluginHost.mount !== origMount, 'boot patched the host mount seam (the seam the product really calls)');
+
+  // (a) an INSTALLED remote slug under the kill switch: the branch this drill is named for
+  await ctx.window.SkipiPluginHost.mount(SLUG, el);
   await Promise.resolve();
-  ok(bundledMounts === 1, 'central kill-switch routes configured remote slug back to bundled mount');
+  ok(bundledMounts === 1, 'central kill-switch routes an INSTALLED remote slug back to the bundled mount');
   ok(runtimeOpens === 0, 'central kill-switch prevents remote runtime open');
+
+  // (b) a slug with no remote record at all still goes bundled (the pre-existing path)
+  store.delete('skipi_remote_plugins_state');
+  await ctx.window.SkipiPluginHost.mount(SLUG, el);
+  await Promise.resolve();
+  ok(bundledMounts === 2, 'a slug without a remote record goes bundled as before');
+  ok(runtimeOpens === 0, 'and still never opens the remote runtime');
 }
 
 (async function main() {
@@ -165,6 +222,7 @@ async function testCentralCatalogKillSwitchFallsBackBundled() {
   ok(win.FEATURE_REMOTE_PLUGIN_DELIVERY === true, 'default FEATURE_REMOTE_PLUGIN_DELIVERY is ON');
   ok(off.FEATURE_REMOTE_PLUGIN_DELIVERY === false, "localStorage 'off' override disables remote delivery");
   testOffOverrideFailClosed();
+  testGateRequiresHostMountSeam();
 
   ok(cfg.catalogUrl === CATALOG_URL, 'catalogUrl is production api.skipi.app path');
   ok(JSON.stringify(cfg.remoteSlugs) === JSON.stringify(EXPECTED_SLUGS), 'remoteSlugs exactly match B5 production set');

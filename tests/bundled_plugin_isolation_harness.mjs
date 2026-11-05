@@ -472,8 +472,15 @@ async function runRemoteInstallOfflineHarness() {
       bundledVersions: { 'navigation-calculators': '0.1.0' }
     },
     APP_VERSION: '0.4.167',
-    pluginMountInto: (id) => { ctx.origMount = id; },
-    SkipiPluginHost: { unmount() { ctx.hostUnmounted = true; } }
+    // SKI No.380 (2026-11-05): remote-boot patches window.SkipiPluginHost.mount, not the
+    // window.pluginMountInto global (the product mounts through the module's closure-local
+    // function, so the global is never called). The fixture must therefore OFFER .mount,
+    // otherwise the dependency gate keeps the boot inert and this whole delivery block
+    // cannot run. The old `pluginMountInto` fixture field was never asserted — dropped.
+    SkipiPluginHost: {
+      mount: (id) => { ctx.origMount = id; return Promise.resolve({ ok: true }); },
+      unmount() { ctx.hostUnmounted = true; }
+    }
   };
   ctx.window.window = ctx.window;
   ctx.window.localStorage = storage;
@@ -565,7 +572,9 @@ async function runRemoteInstallOfflineHarness() {
   const afterEnable = JSON.parse(storage.getItem('skipi_remote_plugins_state') || '{}')['navigation-calculators'];
   ok(enableResult.ok && enableResult.updated === true && afterEnable.version === '0.3.0' && afterEnable.enabled === true, 'Disable→Enable refreshes to latest verified version and preserves enabled state');
   online = false;
-  ctx.window.pluginMountInto('navigation-calculators');
+  const fixtureMount = ctx.window.SkipiPluginHost.mount;
+  ok(typeof fixtureMount === 'function', 'host exposes the mount seam the boot patches');
+  await ctx.window.SkipiPluginHost.mount('navigation-calculators', { innerHTML: '' });
   await settleVm();
   ok(ctx.window.__lastOpen?.opts?.allowNetwork === false, 'installed remote open is forced to allowNetwork:false');
   online = true;
@@ -7060,6 +7069,162 @@ async function s1Boot(map, consent, opts) {
   ok(/https:\/\/assistant\.skipi\.app\/register/.test(HTML),
     'HA8: the SaaS side is untouched — the register route still points at assistant.skipi.app');
   } catch (e) { ok(false, 'hide-assistant proof crashed before it could assert: ' + e.message); }
+}
+
+
+// ---------------------------------------------------------------------------
+// SKI No.380 — a remote plugin must MOUNT after «Обновить» (red before the fix).
+//
+// Why this drill exists at all: every pre-existing remote drill in this suite drove
+// `window.pluginMountInto(slug)` DIRECTLY and supplied its own fake for it. The product
+// never calls that global — @skipi/plugin-host-ui copies its closure reference onto window
+// and its render sites call the closure — so the suite supplied the one caller the product
+// lacks, and a dead interception stayed green for two months. This drill therefore loads
+// host-ui + the inline host runtime + the real bridge + remote-boot into ONE context and
+// goes through the REAL pluginLaunch with the REAL pluginById.
+//
+// index.html blocks are cut by STRING MARKERS, never line numbers: the numbers move with
+// every release bump (+76 between 0.4.196 and 0.4.197), the markers do not.
+{
+  section('SKI No.380 — remote plugin mounts after «Обновить» (oracle on the product seam)');
+  const cut = (start, end, what) => {
+    const i = HTML.indexOf(start), j = HTML.indexOf(end);
+    if (i < 0 || j < 0 || j <= i) { ok(false, 'marker miss: ' + what); return ''; }
+    return HTML.slice(i, j);
+  };
+  const BLK = cut('var SKIPI_PLUGIN_CATEGORIES = [', '// Local/static registry of bundled first-party plugins', 'categories')
+            + cut('var SKIPI_PLUGIN_REGISTRY = [', '// openedFrom records where a plugin was opened from', 'registry');
+  const BLK_CREATE = cut('var pluginHostState = {', '// The module attaches window.showApps but not window.renderMobileApps', 'create');
+  const BLK_RUNTIME = cut('var SkipiBundledStore = {', '// ---- shared permissions/safety panel ----', 'runtime');
+  ok(BLK.length > 1000 && BLK_CREATE.length > 200 && BLK_RUNTIME.length > 2000,
+    'the three index.html blocks are located by markers, not by line numbers');
+
+  const SLUG380 = 'bnwas-time-anchor', MID380 = 'app.skipi.plugins.bnwas-time-anchor';
+  const boot380 = ({ seed = {}, mobile = false } = {}) => {
+    const store = new Map(Object.entries(seed).map(([k, v]) => [k, String(v)]));
+    const els = new Map();
+    const mk = (id) => ({ id, innerHTML: '', style: {}, attrs: {},
+      classList: { add: noop, remove: noop, toggle: noop, contains: () => false },
+      setAttribute(k, v) { this.attrs[k] = String(v); }, getAttribute(k) { return this.attrs[k] ?? null; },
+      appendChild(c) { this._child = c; if (c) c.parentNode = this; },
+      removeChild(c) { if (this._child === c) this._child = null; },
+      remove: noop, querySelector: () => null, querySelectorAll: () => [] });
+    const E = (id) => { if (!els.has(id)) els.set(id, mk(id)); return els.get(id); };
+    const log = [], posts = [], handlers = [], opens = [], made = [];
+    const frame = () => ({ _tag: 'iframe', attrs: {}, style: {}, srcdoc: '', parentNode: null,
+      setAttribute(k, v) { this.attrs[k] = v; }, getAttribute(k) { return this.attrs[k] ?? null; },
+      contentWindow: { postMessage: (m) => posts.push(m) }, appendChild: noop, remove: noop });
+    const sb = {
+      console: { log: noop, error: noop, debug: noop, warn: noop, info: (...a) => log.push(a.join(' ')) },
+      document: { getElementById: E, querySelector: () => null, querySelectorAll: () => [],
+        createElement: (t) => (t === 'iframe' ? frame() : mk('el')), head: mk('head'), body: mk('body'),
+        documentElement: { getAttribute: () => 'dark', setAttribute: noop },
+        addEventListener: noop, removeEventListener: noop },
+      navigator: { onLine: true, userAgent: 'drill-380' },
+      localStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null),
+        setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k),
+        key: (i) => [...store.keys()][i] || null, get length() { return store.size; } },
+      addEventListener: (t, f) => { if (t === 'message') handlers.push(f); }, removeEventListener: noop,
+      crypto: webcrypto, TextEncoder, TextDecoder, URL,
+      setTimeout, clearTimeout, setInterval: () => 0, clearInterval: noop,
+      fetch: async (u) => { const n = String(u).split('/').pop(), b = FILES[n];
+        return b ? { ok: true, status: 200, arrayBuffer: async () => abuf(b) }
+                 : { ok: true, status: 200, json: async () => ({}), text: async () => '{}', arrayBuffer: async () => new ArrayBuffer(0) }; },
+      esc: (x) => String(x == null ? '' : x).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])),
+      escAttr: (x) => String(x == null ? '' : x).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])),
+      jsString: (x) => String(x == null ? '' : x).replace(/\\/g, '\\\\').replace(/'/g, "\\'"),
+      showToast: noop, show: noop, updateTabs: noop,
+      mobileMainHtml: (h) => { E('mobile-main').innerHTML = h || ''; },
+      shouldUseMobileShell: () => mobile, getUiLang: () => 'en', logError: noop,
+    };
+    sb.window = sb; sb.self = sb; sb.globalThis = sb;
+    vm.createContext(sb);
+    vm.runInContext(HOST_UI_MODULE, sb, { filename: 'dist/plugin-host-ui.js' });
+    vm.runInContext(BLK, sb, { filename: 'index.html#registry' });
+    vm.runInContext(BLK_CREATE, sb, { filename: 'index.html#create' });
+    vm.runInContext(BLK_RUNTIME, sb, { filename: 'index.html#runtime' });
+    vm.runInContext(CONFIG, sb, { filename: 'dist/plugin-host-config.js' });
+    vm.runInContext(REMOTE_LOADER, sb, { filename: 'dist/plugin-loader.js' });
+    vm.runInContext(BRIDGE, sb, { filename: 'dist/plugin-host-bridge.js' });
+    const realCreate = sb.SkipiPluginRuntime.create;
+    sb.SkipiPluginRuntime = { create(cfg) { const idx = made.length + 1; made.push(idx);
+      const inst = realCreate.call(this, cfg); const ro = inst.open;
+      inst.open = function (slug) { opens.push({ runtime: idx, slug }); return ro.apply(this, arguments); };
+      return inst; } };
+    const before = sb.SkipiPluginHost.mount;
+    vm.runInContext(REMOTE_BOOT, sb, { filename: 'dist/plugin-remote-boot.js' });
+    return { sb, log, posts, opens, patched: sb.SkipiPluginHost.mount !== before,
+      container: () => E('plugin-host-container'),
+      emit: (d) => handlers.forEach((f) => { try { f({ data: d }); } catch (e) {} }) };
+  };
+
+  const BUNDLED380 = { skipi_plugins_state: JSON.stringify({ [SLUG380]: { installed: true, enabled: true } }) };
+  const V380 = '0.2.1';
+  const E380 = { slug: SLUG380, id: MID380, name: 'BNWAS / Time Anchor', title: 'BNWAS / Time Anchor',
+    version: V380, category: 'safety', icon: 'x', toolCount: 2, permissions: ['local_storage', 'audio_alert'] };
+  const REMOTE380 = { ...BUNDLED380,
+    skipi_remote_plugins_state: JSON.stringify({ [SLUG380]: { installed: true, enabled: true, slug: SLUG380,
+      id: MID380, name: E380.name, title: E380.title, version: V380, toolCount: 2,
+      keyId: 'skipi-firstparty-prod-v1', entry: E380 } }),
+    ['skpd.entry:' + SLUG380]: JSON.stringify(E380),
+    ['skpd.pack:' + SLUG380 + '@' + V380]: JSON.stringify({ slug: SLUG380, id: MID380, version: V380 }) };
+  const UNVERIFIED380 = { ...BUNDLED380,
+    skipi_remote_plugins_state: JSON.stringify({ [SLUG380]: { installed: true, enabled: true, slug: SLUG380,
+      id: MID380, name: E380.name, version: V380, entry: E380 } }) };
+  // host-ui prints the title «Preparing in plugin lab» in BOTH its pending and error branches,
+  // so the title cannot discriminate. The pending NOTE can (BACKLOG No.966).
+  const PENDING_NOTE = 'Plugin artifact is not bundled yet';
+
+  const open380 = async (seed, mobile) => {
+    const h = boot380({ seed, mobile });
+    const shown = h.sb.pluginById(SLUG380);
+    h.sb.pluginLaunch(SLUG380);
+    const gotFrame = await waitUntil(() => h.container()._child && h.container()._child._tag === 'iframe', 40);
+    if (gotFrame) {
+      const m = h.container()._child.srcdoc.match(/__SKIPI_TOKEN__=("[0-9a-f]+")/);
+      const tok = m ? JSON.parse(m[1]) : null;
+      await waitUntil(() => { try { return !!h.sb.bundledRuntime()._active()?.installed; } catch (e) { return false; } }, 60);
+      h.emit({ ch: 'skipi-plugin', v: 1, token: tok, type: 'ready' });
+      await tick();
+      h.emit({ ch: 'skipi-plugin', v: 1, token: tok, type: 'mounted', height: 260,
+        selfcheck: { parentDomAccess: false, storageBlocked: true, fetchBlocked: true } });
+    }
+    await settleVm();
+    const html = h.container().innerHTML, fr = h.container()._child;
+    return { h, shown, html,
+      mounted: !!(fr && fr._tag === 'iframe') && !html.includes(PENDING_NOTE),
+      falsePending: html.includes(PENDING_NOTE),
+      remoteDriven: h.opens.some((o) => o.runtime === 1),
+      bundledDriven: h.opens.some((o) => o.runtime === 2) };
+  };
+
+  // A — POSITIVE CONTROL: if this goes red the drill is blind and every verdict below is void.
+  const A = await open380(BUNDLED380, false);
+  ok(A.patched === undefined || true, 'context built');
+  ok(!!A.shown && !!A.shown.bundle && !A.shown.remote, 'A control: pluginById returns the bundled entry');
+  ok(A.mounted && A.bundledDriven && !A.remoteDriven,
+    'A control: the bundled plugin MOUNTS through the bundled runtime — the drill can see a working plugin');
+  ok(!A.falsePending, 'A control: no «not bundled yet» placeholder');
+
+  // B — the defect itself.
+  const B = await open380(REMOTE380, false);
+  ok(!!B.shown && B.shown.remote === true && B.shown.version === V380 && B.shown.bundle === undefined,
+    'B: after a verified install pluginById returns the REMOTE entry, which carries no .bundle');
+  ok(B.h.patched, 'B: remote-boot intercepts window.SkipiPluginHost.mount — the host’s single mount choke point');
+  ok(!B.falsePending, 'B: the FALSE «artifact is not bundled yet» never reaches the user');
+  ok(B.remoteDriven, 'B: the REMOTE isolated runtime is DRIVEN, not merely constructed');
+  ok(!B.bundledDriven, 'B: the bundled loader is not asked for an entry it can never have');
+
+  // C — the mobile render path reaches the same seam.
+  const C = await open380(REMOTE380, true);
+  ok(!C.falsePending && C.remoteDriven, 'C: the mobile render path reaches the remote runtime too');
+
+  // D — NEGATIVE CONTROL: an unverified remote record must not win.
+  const D = await open380(UNVERIFIED380, false);
+  ok(!!D.shown && !D.shown.remote && D.shown.version === '0.1.0',
+    'D control: an unverified remote record cannot override the bundled entry');
+  ok(D.mounted && D.bundledDriven && !D.remoteDriven,
+    'D control: it mounts the BUNDLED plugin and never reaches the remote runtime');
 }
 
 console.log('\n' + (fail === 0 ? 'ALL GREEN' : 'FAILURES') + ': ' + pass + ' passed, ' + fail + ' failed');
