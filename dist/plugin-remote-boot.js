@@ -18,7 +18,8 @@
   // ---- dependency guard (fail-safe: never break the host if a script is missing) ----
   var CFG = window.SKIPI_REMOTE_CONFIG;
   if (!CFG || !window.SkipiPluginLoader || !window.SkipiPluginRuntime ||
-      typeof window.pluginMountInto !== 'function' || typeof window.SkipiPluginHost !== 'object') {
+      typeof window.SkipiPluginHost !== 'object' || !window.SkipiPluginHost ||
+      typeof window.SkipiPluginHost.mount !== 'function') {
     try { console.warn('[remote-plugins] dependencies missing — staying inert'); } catch (e) {}
     return;
   }
@@ -290,68 +291,97 @@
       + '<div style="font-size:13px;opacity:.7;line-height:1.4">' + esc(body) + '</div></div>';
   }
   function loadingHtml() { return msg('Loading plugin…', 'Verifying signature and integrity.'); }
-  function failHtml(res) {
+  // The host renders the failure surface itself (pluginPlaceholderHtml with our reason),
+  // so the remote branch returns {ok:false, reason} instead of silently painting a container.
+  // Reasons are whole sentences: the host prints them verbatim to the user.
+  function failReason(res) {
     var stage = res && res.stage, reason = (res && res.reason) || '';
     switch (stage) {
-      case 'signature': return msg('Couldn’t verify this plugin', 'Signature check failed. Not installed.');
-      case 'integrity': return msg('Couldn’t verify this plugin', 'Checksum mismatch. Not installed.');
-      case 'revocation': return msg('Plugin update blocked', 'This plugin package was revoked. Skipi kept it disabled.');
-      case 'downgrade': return msg('Plugin update blocked', 'Catalog rollback was blocked. The latest verified plugin stays cached.');
-      case 'compat': return msg('Update Skipi to use this plugin', reason || 'This plugin needs a newer app version.');
-      case 'policy': return msg('Plugin not allowed', 'It requests permissions Skipi doesn’t allow.');
+      case 'signature': return 'Couldn\u2019t verify this plugin \u2014 signature check failed. Not installed.';
+      case 'integrity': return 'Couldn\u2019t verify this plugin \u2014 checksum mismatch. Not installed.';
+      case 'revocation': return 'Plugin update blocked \u2014 this package was revoked. Skipi kept it disabled.';
+      case 'downgrade': return 'Plugin update blocked \u2014 catalog rollback refused. The latest verified plugin stays cached.';
+      case 'compat': return 'Update Skipi to use this plugin \u2014 ' + (reason || 'it needs a newer app version.');
+      case 'policy': return reason === 'disabled'
+        ? 'This plugin is turned off \u2014 enable it in plugin settings.'
+        : 'Plugin not allowed \u2014 it requests permissions Skipi doesn\u2019t allow.';
       case 'catalog':
-      case 'install': return msg('Can’t reach the plugin catalog', 'Check your connection and try again. Already-installed plugins still work offline.');
-      case 'timeout': return msg('Plugin not responding', 'The plugin runtime did not start. Try again.');
-      case 'mount': return msg('Plugin failed to start', reason || 'The plugin could not be opened.');
-      default: return msg('Plugin unavailable', reason || 'Could not open this plugin.');
+      case 'install': return 'Can\u2019t reach the plugin catalog \u2014 check your connection and try again. Installed plugins still work offline.';
+      case 'timeout': return 'Plugin not responding \u2014 the plugin runtime did not start. Try again.';
+      case 'mount': return 'Plugin failed to start \u2014 ' + (reason || 'it could not be opened.');
+      default: return 'Plugin unavailable \u2014 ' + (reason || 'could not open this plugin.');
     }
   }
 
   // ---- route remote plugins through the isolated runtime ----
-  var origMountInto = window.pluginMountInto;
-  window.pluginMountInto = function (id) {
-    // Remote runtime takes over only after a verified remote install exists.
-    // Bundled first-party plugins in CFG.remoteSlugs keep their bundled offline
-    // baseline until the user explicitly clicks Update.
-    if (REMOTE.indexOf(id) < 0 || !remoteRecord(id)) return origMountInto(id); // unchanged path for everything else
-    if (centralDelivery.checked && centralDelivery.enabled === false) return origMountInto(id);
-    var container = document.getElementById('plugin-host-container');
-    if (!container) return;
-    if (currentRemote === id) return; // already open
-    currentRemote = id;
-    if (remoteRecord(id) && !remoteEnabled(id)) {
-      container.innerHTML = failHtml({ stage: 'policy', reason: 'disabled' });
-      currentRemote = null;
-      return;
-    }
-    container.innerHTML = loadingHtml();
-    ensureCentralDelivery({ allowNetwork: true }).then(function (sw) {
-      if (!sw.enabled) {
-        currentRemote = null;
-        origMountInto(id);
-        return { bundledFallback: true };
+  // The host mounts through exactly ONE choke point: window.SkipiPluginHost.mount(id, container),
+  // called from @skipi/plugin-host-ui's CLOSURE-LOCAL pluginMountInto. Patching the
+  // window.pluginMountInto global does not reach that caller: the module copies its closure
+  // reference onto window (plugin-host-ui.js globals/attachGlobals) while its own render sites
+  // call the closure, so a patch on the global is never invoked and the remote runtime, though
+  // constructed, is never driven (SKI No.380, measured 2026-11-05). The interception therefore
+  // lives on host.mount - the same seam unmount is patched on below.
+  var host = window.SkipiPluginHost;
+  var origMount = host.mount;
+  function bundledMount(id, container) { return origMount.call(host, id, container); }
+  function remoteFailed(res) {
+    currentRemote = null;
+    host.current = null;
+    return { ok: false, reason: failReason(res) };
+  }
+  function remoteMounted(id) {
+    host.current = { id: id };
+    // keep the bundled path's bookkeeping: the host records when a plugin was last opened
+    try {
+      if (typeof window.pluginSetState === 'function' && typeof window.pluginNowIso === 'function') {
+        window.pluginSetState(id, { last_opened_at: window.pluginNowIso() });
       }
-      var rec = remoteRecord(id);
-      return (rec ? window.SkipiRemoteEnsureLatest(id).then(function (res) { return res || true; }, function () { return true; }) : Promise.resolve(true));
+    } catch (e) {}
+    return { ok: true };
+  }
+  host.mount = function (id, container) {
+    // Remote runtime takes over only after a verified remote install exists. Bundled
+    // first-party plugins in CFG.remoteSlugs keep their bundled offline baseline until
+    // the user explicitly clicks Update.
+    // Take over ONLY for what the user is actually looking at. The host decides a plugin's
+    // identity with remoteCanOverrideBundled (verified skpd.* cache + semver over the bundled
+    // baseline) and exposes the result through pluginById(): an entry with .remote === true.
+    // Keying the mount on the raw registry record instead would route an UNVERIFIED remote
+    // record to the remote runtime while the tile, metadata and version on screen still say
+    // bundled - the same identity split that made No.380 hard to read. One source of truth.
+    if (REMOTE.indexOf(id) < 0) return bundledMount(id, container);
+    var shown = (typeof window.pluginById === 'function') ? window.pluginById(id) : null;
+    var takeOver = shown ? shown.remote === true : !!remoteRecord(id);
+    if (!takeOver) return bundledMount(id, container);
+    if (centralDelivery.checked && centralDelivery.enabled === false) return bundledMount(id, container);
+    var el = container || document.getElementById('plugin-host-container');
+    if (!el) return Promise.resolve(remoteFailed({ stage: 'mount', reason: 'no container' }));
+    if (currentRemote === id && host.current && host.current.id === id) return Promise.resolve({ ok: true });
+    currentRemote = id;
+    if (!remoteEnabled(id)) return Promise.resolve(remoteFailed({ stage: 'policy', reason: 'disabled' }));
+    el.innerHTML = loadingHtml();
+    return ensureCentralDelivery({ allowNetwork: true }).then(function (sw) {
+      if (!sw.enabled) { currentRemote = null; return { bundledFallback: true }; }
+      return window.SkipiRemoteEnsureLatest(id).then(function (res) { return res || true; }, function () { return true; });
     }).then(function (refreshRes) {
-      if (refreshRes && refreshRes.bundledFallback) return { ok: true, bundledFallback: true };
+      if (refreshRes && refreshRes.bundledFallback) return refreshRes;
       if (refreshRes && refreshRes.stage === 'revocation') return refreshRes;
-      if (centralDelivery.enabled === false) return { ok: true, bundledFallback: true };
-      var openOpts = remoteRecord(id) ? { allowNetwork: false } : undefined;
-      return runtime.open(id, container, openOpts);
+      if (centralDelivery.enabled === false) { currentRemote = null; return { bundledFallback: true }; }
+      return runtime.open(id, el, { allowNetwork: false });
     }).then(function (res) {
-      if (res && res.bundledFallback) return;
-      if (!res || !res.ok) { currentRemote = null; container.innerHTML = failHtml(res); }
+      if (res && res.bundledFallback) return bundledMount(id, el);
+      if (!res || !res.ok) return remoteFailed(res);
+      return remoteMounted(id);
     }, function (e) {
-      currentRemote = null; container.innerHTML = failHtml({ stage: 'mount', reason: '' + (e && e.message || e) });
+      return remoteFailed({ stage: 'mount', reason: '' + (e && e.message || e) });
     });
   };
 
   // ---- tear down the isolated frame on the host's single unmount entry ----
-  var origUnmount = window.SkipiPluginHost.unmount;
-  window.SkipiPluginHost.unmount = function () {
-    if (currentRemote) { try { runtime.close(); } catch (e) {} currentRemote = null; }
-    return origUnmount ? origUnmount.apply(window.SkipiPluginHost, arguments) : undefined;
+  var origUnmount = host.unmount;
+  host.unmount = function () {
+    if (currentRemote) { try { runtime.close(); } catch (e) {} currentRemote = null; host.current = null; }
+    return origUnmount ? origUnmount.apply(host, arguments) : undefined;
   };
 
   try { console.info('[remote-plugins] ON · production catalog · isolated runtime · remote slugs: ' + REMOTE.join(', ')); } catch (e) {}
