@@ -2,8 +2,13 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '0.3.0';
+  var VERSION = '0.3.3';
   var SKIPPED = {};
+  // Account is reserved by placement, not by registration: hosts still supply it
+  // through appSpecificSections, and ACCOUNT_ORDER sits below generic Profile (100)
+  // so Account leads the menu even where Profile is present.
+  var ACCOUNT_ID = 'account';
+  var ACCOUNT_ORDER = 50;
   var GENERIC_IDS = {
     profile: true,
     team: true,
@@ -385,6 +390,34 @@
       return isObject(host.team) && host.team.enabled !== false ? host.team : null;
     }
 
+    // Mirror of storageCapability in FORM, its opposite in DEFAULT: an absent
+    // host.profile keeps the section, so only a strict enabled === false suppresses
+    // it. Returning {} for an absent key is load-bearing — the loader gate below
+    // tests this value, and a boolean would break it.
+    function profileCapability() {
+      if (isObject(host.profile) && host.profile.enabled === false) return null;
+      return isObject(host.profile) ? host.profile : {};
+    }
+
+    // Third flag of the profile/storage FAMILY, and the sign is the whole point:
+    // an absent host.captions KEEPS captions, only a strict enabled === false
+    // removes them. Taking the devices/team sign (enabled !== false) would strip
+    // captions from every home that never asked, on its next vendor bump.
+    // The guard lands on the KEY, never on translated text: a host that wanted
+    // "no caption" by passing '' would get the raw key back, because t() turns an
+    // empty translation into the key on purpose.
+    function captionsCapability() {
+      if (isObject(host.captions) && host.captions.enabled === false) return null;
+      return isObject(host.captions) ? host.captions : {};
+    }
+
+    // Missing storage must stay an object, not a boolean: loader gates rely on
+    // this default-enabled capability and its optional getInfo method.
+    function storageCapability() {
+      if (isObject(host.storage) && host.storage.enabled === false) return null;
+      return isObject(host.storage) ? host.storage : {};
+    }
+
     function recoveryCapability() {
       var capability = host.recovery && typeof host.recovery === 'object' ? host.recovery : {};
       return {
@@ -398,10 +431,10 @@
     }
 
     function storageInfoLoader() {
+      var capability = storageCapability();
+      if (!capability) return null;
       if (typeof host.getStorageInfo === 'function') return host.getStorageInfo;
-      if (host.storage && typeof host.storage.getInfo === 'function') {
-        return function () { return host.storage.getInfo(); };
-      }
+      if (typeof capability.getInfo === 'function') return function () { return capability.getInfo(); };
       return null;
     }
 
@@ -442,7 +475,9 @@
     }
 
     function loadProfile(generation, request) {
-      if (typeof host.getProfile !== 'function') {
+      // No section, no loader: a suppressed Profile must not reach host.getProfile
+      // and must not report an error about a surface nobody can see.
+      if (!profileCapability() || typeof host.getProfile !== 'function') {
         if (!supplementalObsolete(generation, request)) {
           delete state.optionalErrors.profile;
           state.profile = null;
@@ -574,6 +609,7 @@
     }
 
     function sectionDescription(section) {
+      if (!captionsCapability()) return '';
       if (section.descriptionKey) return t(section.descriptionKey);
       return section.description == null ? '' : String(section.description);
     }
@@ -604,13 +640,14 @@
     }
 
     function genericSections() {
-      var list = [
-        {
+      var list = [];
+      if (profileCapability()) {
+        list.push({
           id: 'profile', order: 100, icon: 'P', labelKey: 'settings.section.profile',
           descriptionKey: 'settings.section.profile.description', mobileGroupKey: 'settings.group.general', render: renderProfile,
           badge: function () { return valueText(state.trustStatus, ['label', 'status', 'state']); }
-        }
-      ];
+        });
+      }
       if (deviceCapability()) {
         list.push({
           id: 'devices', order: 200, icon: 'D', labelKey: 'settings.section.devices',
@@ -643,7 +680,10 @@
       if (raw.handlers != null && !isObject(raw.handlers)) throw new TypeError('@skipi/settings: section ' + id + ' handlers must be an object');
       return {
         id: id,
-        order: isFinite(Number(raw.order)) ? Number(raw.order) : 450,
+        // The module owns the placement of the reserved account id, so its position
+        // does not depend on each home passing the right number. Ordinary
+        // app-specific sections keep the host's order and the 450 default.
+        order: id === ACCOUNT_ID ? ACCOUNT_ORDER : (isFinite(Number(raw.order)) ? Number(raw.order) : 450),
         icon: raw.icon == null ? '•' : String(raw.icon),
         label: raw.label,
         labelKey: raw.labelKey,
@@ -967,6 +1007,7 @@
     }
 
     function navigationDetailDescription(item, section, surface) {
+      if (!captionsCapability()) return '';
       if (item && (item.detailDescriptionKey || item.detailDescription != null)) {
         return resolveNavigationValue(item, 'detailDescription', surface, '');
       }
@@ -1143,6 +1184,12 @@
     function navigationBlockMeta(section) {
       var key;
       if (section && section.id === 'team') key = 'settings.group.team';
+      // Reserved id: Account is an app-specific section by construction, but it is
+      // NOT a "home setting" — it joins the first band so it leads the whole menu.
+      // blockOrder is deliberately NOT reordered: that band carries every other
+      // home's app-specific sections, and moving it would silently rearrange four
+      // other products on their next vendor bump.
+      else if (section && section.id === ACCOUNT_ID) key = 'settings.group.general';
       else if (section && section.appSpecific) key = 'settings.group.home_settings';
       else key = 'settings.group.general';
       return { id: 'key:' + key, label: t(key), key: key };
@@ -1153,6 +1200,10 @@
     }
 
     function row(labelKey, descriptionKey, control, qa) {
+      // Suppress the KEY, not the text. The existing guard below already tests the
+      // key, so dropping it here keeps t() out of the path entirely and makes a raw
+      // key impossible in every vendoring order.
+      if (!captionsCapability()) descriptionKey = null;
       return '<div class="skipi-settings__row"' + (qa ? ' data-qa="' + escapeAttr(qa) + '"' : '') + '>'
         + '<div class="skipi-settings__row-copy"><div class="skipi-settings__row-label">' + escapeHtml(t(labelKey)) + '</div>'
         + (descriptionKey ? '<div class="skipi-settings__row-description">' + escapeHtml(t(descriptionKey)) + '</div>' : '')
@@ -1430,7 +1481,7 @@
 
     function renderApplication() {
       return renderAppearance()
-        + renderStorage()
+        + (storageCapability() ? renderStorage() : '')
         + (typeof host.modulesMount === 'function' ? renderModules() : '')
         + renderAbout();
     }
@@ -1482,7 +1533,7 @@
           var disabled;
           if (!navigationVisible(item, 'desktop')) return;
           active = !!activeNavigation && item.id === activeNavigation.id;
-          description = resolveNavigationValue(item, 'description', 'desktop', '');
+          description = captionsCapability() ? resolveNavigationValue(item, 'description', 'desktop', '') : '';
           disabled = navigationDisabled(item, 'desktop');
           var itemHtml = '<button type="button" class="skipi-settings__nav-item skipi-settings__nav-item--configured' + (active ? ' is-active' : '') + '" data-settings-action="desktop-section" data-settings-value="' + escapeAttr(item.id) + '" data-settings-menu-id="' + escapeAttr(item.id) + '"'
             + ' aria-current="' + (active ? 'page' : 'false') + '"' + (disabled ? ' disabled aria-disabled="true"' : '') + ' data-qa="settings.nav.' + escapeAttr(item.id) + '">'
@@ -1500,7 +1551,7 @@
             + ' aria-current="' + (active ? 'page' : 'false') + '" data-qa="settings.nav.' + escapeAttr(item.id) + '">'
             + '<span class="skipi-settings__nav-icon" aria-hidden="true">' + sectionIconHtml(item) + '</span>'
             + '<span class="skipi-settings__nav-copy"><span class="skipi-settings__nav-label">' + escapeHtml(sectionLabel(item)) + '</span>'
-            + '<span class="skipi-settings__nav-description">' + escapeHtml(sectionDescription(item)) + '</span></span>'
+            + (sectionDescription(item) ? '<span class="skipi-settings__nav-description">' + escapeHtml(sectionDescription(item)) + '</span>' : '') + '</span>'
             + (badge ? statusBadge(badge, '') : '') + '</button>';
           navByBlock[navigationBlockMeta(item).key] += itemHtml;
         });
@@ -1538,7 +1589,7 @@
             var tag;
             var attributes;
             if (!navigationVisible(item, 'mobile')) return;
-            description = resolveNavigationValue(item, 'description', 'mobile', '');
+            description = captionsCapability() ? resolveNavigationValue(item, 'description', 'mobile', '') : '';
             value = resolveNavigationValue(item, 'value', 'mobile', '');
             disabled = navigationDisabled(item, 'mobile') || !!state.busy['menu:' + item.id];
             action = item.type === 'section' ? 'mobile-section' : (item.type === 'action' ? 'menu-action' : '');
