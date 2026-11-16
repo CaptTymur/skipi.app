@@ -19961,8 +19961,18 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
     }
     function accountSection(){
         return {
+            // Account must come FIRST (owner 11.11). Two ways exist in 0.3.3:
+            // the reserved id 'account', which the module places itself at
+            // ACCOUNT_ORDER = 50, or an explicit order on this house's own id,
+            // which normalizeAppSection() honours for every non-reserved id.
+            // We take the second: tests/bundled_plugin_isolation_harness.mjs
+            // pins this section's id in its DEL1 drills (App Store 5.1.1(v),
+            // in-app account deletion), and that file belongs to a DIFFERENT
+            // guard route than the settings vendor set — renaming the id here
+            // would put one change across two routes and the gate would refuse
+            // it. 50 mirrors the module's own ACCOUNT_ORDER on purpose.
             id: 'skipi-account',
-            order: 900,
+            order: 50,
             label: (getUiLang()==='ru' ? 'Аккаунт Skipi' : 'Skipi account'),
             icon: '⛓', // chains — the account link this screen can break
             renderHtml: function(){ setTimeout(refreshAppAccountControls,0);return appAccountControlsHtml()+accountDeleteSectionHtml(); }
@@ -20006,6 +20016,19 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
             // «Skipi account» carries the in-app account deletion (App Store
             // 5.1.1(v)); the gear opens THIS shell on desktop and mobile alike,
             // so the deletion path has to live here, not only on the legacy tab.
+            // Section opt-outs (0.3.3). The module removes a section ONLY on a
+            // strict `enabled === false`; an absent key KEEPS it, so these two
+            // must be spelled out. captions = the descriptive sub-text under
+            // menu rows and nav items ("без подписей", owner 11.11); profile =
+            // the module's generic Profile section, which this house replaces
+            // with its own full seafarer-profile editor above.
+            // NOTE: `storage` is deliberately NOT here. Hiding the LOCAL STORAGE
+            // group is №924, and it is waiting on the owner's answer to
+            // ops-20261104-019 because the only exportVaultBackup() call site
+            // lives inside that block. Adding `storage: { enabled: false }`
+            // before that answer would remove the backup export from the app.
+            captions: { enabled: false },
+            profile: { enabled: false },
             appSpecificSections: [ seafarerSection(), syncSection(), accountSection() ],
 
             onError: function(err, context){ try{ logError('settings:'+context,err); }catch(e){} }

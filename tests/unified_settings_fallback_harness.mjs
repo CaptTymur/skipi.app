@@ -802,7 +802,90 @@ await assertSystemBackClosesOverlay();
 await assertEscapeAndBackdropCloseRemain();
 await assertSeafarerSectionEmbedsFullEditor();
 await assertSeafarerDeepLinkRoutesUnified();
+// №929 / 0.3.3 adoption — Account first, captions off, generic Profile off,
+// and the LOCAL STORAGE group deliberately LEFT ALONE.
+//
+// Everything here is read off the EXECUTED host object, not off the text of
+// dist/index.html, for a concrete reason: the source carries a comment that
+// spells out `storage: { enabled: false }` to explain why it is absent, so a
+// text probe for that string reports it PRESENT. The host object cannot lie.
+async function assertSettings033AccountFirstNoCaptions() {
+  section('0.3.3: Account first, no captions, no generic Profile, LOCAL STORAGE untouched');
+
+  // --- the vendored bytes, pinned to the adopted release.
+  const V033_JS = '1fb129490c5fe74dd693c3384e09b220df1732cdbf3e8d80e6e8e079a9f899db';
+  const vendored = fs.readFileSync(path.join(ROOT, 'dist', 'skipi-settings.js'));
+  const decl = fs.readFileSync(path.join(ROOT, 'dist', 'SETTINGS_VERSION'), 'utf8');
+  ok(decl.split('\n')[0].trim() === '0.3.3', `0.3.3: SETTINGS_VERSION declares 0.3.3 (got ${JSON.stringify(decl.split('\n')[0].trim())})`);
+  ok(createHash('sha256').update(vendored).digest('hex') === V033_JS,
+    '0.3.3: the vendored skipi-settings.js is byte-for-byte the 0.3.3 release (sha256 pinned here, so a silent re-vendor reddens)');
+
+  // --- Account placement is OWNED BY THE MODULE: read its constants out of the
+  //     vendored bytes and compare against every generic order it ships.
+  const src = vendored.toString('utf8');
+  const accountId = /var ACCOUNT_ID\s*=\s*'([^']+)'/.exec(src);
+  const accountOrder = /var ACCOUNT_ORDER\s*=\s*(\d+)/.exec(src);
+  ok(!!accountId && accountId[1] === 'account', `0.3.3: the module reserves the id 'account' (got ${accountId && accountId[1]})`);
+  ok(!!accountOrder, '0.3.3: the module declares ACCOUNT_ORDER');
+  const genericOrders = [...src.matchAll(/id: '(?:profile|devices|application|team)', order: (\d+)/g)].map((m) => Number(m[1]));
+  ok(genericOrders.length === 4, `0.3.3: the module ships four generic sections with orders (got ${genericOrders.join(',')})`);
+  ok(genericOrders.every((o) => Number(accountOrder[1]) < o),
+    `0.3.3: ACCOUNT_ORDER ${accountOrder && accountOrder[1]} sorts strictly before every generic section (${genericOrders.join(',')}) — that is what puts Account FIRST`);
+
+  // --- the host this house actually builds.
+  let formFns = null;
+  try { formFns = extractSeafarerFormFns(); } catch (e) { /* reported by its own check elsewhere */ }
+  const sb = makeSandbox({ module: renderingModule, queuedTimers: true });
+  const { sandbox, state } = sb;
+  if (formFns) vm.runInContext(formFns, sandbox, { filename: 'dist/index.html#seafarer-form-fns' });
+  sandbox.spLoad = () => {};
+  sandbox.openSettings();
+  await settle();
+  ok(state.mountCalls === 1, `0.3.3: the unified shell mounted (got ${state.mountCalls})`);
+  const host = state.host || {};
+
+  const ids = (host.appSpecificSections || []).map((s2) => s2 && s2.id);
+  // Account-first is achieved WITHOUT renaming the section: the id stays the one
+  // the DEL1 drills in bundled_plugin_isolation_harness.mjs pin (that file lives
+  // in another guard route), and the order is passed explicitly instead. The
+  // module honours a host order for every non-reserved id.
+  const acct = (host.appSpecificSections || []).find((s2) => s2 && s2.id === 'skipi-account');
+  ok(!!acct, `0.3.3: the Account section keeps its id, so the DEL1 account-deletion drills stay valid (ids: ${ids.join(', ')})`);
+  ok(!!acct && Number(acct.order) < Math.min(...genericOrders),
+    `0.3.3: and it is registered with order ${acct && acct.order} — strictly below every generic section (${genericOrders.join(',')}), so Account comes FIRST`);
+  ok(!!acct && Number(acct.order) === Number(accountOrder[1]),
+    `0.3.3: the number mirrors the module's own ACCOUNT_ORDER (${accountOrder && accountOrder[1]}) rather than inventing a second convention`);
+
+  // captions / profile: the module removes a section ONLY on a strict false,
+  // so assert the strictness, not mere falsiness.
+  ok(!!host.captions && host.captions.enabled === false,
+    `0.3.3: host.captions.enabled is strictly false — the descriptive sub-text is off ("без подписей", owner 11.11) (got ${JSON.stringify(host.captions)})`);
+  ok(!!host.profile && host.profile.enabled === false,
+    `0.3.3: host.profile.enabled is strictly false — the module's generic Profile is off, this house ships its own seafarer-profile editor (got ${JSON.stringify(host.profile)})`);
+
+  // THE BOUNDARY, and it is a drill with a named cancel condition:
+  // hiding the LOCAL STORAGE group is №924 and waits on the owner's answer to
+  // ops-20261104-019, because the only exportVaultBackup() call site lives
+  // inside that group. Cancelled by: that owner answer, and nothing else.
+  ok(!Object.prototype.hasOwnProperty.call(host, 'storage'),
+    '0.3.3 BOUNDARY (№924, cancelled only by the owner answer to ops-20261104-019): the host passes NO storage opt-out, so the LOCAL STORAGE group and the backup export inside it stay');
+  ok(typeof host.exportVaultBackup === 'function',
+    '0.3.3 BOUNDARY: the backup export is still reachable through the host');
+
+  // --- the probes must bite. Substitution, not inspection.
+  const planted = Object.assign({}, host, { storage: { enabled: false } });
+  ok(Object.prototype.hasOwnProperty.call(planted, 'storage'),
+    '0.3.3 NEGATIVE: planting a storage opt-out makes the boundary probe see it — the probe is not vacuous');
+  const noCaptions = Object.assign({}, host); delete noCaptions.captions;
+  ok(!(!!noCaptions.captions && noCaptions.captions.enabled === false),
+    '0.3.3 NEGATIVE: removing the captions key reddens the captions probe');
+  const looseCaptions = Object.assign({}, host, { captions: { enabled: 0 } });
+  ok(!(looseCaptions.captions.enabled === false),
+    '0.3.3 NEGATIVE: a falsy-but-not-false value (0) does NOT satisfy the probe — matching the module, which needs a strict false');
+}
+
 await assertPhotoUploadPreservesUnsavedFields();
+await assertSettings033AccountFirstNoCaptions();
 
 // №740-a / №756 — the vendored settings bytes must match the sha256 that SETTINGS_VERSION declares.
 // Measured 2026-10-14: nothing in this house verified those three sums. SETTINGS_VERSION appeared in the
