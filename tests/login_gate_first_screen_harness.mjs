@@ -336,6 +336,180 @@ if (landing !== null) {
   ok(/try\s*\{[^}]*await\s+accountRestoreLanding\(\)[^}]*\}\s*catch\s*\(/.test(landing), 'G9 (N-A): initNoVaultLanding() itself never rejects — its un-awaited callers in init()/_loginGateNext cannot leave an unhandled rejection');
 }
 
+// ---------------------------------------------------------------------------
+// №1914 — vessel flags. Added to THIS file deliberately and the reason is
+// mechanical, not thematic: the guard route that admits a dist/index.html edit
+// (`entry-fork-187`) requires exactly {dist/index.html, this harness}, and a
+// brand-new tests/*_harness.mjs would land outside every allowed pattern and be
+// refused at push. Manager's word, 2026-11-16.
+//
+// Unlike the contracts above these drills EXECUTE the shipped code: the flag
+// table and the combobox are pulled out of dist/index.html and run against a
+// DOM stub, because the defect №1914 names ("a value outside the list is wiped
+// without a word") is BEHAVIOUR on blur — a source match would not see it.
+//
+// F1. the table carries 249 countries + the 3 register variants, each row
+//     [canonical, russian, ...aliases], no duplicates.
+// F2. Belgium/Бельгия: findable by either spelling, labelled bilingually in RU,
+//     and the STORED value stays the canonical English one.
+// F3. an unlisted typed value survives blur and is labelled (the defect), while
+//     a field attached WITHOUT the opt-in still clears — so airports and the
+//     other closed lists keep their old behaviour.
+{
+  const fnSource = (src, name) => {
+    const re = new RegExp(`function\\s+${name}\\s*\\(`);
+    const m = re.exec(src);
+    if (!m) return null;
+    const open = src.indexOf('{', m.index);
+    let depth = 0;
+    for (let i = open; i < src.length; i++) {
+      if (src[i] === '{') depth++;
+      else if (src[i] === '}' && --depth === 0) return src.slice(m.index, i + 1);
+    }
+    return null;
+  };
+
+  const tableStart = html.indexOf('var MARITIME_FLAGS_I18N = [');
+  const tableEnd = html.indexOf('];', tableStart);
+  ok(tableStart !== -1 && tableEnd !== -1, 'F1: the flag table MARITIME_FLAGS_I18N is present in dist/index.html');
+  const tableSrc = html.slice(tableStart, tableEnd + 2);
+
+  const registersStart = html.indexOf('var MARITIME_FLAG_REGISTERS = [');
+  const registersSrc = html.slice(registersStart, html.indexOf('];', registersStart) + 2);
+  ok(registersStart !== -1, 'F1: the register-variant rows are named explicitly in the data (not guessed from brackets)');
+  const pieces = [
+    tableSrc,
+    registersSrc,
+    'var MARITIME_FLAGS = MARITIME_FLAGS_I18N.map(function(r){ return r[0]; });',
+    // the lazy index declaration: extracting _maritimeFlagRow without it is
+    // exactly the omission that reddened the unified-settings harness (№957)
+    'var _maritimeFlagIndex = null;',
+    fnSource(html, '_maritimeFlagRow'),
+    fnSource(html, 'maritimeFlagLabel'),
+    fnSource(html, 'maritimeFlagSearchText'),
+    fnSource(html, 'maritimeFlagComboOptions'),
+    fnSource(html, 'workFormListWithCurrent'),
+    fnSource(html, 'attachClosedCombobox'),
+  ];
+  ok(pieces.every((p) => typeof p === 'string' && p.length > 0),
+    'F1: table + the five flag helpers + attachClosedCombobox all extract from dist/index.html');
+
+  // --- minimal DOM stub: only what attachClosedCombobox touches.
+  const makeStub = () => {
+    const mk = (tag) => {
+      const el = {
+        tagName: tag, className: '', innerHTML: '', textContent: '', hidden: false,
+        value: '', dataset: {}, children: [], parentNode: null,
+        _cls: new Set(), _handlers: {},
+        classList: {
+          add(c) { el._cls.add(c); }, remove(c) { el._cls.delete(c); },
+          contains(c) { return el._cls.has(c); },
+        },
+        setAttribute() {}, removeAttribute() {},
+        appendChild(c) { el.children.push(c); c.parentNode = el; return c; },
+        insertBefore(c) { el.children.push(c); c.parentNode = el; return c; },
+        addEventListener(ev, fn) { (el._handlers[ev] = el._handlers[ev] || []).push(fn); },
+        fire(ev, arg) { (el._handlers[ev] || []).forEach((fn) => fn(arg || { key: '', preventDefault() {} })); },
+        querySelector() { return null; },
+      };
+      return el;
+    };
+    const input = mk('input');
+    const parent = mk('div');
+    parent.appendChild(input);
+    return { input, document: { createElement: mk } };
+  };
+
+  const build = (stub, uiLang) => {
+    const factory = new Function(
+      'document', 'getUiLang', 'setTimeout',
+      pieces.join('\n') + '\nreturn { MARITIME_FLAGS: MARITIME_FLAGS, MARITIME_FLAG_REGISTERS: MARITIME_FLAG_REGISTERS, maritimeFlagLabel: maritimeFlagLabel, maritimeFlagSearchText: maritimeFlagSearchText, maritimeFlagComboOptions: maritimeFlagComboOptions, workFormListWithCurrent: workFormListWithCurrent, attachClosedCombobox: attachClosedCombobox };'
+    );
+    return factory(stub.document, () => uiLang, setTimeout);
+  };
+
+  const api = build(makeStub(), 'en');
+  const rows = api.MARITIME_FLAGS;
+
+  // F1 — shape of the population, counted here rather than trusted.
+  const registers = api.MARITIME_FLAG_REGISTERS;
+  ok(rows.length === 252, `F1: the list carries 252 entries (got ${rows.length})`);
+  ok(registers.length === 3 && registers.every((r) => rows.indexOf(r) !== -1),
+    `F1: 3 named register variants, all present as rows (${registers.join(', ')})`);
+  ok(rows.length - registers.length === 249,
+    `F1: that leaves 249 countries — the full ISO 3166-1 set the owner asked for (got ${rows.length - registers.length})`);
+  // Counting brackets instead would say 8: five ISO names carry their own.
+  ok(rows.filter((r) => r.indexOf('(') !== -1).length === 8,
+    'F1: and the reason the count is NAMED and not derived from brackets — 8 rows contain brackets, only 3 are registers');
+  ok(new Set(rows).size === rows.length, 'F1: no duplicate canonical value');
+  ok(rows.every((r) => typeof r === 'string' && r.trim() !== ''), 'F1: every canonical value is a non-empty string');
+  const ruMissing = rows.filter((r) => {
+    const t = api.maritimeFlagSearchText(r);
+    return !/[Ѐ-ӿ]/.test(t);
+  });
+  ok(ruMissing.length === 0, `F1: every row carries a Cyrillic (Russian) search term (rows without: ${ruMissing.length})`);
+
+  // F2 — the owner's own calibration, both spellings.
+  const findBy = (q) => rows.filter((it) => api.maritimeFlagSearchText(it).toLowerCase().indexOf(q.toLowerCase()) !== -1);
+  ok(rows.indexOf('Belgium') !== -1, 'F2: Belgium is in the list');
+  ok(findBy('Belgium').indexOf('Belgium') !== -1, 'F2: typing "Belgium" finds it');
+  ok(findBy('Бельгия').indexOf('Belgium') !== -1, 'F2: typing "Бельгия" finds it too — Russian is a search term');
+  ok(findBy('бель').indexOf('Belgium') !== -1, 'F2: a partial Russian query ("бель") finds it');
+  const ruApi = build(makeStub(), 'ru');
+  ok(ruApi.maritimeFlagLabel('Belgium') === 'Belgium — Бельгия',
+    `F2: the RU dropdown label is bilingual (got ${JSON.stringify(ruApi.maritimeFlagLabel('Belgium'))})`);
+  ok(api.maritimeFlagLabel('Belgium') === 'Belgium',
+    'F2: the EN dropdown label stays plain English');
+  ok(ruApi.maritimeFlagLabel('UK') === 'UK — Соединённое Королевство' && findBy('United Kingdom').indexOf('UK') !== -1,
+    'F2: the nine historical spellings are kept as stored values and carry the ISO name as an alias ("UK" is not renamed)');
+  // The stored value is what the CV will print, so it must be the canonical one.
+  ok(rows.indexOf('Бельгия') === -1, 'F2: the Russian name is NOT a stored value — the generated CV stays English');
+
+  // F3 — the defect itself, on blur, executed.
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const typeAndBlur = async (opts, typed) => {
+    const stub = makeStub();
+    const built = build(stub, 'en');
+    built.attachClosedCombobox(stub.input, built.workFormListWithCurrent(built.MARITIME_FLAGS, ''), opts);
+    stub.input.value = typed;
+    stub.input.fire('input');
+    stub.input.fire('blur');
+    await wait(260);
+    const note = (stub.input.parentNode.children || []).find((c) => c.className === 'combobox-note');
+    return { value: stub.input.value, note };
+  };
+
+  const kept = await typeAndBlur(api.maritimeFlagComboOptions(), 'Bangladesh-Chittagong registry');
+  ok(kept.value === 'Bangladesh-Chittagong registry',
+    `F3: a value outside the list SURVIVES blur on a flag field (got ${JSON.stringify(kept.value)})`);
+  ok(!!kept.note && kept.note.hidden === false && /Not in the list|Нет в списке/.test(kept.note.textContent),
+    `F3: and it is labelled beside the control, not dropped in silence (note: ${JSON.stringify(kept.note && kept.note.textContent)})`);
+
+  const listed = await typeAndBlur(api.maritimeFlagComboOptions(), 'Belgium');
+  ok(listed.value === 'Belgium', 'F3: a listed value is untouched by blur');
+  ok(!!listed.note && listed.note.hidden === true, 'F3: and carries no "not in the list" note');
+
+  // F3 CONTROL — the opt-in is what changed behaviour; without it the old
+  // closed-list clearing must still happen, or this fix silently altered every
+  // other combobox in the app (airport hubs).
+  const wiped = await typeAndBlur(undefined, 'Bangladesh-Chittagong registry');
+  ok(wiped.value === '', `F3 CONTROL: a field attached WITHOUT the opt-in still clears an unlisted value (got ${JSON.stringify(wiped.value)}) — airports keep their behaviour`);
+
+  // F3 NEGATIVE — prove the probes bite rather than pass vacuously.
+  const comboSrc = fnSource(html, 'attachClosedCombobox');
+  const drill1 = comboSrc.replace("if(!keepUnlisted && list.indexOf(inputEl.value)===-1) inputEl.value='';",
+                                  "if(list.indexOf(inputEl.value)===-1) inputEl.value='';");
+  ok(drill1 !== comboSrc && !/!keepUnlisted && list\.indexOf/.test(drill1),
+    'F3 NEGATIVE: putting the unconditional wipe back changes the source the probe reads — the guard is on that exact line');
+  ok(/keepUnlisted/.test(comboSrc) && /syncNote\(\)/.test(comboSrc),
+    'F3 NEGATIVE: the shipped combobox still contains both the opt-in and the note call the drills above exercised');
+
+  // All three flag fields reach one list — before №1914 only the desktop one had any.
+  ok(/attachMaritimeFlagCombobox\('mwh-flag'/.test(html), 'F4: the mobile Sea Service flag field is attached to the shared list');
+  ok(/attachMaritimeFlagCombobox\('vw-flag'/.test(html), 'F4: the vessel wizard flag field is attached to the shared list');
+  ok(/attachClosedCombobox\(flagEl,flagList,maritimeFlagComboOptions\(\)\)/.test(html), 'F4: the desktop Sea Service flag field passes the flag options');
+}
+
 if (fail) {
   console.error('login_gate_first_screen_harness: FAIL');
   process.exit(1);

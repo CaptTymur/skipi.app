@@ -667,6 +667,7 @@ body.mobile-mode .desktop-stack-label { display:none; }
 .combobox-item { padding:6px 10px; cursor:pointer; font-size:13px; color:var(--text); }
 .combobox-item:hover, .combobox-item.highlighted { background:var(--bg2); color:var(--accent); }
 .combobox-empty { padding:8px 10px; color:var(--text2); font-size:12px; font-style:italic; }
+.combobox-note { margin-top:4px; font-size:11px; color:var(--text2); }
 
 /* Dashboard */
 .dash-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(120px,1fr)); gap:8px; margin-bottom:24px; }
@@ -6685,6 +6686,7 @@ function mobileRenderExperienceWizard(){
     }
     h+='</div>';
     mobileMainHtml(h);
+    attachMaritimeFlagCombobox('mwh-flag', s.flag);
 }
 async function mobileShowExperienceForm(entryId,prefill){
     mobileView='experience';
@@ -9392,8 +9394,17 @@ var CURRENCIES = ["USD","EUR","GBP","CHF","JPY","AUD","NOK","SEK","DKK"];
 // but allows selection only from the list. On blur, any value not in the list
 // is cleared. Used for the airport fields so users can't enter free-text
 // airport names (which would break future downstream lookups).
-function attachClosedCombobox(inputEl, list){
+function attachClosedCombobox(inputEl, list, opts){
     if(!inputEl || inputEl.dataset.comboboxReady==='1') return;
+    // opts is opt-in so the existing call sites (airport hubs) keep their exact
+    // behaviour: labelOf lets the dropdown show a different string than the one
+    // stored, searchOf widens what a typed query matches (e.g. the Russian name
+    // of a flag), and keepUnlisted stops the blur handler below from wiping a
+    // value the list does not contain. Default: identity, identity, false.
+    opts = opts || {};
+    var labelOf = typeof opts.labelOf === 'function' ? opts.labelOf : function(v){ return v; };
+    var searchOf = typeof opts.searchOf === 'function' ? opts.searchOf : function(v){ return String(v||''); };
+    var keepUnlisted = opts.keepUnlisted === true;
     inputEl.dataset.comboboxReady='1';
     inputEl.removeAttribute('list');
     inputEl.setAttribute('autocomplete','off');
@@ -9407,6 +9418,22 @@ function attachClosedCombobox(inputEl, list){
     var dd=document.createElement('div');
     dd.className='combobox-dd';
     wrap.appendChild(dd);
+    var note=null;
+    if(keepUnlisted){
+        note=document.createElement('div');
+        note.className='combobox-note';
+        note.hidden=true;
+        wrap.appendChild(note);
+    }
+    function syncNote(){
+        if(!note) return;
+        var v=String(inputEl.value||'').trim();
+        var unlisted = v!=='' && list.indexOf(v)===-1;
+        note.textContent = unlisted
+            ? (getUiLang()==='ru' ? 'Нет в списке — сохраню как введено' : 'Not in the list — saved as typed')
+            : '';
+        note.hidden = !unlisted;
+    }
 
     var filtered=list.slice();
     var hi=-1;
@@ -9420,7 +9447,9 @@ function attachClosedCombobox(inputEl, list){
         for(var i=0;i<filtered.length;i++){
             var cls=i===hi?' highlighted':'';
             var v=filtered[i].replace(/"/g,'&quot;');
-            h+='<div class="combobox-item'+cls+'" data-idx="'+i+'" data-val="'+v+'">'+filtered[i]+'</div>';
+            // data-val stays the CANONICAL value; only the visible text is the label.
+            var lbl=String(labelOf(filtered[i])).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+            h+='<div class="combobox-item'+cls+'" data-idx="'+i+'" data-val="'+v+'">'+lbl+'</div>';
         }
         dd.innerHTML=h;
     }
@@ -9429,7 +9458,7 @@ function attachClosedCombobox(inputEl, list){
     function filter(q){
         q=(q||'').toLowerCase().trim();
         if(!q){ filtered=list.slice(); }
-        else { filtered=list.filter(function(it){ return it.toLowerCase().indexOf(q)!==-1; }); }
+        else { filtered=list.filter(function(it){ return searchOf(it).toLowerCase().indexOf(q)!==-1; }); }
         hi=filtered.length?0:-1;
     }
     function scrollHiIntoView(){
@@ -9457,10 +9486,16 @@ function attachClosedCombobox(inputEl, list){
     inputEl.addEventListener('blur', function(){
         // Defer to let a mousedown-on-dropdown win over blur before we close.
         setTimeout(function(){
-            if(list.indexOf(inputEl.value)===-1) inputEl.value='';
+            // keepUnlisted: what the seafarer typed is kept and labelled, never
+            // dropped in silence (№1914). Without the option the old
+            // closed-list behaviour is unchanged for every other field.
+            if(!keepUnlisted && list.indexOf(inputEl.value)===-1) inputEl.value='';
+            syncNote();
             close();
         }, 180);
     });
+    inputEl.addEventListener('input', syncNote);
+    syncNote();
 }
 
 function attachAirportComboboxes(){
@@ -9485,25 +9520,153 @@ function populateFlagsDatalist(){
     _flagsDatalistFilled=true;
 }
 
-// Common maritime flag registries ordered roughly by merchant-fleet tonnage
-// and hiring frequency for CIS / Filipino / Indian seafarers. Top flags of
-// convenience first; national registries seafarers actually work under follow.
-// Used as a closed searchable combobox in Sea Service so downstream matching
-// does not receive arbitrary spellings.
-var MARITIME_FLAGS = [
-    "Panama","Liberia","Marshall Islands",
-    "Hong Kong","Singapore","Malta","Bahamas","Cyprus",
-    "Antigua and Barbuda","Isle of Man","Bermuda","Cayman Islands",
-    "UK","Norway (NIS)","Denmark (DIS)","Netherlands","Portugal (MAR)",
-    "Greece","Italy","Germany","France","Spain",
-    "Vanuatu","Cook Islands","Saint Vincent and the Grenadines","Belize",
-    "Ukraine","Russia","Poland","Romania","Bulgaria","Turkey",
-    "Philippines","India","Japan","South Korea","China",
-    "USA","Canada","Australia","New Zealand",
-    "UAE","Saudi Arabia","Qatar",
-    "Brazil","Argentina","Chile",
-    "Comoros","Luxembourg","Palau"
+// Vessel flag registries (№1914). Full ISO 3166-1 (249 countries) plus the
+// register variants seafarers actually sail under. Each row is
+// [canonical, russian, ...search aliases]: the CANONICAL (first) element is
+// what gets stored and written into the field, so the generated CV stays
+// English whatever the UI language is; the Russian name is a LABEL and a
+// search term, never the stored value (owner sees this on the stand, S4).
+// The first fifty rows keep their historical order - roughly by merchant-fleet
+// tonnage and hiring frequency for CIS / Filipino / Indian seafarers - and
+// their historical spelling, because those strings are already saved in
+// users' vaults; "UK" is not renamed to "United Kingdom", it carries it as an
+// alias instead. The remaining countries follow alphabetically.
+// One Russian label is written by hand: the iso-codes RU catalogue has no entry
+// for the post-2022 ISO name "Türkiye", so gettext returned the input unchanged
+// and the row would have carried a Latin "label" pretending to be Russian.
+// "Turkey"/"Турция" with "Türkiye" as an alias. The drill in
+// tests/login_gate_first_screen_harness.mjs asserts every row carries a
+// Cyrillic search term, so a future vendor bump cannot reintroduce the gap
+// quietly.
+var MARITIME_FLAGS_I18N = [
+    ["Panama","Панама"],["Liberia","Либерия"],["Marshall Islands","Маршалловы острова"],
+    ["Hong Kong","Гонконг"],["Singapore","Сингапур"],["Malta","Мальта"],
+    ["Bahamas","Багамы"],["Cyprus","Кипр"],["Antigua and Barbuda","Антигуа и Барбуда"],
+    ["Isle of Man","Остров Мэн"],["Bermuda","Бермуды"],["Cayman Islands","Каймановы острова"],
+    ["UK","Соединённое Королевство","United Kingdom"],["Norway (NIS)","Норвегия (NIS)","Norway"],["Denmark (DIS)","Дания (DIS)","Denmark"],
+    ["Netherlands","Нидерланды"],["Portugal (MAR)","Португалия (MAR)","Portugal"],["Greece","Греция"],
+    ["Italy","Италия"],["Germany","Германия"],["France","Франция"],
+    ["Spain","Испания"],["Vanuatu","Вануату"],["Cook Islands","Острова Кука"],
+    ["Saint Vincent and the Grenadines","Сент-Винсент и Гренадины"],["Belize","Белиз"],["Ukraine","Украина"],
+    ["Russia","Российская Федерация","Russian Federation"],["Poland","Польша"],["Romania","Румыния"],
+    ["Bulgaria","Болгария"],["Turkey","Турция","Türkiye"],["Philippines","Филиппины"],
+    ["India","Индия"],["Japan","Япония"],["South Korea","Республика Корея","Korea, Republic of"],
+    ["China","Китай"],["USA","Соединённые штаты","United States"],["Canada","Канада"],
+    ["Australia","Австралия"],["New Zealand","Новая Зеландия"],["UAE","Объединённые Арабские Эмираты","United Arab Emirates"],
+    ["Saudi Arabia","Саудовская Аравия"],["Qatar","Катар"],["Brazil","Бразилия"],
+    ["Argentina","Аргентина"],["Chile","Чили"],["Comoros","Коморы"],
+    ["Luxembourg","Люксембург"],["Palau","Палау"],["Afghanistan","Афганистан"],
+    ["Albania","Албания"],["Algeria","Алжир"],["American Samoa","Американские Самоа"],
+    ["Andorra","Андорра"],["Angola","Ангола"],["Anguilla","Ангвилла"],
+    ["Antarctica","Антарктика"],["Armenia","Армения"],["Aruba","Аруба"],
+    ["Austria","Австрия"],["Azerbaijan","Азербайджан"],["Bahrain","Бахрейн"],
+    ["Bangladesh","Бангладеш"],["Barbados","Барбадос"],["Belarus","Беларусь"],
+    ["Belgium","Бельгия"],["Benin","Бенин"],["Bhutan","Бутан"],
+    ["Bolivia, Plurinational State of","Боливия"],["Bonaire, Sint Eustatius and Saba","Бонайре, Синт-Эстатиус и Саба"],["Bosnia and Herzegovina","Босния и Герцеговина"],
+    ["Botswana","Ботсвана"],["Bouvet Island","Остров Буве"],["British Indian Ocean Territory","Британская территория Индийского океана"],
+    ["Brunei Darussalam","Бруней Даруссалам"],["Burkina Faso","Буркина-Фасо"],["Burundi","Бурунди"],
+    ["Cabo Verde","Кабо-Верде"],["Cambodia","Камбоджа"],["Cameroon","Камерун"],
+    ["Central African Republic","Центрально-африканская республика"],["Chad","Чад"],["Christmas Island","Остров Рождества"],
+    ["Cocos (Keeling) Islands","Кокосовые острова"],["Colombia","Колумбия"],["Congo","Конго"],
+    ["Congo, The Democratic Republic of the","Демократическая Республика Конго"],["Costa Rica","Коста-Рика"],["Croatia","Хорватия"],
+    ["Cuba","Куба"],["Curaçao","Кюрасао"],["Czechia","Чехия"],
+    ["Côte d'Ivoire","Кот-д'Ивуар"],["Denmark","Дания"],["Djibouti","Джибути"],
+    ["Dominica","Доминика"],["Dominican Republic","Доминиканская республика"],["Ecuador","Эквадор"],
+    ["Egypt","Египет"],["El Salvador","Сальвадор"],["Equatorial Guinea","Экваториальная Гвинея"],
+    ["Eritrea","Эритрея"],["Estonia","Эстония"],["Eswatini","Эсватини"],
+    ["Ethiopia","Эфиопия"],["Falkland Islands (Malvinas)","Фолклендские (Мальвинские) острова"],["Faroe Islands","Фарерские острова"],
+    ["Fiji","Фиджи"],["Finland","Финляндия"],["French Guiana","Французская Гвиана"],
+    ["French Polynesia","Французская Полинезия"],["French Southern Territories","Французские южные территории"],["Gabon","Габон"],
+    ["Gambia","Гамбия"],["Georgia","Грузия"],["Ghana","Гана"],
+    ["Gibraltar","Гибралтар"],["Greenland","Гренландия"],["Grenada","Гренада"],
+    ["Guadeloupe","Гваделупа"],["Guam","Гуам"],["Guatemala","Гватемала"],
+    ["Guernsey","Гернси"],["Guinea","Гвинея"],["Guinea-Bissau","Гвинея-Бисау"],
+    ["Guyana","Гайана"],["Haiti","Гаити"],["Heard Island and McDonald Islands","Остров Херд и острова МакДональд"],
+    ["Holy See (Vatican City State)","Государство-город Ватикан"],["Honduras","Гондурас"],["Hungary","Венгрия"],
+    ["Iceland","Исландия"],["Indonesia","Индонезия"],["Iran, Islamic Republic of","Иран"],
+    ["Iraq","Ирак"],["Ireland","Ирландия"],["Israel","Израиль"],
+    ["Jamaica","Ямайка"],["Jersey","Джерси"],["Jordan","Иордания"],
+    ["Kazakhstan","Казахстан"],["Kenya","Кения"],["Kiribati","Кирибати"],
+    ["Korea, Democratic People's Republic of","Корейская Народно-Демократическая Республика"],["Kuwait","Кувейт"],["Kyrgyzstan","Киргизия"],
+    ["Lao People's Democratic Republic","Лаосская Народно-Демократическая Республика"],["Latvia","Латвия"],["Lebanon","Ливан"],
+    ["Lesotho","Лесото"],["Libya","Ливия"],["Liechtenstein","Лихтенштейн"],
+    ["Lithuania","Литва"],["Macao","Макао"],["Madagascar","Мадагаскар"],
+    ["Malawi","Малави"],["Malaysia","Малайзия"],["Maldives","Мальдивы"],
+    ["Mali","Мали"],["Martinique","Мартиника"],["Mauritania","Мавритания"],
+    ["Mauritius","Маврикий"],["Mayotte","Майот"],["Mexico","Мексика"],
+    ["Micronesia, Federated States of","Федеративные Штаты Микронезии"],["Moldova, Republic of","Республика Молдова"],["Monaco","Монако"],
+    ["Mongolia","Монголия"],["Montenegro","Черногория"],["Montserrat","Монтсеррат"],
+    ["Morocco","Марокко"],["Mozambique","Мозамбик"],["Myanmar","Мьянма"],
+    ["Namibia","Намибия"],["Nauru","Науру"],["Nepal","Непал"],
+    ["New Caledonia","Новая Каледония"],["Nicaragua","Никарагуа"],["Niger","Нигер"],
+    ["Nigeria","Нигерия"],["Niue","Ниуэ"],["Norfolk Island","Остров Норфолк"],
+    ["North Macedonia","Северная Македония"],["Northern Mariana Islands","Острова северной Марианы"],["Norway","Норвегия"],
+    ["Oman","Оман"],["Pakistan","Пакистан"],["Palestine, State of","Палестина"],
+    ["Papua New Guinea","Папуа — Новая Гвинея"],["Paraguay","Парагвай"],["Peru","Перу"],
+    ["Pitcairn","Питкэрн"],["Portugal","Португалия"],["Puerto Rico","Пуэрто-Рико"],
+    ["Rwanda","Руанда"],["Réunion","Реюньон"],["Saint Barthélemy","Сен-Бартельми"],
+    ["Saint Helena, Ascension and Tristan da Cunha","Остров Святой Елены, Остров Вознесения и Тристан-да-Кунья"],["Saint Kitts and Nevis","Сент-Китс и Невис"],["Saint Lucia","Сент-Люсия"],
+    ["Saint Martin (French part)","Сен-Мартен (Франция)"],["Saint Pierre and Miquelon","Сен-Пьер и Микелон"],["Samoa","Самоа"],
+    ["San Marino","Сан-Марино"],["Sao Tome and Principe","Сан-Томе и Принсипи"],["Senegal","Сенегал"],
+    ["Serbia","Сербия"],["Seychelles","Сейшелы"],["Sierra Leone","Сьерра-Леоне"],
+    ["Sint Maarten (Dutch part)","Синт-Мартен (голландская часть)"],["Slovakia","Словакия"],["Slovenia","Словения"],
+    ["Solomon Islands","Соломоновы Острова"],["Somalia","Сомали"],["South Africa","Южная Африка"],
+    ["South Georgia and the South Sandwich Islands","Южная Джорджия и Южные Сандвичевы острова"],["South Sudan","Южный Судан"],["Sri Lanka","Шри-Ланка"],
+    ["Sudan","Судан"],["Suriname","Суринам"],["Svalbard and Jan Mayen","Шпицберген и Ян-Майен"],
+    ["Sweden","Швеция"],["Switzerland","Швейцария"],["Syrian Arab Republic","Сирийская Арабская Республика"],
+    ["Taiwan, Province of China","Китайская провинция Тайвань"],["Tajikistan","Таджикистан"],["Tanzania, United Republic of","Танзания"],
+    ["Thailand","Таиланд"],["Timor-Leste","Восточный Тимор"],["Togo","Того"],
+    ["Tokelau","Токелау"],["Tonga","Тонга"],["Trinidad and Tobago","Тринидад и Тобаго"],
+    ["Tunisia","Тунис"],["Turkmenistan","Туркменистан"],["Turks and Caicos Islands","Острова Туркс и Каикос"],
+    ["Tuvalu","Тувалу"],["Uganda","Уганда"],["United States Minor Outlying Islands","Соединенные штаты Малых Удаленных островов"],
+    ["Uruguay","Уругвай"],["Uzbekistan","Узбекистан"],["Venezuela, Bolivarian Republic of","Боливарианская Республика Венесуэла"],
+    ["Viet Nam","Вьетнам"],["Virgin Islands, British","Виргинские острова (Британия)"],["Virgin Islands, U.S.","Виргинские острова (США)"],
+    ["Wallis and Futuna","Уоллес и Футана"],["Western Sahara","Западная Сахара"],["Yemen","Йемен"],
+    ["Zambia","Замбия"],["Zimbabwe","Зимбабве"],["Åland Islands","Аландские острова"]
 ];
+// Which rows are REGISTER variants rather than countries. Named explicitly
+// because the shape cannot be guessed from the string: five genuine ISO names
+// carry brackets of their own ("Cocos (Keeling) Islands", "Falkland Islands
+// (Malvinas)", "Holy See (Vatican City State)", "Saint Martin (French part)",
+// "Sint Maarten (Dutch part)"), so counting brackets would miscount the list.
+var MARITIME_FLAG_REGISTERS = ["Norway (NIS)","Denmark (DIS)","Portugal (MAR)"];
+var MARITIME_FLAGS = MARITIME_FLAGS_I18N.map(function(r){ return r[0]; });
+var _maritimeFlagIndex = null;
+function _maritimeFlagRow(value){
+    if(!_maritimeFlagIndex){
+        _maritimeFlagIndex = Object.create(null);
+        MARITIME_FLAGS_I18N.forEach(function(r){ _maritimeFlagIndex[r[0]] = r; });
+    }
+    return _maritimeFlagIndex[value] || null;
+}
+// Shown in the dropdown. Russian UI reads "Belgium - Бельгия" so the seafarer
+// recognises the country and still sees what will be stored.
+function maritimeFlagLabel(value){
+    var row=_maritimeFlagRow(value);
+    if(!row) return value;
+    var ru=row[1];
+    if(getUiLang()==='ru' && ru && ru!==row[0]) return row[0]+' \u2014 '+ru;
+    return row[0];
+}
+// Everything a typed query may match: canonical, Russian, aliases.
+function maritimeFlagSearchText(value){
+    var row=_maritimeFlagRow(value);
+    return (row ? row.join(' ') : String(value||'')).toLowerCase();
+}
+function maritimeFlagComboOptions(){
+    return { labelOf: maritimeFlagLabel, searchOf: maritimeFlagSearchText, keepUnlisted: true };
+}
+// One attach point for every flag field in the app - desktop Sea Service,
+// the mobile Sea Service wizard and the vessel wizard - so the three cannot
+// drift apart again (before №1914 only the desktop field had a list at all).
+// workFormListWithCurrent keeps an already-stored value selectable even when
+// it is not one of the 252 rows.
+function attachMaritimeFlagCombobox(id, current){
+    var el=document.getElementById(id);
+    if(!el) return;
+    var cur=(current||el.value||'');
+    attachClosedCombobox(el, workFormListWithCurrent(MARITIME_FLAGS, cur), maritimeFlagComboOptions());
+}
 
 // ========== Common seafarer airport hubs (datalist for airport fields) ==========
 // International airports list — alphabetical by display label. Curated for
@@ -10061,6 +10224,7 @@ function renderVesselWizard(){
     h+='<div id="w-framework-panel" class="wizard-col-right"></div>';
     h+='</div>'; // close wizard-wrap
     document.getElementById('scr-setup').innerHTML=h;show('scr-setup');
+    attachMaritimeFlagCombobox('vw-flag', vesselWizardState.flag);
     refreshVesselFramework();
 }
 
@@ -13574,7 +13738,7 @@ async function populateWorkEntryFormControls(entry){
     if(flagEl){
         var flagList=workFormListWithCurrent(MARITIME_FLAGS,entry.flag||'');
         (workVesselPresets||[]).forEach(function(row){flagList=workFormListWithCurrent(flagList,row&&row.flag);});
-        attachClosedCombobox(flagEl,flagList);
+        attachClosedCombobox(flagEl,flagList,maritimeFlagComboOptions());
     }
 }
 
