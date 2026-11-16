@@ -803,14 +803,15 @@ await assertEscapeAndBackdropCloseRemain();
 await assertSeafarerSectionEmbedsFullEditor();
 await assertSeafarerDeepLinkRoutesUnified();
 // №929 / 0.3.3 adoption — Account first, captions off, generic Profile off,
-// and the LOCAL STORAGE group deliberately LEFT ALONE.
+// and the LOCAL STORAGE group REMOVED together with the backup export, on the
+// owner's answer to ops-20261104-019 (2026-11-16, DECISIONS (1990)).
 //
 // Everything here is read off the EXECUTED host object, not off the text of
 // dist/index.html, for a concrete reason: the source carries a comment that
 // spells out `storage: { enabled: false }` to explain why it is absent, so a
 // text probe for that string reports it PRESENT. The host object cannot lie.
 async function assertSettings033AccountFirstNoCaptions() {
-  section('0.3.3: Account first, no captions, no generic Profile, LOCAL STORAGE untouched');
+  section('0.3.3: Account first, no captions, no generic Profile, LOCAL STORAGE removed with its export (owner 1990)');
 
   // --- the vendored bytes, pinned to the adopted release.
   const V033_JS = '1fb129490c5fe74dd693c3384e09b220df1732cdbf3e8d80e6e8e079a9f899db';
@@ -863,19 +864,51 @@ async function assertSettings033AccountFirstNoCaptions() {
   ok(!!host.profile && host.profile.enabled === false,
     `0.3.3: host.profile.enabled is strictly false — the module's generic Profile is off, this house ships its own seafarer-profile editor (got ${JSON.stringify(host.profile)})`);
 
-  // THE BOUNDARY, and it is a drill with a named cancel condition:
-  // hiding the LOCAL STORAGE group is №924 and waits on the owner's answer to
-  // ops-20261104-019, because the only exportVaultBackup() call site lives
-  // inside that group. Cancelled by: that owner answer, and nothing else.
-  ok(!Object.prototype.hasOwnProperty.call(host, 'storage'),
-    '0.3.3 BOUNDARY (№924, cancelled only by the owner answer to ops-20261104-019): the host passes NO storage opt-out, so the LOCAL STORAGE group and the backup export inside it stay');
-  ok(typeof host.exportVaultBackup === 'function',
-    '0.3.3 BOUNDARY: the backup export is still reachable through the host');
+  // THE BOUNDARY ABOVE WAS CANCELLED BY ITS OWN NAMED CONDITION, and the
+  // assertions are REPLACED rather than dropped: the owner answered
+  // ops-20261104-019 on 2026-11-16 (DECISIONS (1990)) — remove the «Локальное
+  // хранилище» block TOGETHER WITH the backup export. What used to be asserted
+  // ("no storage opt-out", "export still reachable") is now asserted inverted,
+  // so the count of guarded statements goes up, not down.
+  ok(!!host.storage && host.storage.enabled === false,
+    `№924 (owner 2026-11-16, DECISIONS (1990)): host.storage.enabled is strictly false — the LOCAL STORAGE group is gone (got ${JSON.stringify(host.storage)})`);
+  ok(html.indexOf('onclick="exportVaultBackup()"') === -1,
+    '№924: and the legacy settings screen no longer offers "Export vault backup" — the last UI call site of exportVaultBackup() is removed');
+  // The implementation is deliberately left in place; what must be gone is every
+  // way for a user to reach it.
+  // Counting occurrences would count COMMENTS: two lines mention
+  // exportVaultBackup() in prose (one of them explains this very removal), and
+  // a probe that cannot tell prose from code reports a call site that is not
+  // there. Judge line by line instead, skipping comments and the definition.
+  const exportCallSites = html.split('\n').filter((line) => {
+    if (line.indexOf('exportVaultBackup()') === -1) return false;
+    const t = line.trim();
+    if (t.startsWith('//') || t.startsWith('*')) return false;        // prose
+    if (/function exportVaultBackup\(\)/.test(t)) return false;       // the implementation itself
+    return true;
+  });
+  ok(exportCallSites.length === 0,
+    `№924: zero remaining call sites of exportVaultBackup() in the product (got ${exportCallSites.length}${exportCallSites.length ? ': ' + exportCallSites.map((l) => l.trim().slice(0, 60)).join(' | ') : ''})`);
+  // and prove THIS probe is not vacuous: a planted call line must be seen.
+  const plantedCall = ['  foo();', '  exportVaultBackup();', '  // exportVaultBackup() in prose'].filter((line) => {
+    if (line.indexOf('exportVaultBackup()') === -1) return false;
+    const t = line.trim();
+    return !(t.startsWith('//') || t.startsWith('*')) && !/function exportVaultBackup\(\)/.test(t);
+  });
+  ok(plantedCall.length === 1,
+    `№924 NEGATIVE: the call-site probe sees a planted call and ignores a prose mention (saw ${plantedCall.length} of 1)`);
+  // And the module honours the flag the way the host spells it — read off the
+  // vendored bytes, not assumed.
+  ok(/function storageCapability\(\)\s*\{\s*if \(isObject\(host\.storage\) && host\.storage\.enabled === false\) return null;/.test(vendored.toString('utf8')),
+    '№924: the vendored 0.3.3 drops the storage group on exactly a strict enabled===false');
 
   // --- the probes must bite. Substitution, not inspection.
-  const planted = Object.assign({}, host, { storage: { enabled: false } });
-  ok(Object.prototype.hasOwnProperty.call(planted, 'storage'),
-    '0.3.3 NEGATIVE: planting a storage opt-out makes the boundary probe see it — the probe is not vacuous');
+  const unplanted = Object.assign({}, host); delete unplanted.storage;
+  ok(!(!!unplanted.storage && unplanted.storage.enabled === false),
+    '№924 NEGATIVE: removing the storage key reddens the probe — it is not vacuous');
+  const looseStorage = Object.assign({}, host, { storage: { enabled: 0 } });
+  ok(!(looseStorage.storage.enabled === false),
+    '№924 NEGATIVE: a falsy-but-not-false storage value (0) does NOT satisfy it — matching the module, which needs a strict false');
   const noCaptions = Object.assign({}, host); delete noCaptions.captions;
   ok(!(!!noCaptions.captions && noCaptions.captions.enabled === false),
     '0.3.3 NEGATIVE: removing the captions key reddens the captions probe');

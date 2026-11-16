@@ -18351,8 +18351,7 @@ function renderSettingsBody(){
         h += '<div class="setting-control"><button class="btn btn-outline btn-sm" onclick="switchVault()">Open&hellip;</button></div></div>';
         h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Create new vault</div><div class="setting-desc">Close the current vault and start the setup flow for a new one.</div></div>';
         h += '<div class="setting-control"><button class="btn btn-outline btn-sm" onclick="createNewVault()">Create&hellip;</button></div></div>';
-        h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Export vault backup</div><div class="setting-desc">Create a ZIP backup with the vault database and all local attachments. Use this before risky changes or device migration.</div></div>';
-        h += '<div class="setting-control"><button class="btn btn-accent btn-sm" onclick="exportVaultBackup()">Export&hellip;</button></div></div>';
+        // Export vault backup: removed on the owner's word (DECISIONS (1990), 2026-11-16).
         h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Import vault backup</div><div class="setting-desc">Restore a '+tr('app.name')+' vault ZIP into a new folder and switch to it after validation.</div></div>';
         h += '<div class="setting-control"><button class="btn btn-outline btn-sm" onclick="importVaultBackup()">Import&hellip;</button></div></div>';
         h += '<div class="setting-row"><div class="setting-info"><div class="setting-label">Forget last vault</div><div class="setting-desc">Stop auto-opening the last vault on startup. The vault files on disk are not touched.</div></div>';
@@ -20022,13 +20021,15 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
             // menu rows and nav items ("без подписей", owner 11.11); profile =
             // the module's generic Profile section, which this house replaces
             // with its own full seafarer-profile editor above.
-            // NOTE: `storage` is deliberately NOT here. Hiding the LOCAL STORAGE
-            // group is №924, and it is waiting on the owner's answer to
-            // ops-20261104-019 because the only exportVaultBackup() call site
-            // lives inside that block. Adding `storage: { enabled: false }`
-            // before that answer would remove the backup export from the app.
+            // `storage` closes the LOCAL STORAGE group (№924). The owner answered
+            // ops-20261104-019 on 2026-11-16 (DECISIONS (1990)) in these words:
+            // remove the «Локальное хранилище» block TOGETHER WITH the backup
+            // export. So the group goes, and with it the module's export/import
+            // rows; the legacy screen's own "Export vault backup" row is removed
+            // below, which leaves the app with no way to call exportVaultBackup().
             captions: { enabled: false },
             profile: { enabled: false },
+            storage: { enabled: false },
             appSpecificSections: [ seafarerSection(), syncSection(), accountSection() ],
 
             onError: function(err, context){ try{ logError('settings:'+context,err); }catch(e){} }
