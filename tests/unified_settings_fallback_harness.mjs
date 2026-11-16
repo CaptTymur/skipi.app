@@ -581,6 +581,14 @@ const renderingModule = (state) => ({
 function extractSeafarerFormFns() {
   return [
     extractFunction('function spField(id,label,type)'),
+    // seafarerProfileFormHtml()'s FIRST statement has been
+    // `var h = appAccountControlsHtml();` since PR #112 (5240c473, 2026-09-14,
+    // №193 account path). Extracting the form builder without that dependency
+    // makes renderHtml throw ReferenceError inside the module mount, the
+    // product's own fail-closed branch swallows it and opens the legacy screen
+    // — which is exactly what this file asserts must NOT happen. The twelve
+    // reds that followed were one missing sandbox symbol, not twelve defects.
+    extractFunction('function appAccountControlsHtml()'),
     extractFunction('function seafarerProfileFormHtml()'),
   ].join('\n');
 }
