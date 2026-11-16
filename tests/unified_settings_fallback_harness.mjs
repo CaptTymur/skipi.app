@@ -581,6 +581,14 @@ const renderingModule = (state) => ({
 function extractSeafarerFormFns() {
   return [
     extractFunction('function spField(id,label,type)'),
+    // seafarerProfileFormHtml()'s FIRST statement has been
+    // `var h = appAccountControlsHtml();` since PR #112 (5240c473, 2026-09-14,
+    // №193 account path). Extracting the form builder without that dependency
+    // makes renderHtml throw ReferenceError inside the module mount, the
+    // product's own fail-closed branch swallows it and opens the legacy screen
+    // — which is exactly what this file asserts must NOT happen. The twelve
+    // reds that followed were one missing sandbox symbol, not twelve defects.
+    extractFunction('function appAccountControlsHtml()'),
     extractFunction('function seafarerProfileFormHtml()'),
   ].join('\n');
 }
@@ -794,7 +802,123 @@ await assertSystemBackClosesOverlay();
 await assertEscapeAndBackdropCloseRemain();
 await assertSeafarerSectionEmbedsFullEditor();
 await assertSeafarerDeepLinkRoutesUnified();
+// №929 / 0.3.3 adoption — Account first, captions off, generic Profile off,
+// and the LOCAL STORAGE group REMOVED together with the backup export, on the
+// owner's answer to ops-20261104-019 (2026-11-16, DECISIONS (1990)).
+//
+// Everything here is read off the EXECUTED host object, not off the text of
+// dist/index.html, for a concrete reason: the source carries a comment that
+// spells out `storage: { enabled: false }` to explain why it is absent, so a
+// text probe for that string reports it PRESENT. The host object cannot lie.
+async function assertSettings033AccountFirstNoCaptions() {
+  section('0.3.3: Account first, no captions, no generic Profile, LOCAL STORAGE removed with its export (owner 1990)');
+
+  // --- the vendored bytes, pinned to the adopted release.
+  const V033_JS = '1fb129490c5fe74dd693c3384e09b220df1732cdbf3e8d80e6e8e079a9f899db';
+  const vendored = fs.readFileSync(path.join(ROOT, 'dist', 'skipi-settings.js'));
+  const decl = fs.readFileSync(path.join(ROOT, 'dist', 'SETTINGS_VERSION'), 'utf8');
+  ok(decl.split('\n')[0].trim() === '0.3.3', `0.3.3: SETTINGS_VERSION declares 0.3.3 (got ${JSON.stringify(decl.split('\n')[0].trim())})`);
+  ok(createHash('sha256').update(vendored).digest('hex') === V033_JS,
+    '0.3.3: the vendored skipi-settings.js is byte-for-byte the 0.3.3 release (sha256 pinned here, so a silent re-vendor reddens)');
+
+  // --- Account placement is OWNED BY THE MODULE: read its constants out of the
+  //     vendored bytes and compare against every generic order it ships.
+  const src = vendored.toString('utf8');
+  const accountId = /var ACCOUNT_ID\s*=\s*'([^']+)'/.exec(src);
+  const accountOrder = /var ACCOUNT_ORDER\s*=\s*(\d+)/.exec(src);
+  ok(!!accountId && accountId[1] === 'account', `0.3.3: the module reserves the id 'account' (got ${accountId && accountId[1]})`);
+  ok(!!accountOrder, '0.3.3: the module declares ACCOUNT_ORDER');
+  const genericOrders = [...src.matchAll(/id: '(?:profile|devices|application|team)', order: (\d+)/g)].map((m) => Number(m[1]));
+  ok(genericOrders.length === 4, `0.3.3: the module ships four generic sections with orders (got ${genericOrders.join(',')})`);
+  ok(genericOrders.every((o) => Number(accountOrder[1]) < o),
+    `0.3.3: ACCOUNT_ORDER ${accountOrder && accountOrder[1]} sorts strictly before every generic section (${genericOrders.join(',')}) — that is what puts Account FIRST`);
+
+  // --- the host this house actually builds.
+  let formFns = null;
+  try { formFns = extractSeafarerFormFns(); } catch (e) { /* reported by its own check elsewhere */ }
+  const sb = makeSandbox({ module: renderingModule, queuedTimers: true });
+  const { sandbox, state } = sb;
+  if (formFns) vm.runInContext(formFns, sandbox, { filename: 'dist/index.html#seafarer-form-fns' });
+  sandbox.spLoad = () => {};
+  sandbox.openSettings();
+  await settle();
+  ok(state.mountCalls === 1, `0.3.3: the unified shell mounted (got ${state.mountCalls})`);
+  const host = state.host || {};
+
+  const ids = (host.appSpecificSections || []).map((s2) => s2 && s2.id);
+  // Account-first is achieved WITHOUT renaming the section: the id stays the one
+  // the DEL1 drills in bundled_plugin_isolation_harness.mjs pin (that file lives
+  // in another guard route), and the order is passed explicitly instead. The
+  // module honours a host order for every non-reserved id.
+  const acct = (host.appSpecificSections || []).find((s2) => s2 && s2.id === 'skipi-account');
+  ok(!!acct, `0.3.3: the Account section keeps its id, so the DEL1 account-deletion drills stay valid (ids: ${ids.join(', ')})`);
+  ok(!!acct && Number(acct.order) < Math.min(...genericOrders),
+    `0.3.3: and it is registered with order ${acct && acct.order} — strictly below every generic section (${genericOrders.join(',')}), so Account comes FIRST`);
+  ok(!!acct && Number(acct.order) === Number(accountOrder[1]),
+    `0.3.3: the number mirrors the module's own ACCOUNT_ORDER (${accountOrder && accountOrder[1]}) rather than inventing a second convention`);
+
+  // captions / profile: the module removes a section ONLY on a strict false,
+  // so assert the strictness, not mere falsiness.
+  ok(!!host.captions && host.captions.enabled === false,
+    `0.3.3: host.captions.enabled is strictly false — the descriptive sub-text is off ("без подписей", owner 11.11) (got ${JSON.stringify(host.captions)})`);
+  ok(!!host.profile && host.profile.enabled === false,
+    `0.3.3: host.profile.enabled is strictly false — the module's generic Profile is off, this house ships its own seafarer-profile editor (got ${JSON.stringify(host.profile)})`);
+
+  // THE BOUNDARY ABOVE WAS CANCELLED BY ITS OWN NAMED CONDITION, and the
+  // assertions are REPLACED rather than dropped: the owner answered
+  // ops-20261104-019 on 2026-11-16 (DECISIONS (1990)) — remove the «Локальное
+  // хранилище» block TOGETHER WITH the backup export. What used to be asserted
+  // ("no storage opt-out", "export still reachable") is now asserted inverted,
+  // so the count of guarded statements goes up, not down.
+  ok(!!host.storage && host.storage.enabled === false,
+    `№924 (owner 2026-11-16, DECISIONS (1990)): host.storage.enabled is strictly false — the LOCAL STORAGE group is gone (got ${JSON.stringify(host.storage)})`);
+  ok(html.indexOf('onclick="exportVaultBackup()"') === -1,
+    '№924: and the legacy settings screen no longer offers "Export vault backup" — the last UI call site of exportVaultBackup() is removed');
+  // The implementation is deliberately left in place; what must be gone is every
+  // way for a user to reach it.
+  // Counting occurrences would count COMMENTS: two lines mention
+  // exportVaultBackup() in prose (one of them explains this very removal), and
+  // a probe that cannot tell prose from code reports a call site that is not
+  // there. Judge line by line instead, skipping comments and the definition.
+  const exportCallSites = html.split('\n').filter((line) => {
+    if (line.indexOf('exportVaultBackup()') === -1) return false;
+    const t = line.trim();
+    if (t.startsWith('//') || t.startsWith('*')) return false;        // prose
+    if (/function exportVaultBackup\(\)/.test(t)) return false;       // the implementation itself
+    return true;
+  });
+  ok(exportCallSites.length === 0,
+    `№924: zero remaining call sites of exportVaultBackup() in the product (got ${exportCallSites.length}${exportCallSites.length ? ': ' + exportCallSites.map((l) => l.trim().slice(0, 60)).join(' | ') : ''})`);
+  // and prove THIS probe is not vacuous: a planted call line must be seen.
+  const plantedCall = ['  foo();', '  exportVaultBackup();', '  // exportVaultBackup() in prose'].filter((line) => {
+    if (line.indexOf('exportVaultBackup()') === -1) return false;
+    const t = line.trim();
+    return !(t.startsWith('//') || t.startsWith('*')) && !/function exportVaultBackup\(\)/.test(t);
+  });
+  ok(plantedCall.length === 1,
+    `№924 NEGATIVE: the call-site probe sees a planted call and ignores a prose mention (saw ${plantedCall.length} of 1)`);
+  // And the module honours the flag the way the host spells it — read off the
+  // vendored bytes, not assumed.
+  ok(/function storageCapability\(\)\s*\{\s*if \(isObject\(host\.storage\) && host\.storage\.enabled === false\) return null;/.test(vendored.toString('utf8')),
+    '№924: the vendored 0.3.3 drops the storage group on exactly a strict enabled===false');
+
+  // --- the probes must bite. Substitution, not inspection.
+  const unplanted = Object.assign({}, host); delete unplanted.storage;
+  ok(!(!!unplanted.storage && unplanted.storage.enabled === false),
+    '№924 NEGATIVE: removing the storage key reddens the probe — it is not vacuous');
+  const looseStorage = Object.assign({}, host, { storage: { enabled: 0 } });
+  ok(!(looseStorage.storage.enabled === false),
+    '№924 NEGATIVE: a falsy-but-not-false storage value (0) does NOT satisfy it — matching the module, which needs a strict false');
+  const noCaptions = Object.assign({}, host); delete noCaptions.captions;
+  ok(!(!!noCaptions.captions && noCaptions.captions.enabled === false),
+    '0.3.3 NEGATIVE: removing the captions key reddens the captions probe');
+  const looseCaptions = Object.assign({}, host, { captions: { enabled: 0 } });
+  ok(!(looseCaptions.captions.enabled === false),
+    '0.3.3 NEGATIVE: a falsy-but-not-false value (0) does NOT satisfy the probe — matching the module, which needs a strict false');
+}
+
 await assertPhotoUploadPreservesUnsavedFields();
+await assertSettings033AccountFirstNoCaptions();
 
 // №740-a / №756 — the vendored settings bytes must match the sha256 that SETTINGS_VERSION declares.
 // Measured 2026-10-14: nothing in this house verified those three sums. SETTINGS_VERSION appeared in the
