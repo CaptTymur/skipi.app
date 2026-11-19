@@ -4032,13 +4032,14 @@ async function init() {
 }
 // Startup landing when no vault could be opened (runs only once signed in).
 async function initNoVaultLanding(hadVaultPath){
-    // A signed-in account and a local profile are separate: login alone must not
-    // start a form or imply cloud consent — consent is asked explicitly before restore
-    // (№193). One account — one profile (OWNER (1023), 08.10, №707 S1): with a live
-    // session and no open profile the landing itself offers the account restore
-    // (consent → download, or profile setup when the account is empty); the
-    // create/open/demo choice stays the fallback — consent declined, download failed,
-    // web shell, or no live restore context.
+    // №976 (OWNER 06.11): «локального волта как сущности нет, есть кэш приложения; вход → пустой кэш
+    // наполняется, непустой обновляется». After sign-in there is ONE path — into the app:
+    // 'restored' → the downloaded profile is open; 'empty' → an empty account cache is created
+    // silently and the home screen invites to fill the profile INSIDE the app. Consent declined,
+    // download failed, no live restore context → an honest error with «Retry» beside Sign out —
+    // never the create/open/demo choice of a local profile. Consent is still asked explicitly
+    // before restore (№193); the web shell keeps the old landing (no Tauri invoke without the shim).
+    if(window.__SKIPI_WEBDESKTOP__){showWelcome();return;}
     var outcome=null;
     try{outcome=await accountRestoreLanding();}
     catch(e){
@@ -4046,8 +4047,29 @@ async function initNoVaultLanding(hadVaultPath){
         logError('account_restore_landing',e);accountRestoreLastError=String((e&&e.message)||e||'');
     }
     if(outcome==='restored'||outcome==='empty')return;
-    showWelcome();
+    try{showAccountRestoreRetry(outcome);}
+    catch(e){logError('account_restore_landing',e);showWelcome();}
     // Jobs polling still starts only after opening an opted-in seafarer profile.
+}
+// «Retry» on the error screen: the one automatic attempt per sign-in context (D7) is
+// re-armed by the user's tap, never by a timer.
+function accountRestoreRetry(){
+    _accountRestoreAutoTried=null;accountRestoreLastError='';
+    initNoVaultLanding(true);
+}
+// The empty account's cache: a seafarer profile with no data, created without a single form.
+// The signed-in session is written into it by the first app_login_status call inside
+// loadVault() (persist_pending_login), so the cache is bound to the account like any other
+// profile. A cache that already exists for this e-mail (sign-in after a forgotten vault)
+// is opened, not duplicated. The profile is filled INSIDE the app (home banner → Profile).
+async function openEmptyAccountCache(){
+    var email='';
+    try{var st=await invoke('app_login_status');email=String((st&&st.email)||'').trim();}catch(e){}
+    var path=await defaultVaultPath(vaultFolderName('Seafarer',email||'Account'));
+    var info;
+    try{info=await invoke('open_vault',{path:path});}
+    catch(e){info=await invoke('create_vault',{path:path,accountType:'seafarer',name:email||'Skipi Seafarer',rank:null,vesselType:null});}
+    await loadVault(info);
 }
 // №707 S1: the automatic restore offer. Returns the restore outcome ('restored' |
 // 'empty' | 'cancel' | 'error') or null when the auto path does not apply. The trigger is
@@ -4074,10 +4096,26 @@ async function accountRestoreLanding(){
 function showAccountRestoreLanding(status){
     var ru=getUiLang()==='ru';
     var title=ru?'Загружаю профиль из аккаунта…':'Downloading your profile from the account…';
-    var sub=ru?'После вашего согласия профиль и документы появятся на этом устройстве. Если в аккаунте ещё нет данных, откроется создание профиля.':'After your consent your profile and documents appear on this device. If the account has no data yet, profile setup opens.';
+    var sub=ru?'После вашего согласия профиль и документы появятся на этом устройстве. Если в аккаунте ещё нет данных, откроется пустой профиль — заполните его в приложении.':'After your consent your profile and documents appear on this device. If the account has no data yet, an empty profile opens — fill it in inside the app.';
+    paintAccountRestoreScreen('<div class="mobile-hero" data-account-restore-landing><h1>'+esc(title)+'</h1><p>'+esc(sub)+'</p>'+appAccountControlsHtml()+'</div>');
+}
+// №976: the error screen after sign-in — the reason beside «Retry», Sign out underneath.
+// outcome: 'cancel' (consent declined) | 'error' (download or cache failed, accountRestoreLastError)
+// | null (no live restore context / status call failed).
+function showAccountRestoreRetry(outcome){
+    var ru=getUiLang()==='ru';
+    var title=ru?'Данные аккаунта не загружены':'Account data not downloaded';
+    var reason=outcome==='cancel'
+        ?(ru?'Без согласия на загрузку данных из аккаунта приложение открыть нельзя.':'Without consent to download the account data the app cannot open.')
+        :(accountRestoreLastError||(ru?'Нет связи с аккаунтом Skipi. Проверьте интернет и повторите.':'No connection to the Skipi account. Check the internet and retry.'));
+    paintAccountRestoreScreen('<div class="mobile-hero" data-account-restore-retry><h1>'+esc(title)+'</h1><p data-account-restore-error style="color:var(--red);">'+esc(reason)+'</p>'
+        +'<div class="mobile-stack"><button class="btn btn-accent" type="button" data-qa="account-restore-retry" onclick="accountRestoreRetry()">'+esc(ru?'Повторить':'Retry')+'</button></div>'
+        +appAccountControlsHtml()+'</div>');
+}
+function paintAccountRestoreScreen(html){
+    var ru=getUiLang()==='ru';
     show('scr-welcome');hide('scr-setup');hide('scr-content');hide('ribbon');hide('left-panel');hide('tabs');hide('statusbar');
     var mb=document.getElementById('modules-bar');if(mb)mb.style.display='none';
-    var html='<div class="mobile-hero" data-account-restore-landing><h1>'+esc(title)+'</h1><p>'+esc(sub)+'</p>'+appAccountControlsHtml()+'</div>';
     if(shouldUseMobileShell()){
         mobileView='home';
         try{updateTitlebar();}catch(e){}
@@ -7032,6 +7070,9 @@ var mobileAssistantBusy=false;
 // it answers on the demo vault's data and offers to create a real profile (banner) instead of being
 // gated off. Set in loadVault (sync from info.is_demo, async via get_profile_status).
 var mobileIsDemo=false;
+// №976: no rank and no position yet — the one invitation on the home screen to fill the profile
+// inside the app. Set from VaultInfo in loadVault(), refreshed with the demo flag below.
+var mobileProfileEmpty=false;
 var mobileAssistantConsentKey='skipi-assistant-consent';
 var mobileAssistantConvKey='skipi-assistant-conv';
 (function(){try{var raw=localStorage.getItem(mobileAssistantConvKey);if(raw)mobileAssistantMessages=JSON.parse(raw)||[];}catch(e){mobileAssistantMessages=[];}})();
@@ -7049,8 +7090,17 @@ function mobileAssistantRerender(){
 function mobileDemoFlagSelfCheck(){
     try{invoke('get_profile_status').then(function(sp){
         var d=String((sp&&sp.is_demo)||'')==='1';
-        if(d!==mobileIsDemo){mobileIsDemo=d;mobileAssistantRerender();}
+        // A status that carries the profile keys is the authority; anything else leaves the VaultInfo verdict.
+        var empty=(sp&&('position' in sp||'stcw_level' in sp))?!(sp.position||sp.stcw_level):mobileProfileEmpty;
+        if(d!==mobileIsDemo||empty!==mobileProfileEmpty){mobileIsDemo=d;mobileProfileEmpty=empty;mobileAssistantRerender();}
     }).catch(function(){});}catch(e){}
+}
+// The empty-profile banner (№976) — same shape as the demo banner; the button opens the
+// profile form inside the app (openSettings('seafarer'), the same door as «Edit profile»).
+function mobileEmptyProfileBannerHtml(){
+    var ru=getUiLang()==='ru';
+    return '<div class="mobile-assistant-banner" data-qa="empty-profile-banner">'+mobileEsc(ru?'Профиль ещё не заполнен. Укажите должность и данные о себе — документы и вакансии подстроятся под вас.':'Your profile is not filled in yet. Add your rank and details — documents and jobs will follow.')
+        +'<button class="btn btn-outline btn-sm" type="button" data-qa="empty-profile-fill" onclick="openSettings(\'seafarer\')">'+mobileEsc(ru?'Заполнить профиль':'Fill in profile')+'</button></div>';
 }
 // The demo banner — «Create my profile» (ONB1) and, natively, «Sign in» back to the fork (D7/D11) —
 // one markup source for the chat and the native home grid.
@@ -7343,7 +7393,9 @@ function renderMobileHome(){
     if(isNativeMobile()){
         mobileDemoFlagSelfCheck();
         renderMobileMenu();
-        if(mobileIsDemo){var main=document.getElementById('mobile-main');if(main)main.innerHTML=mobileAssistantDemoBannerHtml()+main.innerHTML;}
+        var main=document.getElementById('mobile-main');
+        if(mobileIsDemo){if(main)main.innerHTML=mobileAssistantDemoBannerHtml()+main.innerHTML;}
+        else if(mobileProfileEmpty){if(main)main.innerHTML=mobileEmptyProfileBannerHtml()+main.innerHTML;}
         return;
     }
     // Family mobile home (card 12): hero + the 11-module grid. The grid markup
@@ -10930,6 +10982,7 @@ async function loadVault(info){
     var mb=document.getElementById('modules-bar');if(mb)mb.style.display='flex';
     currentAccountType=info.account_type||'';
     mobileIsDemo=String((info&&info.is_demo)||'')==='1';
+    mobileProfileEmpty=!(info&&(info.rank||info.position));
     try{invoke('get_profile_status').then(function(sp){mobileIsDemo=String((sp&&sp.is_demo)||'')==='1';}).catch(function(){});}catch(e){}
     var prevPosition = currentWizardPosition;
     currentWizardPosition=info.position||'';
@@ -18361,8 +18414,9 @@ async function restoreAccountProfile(){
         if(after.restore_context!==before.restore_context||after.profile_open!==false||after.logged_in!==true||after.consent_notice_version!==consent.notice_version)throw new Error(oneAccountSyncTexts().contextChanged);
         var result=await invoke('restore_account_profile',{consent:true,restoreContext:before.restore_context,consentNotice:consent});
         if(result.outcome==='empty'){
-            showToast(ru?'В аккаунте пока нет данных профиля. Создайте профиль на этом устройстве.':'This account has no profile data yet. Create a profile on this device.','info');
-            if(shouldUseMobileShell())await mobileCreateProfile();else await startSeafarerWizard();
+            // №976: an empty account → an empty cache opened straight away; the profile is
+            // filled inside the app (home banner), not in a wizard before it.
+            await openEmptyAccountCache();
             return 'empty';
         }else if(result.outcome==='restored'){
             await loadVault(result.vault);
