@@ -1811,7 +1811,11 @@ async function oneAccountSyncRequestConsent(mode,status){
     var html='<strong>'+esc(n.title)+'</strong><p>'+esc(status.account_email||'')+'</p>';
     n.paragraphs.forEach(function(p){html+='<p>'+esc(p)+'</p>';});
     html+='<p><a href="#" onclick="openExternalUrlSafe(accountSyncNotice.privacy_url);return false;">'+esc(n.privacy_label)+'</a></p>';
-    var accepted=await uiConfirm(html,{allowHtml:true,confirmLabel:mode==='restore'?n.accept_restore:n.accept_enable,cancelLabel:n.cancel,requiredChecks:[n.sync_label,n.health_label]});
+    // №976 (OWNER 19.11): the download consent after sign-in is ONE tap — the two statements
+    // stay in the text, the checkboxes stay for enabling sync from Settings.
+    var oneTap=mode==='restore';
+    if(oneTap)html+='<p>'+esc(n.sync_label)+'</p><p>'+esc(n.health_label)+'</p>';
+    var accepted=await uiConfirm(html,{allowHtml:true,confirmLabel:mode==='restore'?n.accept_restore:n.accept_enable,cancelLabel:n.cancel,requiredChecks:oneTap?[]:[n.sync_label,n.health_label]});
     if(accepted!==true)return null;
     return {notice_version:accountSyncNotice.version,notice_sha256:n.notice_sha256,language:language,scope:'profile-photo-sea-service-documents',sync:true,health:true};
 }

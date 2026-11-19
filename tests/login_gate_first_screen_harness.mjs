@@ -352,6 +352,11 @@ if (landing !== null) {
   ok(/data-qa="empty-profile-banner"/.test(banner) && /openSettings\(\\'seafarer\\'\)/.test(banner) && !/mobileStartVaultWizard|mobileCreateProfile/.test(banner), 'G9 (№976): the banner\'s one button opens the profile form inside the app (openSettings(\'seafarer\')), not the vault wizard');
   ok(/mobileProfileEmpty\s*=\s*!\(info&&\(info\.rank\|\|info\.position\)\)/.test(fnBody(html, 'loadVault') || ''), 'G9 (№976): the empty verdict is taken from VaultInfo in loadVault() (no rank, no position)');
   ok(/mobileProfileEmpty/.test(fnBody(html, 'mobileDemoFlagSelfCheck') || ''), 'G9 (№976): the verdict is refreshed with the demo flag from get_profile_status (banner disappears after the first save)');
+  // №976 (OWNER 19.11): the download consent after sign-in is ONE tap; the two statements stay in the
+  // text; the checkboxes stay for enabling sync from Settings (№193 unchanged there).
+  const consent = fnBody(html, 'oneAccountSyncRequestConsent') || '';
+  ok(/var\s+oneTap\s*=\s*mode\s*===\s*'restore'/.test(consent) && /requiredChecks\s*:\s*oneTap\s*\?\s*\[\]\s*:\s*\[\s*n\.sync_label\s*,\s*n\.health_label\s*\]/.test(consent), 'G9 (№976): restore consent passes no required checks; enable consent keeps both');
+  ok(/if\s*\(\s*oneTap\s*\)\s*html\s*\+=\s*'<p>'\s*\+\s*esc\(n\.sync_label\)/.test(consent), 'G9 (№976): the two consent statements are still shown as text in the one-tap dialog');
   // Negative drills — the structural shape is what protects the user, so prove the probes bite.
   const drillA = landing.replace(/await\s+accountRestoreLanding\(\)/, 'null');
   ok(!/await\s+accountRestoreLanding\(\)/.test(drillA), 'G9 NEGATIVE A: dropping the await reddens the first G9 probe');
