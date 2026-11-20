@@ -22,6 +22,11 @@
 //       accepted login is parked in PendingLogin and persisted into the first
 //       vault that opens via app_login_status -> persist_pending_login.
 //   G6. lib.rs: AppState carries the login_pending slot.
+//   E1–E4 (tasks/003, 2026-11-20): sign-in failures reach the user as human
+//       texts in the UI language — classified in Rust as LoginError {code,
+//       detail} (network / credentials / rate_limited / rejected / other), the
+//       frontend maps the code and never parses an English string; "other"
+//       keeps the technical detail as a small line UNDER the main text.
 // Limitations: source contract (brace matching, no AST); not a runtime test.
 
 import { readFileSync } from 'node:fs';
@@ -508,6 +513,71 @@ if (landing !== null) {
   ok(/attachMaritimeFlagCombobox\('mwh-flag'/.test(html), 'F4: the mobile Sea Service flag field is attached to the shared list');
   ok(/attachMaritimeFlagCombobox\('vw-flag'/.test(html), 'F4: the vessel wizard flag field is attached to the shared list');
   ok(/attachClosedCombobox\(flagEl,flagList,maritimeFlagComboOptions\(\)\)/.test(html), 'F4: the desktop Sea Service flag field passes the flag options');
+}
+
+// ── E. Human-readable sign-in errors (tasks/003, 2026-11-20) ────────────────
+// Before: offline sign-in showed the raw reqwest string
+// ("assistant.skipi.app network: error sending request …"), in English,
+// regardless of the UI language; 403/429 came as English sentences baked into
+// app_login.rs and the frontend printed whatever it got.
+{
+  const rust = rustLogin;
+  // E1 — Rust-side classification.
+  ok(/struct\s+LoginError\b/.test(rust), 'E1: app_login.rs declares LoginError (code + detail)');
+  ok(/derive\([^)]*Serialize[^)]*\)\]\s*(?:pub(?:\(crate\))?\s+)?struct\s+LoginError\b/.test(rust), 'E1: LoginError is Serialize (reaches JS as an object, not a string)');
+  for (const code of ['network', 'credentials', 'rate_limited', 'other']) {
+    ok(new RegExp(`"${code}"`).test(rust), `E1: app_login.rs emits code "${code}"`);
+  }
+  ok(/403\s*=>[^,]*credentials/.test(rust), 'E1: HTTP 403 → code credentials');
+  ok(/429\s*=>[^,]*rate_limited/.test(rust), 'E1: HTTP 429 → code rate_limited');
+
+  // E2 — the structured error leaves the command; no English network string.
+  ok(/pub\s+async\s+fn\s+app_login\s*\([\s\S]*?\)\s*->\s*Result<Value,\s*LoginError>/.test(rust), 'E2: app_login returns Result<Value, LoginError>');
+  ok(!/assistant\.skipi\.app network:/.test(rust), 'E2: the raw "assistant.skipi.app network: …" formatting is gone');
+
+  // E3 — texts in both UI languages.
+  const lgTxt = fnBody(html, '_lgTxt');
+  ok(lgTxt !== null, 'E3: _lgTxt() found');
+  if (lgTxt) {
+    const ru = {
+      net: 'Нет связи с сервером Skipi. Проверьте интернет и повторите.',
+      creds: 'Неверный email или пароль.',
+      rate: 'Слишком много попыток. Подождите минуту.',
+      failed: 'Не удалось войти. Повторите позже.',
+    };
+    for (const [k, v] of Object.entries(ru)) {
+      ok(lgTxt.includes(`${k}:'${v}'`), `E3: RU text ${k} = «${v}»`);
+    }
+    for (const k of Object.keys(ru)) {
+      const n = (lgTxt.match(new RegExp(`\\b${k}:'`, 'g')) || []).length;
+      ok(n >= 2, `E3: EN text for ${k} present (key appears in both branches)`);
+    }
+  }
+
+  // E4 — the frontend maps the code, keeps the detail small and under.
+  if (doLogin !== null) {
+    ok(!/String\(e\s*\|\|\s*'Login failed'\)/.test(doLogin), 'E4: doAppLogin no longer prints the raw error as the main text');
+    ok(/_lgErrorFor\(e\)/.test(doLogin), 'E4: doAppLogin dispatches on the error code (_lgErrorFor)');
+  }
+  const errFor = fnBody(html, '_lgErrorFor');
+  ok(errFor !== null, 'E4: _lgErrorFor() found (code → text)');
+  if (errFor) {
+    ok(/'network'/.test(errFor) && /t\.net\b/.test(errFor), 'E4: network → t.net');
+    ok(/'credentials'/.test(errFor) && /t\.creds\b/.test(errFor), 'E4: credentials → t.creds');
+    ok(/'rate_limited'/.test(errFor) && /t\.rate\b/.test(errFor), 'E4: rate_limited → t.rate');
+    ok(/t\.failed\b/.test(errFor), 'E4: other → t.failed');
+    ok(/_lgError\(\s*t\.failed\s*,\s*\w+\s*\)/.test(errFor), 'E4: other → generic text WITH the detail as the second argument');
+  }
+  const lgError = fnBody(html, '_lgError');
+  ok(lgError !== null, 'E4: _lgError() found');
+  if (lgError) {
+    ok(/function\s+_lgError\s*\(\s*msg\s*,\s*detail\s*\)/.test(html), 'E4: _lgError(msg, detail) takes the technical detail separately');
+    // The node is created in JS: the gate markup lives in the desktop static region that
+    // bundled_plugin_isolation_harness pins byte-for-byte (never re-based by the card that breaks it).
+    ok(/lg-err-detail/.test(lgError) && /createElement\('div'\)/.test(lgError) && /appendChild\(/.test(lgError), 'E4: detail node #lg-err-detail is created by _lgError (frozen markup untouched)');
+    ok(/font-size:\s*1[01]px/.test(lgError), 'E4: detail is small text (10–11px), under the main message');
+  }
+  ok(!/id="lg-err-detail"/.test(html), 'E4: no #lg-err-detail attribute in the static markup (desktop region pin stays valid)');
 }
 
 if (fail) {
