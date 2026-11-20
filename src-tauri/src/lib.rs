@@ -233,20 +233,13 @@ pub fn run() {
             profile::clear_profile_photo,
             profile::get_profile_photo_abs_path,
             profile::get_profile_photo_data_url,
-            // Skipi account profile sync (№96(б): explicit import/export only)
+            // Skipi account profile sync (№192/707 one-account sync; manual transfer removed in tasks/004)
             account_sync::vault_sync::enable_account_sync,
             account_sync::vault_sync::restore_account_profile,
             account_sync::vault_sync::disable_account_sync,
             account_sync::vault_sync::get_account_sync_status,
             account_sync::vault_sync::sync_account_now,
             account_sync::vault_sync::resolve_account_sync_conflict,
-            account_sync::link_account_device,
-            account_sync::get_account_link_status,
-            account_sync::unlink_account_device,
-            account_sync::preview_account_profile_import,
-            account_sync::apply_account_profile_import,
-            account_sync::preview_account_profile_export,
-            account_sync::send_account_profile,
             // App login hard gate (№117): login/logout/status
             app_login::app_login,
             app_login::app_logout,
