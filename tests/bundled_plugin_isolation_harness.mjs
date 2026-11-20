@@ -1232,11 +1232,11 @@ const efGateMarkup = () => HTML.slice(HTML.indexOf('id="login-gate-overlay"'), H
 }
 
 {
-  section('entry fork (D5) — session (parked login) but no vault: no fork, welcome/wizard landing as today');
+  section('entry fork (D5) — session (parked login) but no vault: no fork, the account screen (№976) — never the create/open choice');
   const { doc, spies } = await efBoot({ app_login_status: { logged_in: true, pending: true } });
   ok(spies.showEntryFork.length === 0 && !efFork(doc), 'D5: no fork with a parked login');
   ok(spies.showLoginGate.length === 0, 'D5: no gate');
-  ok(spies.showWelcome.length === 1 && mobileHtml(doc).includes('mobileCreateProfile()'), 'D5: welcome landing rendered (its create-profile action goes through step 0, which passes straight through with a live session — ONB1)');
+  ok(spies.showWelcome.length === 0 && mobileHtml(doc).includes('data-account-restore-retry') && mobileHtml(doc).includes('appLogoutToGate()') && !mobileHtml(doc).includes('mobileCreateProfile()'), 'D5 (№976): a session without a restore context lands on the account screen (Retry · Sign out), not on the create/open profile choice');
 }
 
 {
@@ -1369,7 +1369,7 @@ const efGateMarkup = () => HTML.slice(HTML.indexOf('id="login-gate-overlay"'), H
   await sandbox.doAppLogin();
   await efSettle();
   ok(efCalled(calls, 'app_login').length === 1 && efCalled(calls, 'create_demo_vault_auto').length === 0 && efCalled(calls, 'open_vault').length === 0, 'D11: login goes through app_login with no vault re-opened (token parked, lands in the first REAL vault)');
-  ok(spies.showWelcome.length >= 1 && !mobileHtml(doc).includes('data-qa="assistant-demo-banner"'), 'D11: continuation = welcome landing — not the demo home');
+  ok(spies.showWelcome.length === 0 && mobileHtml(doc).includes('data-account-restore-retry') && !mobileHtml(doc).includes('data-qa="assistant-demo-banner"'), 'D11 (№976): continuation = the account screen — not the demo home, not the create/open choice');
 }
 
 {
@@ -6411,9 +6411,9 @@ for(const lang of ['en','ru']){
       doc.getElementById('lg-password').value='synthetic-only';
       await s.doAppLogin(); await efSettle();
       ok(!efGateShown(doc),'193 '+lang+': successful sign-in closes the gate');
-      ok(app.spies.showWelcome.length>0,'193 '+lang+': sign-in from fork opens create/open profile landing');
+      ok(app.spies.showWelcome.length===0,'193 '+lang+' (№976): sign-in from fork never opens the create/open profile landing');
       const h=mobileHtml(doc);
-      ok(h.includes('mobileCreateProfile()')&&h.includes('mobileOpenExistingVault()'),'193 '+lang+': both create and open profile actions are visible');
+      ok(h.includes('data-account-restore-retry')&&h.includes('accountRestoreRetry()')&&!h.includes('mobileCreateProfile()')&&!h.includes('mobileOpenExistingVault()'),'193 '+lang+' (№976): the next step is Retry on the account screen — no create/open profile actions');
       ok(h.includes('appLogoutToGate()'),'193 '+lang+': signed-in account has sign-out before a profile exists');
       ok(!app.calls.some(([c])=>c==='enable_account_sync'||c==='sync_account_now'),'193 '+lang+': sign-in is not sync consent');
     }catch(e){ok(false,'193 '+lang+' login journey: '+e.message);}
@@ -6429,7 +6429,7 @@ for(const lang of ['en','ru']){
   await s.doAppLogin();ok(welcome===1,'193: successful sign-in without a saved continuation has reachable profile actions');
   s.setTimeout=(f)=>{f();return 1;};welcome=0;
   await s.initNoVaultLanding(false);
-  ok(welcome===1&&create===0,'193: fresh login keeps create/open choice visible until the user chooses (status without restore context → the choice, as before)');
+  ok(welcome===0&&create===0&&mobileHtml(doc).includes('data-account-restore-retry'),'193 (№976): fresh login without a restore context shows the account screen with Retry — never the create/open choice, never the wizard');
 }
 {
   section('193 account journey — sign-out closes either settings shell and preserves profile data');
@@ -6528,12 +6528,12 @@ for(const lang of ['en','ru']){
     for(const outcome of ['restored','empty','error','cancel','changed']){
       const calls=[];let loaded=0,wizards=0,statusReads=0;
       s.uiConfirm=async()=>outcome!=='cancel';s.loadVault=async()=>{loaded++;};s.mobileCreateProfile=async()=>{wizards++;};
-      s.invoke=async(c,args)=>{calls.push([c,args]);if(c==='get_account_sync_status')return {consent_notice_version:s.accountSyncNotice.version,profile_open:false,logged_in:true,restore_context:outcome==='changed'&&statusReads++?'new-context':'synthetic-context'};if(c==='restore_account_profile'){if(outcome==='error')throw new Error('synthetic offline');return {outcome,vault:EF_REAL};}return {};};
+      s.invoke=async(c,args)=>{calls.push([c,args]);if(c==='app_login_status')return {logged_in:true,email:'synthetic@example.invalid'};if(c==='get_default_vault_parent')return '/synthetic/vaults';if(c==='open_vault')throw new Error('Not a Skipi vault (no skipi.db found)');if(c==='create_vault')return {name:args.name,account_type:'seafarer'};if(c==='get_account_sync_status')return {consent_notice_version:s.accountSyncNotice.version,profile_open:false,logged_in:true,restore_context:outcome==='changed'&&statusReads++?'new-context':'synthetic-context'};if(c==='restore_account_profile'){if(outcome==='error')throw new Error('synthetic offline');return {outcome,vault:EF_REAL};}return {};};
       await s.restoreAccountProfile();
-      ok(!calls.some(([c])=>c==='create_vault'||c==='create_profile_vault'||c==='enable_account_sync'),'193 '+lang+' '+outcome+': frontend never scaffolds a duplicate profile or bypasses restore consent');
+      ok(calls.filter(([c])=>c==='create_vault').length===(outcome==='empty'?1:0)&&!calls.some(([c])=>c==='create_profile_vault'||c==='enable_account_sync'),'193 '+lang+' '+outcome+': the empty cache is scaffolded ONLY on the genuinely empty verdict (№976); no duplicate profile elsewhere, no sync bypass');
       const request=calls.find(([c])=>c==='restore_account_profile');if(request)ok(request[1].consentNotice.health===true&&request[1].consentNotice.sync===true&&request[1].consentNotice.notice_version===s.accountSyncNotice.version&&request[1].consentNotice.notice_sha256===s.accountSyncNotice[lang].notice_sha256,'193 '+lang+': actual restore caller sends both choices and exact displayed notice binding');
       if(outcome==='restored')ok(loaded===1&&wizards===0,'193: populated account restores directly without a wizard');
-      else if(outcome==='empty')ok(wizards===1&&loaded===0,'193: genuinely empty account offers normal profile setup');
+      else if(outcome==='empty')ok(wizards===0&&loaded===1&&calls.find(([c])=>c==='create_vault')[1].path==='/synthetic/vaults/Skipi Seafarer - synthetic@example.invalid','193 (№976): genuinely empty account opens an empty cache named after the account inside the app — no wizard before it');
       else ok(loaded===0&&wizards===0,'193 '+outcome+': failure/cancel never masquerades as empty account or successful restore');
       if(['cancel','changed'].includes(outcome))ok(!calls.some(([c])=>c==='restore_account_profile'),'193 '+outcome+': no restoration request without current explicit consent');
     }
@@ -6563,8 +6563,9 @@ for(const lang of ['en','ru']){
 // №707 S1 «one account — one profile» (OWNER (1023), 08.10; TASKCARD-2026-10-08-seafarer-707-s1-auto-sync).
 // The signed-in landing WITHOUT an open profile offers the account restore itself through the
 // existing restoreAccountProfile() flow: one explicit consent (№193) → 'restored' loads the
-// profile, 'empty' opens the wizard; consent declined / download failed / web shell / no live
-// restore context → the create/open/demo landing as before (the error beside the restore action).
+// profile, 'empty' opens an empty account cache (№976, OWNER 06.11/19.11: no local-profile choice
+// after sign-in); consent declined / download failed / no live restore context → the account
+// screen with the error beside «Retry» and Sign out; the web shell alone keeps the old landing.
 // Call sites covered (Supervisor audit B.1): init() → initNoVaultLanding (S1-1), doAppLogin →
 // _loginGateNext (S1-2), accountFirstSignIn's own continuation (S1-7), the welcome renderers behind
 // the fallback (S1-3/S1-4), the wide (desktop) welcome (S1-10). Cancel condition of these drills: S1b
@@ -6608,6 +6609,7 @@ async function s1Boot(map, consent, opts) {
   const req = calls.find(([c]) => c === 'restore_account_profile');
   ok(!!req && req[1].consent === true && req[1].restoreContext === 'synthetic-restore-context' && req[1].consentNotice && req[1].consentNotice.sync === true && req[1].consentNotice.health === true && req[1].consentNotice.notice_version === S1_NOTICE_VERSION, 'S1-1: after consent the EXISTING restore caller sends the real consent binding');
   ok(spies.loadVault.length === 1 && spies.renderMobileShell.length >= 1 && spies.showWelcome.length === 0 && spies.mobileStartVaultWizard.length === 0, 'S1-1: a populated account lands on the native home — no fork, no wizard');
+  ok(!mobileHtml(doc).includes('data-qa="empty-profile-banner"'), 'S1-1 (№976): a populated profile (position set) shows no empty-profile banner');
 }
 {
   section('707 S1 — sign-in from the fork without a profile: the continuation restores, never shows the fork (doAppLogin path)');
@@ -6626,16 +6628,18 @@ async function s1Boot(map, consent, opts) {
   ok(!calls.some(([c]) => c === 'enable_account_sync' || c === 'sync_account_now'), 'S1-2 (№193): sign-in is not sync consent');
 }
 {
-  section('707 S1 — consent declined: the previous landing with every door, no request, no retry loop (D7)');
+  section('707 S1 — consent declined: the account screen with Retry · Sign out, no request, no retry loop (D7)');
   const app = await s1Boot({ app_login_status: { logged_in: true, pending: true, email: 'synthetic@example.invalid' }, get_account_sync_status: () => s1Status(), restore_account_profile: { outcome: 'restored', vault: EF_REAL } }, () => false);
   const { sandbox: s, doc, spies, calls } = app;
   ok(app.consents.length === 1 && !calls.some(([c]) => c === 'restore_account_profile'), 'S1-3: declined consent sends no restoration request');
   const h = mobileHtml(doc);
-  ok(spies.showWelcome.length === 1 && h.includes('mobileCreateProfile()') && h.includes('mobileOpenExistingVault()') && h.includes('loadDemoVault()') && h.includes('restoreAccountProfile()'), 'S1-3: the landing falls back to create / open / demo / connect-account — every door reachable');
+  ok(spies.showWelcome.length === 0 && h.includes('data-account-restore-retry') && h.includes('accountRestoreRetry()') && h.includes('appLogoutToGate()') && !h.includes('mobileCreateProfile()') && !h.includes('mobileOpenExistingVault()') && !h.includes('loadDemoVault()'), 'S1-3 (№976): declining lands on the account screen — Retry and Sign out, no create / open / demo doors');
   ok(spies.loadVault.length === 0 && spies.mobileStartVaultWizard.length === 0, 'S1-3: declining is neither a restore nor a wizard');
   ok(!calls.some(([c]) => c === 'enable_account_sync' || c === 'sync_account_now'), 'S1-3 (№193): declining never enables sync');
   await s.initNoVaultLanding(false); await efSettle();
-  ok(app.consents.length === 1 && spies.showWelcome.length === 2 && !calls.some(([c]) => c === 'restore_account_profile'), 'S1-3 (D7): the same sign-in context is not asked again automatically — the explicit button is the retry');
+  ok(app.consents.length === 1 && spies.showWelcome.length === 0 && mobileHtml(doc).includes('data-account-restore-retry') && !calls.some(([c]) => c === 'restore_account_profile'), 'S1-3 (D7): the same sign-in context is not asked again automatically — the Retry button is the retry');
+  await s.accountRestoreRetry(); await efSettle();
+  ok(app.consents.length === 2 && !calls.some(([c]) => c === 'restore_account_profile'), 'S1-3 (№976): the Retry tap re-arms the SAME sign-in context — one new consent dialog, still no request without consent');
   const t0 = app.consents.length;
   app.sandbox.invoke = async (cmd, args) => { calls.push([cmd, args]); return cmd === 'get_account_sync_status' ? s1Status({ restore_context: 'synthetic-restore-context-2' }) : efInvoke({ app_login_status: { logged_in: true, pending: true }, restore_account_profile: { outcome: 'restored', vault: EF_REAL } })(cmd, args); };
   await s.initNoVaultLanding(false); await efSettle();
@@ -6648,18 +6652,19 @@ async function s1Boot(map, consent, opts) {
     const { doc, spies, calls } = app;
     ok(calls.filter(([c]) => c === 'restore_account_profile').length === 1, 'S1-4 ' + lang + ': one restoration request was made');
     const h = mobileHtml(doc);
-    ok(spies.showWelcome.length === 1 && h.includes('mobileCreateProfile()') && h.includes('restoreAccountProfile()'), 'S1-4 ' + lang + ': failure falls back to the landing with the explicit restore action');
+    ok(spies.showWelcome.length === 0 && h.includes('data-account-restore-retry') && h.includes('accountRestoreRetry()') && !h.includes('mobileCreateProfile()'), 'S1-4 ' + lang + ' (№976): failure lands on the account screen with Retry — no local-profile choice');
     ok(h.includes('data-account-restore-error') && h.includes('synthetic offline'), 'S1-4 ' + lang + ': the error text sits beside the action, not only in a toast');
     ok(spies.mobileStartVaultWizard.length === 0 && spies.loadVault.length === 0 && !calls.some(([c]) => c === 'create_vault' || c === 'create_profile_vault'), 'S1-4 ' + lang + ': a failed download never masquerades as an empty account (no wizard, no scaffold)');
   }
 }
 {
-  section('707 S1 — genuinely empty account: straight into profile setup, no fork');
-  const app = await s1Boot({ app_login_status: { logged_in: true, pending: true, email: 'synthetic@example.invalid' }, get_account_sync_status: () => s1Status(), restore_account_profile: { outcome: 'empty' } }, () => true);
-  const { spies, calls } = app;
+  section('707 S1 — genuinely empty account (№976): an empty cache opens straight into the app, the home invites to fill the profile');
+  const EF_EMPTY_CACHE = { name: 'synthetic@example.invalid', account_type: 'seafarer' };
+  const app = await s1Boot({ app_login_status: { logged_in: true, pending: true, email: 'synthetic@example.invalid' }, get_account_sync_status: () => s1Status(), restore_account_profile: { outcome: 'empty' }, get_default_vault_parent: '/synthetic/vaults', open_vault: () => { throw new Error('Not a Skipi vault (no skipi.db found)'); }, create_vault: EF_EMPTY_CACHE }, () => true);
+  const { doc, spies, calls } = app;
   ok(calls.filter(([c]) => c === 'restore_account_profile').length === 1, 'S1-5: the empty verdict comes from a real restoration result');
-  ok(spies.mobileStartVaultWizard.length === 1 && spies.loadVault.length === 0, 'S1-5: an empty account opens the wizard once (through mobileCreateProfile → live session)');
-  ok(spies.showWelcome.length === 0, 'S1-5: no create/open/demo fork on the way to the wizard');
+  ok(spies.mobileStartVaultWizard.length === 0 && spies.loadVault.length === 1 && efCalled(calls, 'create_vault', (a) => a && a.accountType === 'seafarer' && a.path === '/synthetic/vaults/Skipi Seafarer - synthetic@example.invalid').length === 1, 'S1-5 (№976): an empty account creates ONE empty cache named after the account and loads it — no wizard, no form before the app');
+  ok(spies.showWelcome.length === 0 && mobileHtml(doc).includes('data-qa="mobile-menu-screen"') && mobileHtml(doc).includes('data-qa="empty-profile-banner"') && mobileHtml(doc).includes("openSettings('seafarer')"), 'S1-5 (№976): the native home is on screen with the one invitation to fill the profile inside the app (→ Profile form)');
 }
 {
   section('707 S1 — "Create profile" chosen before sign-in keeps its own errand (accountFirstSignIn continuation)');
@@ -6681,22 +6686,22 @@ async function s1Boot(map, consent, opts) {
   const { doc, spies, calls } = app;
   ok(spies.initNoVaultLanding.length === 1, 'N-A: init() reached the landing once and the runner is still alive (no unhandled rejection)');
   const h = mobileHtml(doc);
-  ok(spies.showWelcome.length === 1 && h.includes('mobileCreateProfile()') && h.includes('mobileOpenExistingVault()') && h.includes('loadDemoVault()') && h.includes('restoreAccountProfile()'), 'N-A: the render failure falls back to the full create / open / demo / connect-account landing');
+  ok(spies.showWelcome.length === 0 && h.includes('data-account-restore-retry') && h.includes('accountRestoreRetry()') && h.includes('appLogoutToGate()'), 'N-A (№976): the render failure lands on the account screen with Retry and Sign out — never an empty screen, never the local-profile choice');
   ok(h.includes('data-account-restore-error') && h.includes('synthetic render failure'), 'N-A: the error text sits beside the explicit restore action');
   ok(app.consents.length === 0 && !calls.some(([c]) => c === 'restore_account_profile' || c === 'enable_account_sync' || c === 'sync_account_now'), 'N-A: no consent dialog, no restoration request, no sync on a failed render');
   const open = await s1Boot({ app_login_status: { logged_in: true, pending: false, email: 'synthetic@example.invalid' }, get_account_sync_status: () => s1Status({ profile_open: true }) }, () => true);
   open.calls.length = 0; open.consents.length = 0; open.spies.showWelcome.length = 0;
   await open.sandbox.initNoVaultLanding(true); await efSettle();
-  ok(open.spies.showWelcome.length === 1 && open.consents.length === 0 && !open.calls.some(([c]) => c === 'restore_account_profile'), 'N-B (D1): with a profile open the auto path returns null — old landing, no consent, no request');
+  ok(open.spies.showWelcome.length === 0 && open.consents.length === 0 && !open.calls.some(([c]) => c === 'restore_account_profile') && mobileHtml(open.doc).includes('data-account-restore-retry'), 'N-B (D1): with a profile open the auto path returns null — the account screen, no consent, no request');
 }
 {
   section('707 S1 — the auto path is off for the web shell and for a session without a live restore context');
   const web = await s1Boot({ app_login_status: { logged_in: true, pending: true }, get_account_sync_status: () => s1Status() }, () => true);
   web.sandbox.__SKIPI_WEBDESKTOP__ = true; web.calls.length = 0; web.consents.length = 0;
   await web.sandbox.initNoVaultLanding(false); await efSettle();
-  ok(web.spies.showWelcome.length === 2 && web.consents.length === 0 && !web.calls.some(([c]) => c === 'get_account_sync_status' || c === 'restore_account_profile'), 'S1-8: the web shell shows the landing without touching the native sync commands');
+  ok(web.spies.showWelcome.length === 1 && web.consents.length === 0 && !web.calls.some(([c]) => c === 'get_account_sync_status' || c === 'restore_account_profile'), 'S1-8: the web shell alone still shows the old landing, without touching the native sync commands');
   const bare = await s1Boot({ app_login_status: { logged_in: true, pending: true } }, () => true);
-  ok(bare.spies.showWelcome.length === 1 && bare.consents.length === 0 && !bare.calls.some(([c]) => c === 'restore_account_profile') && mobileHtml(bare.doc).includes('mobileCreateProfile()'), 'S1-9: a parked login without restore_context lands on the choice as before (D5 shape)');
+  ok(bare.spies.showWelcome.length === 0 && bare.consents.length === 0 && !bare.calls.some(([c]) => c === 'restore_account_profile') && mobileHtml(bare.doc).includes('data-account-restore-retry') && !mobileHtml(bare.doc).includes('mobileCreateProfile()'), 'S1-9 (№976): a parked login without restore_context lands on the account screen with Retry (D5 shape)');
 }
 {
   section('707 S1 — wide (desktop) welcome: the static fork is hidden behind the waiting screen and returns on fallback');
@@ -6713,7 +6718,7 @@ async function s1Boot(map, consent, opts) {
   ok(welcome && welcome.classList.contains('account-restoring') && welcomes === 0, 'S1-10: the wide welcome is in the waiting state (static create/open/demo hidden by class) before the consent decision');
   ok(String((doc.getElementById('welcome-account-controls') || {}).innerHTML || '').includes('Downloading your profile from the account'), 'S1-10: the waiting text is rendered in the account block');
   ok(typeof release === 'function', 'S1-10: the consent dialog was opened by the wide landing'); if (typeof release === 'function') release(false); await efSettle();
-  ok(!welcome.classList.contains('account-restoring') && welcomes === 1 && !calls.some(([c]) => c === 'restore_account_profile'), 'S1-10: declining restores the full wide welcome (class cleared by showWelcome)');
+  ok(welcome.classList.contains('account-restoring') && welcomes === 0 && !calls.some(([c]) => c === 'restore_account_profile') && String((doc.getElementById('welcome-account-controls') || {}).innerHTML || '').includes('accountRestoreRetry()'), 'S1-10 (№976): declining keeps the static create/open/demo hidden — the account block shows Retry (desktop shares the flow)');
 }
 {
   section('193 diagnostics — visible errors survive reload, redact credentials and travel in prepared drafts');
