@@ -54,6 +54,52 @@ pub(crate) struct PendingLogin {
 
 pub(crate) type PendingLoginSlot = Mutex<Option<PendingLogin>>;
 
+/// Sign-in failure classified on the Rust side (tasks/003, 2026-11-20). The
+/// frontend maps `code` to a text in the UI language and never parses
+/// `detail` (English, technical — shown small under the main text for
+/// `other`, logged for the rest).
+///
+/// Codes: `network` (request never got an HTTP answer: offline, DNS, timeout,
+/// refused), `credentials` (403 — wrong password OR unknown email, uniform by
+/// design), `rate_limited` (429), `rejected` (login refused for a reason the
+/// user must read as-is: foreign role, profile bound to another account),
+/// `other` (anything else — server 5xx, bad JSON, local vault write).
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+pub(crate) struct LoginError {
+    pub code: &'static str,
+    pub detail: String,
+}
+
+impl LoginError {
+    fn new(code: &'static str, detail: impl Into<String>) -> Self {
+        LoginError {
+            code,
+            detail: detail.into(),
+        }
+    }
+    fn other(detail: impl Into<String>) -> Self {
+        LoginError::new("other", detail)
+    }
+    fn rejected(detail: impl Into<String>) -> Self {
+        LoginError::new("rejected", detail)
+    }
+    /// Classify an HTTP answer from `/api/app/login` that is not a success.
+    fn from_status(status: u16, body: &str) -> Self {
+        match status {
+            403 => LoginError::new("credentials", format!("HTTP 403: {}", body.trim())),
+            429 => LoginError::new("rate_limited", format!("HTTP 429: {}", body.trim())),
+            code => LoginError::other(format!("assistant.skipi.app returned {code}: {}", body.trim())),
+        }
+    }
+}
+
+/// Plain-string failures (vault I/O, task join, JSON) are `other`.
+impl From<String> for LoginError {
+    fn from(detail: String) -> Self {
+        LoginError::other(detail)
+    }
+}
+
 /// Write the three login keys into the open vault.
 fn write_login(conn: &Connection, token: &str, email: &str, login_at: &str) -> Result<(), String> {
     db::set_vault_info(conn, USER_TOKEN_KEY, token).map_err(|e| e.to_string())?;
@@ -149,35 +195,33 @@ struct AppLoginOk {
 
 /// POST {base}/api/app/login {email,password,label} → token + role.
 /// Wrong password AND unknown email both return a uniform 403 from the server
-/// (no email-existence leak); we surface one honest message for both.
+/// (no email-existence leak); both map to one code, `credentials`.
 fn post_app_login(
     base: &str,
     client: &reqwest::blocking::Client,
     email: &str,
     password: &str,
     label: &str,
-) -> Result<AppLoginOk, String> {
+) -> Result<AppLoginOk, LoginError> {
     let url = format!("{}/api/app/login", base.trim_end_matches('/'));
     let resp = client
         .post(&url)
         .json(&json!({"email": email, "password": password, "label": label}))
         .send()
-        .map_err(|e| format!("assistant.skipi.app network: {e}"))?;
+        .map_err(|e| LoginError::new("network", e.to_string()))?;
     let status = resp.status();
     let body = resp.text().unwrap_or_default();
     match status.as_u16() {
-        403 => Err("Wrong email or password.".to_string()),
-        429 => Err("Too many attempts. Wait a minute and try again.".to_string()),
         code if (200..300).contains(&code) => {
-            let parsed: Value =
-                serde_json::from_str(&body).map_err(|e| format!("bad JSON: {e}"))?;
+            let parsed: Value = serde_json::from_str(&body)
+                .map_err(|e| LoginError::other(format!("bad JSON: {e}")))?;
             let token = parsed
                 .get("token")
                 .and_then(|t| t.as_str())
                 .unwrap_or("")
                 .to_string();
             if token.is_empty() {
-                return Err("assistant.skipi.app returned no token".to_string());
+                return Err(LoginError::other("assistant.skipi.app returned no token"));
             }
             // role may be absent/null (legacy or brand-new seafarer with no
             // declared role yet) — treated as "unset" by the policy check.
@@ -197,7 +241,7 @@ fn post_app_login(
                 account_id,
             })
         }
-        _ => Err(format!("assistant.skipi.app returned {status}: {body}")),
+        code => Err(LoginError::from_status(code, &body)),
     }
 }
 
@@ -265,16 +309,16 @@ pub async fn app_login(
     state: State<'_, AppState>,
     email: String,
     password: String,
-) -> Result<Value, String> {
+) -> Result<Value, LoginError> {
     crate::commands::account_sync::vault_sync::invalidate(&state);
     let epoch = state.sync_epoch.load(std::sync::atomic::Ordering::SeqCst);
     let email = email.trim().to_lowercase();
     if email.is_empty() || password.is_empty() {
-        return Err("Enter your email and password.".to_string());
+        return Err(LoginError::rejected("Enter your email and password."));
     }
     let ok = {
         let email = email.clone();
-        tauri::async_runtime::spawn_blocking(move || -> Result<AppLoginOk, String> {
+        tauri::async_runtime::spawn_blocking(move || -> Result<AppLoginOk, LoginError> {
             let client = http_client()?;
             let label = format!("Skipi app ({})", std::env::consts::OS);
             post_app_login(&assistant_api_base(), &client, &email, &password, &label)
@@ -285,16 +329,18 @@ pub async fn app_login(
     // Per-app role gate (DECISIONS 59/60): reject foreign roles BEFORE storing
     // the token, so a rejected broker/crewing account never unlocks the shell
     // and no token is persisted (the login gate stays shown).
-    let stored: Result<bool, String> = (|| {
-        seafarer_role_allowed(ok.role.as_deref())?;
+    let stored: Result<bool, LoginError> = (|| {
+        seafarer_role_allowed(ok.role.as_deref()).map_err(LoginError::rejected)?;
         let login_at = chrono::Utc::now().to_rfc3339();
         let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
         if state.sync_epoch.load(std::sync::atomic::Ordering::SeqCst) != epoch {
-            return Err("Vault or account changed during sign in; please retry.".into());
+            return Err(LoginError::other(
+                "Vault or account changed during sign in; please retry.",
+            ));
         }
         match lock.as_ref() {
             Some(conn) => {
-                check_sync_account(conn, ok.account_id.as_deref())?;
+                check_sync_account(conn, ok.account_id.as_deref()).map_err(LoginError::rejected)?;
                 write_login(conn, &ok.token, &email, &login_at)?;
                 Ok(false)
             }
@@ -520,5 +566,26 @@ mod tests {
         assert!(stored_user_token(&conn).is_none());
         drop(conn);
         let _ = fs::remove_dir_all(&path);
+    }
+
+    // tasks/003 (2026-11-20): the failure reaches the frontend as a code, not
+    // as an English sentence to be parsed.
+    #[test]
+    fn login_error_codes_follow_http_status() {
+        assert_eq!(LoginError::from_status(403, "forbidden").code, "credentials");
+        assert_eq!(LoginError::from_status(429, "slow down").code, "rate_limited");
+        let e = LoginError::from_status(502, "bad gateway");
+        assert_eq!(e.code, "other");
+        assert!(e.detail.contains("502") && e.detail.contains("bad gateway"));
+    }
+
+    #[test]
+    fn login_error_from_plain_string_is_other_and_serializes_as_object() {
+        let e: LoginError = "disk full".to_string().into();
+        assert_eq!(e, LoginError::other("disk full"));
+        let v = serde_json::to_value(&LoginError::new("network", "dns failure")).unwrap();
+        assert_eq!(v["code"], "network");
+        assert_eq!(v["detail"], "dns failure");
+        assert_eq!(LoginError::rejected("role").code, "rejected");
     }
 }
