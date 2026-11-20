@@ -287,53 +287,90 @@ ok(nativeGuardedHandoff(drillF) === null, 'G8 (#320) NEGATIVE F: replacing the c
 ok(/if\s*\(\s*!_afHistMark\s*\)\s*return\s*;/.test(fnBody(html, 'hideAccountFirst') || ''), 'G8 (#320): hideAccountFirst still early-returns on a cleared marker — this is what makes the handoff suppress the back()');
 ok(/if\s*\(\s*!_efHistMark\s*\)\s*\{/.test(fnBody(html, 'entryForkSignIn') || ''), 'G8 (#320): entryForkSignIn still guards its pushState, so the adopted entry is never doubled');
 
-// G9 — №707 S1 «one account — one profile» (OWNER (1023), 08.10; card TASKCARD-2026-10-08-seafarer-707-s1-auto-sync).
-// The signed-in landing WITHOUT an open profile no longer stops at the create/open/demo
-// fork: it offers the account restore itself through the EXISTING restoreAccountProfile()
-// flow — one explicit consent (№193), 'restored' → loadVault, 'empty' → wizard. The fork
-// stays reachable behind it: consent declined, download failed, web shell, no live restore
-// context. Source-level like G1–G8; the runtime drills live in bundled_plugin_isolation.
-// Cancel condition of the negative drills below: S1b (Rust: «Open existing» only for
-// unbound profiles) or a later slice named by the owner may move the landing again; until
-// then every assertion here is a drill-invariant of this slice.
+// G9 — №707 S1 «one account — one profile» (OWNER (1023), 08.10) + №976 «вход → сразу в программу»
+// (OWNER 06.11, task 001 19.11). The signed-in landing WITHOUT an open profile offers the account
+// restore itself through the EXISTING restoreAccountProfile() flow — one explicit consent (№193),
+// 'restored' → loadVault, 'empty' → an EMPTY ACCOUNT CACHE opened straight into the app (the home
+// screen invites to fill the profile inside it). Every other outcome — consent declined, download
+// failed, no live restore context — lands on the account screen: the reason beside «Retry», Sign out
+// underneath. showWelcome() (the create / open / demo choice of a LOCAL profile) is no longer on the
+// post-login path; the web shell alone keeps it. Source-level like G1–G8; the runtime drills live in
+// bundled_plugin_isolation (D5, D11, 193, S1-1…S1-10). Cancel condition of the negative drills below:
+// a later slice named by the owner that moves the landing again; until then they are drill-invariants.
 const landing = fnBody(html, 'initNoVaultLanding');
 ok(landing !== null, 'G9: initNoVaultLanding() found');
 const autoLanding = fnBody(html, 'accountRestoreLanding');
 ok(autoLanding !== null, 'G9: accountRestoreLanding() exists — the auto path lives OUTSIDE init()/doAppLogin (G3/G8 pins untouched)');
 if (landing !== null) {
   const auto = autoLanding || '';
-  ok(/await\s+accountRestoreLanding\(\)/.test(landing), 'G9: initNoVaultLanding() awaits the account restore landing BEFORE any welcome fork');
-  ok(firstIndex(landing, 'accountRestoreLanding(') < firstIndex(landing, 'showWelcome('), 'G9: restore comes first; showWelcome() is the fallback, not the first screen');
-  ok(/'restored'/.test(landing) && /'empty'/.test(landing) && /showWelcome\(\)/.test(landing), 'G9: restored/empty end the landing; every other outcome falls back to the create/open/demo choice');
-  ok(/consent is asked explicitly before restore/.test(landing), 'G9 (N3): the landing comment says consent is explicit before restore — behaviour and comment changed together');
+  const landingCode = landing.replace(/^\s*\/\/.*$/gm, '');
+  ok(/await\s+accountRestoreLanding\(\)/.test(landing), 'G9: initNoVaultLanding() awaits the account restore landing');
+  ok(/'restored'/.test(landing) && /'empty'/.test(landing) && /showAccountRestoreRetry\(outcome\)/.test(landing), 'G9 (№976): restored/empty end the landing IN the app; every other outcome goes to the account screen with Retry');
+  // №976: the only showWelcome() left on the post-login path is the web shell's (no Tauri invoke
+  // without the shim) and the last-resort catch around the Retry screen render itself.
+  ok(/^\s*if\s*\(\s*window\.__SKIPI_WEBDESKTOP__\s*\)\s*\{\s*showWelcome\(\);\s*return;\s*\}/m.test(landingCode), 'G9 (№976): the web shell is the FIRST line of the landing and the only planned way to showWelcome()');
+  ok((landingCode.match(/showWelcome\(/g) || []).length === 2 && /catch\s*\([^)]*\)\s*\{[^}]*showWelcome\(\)/.test(landingCode), 'G9 (№976): exactly two showWelcome() sites in the landing — the web shell and the catch around the Retry screen render; the create/open/demo choice is NOT a post-login outcome');
+  ok(/локального волта как сущности нет/.test(landing) && /consent is still asked explicitly/i.test(landing), 'G9 (N3): the landing comment carries the owner word and the explicit-consent rule — behaviour and comment changed together');
   ok(/get_account_sync_status/.test(auto), 'G9 (N4): the auto path reads get_account_sync_status — trigger is the STATE logged_in && !profile_open, not the login event');
-  ok(/logged_in\s*!==\s*true/.test(auto) && /profile_open\s*!==\s*false/.test(auto) && /restore_context/.test(auto), 'G9: without logged_in===true, profile_open===false and a live restore_context the auto path returns null (old landing)');
+  ok(/logged_in\s*!==\s*true/.test(auto) && /profile_open\s*!==\s*false/.test(auto) && /restore_context/.test(auto), 'G9: without logged_in===true, profile_open===false and a live restore_context the auto path returns null');
   ok(/__SKIPI_WEBDESKTOP__/.test(auto), 'G9: the web shell never auto-restores (no Tauri invoke without the shim)');
   ok(/await\s+restoreAccountProfile\(\)/.test(auto), 'G9 (W1): the auto path REUSES restoreAccountProfile() — still the only caller of restore_account_profile');
   ok((html.match(/invoke\('restore_account_profile'/g) || []).length === 1, 'G9 (W1): exactly one restore_account_profile invoke site in dist');
-  ok(!/loadVault\(/.test(auto) && !/loadVault\(/.test(landing), 'G9 (W1): neither landing function hands a vault to loadVault() itself — the G8 count of 2 in init() is untouched by construction');
-  ok(!/mobileCreateProfile\(|startSeafarerWizard\(|mobileStartVaultWizard\(/.test(auto) && !/mobileCreateProfile\(|startSeafarerWizard\(|mobileStartVaultWizard\(/.test(landing), 'G9 (W5/D6): the landing never opens the wizard itself — only the "empty" branch inside restoreAccountProfile() does, and only from a real outcome');
+  ok(!/loadVault\(/.test(auto) && !/loadVault\(/.test(landingCode), 'G9 (W1): neither landing function hands a vault to loadVault() itself — the G8 count of 2 in init() is untouched by construction');
+  ok(!/mobileCreateProfile\(|startSeafarerWizard\(|mobileStartVaultWizard\(/.test(auto) && !/mobileCreateProfile\(|startSeafarerWizard\(|mobileStartVaultWizard\(/.test(landing), 'G9 (W5/D6): the landing never opens the wizard itself');
   ok(!/enable_account_sync|sync_account_now/.test(auto) && !/enable_account_sync|sync_account_now/.test(landing), 'G9 (№193): sign-in is not sync consent — the landing never enables or runs sync');
   ok(!/setTimeout|setInterval/.test(auto) && !/setTimeout|setInterval/.test(landing), 'G9: no timer-driven restore');
-  ok(/_accountRestoreAutoTried/.test(auto), 'G9 (D7): one automatic attempt per sign-in context per process — a declined consent or a failed download hands back the explicit button, never a loop of consent prompts or server tokens');
+  ok(/_accountRestoreAutoTried/.test(auto), 'G9 (D7): one automatic attempt per sign-in context per process — a declined consent or a failed download hands back the Retry button, never a loop of consent prompts or server tokens');
+  const retry = fnBody(html, 'accountRestoreRetry') || '';
+  ok(/_accountRestoreAutoTried\s*=\s*null/.test(retry) && /initNoVaultLanding\(/.test(retry) && !/setTimeout|setInterval/.test(retry), 'G9 (№976, D7): accountRestoreRetry() re-arms the one attempt on the user\'s tap and re-runs the landing — never a timer');
   const restore = fnBody(html, 'restoreAccountProfile');
-  ok(restore !== null && /return\s*'cancel'/.test(restore) && /return\s*'error'/.test(restore) && /return\s*'restored'/.test(restore) && /return\s*'empty'/.test(restore), 'G9: restoreAccountProfile() reports cancel/error/restored/empty to its caller');
-  ok(restore !== null && /outcome\s*===\s*'empty'/.test(restore) && !/catch\s*\([^)]*\)\s*\{[^}]*(mobileCreateProfile|startSeafarerWizard)/.test(restore), 'G9 (W5/D6): "empty" comes only from the real result; the catch block never opens the wizard');
-  ok(restore !== null && /accountRestoreLastError\s*=/.test(restore) && /accountRestoreLastError/.test(fnBody(html, 'accountRestoreActionHtml') || ''), 'G9 (D3): a failed download is shown beside the explicit restore action on the fallback landing');
+  ok(restore !== null && /return\s*'cancel'/.test(restore) && /return\s*'error'/.test(restore) && /return\s*'restored'/.test(restore) && /return\s*'empty'/.test(restore), 'G9: restoreAccountProfile() reports cancel/error/restored/empty');
+  ok(restore !== null && /outcome\s*===\s*'empty'\s*\)\s*\{[\s\S]*?await\s+openEmptyAccountCache\(\)/.test(restore) && !/mobileCreateProfile\(|startSeafarerWizard\(|mobileStartVaultWizard\(/.test(restore.replace(/^\s*\/\/.*$/gm, '')), 'G9 (№976, W5/D6): "empty" comes only from the real result and opens the empty cache — no wizard anywhere in restoreAccountProfile()');
+  ok(restore !== null && /accountRestoreLastError\s*=/.test(restore) && /accountRestoreLastError/.test(fnBody(html, 'showAccountRestoreRetry') || ''), 'G9 (D3): a failed download is shown beside Retry on the account screen (accountRestoreLastError)');
+  // №976: the empty account cache — created without a form, bound to the account by loadVault()'s
+  // app_login_status (persist_pending_login), reopened instead of duplicated.
+  const cache = fnBody(html, 'openEmptyAccountCache') || '';
+  ok(/invoke\('open_vault'/.test(cache) && /invoke\('create_vault'/.test(cache) && cache.indexOf("invoke('open_vault'") < cache.indexOf("invoke('create_vault'"), 'G9 (№976): openEmptyAccountCache() opens an existing cache for this account first, creates one only when none exists');
+  ok(/accountType\s*:\s*'seafarer'/.test(cache) && /vaultFolderName\('Seafarer'/.test(cache) && /defaultVaultPath\(/.test(cache), 'G9 (№976): the cache is a seafarer profile in the default profile folder (Android: app data; desktop: Documents/Skipi)');
+  ok((cache.match(/loadVault\(/g) || []).length === 1 && !/create_profile_vault|mobileStartVaultWizard|startSeafarerWizard/.test(cache), 'G9 (№976): the cache is handed to loadVault() exactly once — no wizard, no stcw/position form before the app');
+  ok(!/is_demo\s*=/.test(cache), 'G9 (№976): the cache never stamps is_demo (the G4 demo exception stays single-sited)');
+  // №976: the account screen after sign-in — Retry beside the reason, Sign out underneath, no local-profile doors.
+  const retryScreen = fnBody(html, 'showAccountRestoreRetry') || '';
+  ok(/data-account-restore-retry/.test(retryScreen) && /accountRestoreRetry\(\)/.test(retryScreen) && /appAccountControlsHtml\(\)/.test(retryScreen), 'G9 (№976): showAccountRestoreRetry() renders the marked screen with the Retry button and the account controls (Sign out)');
+  ok(/Данные аккаунта не загружены/.test(retryScreen) && /Account data not downloaded/.test(retryScreen) && /'cancel'/.test(retryScreen), 'G9 (№976): RU/EN account screen names the declined-consent case separately from a failed download');
+  ok(!/mobileCreateProfile\(|mobileOpenExistingVault\(|loadDemoVault\(|restoreAccountProfile\(/.test(retryScreen), 'G9 (№976): no create / open / demo / connect-account door on the account screen');
+  ok(!/vault/i.test(retryScreen.replace(/^\s*\/\/.*$/gm, '')), 'G9 (vocabulary): the account screen strings carry no "vault"');
   const waitScreen = fnBody(html, 'showAccountRestoreLanding');
   ok(waitScreen !== null && /Загружаю профиль из аккаунта/.test(waitScreen) && /Downloading your profile from the account/.test(waitScreen), 'G9: the RU/EN waiting screen exists');
   ok(waitScreen !== null && !/vault/i.test(waitScreen.replace(/^\s*\/\/.*$/gm, '')), 'G9 (vocabulary): the new strings carry no "vault"');
-  ok(/accountRestoreLandingReset\(\)/.test(fnBody(html, 'showWelcome') || ''), 'G9: showWelcome() clears the waiting state, so the fallback landing shows the full choice again');
+  ok(/paintAccountRestoreScreen\(/.test(waitScreen || '') && /paintAccountRestoreScreen\(/.test(retryScreen), 'G9 (№976): waiting and account screens share ONE painter (mobile main / desktop account block)');
+  ok(/accountRestoreLandingReset\(\)/.test(fnBody(html, 'showWelcome') || ''), 'G9: showWelcome() still clears the waiting state (web shell / last-resort path)');
+  // №976: the one invitation on the native home — fill the profile INSIDE the app.
+  const home = fnBody(html, 'renderMobileHome') || '';
+  const banner = fnBody(html, 'mobileEmptyProfileBannerHtml') || '';
+  ok(/mobileProfileEmpty/.test(home) && /mobileEmptyProfileBannerHtml\(\)/.test(home) && home.indexOf('mobileAssistantDemoBannerHtml()') < home.indexOf('mobileEmptyProfileBannerHtml()') && /else\s+if\s*\(\s*mobileProfileEmpty\s*\)/.test(home), 'G9 (№976): the native home shows the empty-profile banner only when the profile is empty AND not the demo (demo banner wins)');
+  ok(/data-qa="empty-profile-banner"/.test(banner) && /openSettings\(\\'seafarer\\'\)/.test(banner) && !/mobileStartVaultWizard|mobileCreateProfile/.test(banner), 'G9 (№976): the banner\'s one button opens the profile form inside the app (openSettings(\'seafarer\')), not the vault wizard');
+  ok(/mobileProfileEmpty\s*=\s*!\(info&&\(info\.rank\|\|info\.position\)\)/.test(fnBody(html, 'loadVault') || ''), 'G9 (№976): the empty verdict is taken from VaultInfo in loadVault() (no rank, no position)');
+  ok(/mobileProfileEmpty/.test(fnBody(html, 'mobileDemoFlagSelfCheck') || ''), 'G9 (№976): the verdict is refreshed with the demo flag from get_profile_status (banner disappears after the first save)');
+  // №976 (OWNER 19.11): the download consent after sign-in is ONE tap; the two statements stay in the
+  // text; the checkboxes stay for enabling sync from Settings (№193 unchanged there).
+  const consent = fnBody(html, 'oneAccountSyncRequestConsent') || '';
+  ok(/var\s+oneTap\s*=\s*mode\s*===\s*'restore'/.test(consent) && /requiredChecks\s*:\s*oneTap\s*\?\s*\[\]\s*:\s*\[\s*n\.sync_label\s*,\s*n\.health_label\s*\]/.test(consent), 'G9 (№976): restore consent passes no required checks; enable consent keeps both');
+  ok(/if\s*\(\s*oneTap\s*\)\s*html\s*\+=\s*'<p>'\s*\+\s*esc\(n\.sync_label\)/.test(consent), 'G9 (№976): the two consent statements are still shown as text in the one-tap dialog');
   // Negative drills — the structural shape is what protects the user, so prove the probes bite.
   const drillA = landing.replace(/await\s+accountRestoreLanding\(\)/, 'null');
   ok(!/await\s+accountRestoreLanding\(\)/.test(drillA), 'G9 NEGATIVE A: dropping the await reddens the first G9 probe');
   const drillB = html.replace(/await\s+restoreAccountProfile\(\)/, "await invoke('restore_account_profile',{consent:true})");
   ok((drillB.match(/invoke\('restore_account_profile'/g) || []).length === 2, 'G9 NEGATIVE B (N-D): a second restore_account_profile caller in dist makes the single-invoke-site probe count 2 — the probe bites');
+  const drillC = landingCode.replace(/showAccountRestoreRetry\(outcome\)/, 'showWelcome()');
+  ok((drillC.match(/showWelcome\(/g) || []).length === 3, 'G9 NEGATIVE C (№976): putting the create/open/demo choice back after sign-in makes the showWelcome() count 3 — the probe bites');
+  const drillD = (fnBody(html, 'restoreAccountProfile') || '').replace(/await\s+openEmptyAccountCache\(\)/, 'await mobileCreateProfile()');
+  ok(/mobileCreateProfile\(/.test(drillD.replace(/^\s*\/\/.*$/gm, '')), 'G9 NEGATIVE D (№976): routing "empty" back into the wizard reddens the no-wizard probe');
   // N-A (Supervisor point 2): the waiting-screen render is the only fail-open spot — a thrown DOM error must
-  // fall back to the full landing with the error beside the action, never an empty screen. Cancel condition: S1b or a later owner slice.
+  // land on the account screen with the error beside Retry, never an empty screen.
   ok(/try\s*\{\s*showAccountRestoreLanding\(status\)\s*;?\s*\}\s*catch\s*\(/.test(auto), 'G9 (N-A): showAccountRestoreLanding(status) is wrapped in try/catch inside accountRestoreLanding()');
-  ok(/catch\s*\([^)]*\)\s*\{[^}]*accountRestoreLastError\s*=[^}]*return\s+null/.test(auto), 'G9 (N-A): a render failure records the error for the landing and returns null (old landing + error beside the action)');
-  ok(/try\s*\{[^}]*await\s+accountRestoreLanding\(\)[^}]*\}\s*catch\s*\(/.test(landing), 'G9 (N-A): initNoVaultLanding() itself never rejects — its un-awaited callers in init()/_loginGateNext cannot leave an unhandled rejection');
+  ok(/catch\s*\([^)]*\)\s*\{[^}]*accountRestoreLastError\s*=[^}]*return\s+null/.test(auto), 'G9 (N-A): a render failure records the error for the account screen and returns null');
+  ok(/try\s*\{[^}]*await\s+accountRestoreLanding\(\)[^}]*\}\s*catch\s*\(/.test(landing) && /try\s*\{\s*showAccountRestoreRetry\(outcome\)\s*;?\s*\}\s*catch\s*\(/.test(landing), 'G9 (N-A): initNoVaultLanding() itself never rejects — restore AND the Retry screen render are both caught (un-awaited callers in init()/_loginGateNext)');
 }
 
 // ---------------------------------------------------------------------------
