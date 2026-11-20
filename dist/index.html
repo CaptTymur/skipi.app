@@ -10418,12 +10418,20 @@ function _lgTxt(){
         title:'Вход в Skipi', sub:'Введите email и пароль вашего аккаунта Skipi.',
         email:'Email', pass:'Пароль', submit:'Войти', signing:'Вход…',
         noacct:'Нет аккаунта?', register:'Регистрация',
-        fill:'Введите email и пароль.'
+        fill:'Введите email и пароль.',
+        net:'Нет связи с сервером Skipi. Проверьте интернет и повторите.',
+        creds:'Неверный email или пароль.',
+        rate:'Слишком много попыток. Подождите минуту.',
+        failed:'Не удалось войти. Повторите позже.'
     } : {
         title:'Sign in to Skipi', sub:'Use your Skipi account email and password.',
         email:'Email', pass:'Password', submit:'Sign in', signing:'Signing in…',
         noacct:'No account?', register:'Register',
-        fill:'Enter your email and password.'
+        fill:'Enter your email and password.',
+        net:'Cannot reach the Skipi server. Check your internet connection and try again.',
+        creds:'Wrong email or password.',
+        rate:'Too many attempts. Wait a minute and try again.',
+        failed:'Could not sign in. Try again later.'
     };
 }
 function _lgApplyI18n(){
@@ -10433,10 +10441,36 @@ function _lgApplyI18n(){
     set('lg-pass-label',t.pass);set('lg-submit',t.submit);set('lg-noacct',t.noacct);
     set('lg-register',t.register);
 }
-function _lgError(msg){
-    if(msg)logError('login',msg);
+// msg — human text in the UI language; detail — optional technical line shown
+// small UNDER the message (never instead of it). Both go to the error log.
+// The detail node is created here, not in the markup: #lg-err sits inside the
+// desktop static region that bundled_plugin_isolation_harness pins byte-for-byte.
+function _lgError(msg,detail){
+    if(msg)logError('login',detail?msg+' ['+detail+']':msg);
     var e=document.getElementById('lg-err');
-    if(e){e.textContent=msg||'';e.style.display=msg?'block':'none';}
+    if(!e)return;
+    e.textContent=msg||'';
+    if(msg&&detail){
+        var d=document.createElement('div');
+        d.id='lg-err-detail';
+        d.style.cssText='font-size:11px;opacity:.85;margin-top:4px;word-break:break-word;';
+        d.textContent=detail;
+        e.appendChild(d);
+    }
+    e.style.display=msg?'block':'none';
+}
+// app_login rejects with {code, detail} classified in Rust (app_login.rs,
+// LoginError) — the text is chosen by code here, never by parsing the detail.
+function _lgErrorFor(e){
+    var t=_lgTxt();
+    var obj=e&&typeof e==='object';
+    var code=obj?String(e.code||''):'';
+    var detail=obj?String(e.detail||''):String(e||'');
+    if(code==='network'){logError('login','network: '+detail);_lgError(t.net);}
+    else if(code==='credentials')_lgError(t.creds);
+    else if(code==='rate_limited')_lgError(t.rate);
+    else if(code==='rejected'&&detail)_lgError(detail);
+    else _lgError(t.failed,detail);
 }
 function showLoginGate(){
     var o=document.getElementById('login-gate-overlay');
@@ -10470,7 +10504,7 @@ async function doAppLogin(){
         else if(next){ await next(); }
         else { showWelcome(); }
     }catch(e){
-        _lgError(String(e||'Login failed'));
+        _lgErrorFor(e);
     }finally{
         if(btn){btn.disabled=false;btn.textContent=t.submit;}
     }
