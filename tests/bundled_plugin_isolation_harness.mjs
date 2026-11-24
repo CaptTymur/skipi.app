@@ -2141,7 +2141,10 @@ const appsTileTag = (h, id) => {
       ok(/data-qa="plugin-tile-x"/.test(emoji) && /data-qa="plugin-open-x"/.test(emoji) && /onclick="pluginLaunch\('x'\)"/.test(emoji), 'id hooks and the open handler are carried over verbatim');
       const upd = t(tile('⏱️', '<span class="apps-badge live" data-qa="plugin-update-available-x">Update available</span>'));
       ok(/data-hint="v1"/.test(emoji), 'an unknown plugin id falls back to the meta line the launcher printed, never to an empty hint');
-      ok(/data-hint="v1 · Update available"/.test(upd) && !/apps-badge/.test(upd), '«Update available» moves into the hint instead of a second text line in the tile');
+      ok(/data-hint="v1 · Update available"/.test(upd) && !/apps-badge/.test(upd), '«Update available» is in the hint, and the launcher badge markup does not survive');
+      // Owner 24.11.2026: those who have the plugin must SEE that an update is available — the hint alone is invisible.
+      ok(/<span class="fam-app-label">X<\/span><span class="fam-app-sublabel fam-app-update" data-qa="plugin-update-available-x">Update<\/span>/.test(upd), 'a tile with an update carries a visible «Update» line under its name');
+      ok(!/fam-app-update/.test(emoji), 'a tile without an update has no such line');
       ok(t('<div>nothing to do</div>') === '<div>nothing to do</div>', 'markup without launcher tiles comes back byte-identical');
       // host-ui 1.1: a catalog plugin that is not installed yet (the «Available» shelf)
       const avail = t('<div class="apps-icon-tile" data-qa="plugin-available-y"><button type="button" data-qa="plugin-preview-y" onclick="pluginPreview(\'y\')" title="Y &#183; v1"><span class="apps-icon-tile-icon">⚖</span><span class="apps-icon-tile-name">Y</span><span class="apps-icon-tile-meta">v1</span><span class="apps-badge live">Install</span></button></div>');

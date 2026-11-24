@@ -1263,6 +1263,7 @@ body.mobile-mode .apps-launcher-grid { grid-template-columns:repeat(4,minmax(0,1
 /* Optional second line under a menu icon: the tile shows its own state in words.
    Used by the Language icon so the current language is readable ON the Menu screen
    (user report B6 — the language was three taps deep and labelled in English). */
+.fam-app-tile .fam-app-sublabel.fam-app-update { color:var(--accent); font-weight:700; }
 .fam-app-tile .fam-app-sublabel { font-size:11px; font-weight:600; line-height:1.15; color:var(--text2); margin-top:-4px; overflow-wrap:break-word; }
 /* A plugin icon is not always an outline SVG: bundled plugins ship an emoji and a
    third-party one may ship a bitmap. Both take the SAME box — the box is font-size:0
@@ -11906,8 +11907,12 @@ function mobileAppsIconizeHtml(html){
     if(!hint)hint=pick(/<span class="apps-icon-tile-meta">([\s\S]*?)<\/span>/)||pick(/title="([^"]*)"/)||name;
     // «Update available» used to be a second text line in the tile; it joins the
     // long-press hint so the tile itself stays icon + label, like every module.
+    // Owner 24.11.2026: those who have the plugin must SEE that an update is available, so
+    // the tile also gets a short visible line under its name (the update itself is in ⚙).
+    var updLine='';
     if(inner.indexOf('data-qa="plugin-update-available-')>=0){
       hint=hint+' · '+(getUiLang()==='ru'?'Доступно обновление':'Update available');
+      updLine='<span class="fam-app-sublabel fam-app-update" data-qa="plugin-update-available-'+id+'">'+(getUiLang()==='ru'?'Обновление':'Update')+'</span>';
     }
     var cellQa=(kind==='tile')?'data-qa="plugin-tile-'+id+'"':'data-qa="plugin-available-'+id+'"';
     var btnQa=(kind==='tile')?'data-qa="plugin-open-'+id+'"':'data-qa="plugin-preview-'+id+'"';
@@ -11917,7 +11922,7 @@ function mobileAppsIconizeHtml(html){
       +' onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()"'
       +' data-hint="'+hint+'" title="'+hint+'" aria-label="'+name+'">'
       +'<span class="fam-app-icon-box" aria-hidden="true">'+mobileAppsTileIconHtml(icon)+'</span>'
-      +'<span class="fam-app-label">'+name+'</span></button></div>';
+      +'<span class="fam-app-label">'+name+'</span>'+updLine+'</button></div>';
   });
 }
 function mobileAppsIconizeTiles(){
