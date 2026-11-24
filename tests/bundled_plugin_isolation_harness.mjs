@@ -6570,14 +6570,16 @@ for(const lang of ['en','ru']){
     for(const outcome of ['restored','empty','error','cancel','changed']){
       const calls=[];let loaded=0,wizards=0,statusReads=0;
       s.uiConfirm=async()=>outcome!=='cancel';s.loadVault=async()=>{loaded++;};s.mobileCreateProfile=async()=>{wizards++;};
-      s.invoke=async(c,args)=>{calls.push([c,args]);if(c==='app_login_status')return {logged_in:true,email:'synthetic@example.invalid'};if(c==='get_default_vault_parent')return '/synthetic/vaults';if(c==='open_vault')throw new Error('Not a Skipi vault (no skipi.db found)');if(c==='create_vault')return {name:args.name,account_type:'seafarer'};if(c==='get_account_sync_status')return {consent_notice_version:s.accountSyncNotice.version,profile_open:false,logged_in:true,restore_context:outcome==='changed'&&statusReads++?'new-context':'synthetic-context'};if(c==='restore_account_profile'){if(outcome==='error')throw new Error('synthetic offline');return {outcome,vault:EF_REAL};}return {};};
+      s.invoke=async(c,args)=>{calls.push([c,args]);if(c==='app_login_status')return {logged_in:true,email:'synthetic@example.invalid'};if(c==='get_default_vault_parent')return '/synthetic/vaults';if(c==='open_vault')throw new Error('Not a Skipi vault (no skipi.db found)');if(c==='create_vault')return {name:args.name,account_type:'seafarer'};if(c==='get_account_sync_status')return {consent_notice_version:s.accountSyncNotice.version,profile_open:false,logged_in:true,restore_context:outcome==='changed'&&statusReads++?'new-context':'synthetic-context'};if(c==='restore_account_profile'){if(args.accountConsent===true)throw new Error('Current sync and health consent is required. Review the notice and try again.');if(outcome==='error')throw new Error('synthetic offline');return {outcome,vault:EF_REAL};}return {};};
       await s.restoreAccountProfile();
+      const joined=calls.find(([c])=>c==='restore_account_profile');
+      ok(!!joined&&joined[1].accountConsent===true&&joined[1].consentNotice===null&&joined[1].consent===false,'193 '+lang+' '+outcome+' (owner 24.11): the first request joins under the account consent and claims no notice');
       ok(calls.filter(([c])=>c==='create_vault').length===(outcome==='empty'?1:0)&&!calls.some(([c])=>c==='create_profile_vault'||c==='enable_account_sync'),'193 '+lang+' '+outcome+': the empty cache is scaffolded ONLY on the genuinely empty verdict (№976); no duplicate profile elsewhere, no sync bypass');
-      const request=calls.find(([c])=>c==='restore_account_profile');if(request)ok(request[1].consentNotice.health===true&&request[1].consentNotice.sync===true&&request[1].consentNotice.notice_version===s.accountSyncNotice.version&&request[1].consentNotice.notice_sha256===s.accountSyncNotice[lang].notice_sha256,'193 '+lang+': actual restore caller sends both choices and exact displayed notice binding');
+      const request=calls.find(([c,a])=>c==='restore_account_profile'&&a.consent===true);if(request)ok(request[1].consentNotice.health===true&&request[1].consentNotice.sync===true&&request[1].consentNotice.notice_version===s.accountSyncNotice.version&&request[1].consentNotice.notice_sha256===s.accountSyncNotice[lang].notice_sha256,'193 '+lang+': actual restore caller sends both choices and exact displayed notice binding');
       if(outcome==='restored')ok(loaded===1&&wizards===0,'193: populated account restores directly without a wizard');
       else if(outcome==='empty')ok(wizards===0&&loaded===1&&calls.find(([c])=>c==='create_vault')[1].path==='/synthetic/vaults/Skipi Seafarer - synthetic@example.invalid','193 (№976): genuinely empty account opens an empty cache named after the account inside the app — no wizard before it');
       else ok(loaded===0&&wizards===0,'193 '+outcome+': failure/cancel never masquerades as empty account or successful restore');
-      if(['cancel','changed'].includes(outcome))ok(!calls.some(([c])=>c==='restore_account_profile'),'193 '+outcome+': no restoration request without current explicit consent');
+      if(['cancel','changed'].includes(outcome))ok(!calls.some(([c,a])=>c==='restore_account_profile'&&a.consent===true),'193 '+outcome+': no restoration request without current explicit consent');
     }
   }
 }
@@ -6616,11 +6618,17 @@ const S1_NOTICE_VERSION = (HTML.match(/var accountSyncNotice=\{"version":"([^"]+
 const s1Status = (extra) => Object.assign({ consent_notice_version: S1_NOTICE_VERSION, enabled: false, state: 'disabled', conflicts: [], profile_open: false, logged_in: true, restore_context: 'synthetic-restore-context', account_email: 'synthetic@example.invalid' }, extra || {});
 // efBoot + a consent stub installed BEFORE init() resumes (the VM DOM has no insertBefore for the
 // real two-checkbox dialog; the real dialog is covered by the 193 restore matrix below).
+// Owner 24.11: restoreAccountProfile() first asks to join under the ACCOUNT's consent. These drills model an
+// account that never consented, so the server answers «consent required» to that request and the notice follows.
+const S1_CONSENT_REQUIRED = 'Current sync and health consent is required. Review the notice and try again.';
+const s1Server = (inner) => async (cmd, args) => { if (cmd === 'restore_account_profile' && args && args.accountConsent === true) throw new Error(S1_CONSENT_REQUIRED); return inner(cmd, args); };
+// Restoration requests that carry the consent the user just gave (the account-consent probe claims none).
+const s1Restores = (calls) => calls.filter(([c, a]) => c === 'restore_account_profile' && a && a.consent === true);
 async function s1Boot(map, consent, opts) {
   const app = bootMobile(opts || {});
   if (opts && typeof opts.pre === 'function') opts.pre(app.sandbox);
   const calls = [];
-  const base = efInvoke(map || {}, 'android');
+  const base = s1Server(efInvoke(map || {}, 'android'));
   app.sandbox.invoke = async (cmd, args) => { calls.push([cmd, args]); return base(cmd, args); };
   app.sandbox.showDashboard = async () => {};
   const consents = [];
@@ -6645,10 +6653,10 @@ async function s1Boot(map, consent, opts) {
   ok(spies.showWelcome.length === 0 && !mobileHtml(doc).includes('mobileCreateProfile()'), 'S1-1: no create/open/demo fork before the consent decision');
   ok(mobileHtml(doc).includes('Downloading your profile from the account'), 'S1-1: the waiting screen is the first screen a signed-in seafarer sees');
   ok(mobileHtml(doc).includes('appLogoutToGate()'), 'S1-1: sign-out stays reachable on the waiting screen');
-  ok(app.consents.length === 1 && calls.some(([c]) => c === 'get_account_sync_status') && !calls.some(([c]) => c === 'restore_account_profile'), 'S1-1: status read and ONE consent dialog open, no restoration request before explicit consent');
+  ok(app.consents.length === 1 && calls.some(([c]) => c === 'get_account_sync_status') && !(s1Restores(calls).length > 0), 'S1-1: status read and ONE consent dialog open, no restoration request before explicit consent');
   ok(!calls.some(([c]) => c === 'enable_account_sync' || c === 'sync_account_now'), 'S1-1 (№193): sign-in is still not sync consent');
   ok(typeof release === 'function', 'S1-1: the consent dialog was opened by the landing'); if (typeof release === 'function') release(true); await efSettle();
-  const req = calls.find(([c]) => c === 'restore_account_profile');
+  const req = s1Restores(calls)[0];
   ok(!!req && req[1].consent === true && req[1].restoreContext === 'synthetic-restore-context' && req[1].consentNotice && req[1].consentNotice.sync === true && req[1].consentNotice.health === true && req[1].consentNotice.notice_version === S1_NOTICE_VERSION, 'S1-1: after consent the EXISTING restore caller sends the real consent binding');
   ok(spies.loadVault.length === 1 && spies.renderMobileShell.length >= 1 && spies.showWelcome.length === 0 && spies.mobileStartVaultWizard.length === 0, 'S1-1: a populated account lands on the native home — no fork, no wizard');
   ok(!mobileHtml(doc).includes('data-qa="empty-profile-banner"'), 'S1-1 (№976): a populated profile (position set) shows no empty-profile banner');
@@ -6665,7 +6673,7 @@ async function s1Boot(map, consent, opts) {
   await s.doAppLogin(); await efSettle();
   ok(!efGateShown(doc), 'S1-2: successful sign-in closes the gate');
   ok(spies.initNoVaultLanding.length === 1 && app.consents.length === 1, 'S1-2: the saved continuation runs the landing once → one consent dialog');
-  ok(calls.filter(([c]) => c === 'restore_account_profile').length === 1 && spies.loadVault.length === 1, 'S1-2: one restoration request, the profile is loaded');
+  ok(s1Restores(calls).length === 1 && spies.loadVault.length === 1, 'S1-2: one restoration request, the profile is loaded');
   ok(spies.showWelcome.length === 0 && !mobileHtml(doc).includes('mobileCreateProfile()'), 'S1-2: the create/open/demo fork never appeared');
   ok(!calls.some(([c]) => c === 'enable_account_sync' || c === 'sync_account_now'), 'S1-2 (№193): sign-in is not sync consent');
 }
@@ -6673,17 +6681,17 @@ async function s1Boot(map, consent, opts) {
   section('707 S1 — consent declined: the account screen with Retry · Sign out, no request, no retry loop (D7)');
   const app = await s1Boot({ app_login_status: { logged_in: true, pending: true, email: 'synthetic@example.invalid' }, get_account_sync_status: () => s1Status(), restore_account_profile: { outcome: 'restored', vault: EF_REAL } }, () => false);
   const { sandbox: s, doc, spies, calls } = app;
-  ok(app.consents.length === 1 && !calls.some(([c]) => c === 'restore_account_profile'), 'S1-3: declined consent sends no restoration request');
+  ok(app.consents.length === 1 && !(s1Restores(calls).length > 0), 'S1-3: declined consent sends no restoration request');
   const h = mobileHtml(doc);
   ok(spies.showWelcome.length === 0 && h.includes('data-account-restore-retry') && h.includes('accountRestoreRetry()') && h.includes('appLogoutToGate()') && !h.includes('mobileCreateProfile()') && !h.includes('mobileOpenExistingVault()') && !h.includes('loadDemoVault()'), 'S1-3 (№976): declining lands on the account screen — Retry and Sign out, no create / open / demo doors');
   ok(spies.loadVault.length === 0 && spies.mobileStartVaultWizard.length === 0, 'S1-3: declining is neither a restore nor a wizard');
   ok(!calls.some(([c]) => c === 'enable_account_sync' || c === 'sync_account_now'), 'S1-3 (№193): declining never enables sync');
   await s.initNoVaultLanding(false); await efSettle();
-  ok(app.consents.length === 1 && spies.showWelcome.length === 0 && mobileHtml(doc).includes('data-account-restore-retry') && !calls.some(([c]) => c === 'restore_account_profile'), 'S1-3 (D7): the same sign-in context is not asked again automatically — the Retry button is the retry');
+  ok(app.consents.length === 1 && spies.showWelcome.length === 0 && mobileHtml(doc).includes('data-account-restore-retry') && !(s1Restores(calls).length > 0), 'S1-3 (D7): the same sign-in context is not asked again automatically — the Retry button is the retry');
   await s.accountRestoreRetry(); await efSettle();
-  ok(app.consents.length === 2 && !calls.some(([c]) => c === 'restore_account_profile'), 'S1-3 (№976): the Retry tap re-arms the SAME sign-in context — one new consent dialog, still no request without consent');
+  ok(app.consents.length === 2 && !(s1Restores(calls).length > 0), 'S1-3 (№976): the Retry tap re-arms the SAME sign-in context — one new consent dialog, still no request without consent');
   const t0 = app.consents.length;
-  app.sandbox.invoke = async (cmd, args) => { calls.push([cmd, args]); return cmd === 'get_account_sync_status' ? s1Status({ restore_context: 'synthetic-restore-context-2' }) : efInvoke({ app_login_status: { logged_in: true, pending: true }, restore_account_profile: { outcome: 'restored', vault: EF_REAL } })(cmd, args); };
+  app.sandbox.invoke = async (cmd, args) => { calls.push([cmd, args]); if (cmd === 'restore_account_profile' && args && args.accountConsent === true) throw new Error(S1_CONSENT_REQUIRED); return cmd === 'get_account_sync_status' ? s1Status({ restore_context: 'synthetic-restore-context-2' }) : efInvoke({ app_login_status: { logged_in: true, pending: true }, restore_account_profile: { outcome: 'restored', vault: EF_REAL } })(cmd, args); };
   await s.initNoVaultLanding(false); await efSettle();
   ok(app.consents.length === t0 + 1, 'S1-3 (D7): a NEW sign-in context (fresh login) is offered the restore again');
 }
@@ -6692,7 +6700,7 @@ async function s1Boot(map, consent, opts) {
   for (const lang of ['en', 'ru']) {
     const app = await s1Boot({ app_login_status: { logged_in: true, pending: true, email: 'synthetic@example.invalid' }, get_account_sync_status: () => s1Status(), restore_account_profile: () => { throw new Error('synthetic offline'); } }, () => true, { seed: { 'skipi-ui-lang': lang } });
     const { doc, spies, calls } = app;
-    ok(calls.filter(([c]) => c === 'restore_account_profile').length === 1, 'S1-4 ' + lang + ': one restoration request was made');
+    ok(s1Restores(calls).length === 1, 'S1-4 ' + lang + ': one restoration request was made');
     const h = mobileHtml(doc);
     ok(spies.showWelcome.length === 0 && h.includes('data-account-restore-retry') && h.includes('accountRestoreRetry()') && !h.includes('mobileCreateProfile()'), 'S1-4 ' + lang + ' (№976): failure lands on the account screen with Retry — no local-profile choice');
     ok(h.includes('data-account-restore-error') && h.includes('synthetic offline'), 'S1-4 ' + lang + ': the error text sits beside the action, not only in a toast');
@@ -6704,7 +6712,7 @@ async function s1Boot(map, consent, opts) {
   const EF_EMPTY_CACHE = { name: 'synthetic@example.invalid', account_type: 'seafarer' };
   const app = await s1Boot({ app_login_status: { logged_in: true, pending: true, email: 'synthetic@example.invalid' }, get_account_sync_status: () => s1Status(), restore_account_profile: { outcome: 'empty' }, get_default_vault_parent: '/synthetic/vaults', open_vault: () => { throw new Error('Not a Skipi vault (no skipi.db found)'); }, create_vault: EF_EMPTY_CACHE }, () => true);
   const { doc, spies, calls } = app;
-  ok(calls.filter(([c]) => c === 'restore_account_profile').length === 1, 'S1-5: the empty verdict comes from a real restoration result');
+  ok(s1Restores(calls).length === 1, 'S1-5: the empty verdict comes from a real restoration result');
   ok(spies.mobileStartVaultWizard.length === 0 && spies.loadVault.length === 1 && efCalled(calls, 'create_vault', (a) => a && a.accountType === 'seafarer' && a.path === '/synthetic/vaults/Skipi Seafarer - synthetic@example.invalid').length === 1, 'S1-5 (№976): an empty account creates ONE empty cache named after the account and loads it — no wizard, no form before the app');
   ok(spies.showWelcome.length === 0 && mobileHtml(doc).includes('data-qa="mobile-menu-screen"') && mobileHtml(doc).includes('data-qa="empty-profile-banner"') && mobileHtml(doc).includes("openSettings('seafarer')"), 'S1-5 (№976): the native home is on screen with the one invitation to fill the profile inside the app (→ Profile form)');
 }
@@ -6720,7 +6728,7 @@ async function s1Boot(map, consent, opts) {
   doc.getElementById('lg-password').value = 'synthetic-only';
   await s.doAppLogin(); await efSettle();
   ok(spies.mobileStartVaultWizard.length === 1 && spies.initNoVaultLanding.length === 0, 'S1-7: the explicit create errand finishes in the wizard, the auto restore landing is not involved');
-  ok(!calls.some(([c]) => c === 'restore_account_profile') && app.consents.length === 0, 'S1-7: no restoration request and no consent dialog on the create errand');
+  ok(!(s1Restores(calls).length > 0) && app.consents.length === 0, 'S1-7: no restoration request and no consent dialog on the create errand');
 }
 {
   section('707 S1 (N-A) — the waiting-screen render throws: full landing with the error beside the action, never an empty screen');
@@ -6734,7 +6742,7 @@ async function s1Boot(map, consent, opts) {
   const open = await s1Boot({ app_login_status: { logged_in: true, pending: false, email: 'synthetic@example.invalid' }, get_account_sync_status: () => s1Status({ profile_open: true }) }, () => true);
   open.calls.length = 0; open.consents.length = 0; open.spies.showWelcome.length = 0;
   await open.sandbox.initNoVaultLanding(true); await efSettle();
-  ok(open.spies.showWelcome.length === 0 && open.consents.length === 0 && !open.calls.some(([c]) => c === 'restore_account_profile') && mobileHtml(open.doc).includes('data-account-restore-retry'), 'N-B (D1): with a profile open the auto path returns null — the account screen, no consent, no request');
+  ok(open.spies.showWelcome.length === 0 && open.consents.length === 0 && !(s1Restores(open.calls).length > 0) && mobileHtml(open.doc).includes('data-account-restore-retry'), 'N-B (D1): with a profile open the auto path returns null — the account screen, no consent, no request');
 }
 {
   section('707 S1 — the auto path is off for the web shell and for a session without a live restore context');
@@ -6743,14 +6751,14 @@ async function s1Boot(map, consent, opts) {
   await web.sandbox.initNoVaultLanding(false); await efSettle();
   ok(web.spies.showWelcome.length === 1 && web.consents.length === 0 && !web.calls.some(([c]) => c === 'get_account_sync_status' || c === 'restore_account_profile'), 'S1-8: the web shell alone still shows the old landing, without touching the native sync commands');
   const bare = await s1Boot({ app_login_status: { logged_in: true, pending: true } }, () => true);
-  ok(bare.spies.showWelcome.length === 0 && bare.consents.length === 0 && !bare.calls.some(([c]) => c === 'restore_account_profile') && mobileHtml(bare.doc).includes('data-account-restore-retry') && !mobileHtml(bare.doc).includes('mobileCreateProfile()'), 'S1-9 (№976): a parked login without restore_context lands on the account screen with Retry (D5 shape)');
+  ok(bare.spies.showWelcome.length === 0 && bare.consents.length === 0 && !(s1Restores(bare.calls).length > 0) && mobileHtml(bare.doc).includes('data-account-restore-retry') && !mobileHtml(bare.doc).includes('mobileCreateProfile()'), 'S1-9 (№976): a parked login without restore_context lands on the account screen with Retry (D5 shape)');
 }
 {
   section('707 S1 — wide (desktop) welcome: the static fork is hidden behind the waiting screen and returns on fallback');
   let release = null;
   const app = bootApp({ platform: 'linux' });
   const calls = [];
-  app.sandbox.invoke = async (cmd, args) => { calls.push([cmd, args]); return efInvoke({ app_login_status: { logged_in: true, pending: true, email: 'synthetic@example.invalid' }, get_account_sync_status: () => s1Status() }, 'linux')(cmd, args); };
+  app.sandbox.invoke = async (cmd, args) => { calls.push([cmd, args]); return s1Server(efInvoke({ app_login_status: { logged_in: true, pending: true, email: 'synthetic@example.invalid' }, get_account_sync_status: () => s1Status() }, 'linux'))(cmd, args); };
   app.sandbox.showDashboard = async () => {};
   app.sandbox.uiConfirm = async () => new Promise((r) => { release = r; });
   let welcomes = 0; const origWelcome = app.sandbox.showWelcome; app.sandbox.showWelcome = function (...a) { welcomes++; return origWelcome.apply(this, a); };
@@ -6760,7 +6768,7 @@ async function s1Boot(map, consent, opts) {
   ok(welcome && welcome.classList.contains('account-restoring') && welcomes === 0, 'S1-10: the wide welcome is in the waiting state (static create/open/demo hidden by class) before the consent decision');
   ok(String((doc.getElementById('welcome-account-controls') || {}).innerHTML || '').includes('Downloading your profile from the account'), 'S1-10: the waiting text is rendered in the account block');
   ok(typeof release === 'function', 'S1-10: the consent dialog was opened by the wide landing'); if (typeof release === 'function') release(false); await efSettle();
-  ok(welcome.classList.contains('account-restoring') && welcomes === 0 && !calls.some(([c]) => c === 'restore_account_profile') && String((doc.getElementById('welcome-account-controls') || {}).innerHTML || '').includes('accountRestoreRetry()'), 'S1-10 (№976): declining keeps the static create/open/demo hidden — the account block shows Retry (desktop shares the flow)');
+  ok(welcome.classList.contains('account-restoring') && welcomes === 0 && !(s1Restores(calls).length > 0) && String((doc.getElementById('welcome-account-controls') || {}).innerHTML || '').includes('accountRestoreRetry()'), 'S1-10 (№976): declining keeps the static create/open/demo hidden — the account block shows Retry (desktop shares the flow)');
 }
 {
   section('193 diagnostics — visible errors survive reload, redact credentials and travel in prepared drafts');
@@ -7272,6 +7280,44 @@ async function s1Boot(map, consent, opts) {
 }
 
 {
+  // Owner 24.11: «это то о чем я говорю ненужное пользовательское действие. оно ничего не меняет оно должно быть
+  // под капотом и никак незаметно для пользователя» — the Pixel 7 synced only after «Enable account sync» was pressed.
+  section('invisible sync — a signed-in profile joins the account sync by itself; the notice only for an account that never consented');
+  const NOTICE_ERR = 'Current sync and health consent is required. Review the notice and try again.';
+  for (const consented of [true, false]) {
+    const app = await efBoot({}); const s = app.sandbox; const calls = []; let enabled = false, confirms = 0;
+    const status = () => ({ enabled, state: enabled ? 'current' : 'disabled', profile_open: true, logged_in: true, consent_context: 'ctx-1', consent_notice_version: s.accountSyncNotice.version, account_email: 'synthetic@example.invalid', conflicts: [] });
+    s.uiConfirm = async () => { confirms++; return true; };
+    s.invoke = async (c, a) => { calls.push([c, a]); if (c === 'get_account_sync_status') return status(); if (c === 'enable_account_sync') { if (a.accountConsent === true && !consented) throw new Error(NOTICE_ERR); enabled = true; return status(); } if (c === 'sync_account_now') return status(); if (c === 'get_documents') return []; return {}; };
+    await s.oneAccountSyncRun();
+    const tries = calls.filter(([c]) => c === 'enable_account_sync');
+    ok(tries.length >= 1 && tries[0][1].accountConsent === true && tries[0][1].consentNotice === null && tries[0][1].consent === false, 'invisible (' + (consented ? 'account consented' : 'never consented') + '): the device first joins under the ACCOUNT consent, claiming no notice');
+    if (consented) ok(confirms === 0 && tries.length === 1, 'invisible (account consented): no window at all');
+    else ok(confirms === 1 && tries.length === 2 && tries[1][1].consent === true && !!tries[1][1].consentNotice, 'invisible (never consented): the notice is shown once and its acceptance is sent');
+    ok(calls.some(([c]) => c === 'sync_account_now'), 'invisible: synchronization runs right after joining');
+    if (!consented) {
+      enabled = false; confirms = 0; calls.length = 0; s.uiConfirm = async () => { confirms++; return false; };
+      s.oneAccountAutoLinkDone = null; await s.oneAccountSyncRun();
+      await s.oneAccountSyncRun();
+      ok(confirms === 1, 'invisible: a declined notice is not asked again in a loop for the same sign-in');
+    }
+  }
+  {
+    const app = await efBoot({}); const s = app.sandbox; const calls = [];
+    s.invoke = async (c, a) => { calls.push([c, a]); if (c === 'get_account_sync_status') return { enabled: false, profile_open: true, logged_in: false, consent_context: 'ctx-2', conflicts: [] }; return {}; };
+    await s.oneAccountSyncRun();
+    ok(!calls.some(([c]) => c === 'enable_account_sync'), 'PRESERVE (№193): without a session nothing is linked — sign-in stays the precondition');
+  }
+  {
+    const app = await efBoot({}); const s = app.sandbox; const doc = app.doc; s.getUiLang = () => 'en';
+    const panel = doc.createElement('div'); panel.setAttribute('id', 'one-account-sync'); doc.body.appendChild(panel);
+    s.oneAccountSyncRender({ enabled: true, state: 'current', profile_open: true, logged_in: true, account_email: 'a@b.c', conflicts: [] }, panel);
+    ok(!panel.innerHTML.includes('data-sync-action'), 'Settings → Sync: no «Sync now», no «Pause» — only the status');
+    s.oneAccountSyncRender({ enabled: true, state: 'conflict', profile_open: true, logged_in: true, account_email: 'a@b.c', conflicts: [{ kind: 'photo', id: 'main', local: {}, remote: {}, revision: 1 }] }, panel);
+    ok(!panel.innerHTML.includes('Keep this device version') && !panel.innerHTML.includes('Choose which changes') && panel.innerHTML.includes('Synchronizing'), 'Settings → Sync: no version choice — a difference reads as «Synchronizing…» while the sync settles it');
+    s.oneAccountSyncRender({ enabled: false, state: 'disabled', profile_open: true, logged_in: true, consent_context: 'ctx-3', conflicts: [] }, panel);
+    ok(!panel.innerHTML.includes('data-sync-action'), 'Settings → Sync: a profile about to join shows no «Enable» switch');
+  }
   section('Tester feedback 24.11 — desktop Sea Service: vessel type accepts a typed value («Other»), like the phone');
   try {
     const { sandbox, doc } = bootApp({ seed: {} });

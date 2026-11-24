@@ -73,8 +73,9 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
 async function mountSync(){const s=mountedSyncSettings();s.sandbox.scheduleSeafarerFormLoad();s.scheduled.shift()();await flush();assert.equal(s.loads(),1,'actual callback still loads profile');assert.equal(s.legacy.innerHTML,'','stale legacy form still cleared');assert.equal(s.requests.length,1,'actual unified post-mount callback requests sync status');assert.equal(s.requests[0].name,'get_account_sync_status');return s;}
 let mounted=await mountSync();
 mounted.requests[0].resolve({enabled:false,state:'disabled',account_email:'synthetic@example.invalid',conflicts:[]});await flush();
-assert.equal(mounted.active.buttons.length,1,'actual callback/status response renders Enable in mounted unified panel');
-assert.ok(mounted.active.html.includes('Enable account sync'));
+// Owner 24.11: sync runs under the hood — a signed-in profile about to join shows no Enable switch.
+assert.equal(mounted.active.buttons.length,0,'actual callback/status response renders no Enable switch in mounted unified panel');
+assert.ok(mounted.active.html.includes('Sync is off'),'a binding with no live session reads as off, never as synchronizing');
 assert.equal(mounted.competing.innerHTML,'','competing mobile/legacy copy never receives unified status');
 assert.equal(mounted.requests.length,1,'mount never enables synchronization automatically');
 for(const change of ['close','replace','replaceRoot']){
@@ -91,9 +92,10 @@ assert.ok(mounted.active.html.includes('documents are synchronized'));assert.equ
 for(const language of ['en','ru']){
     const s=await mountSync();s.sandbox.getUiLang=()=>language;
     s.requests[0].resolve({enabled:false,state:'disabled',conflicts:[]});await flush();
-    assert.ok(s.active.html.includes(language==='ru'?'Включить синхронизацию':'Enable account sync'));
+    assert.ok(s.active.html.includes(language==='ru'?'Синхронизация выключена':'Sync is off'));assert.ok(!s.active.html.includes('data-sync-action'));
+    // Owner 24.11: no version choice — a difference is settled by the sync itself (account_sync.rs settle_conflict).
     s.sandbox.oneAccountSyncRender({enabled:true,state:'conflict',conflicts:[{kind:'profile',id:'main',local:{name:'local'},remote:{name:'remote'},revision:1}]},s.active);
-    const row=s.active.children[0];assert.equal(row.children[2].textContent,language==='ru'?'Оставить версию устройства':'Keep this device version');assert.equal(row.children[3].textContent,language==='ru'?'Использовать версию аккаунта':'Use account version');assert.ok(row.children[1].textContent.startsWith(language==='ru'?'На устройстве: ':'This device: '));
+    assert.equal(s.active.children.length,0,'no version choice rows');assert.ok(!s.active.html.includes('data-sync-action'));assert.ok(s.active.html.includes(language==='ru'?'Синхронизация…':'Synchronizing…'));
     s.sandbox.oneAccountSyncRender({state:'error',error:'raw server error <retry>',conflicts:[]},s.active);assert.ok(s.active.html.includes(language==='ru'?'Синхронизация требует внимания':'Sync needs attention'));assert.ok(s.active.html.includes('raw server error &lt;retry&gt;'));
     s.sandbox.invoke=async()=>({consent_notice_version:NOTICE,consent_context:'synthetic-context'});let consent;s.sandbox.uiConfirm=async message=>{consent=message;return false;};s.sandbox.confirm=message=>{consent=message;return false;};await s.sandbox.oneAccountSyncEnable();assert.ok(consent.includes(s.sandbox.accountSyncNotice[language].title));assert.equal(s.requests.length,1,'declined real consent never enables sync');
 }
@@ -196,7 +198,10 @@ console.log('backend context rejection blocks sync and web never requests native
 {
     const counter={activeTemplateIds:['passport','sid','passport'],activeTemplateIdsLoaded:true,activeTemplateIdSet:{passport:true,sid:true},allDocs:[{id:'p1',template_id:'passport',category:'Passport',file_name:'p.pdf'},{id:'p2',template_id:'passport',category:'Passport'},{id:'s1',template_id:'sid',category:'SID',sha256:'synthetic-sha'},{id:'s2',template_id:'sid',category:'SID'},{id:'custom',category:'Custom'},{id:'conditional',template_id:'conditional',category:'Conditional'}],docTreeFilter:'all',isOptionalCategory:c=>c==='Optional',classify:()=> 'none'};
     vm.createContext(counter);
-    for(const name of ['isActiveTemplateId','isActiveRequiredDoc','mobileDocHasAttachedFile','requiredDocumentSummary','mobileCompletenessPercent','mobileStats','docMatchesTreeFilter','docFilterCount']){
+    // requiredDocumentSummary() asks the security-coverage predicate (№902-b) since it was added; load it with
+    // its table so this counter fixture runs the real code instead of crashing on a missing name.
+    vm.runInContext((html.match(/var SECURITY_COVERAGE\s*=[^;]*;/)||[''])[0],counter);
+    for(const name of ['securityCoveringIds','securityCoveringDoc','securityCoveredByAttached','isActiveTemplateId','isActiveRequiredDoc','mobileDocHasAttachedFile','requiredDocumentSummary','mobileCompletenessPercent','mobileStats','docMatchesTreeFilter','docFilterCount']){
         const start=html.indexOf('function '+name+'(');if(start<0)continue;
         const end=html.indexOf('\nfunction ',start+1);vm.runInContext(html.slice(start,end).split('\nvar ')[0],counter);
     }
@@ -221,7 +226,8 @@ for(const language of ['en','ru'])for(const oldState of ['current','error','conf
     s.sandbox.oneAccountSyncRender({enabled:false,state:oldState,last_completed:'preserved',conflicts:[{kind:'document',id:'saved-conflict',revision:2,local:{},remote:null}]},s.active);
     assert.ok(s.active.html.includes(language==='ru'?'Синхронизация выключена':'Sync is off'),'disabled binding never displays synchronized history');
     assert.equal(s.active.children.length,0,'inactive native binding hides retained conflict resolution actions');
-    assert.ok(s.active.html.includes('data-sync-action="enable"'));
+    // Owner 24.11: no switch — the profile joins by itself; Enable appears only when consent is missing (below).
+    assert.ok(!s.active.html.includes('data-sync-action="enable"'));
     assert.ok(!s.active.html.includes('data-sync-action="retry"'));
 }
 console.log('disabled native UI hides retained conflict actions and never claims current RU/EN PASS');
@@ -231,7 +237,8 @@ for(const language of ['en','ru'])for(const scenario of ['empty-duplicates','abs
     const rows=scenario==='empty-duplicates'?[{id:'empty-one',template_id:'passport',category:'Passport'},{id:'empty-two',template_id:'passport',category:'Passport'}]:[{id:'custom',category:'Custom'}];
     const mobile={allDocs:rows,activeTemplateIds:['passport'],activeTemplateIdSet:{passport:true},activeTemplateIdsLoaded:scenario!=='unknown',mobileDocsFilter:'missing',mobileDocsSearch:'',isOptionalCategory:()=>false,classify:()=> 'none',docStatusRank:()=>0,mobileSetupText:(en,ru)=>language==='ru'?ru:en,mobileEsc:String,jsString:String,mobileDocRow:d=>'<span data-doc="'+d.id+'"></span>'};
     vm.createContext(mobile);
-    for(const name of ['isActiveTemplateId','isActiveRequiredDoc','mobileDocHasAttachedFile','requiredDocumentSummary','mobileFilteredDocs','mobileFilterChip','mobileDocsBodyHtml']){
+    vm.runInContext((html.match(/var SECURITY_COVERAGE\s*=[^;]*;/)||[''])[0],mobile);
+    for(const name of ['securityCoveringIds','securityCoveringDoc','securityCoveredByAttached','isActiveTemplateId','isActiveRequiredDoc','isCoveredRequiredDoc','mobileDocHasAttachedFile','requiredDocumentSummary','mobileFilteredDocs','mobileFilterChip','mobileDocsBodyHtml']){
         const start=html.indexOf('function '+name+'(');assert.ok(start>=0,name);
         const end=html.indexOf('\nfunction ',start+1);vm.runInContext(html.slice(start,end).split('\nvar ')[0],mobile);
     }
