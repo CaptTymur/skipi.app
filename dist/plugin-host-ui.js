@@ -772,7 +772,11 @@
         container.innerHTML = pluginPlaceholderHtml(pluginById(id), 'host_runtime_missing');
         return;
       }
-      if(host.current && host.current.id === id) return;
+      // "Already mounted" holds only while the container still shows the plugin. A home that
+      // leaves the screen with its own Back button never calls host.unmount; the next render
+      // gives a fresh container with the loading placeholder, and it must be mounted again.
+      var fresh = String(container.innerHTML || '').indexOf('plugin-host-loading') >= 0;
+      if(host.current && host.current.id === id && !fresh) return;
       host.mount(id, container).then(function(res){
         if(res && res.ok) return;
         container.innerHTML = pluginPlaceholderHtml(pluginById(id), res && res.reason);
