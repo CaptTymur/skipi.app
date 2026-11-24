@@ -1566,6 +1566,7 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
             <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-vessels" data-mview="vessels" onclick="mobileShow('vessels')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Known vessel records" title="Known vessel records" aria-label="Vessel DB"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 20.4c.8.6 1.5 1.1 2.6 1.1 2.3 0 2.3-2 4.6-2s2.3 2 4.6 2c1.1 0 1.8-.5 2.6-1.1"/><path d="M19.1 19.4A10.4 10.4 0 0021 13.3L12 9.7l-9 3.6c0 2.4.8 4.5 2.3 6.1"/><path d="M18.4 12.5V7.2a1.8 1.8 0 00-1.8-1.8H7.4a1.8 1.8 0 00-1.8 1.8v5.3"/><path d="M12 5.4V2.7"/></svg></span><span class="fam-app-label" id="mhn-vessels">Vessel DB</span></button>
             <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-myvessel" data-mview="myvessel" onclick="mobileShow('myvessel')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="On Board workspace" title="On Board workspace" aria-label="My Vessel"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="4.6" r="1.8"/><path d="M12 6.4V21"/><path d="M7 10h10"/><path d="M4.5 15a7.5 7.5 0 0015 0"/></svg></span><span class="fam-app-label" id="mhn-myvessel">My Vessel</span></button>
             <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-apps" data-mview="apps" onclick="mobileShow('apps')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Installed tools" title="Installed tools" aria-label="Apps"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg></span><span class="fam-app-label" id="mhn-apps">Apps</span></button>
+            <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-aiconnect" data-mview="aiconnect" onclick="mobileShow('aiconnect')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Use Skipi inside Claude or ChatGPT" title="Use Skipi inside Claude or ChatGPT" aria-label="Claude / ChatGPT"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.2l1.9 5 5 1.9-5 1.9-1.9 5-1.9-5-5-1.9 5-1.9z"/><path d="M18.6 15.4l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/></svg></span><span class="fam-app-label" id="mhn-aiconnect">Claude / ChatGPT</span></button>
             <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-assistant" style="display:none;" data-mview="assistant" onclick="mobileShow('assistant')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Drafts and help" title="Drafts and help" aria-label="Assistant"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 15a3 3 0 01-3 3H8l-4 3V7a3 3 0 013-3h10a3 3 0 013 3z"/><path d="M9 11h6"/><path d="M9 8h4"/></svg></span><span class="fam-app-label" id="mhn-assistant">Assistant</span></button>
         </div>
     </template>
@@ -3535,6 +3536,56 @@ async function showContribution(){
         host.innerHTML='<div class="trust-contribution-wrap"><div class="trust-contribution-card"><strong>'+esc(ru?'Не удалось открыть':'Could not open')+'</strong><div class="trust-contribution-meta">'+esc(String(e||''))+'</div></div></div>';
     }
 }
+// ── Claude / ChatGPT (owner 24.11.2026): the seafarer connects Skipi to the AI assistant they already use.
+// The connector lives on its own server (canon п.14); this screen only gives the address, opens the
+// assistant in the system browser/app and says where to paste it. Sign-in to Skipi happens there, once.
+var SKIPI_AI_CONNECTOR_URL='https://mcp.skipi.app/mcp';
+var SKIPI_AI_ASSISTANTS=[
+    {id:'claude',name:'Claude',url:'https://claude.ai/settings/connectors',
+     en:['In Claude open Settings → Connectors and choose “Add custom connector”.','Paste the address and press Add, then Connect.','Sign in to Skipi and press Allow.'],
+     ru:['В Claude откройте Настройки → Connectors и выберите «Add custom connector».','Вставьте адрес, нажмите Add, затем Connect.','Войдите в Skipi и нажмите «Разрешить».']},
+    {id:'chatgpt',name:'ChatGPT',url:'https://chatgpt.com/',
+     en:['In ChatGPT open the apps / plugins section and choose “Add custom MCP server”.','Paste the address, authentication: OAuth.','Sign in to Skipi and press Allow.'],
+     ru:['В ChatGPT откройте раздел приложений (Plugins) и выберите «Add custom MCP server».','Вставьте адрес, способ входа — OAuth.','Войдите в Skipi и нажмите «Разрешить».'],
+     noteEn:'Adding your own server is not available in every ChatGPT account.',noteRu:'Свой сервер можно добавить не в каждом аккаунте ChatGPT.'}
+];
+async function aiConnectCopyAddress(){
+    var ru=getUiLang()==='ru';
+    try{ await writeClipboardText(SKIPI_AI_CONNECTOR_URL); showToast(ru?'Адрес скопирован':'Address copied','ok'); }
+    catch(e){ showToast(ru?'Не удалось скопировать — выделите адрес вручную':'Could not copy — select the address manually','warn'); }
+}
+async function aiConnectOpen(id){
+    var a=SKIPI_AI_ASSISTANTS.filter(function(x){return x.id===id;})[0];
+    if(!a)return;
+    // The address goes to the clipboard first: the next thing the seafarer does there is paste it.
+    try{ await writeClipboardText(SKIPI_AI_CONNECTOR_URL); }catch(_e){}
+    await openExternalUrlSafe(a.url);
+}
+function renderMobileAiConnect(){
+    var ru=getUiLang()==='ru';
+    var box='border:1px solid var(--border,#d8dee4);border-radius:14px;padding:14px;margin:0 0 12px;background:var(--card,#fff);';
+    var h='<div data-qa="ai-connect-screen" style="padding:14px 14px 28px;">';
+    h+='<div style="font-size:18px;font-weight:700;margin:2px 0 6px;">'+mobileEsc(ru?'Skipi в Claude и ChatGPT':'Skipi in Claude and ChatGPT')+'</div>';
+    h+='<div style="font-size:13px;line-height:1.45;color:var(--text2,#5b6770);margin:0 0 14px;">'
+        +mobileEsc(ru?'Подключите Skipi к ассистенту, которым уже пользуетесь. Он сможет искать вакансии Skipi и читать ваш профиль, сроки документов и морской стаж. Только чтение; отключить можно в кабинете Skipi.'
+                     :'Connect Skipi to the assistant you already use. It can search Skipi vacancies and read your profile, document expiry dates and sea service. Read-only; disconnect any time in your Skipi account.')+'</div>';
+    h+='<div style="'+box+'"><div style="font-size:12px;color:var(--text2,#5b6770);margin-bottom:6px;">'+mobileEsc(ru?'Адрес коннектора':'Connector address')+'</div>'
+        +'<div data-qa="ai-connect-address" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;word-break:break-all;user-select:all;-webkit-user-select:all;margin-bottom:10px;">'+mobileEsc(SKIPI_AI_CONNECTOR_URL)+'</div>'
+        +'<div class="mobile-actions"><button class="btn btn-outline mobile-grow" type="button" data-qa="ai-connect-copy" onclick="aiConnectCopyAddress()">'+mobileEsc(ru?'Скопировать адрес':'Copy address')+'</button></div></div>';
+    SKIPI_AI_ASSISTANTS.forEach(function(a){
+        h+='<div style="'+box+'"><div style="font-size:15px;font-weight:700;margin-bottom:8px;">'+mobileEsc(a.name)+'</div><ol style="margin:0 0 10px;padding-left:20px;font-size:13px;line-height:1.5;">';
+        (ru?a.ru:a.en).forEach(function(s){ h+='<li>'+mobileEsc(s)+'</li>'; });
+        h+='</ol>';
+        var note=ru?a.noteRu:a.noteEn;
+        if(note)h+='<div style="font-size:12px;color:var(--text2,#5b6770);margin:0 0 10px;">'+mobileEsc(note)+'</div>';
+        h+='<div class="mobile-actions"><button class="btn btn-primary mobile-grow" type="button" data-qa="ai-connect-open-'+a.id+'" onclick="aiConnectOpen(\''+a.id+'\')">'+mobileEsc((ru?'Открыть ':'Open ')+a.name)+'</button></div></div>';
+    });
+    h+='<div style="font-size:12px;line-height:1.5;color:var(--text2,#5b6770);">'+mobileEsc(ru?'После подключения спросите, например: «Какие мои документы скоро истекают?» или «Найди вакансии под мой профиль».'
+                     :'Once connected, ask for example: “Which of my documents expire soon?” or “Find vacancies that match my profile”.')+'</div>';
+    h+='</div>';
+    mobileMainHtml(h);
+}
+
 function renderMobileContribution(){
     var ru=getUiLang()==='ru';
     mobileMainHtml('<div class="trust-contribution-wrap"><div class="trust-contribution-card"><strong>'+mobileEsc(ru?'Загрузка':'Loading')+'</strong><div class="trust-contribution-meta">'+mobileEsc(ru?'Готовим приватный обзор вклада.':'Preparing your private contribution view.')+'</div></div></div>');
@@ -7367,6 +7418,7 @@ function renderMobileShell(){
     if(mobileView==='myvessel')return renderMobileMyVessel();
 
     if(mobileView==='apps')return renderMobileApps();
+    if(mobileView==='aiconnect')return renderMobileAiConnect();
 
     if(mobileView==='contribution')return renderMobileContribution();
 
@@ -7458,6 +7510,7 @@ var MOBILE_HOME_MODULE_L10N={
     vessels:['База судов','Известные суда'],
     myvessel:['Моё судно','Рабочее пространство On Board'],
     apps:['Приложения','Установленные инструменты'],
+    aiconnect:['Claude / ChatGPT','Skipi в вашем ИИ-ассистенте'],
     assistant:['Ассистент','Черновики и помощь']
 };
 function mobileModuleIconBtn(key){
