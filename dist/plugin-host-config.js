@@ -18,7 +18,10 @@ window.SKIPI_REMOTE_CONFIG = {
   catalogUrl: 'https://api.skipi.app/seafarer/releases/plugins/v1/catalog.json',
 
   // Which catalog plugins are routed through the isolated remote runtime.
-  remoteSlugs: ['bnwas-time-anchor', 'navigation-calculators', 'ecdis-position-reminder'],
+  // '*' = the SIGNED CATALOG decides (owner 24.11.2026: Apps is a store — a new plugin must
+  // not need an app release). Every entry is still verified: signature by the pinned key,
+  // compatibility, the policy below, and the pack checksum.
+  remoteSlugs: '*',
   bundledVersions: {
     'bnwas-time-anchor': '0.1.0',
     'navigation-calculators': '0.1.0',
@@ -28,10 +31,15 @@ window.SKIPI_REMOTE_CONFIG = {
   // Host identity for compatibility checks.
   host: { id: 'seafarer', version: '0.4.165' },
 
-  // First-party utility policy (v1). Plugins exceeding this are rejected.
+  // First-party policy (v2). Plugins exceeding this are rejected.
+  // Network (owner 24.11.2026): a plugin may use the network ONLY through the host
+  // (hostApi.net.fetch — the sandbox itself stays connect-src 'none'), ONLY with the
+  // `network` permission, and ONLY to https prefixes listed in its signed entry
+  // (capabilities.network.allow), each of which must sit on one of networkOrigins.
   policy: {
-    maxPermissions: ['local_storage', 'audio_alert'],
-    requireCapabilities: { network: 'none', documents: 'none', account: 'none', analytics: 'none', server_upload: false }
+    maxPermissions: ['local_storage', 'audio_alert', 'network'],
+    requireCapabilities: { documents: 'none', account: 'none', analytics: 'none', server_upload: false },
+    networkOrigins: ['https://api.skipi.app']
   },
 
   // Trusted production first-party signing key (public material only — safe to ship).
