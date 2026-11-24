@@ -7263,6 +7263,10 @@ async function s1Boot(map, consent, opts) {
     ok(String(sel.innerHTML).includes('<option value="Oil Tanker" selected>'), 'a listed type is preselected in the list');
     ok(custom.style.display === 'none' && custom.value === '', 'a listed type keeps the plain select (no text input)');
     ok(sandbox.workTypeValue() === 'Oil Tanker', 'a listed type is saved as picked');
+    sandbox.types = { vessel_types: ['Bulk Carrier', 'Oil Tanker', 'Passenger Ship'], ranks: [] };
+    const list = Array.from(sandbox.workVesselTypeList());
+    ok(list.includes('Tug') && list.indexOf('Tug') === list.lastIndexOf('Tug'), '«Tug» is in the vessel type list (once), on top of the vault types');
+    ok(list.slice(0, 3).join('|') === 'Bulk Carrier|Oil Tanker|Passenger Ship', 'PRESERVE: the vault types keep their order');
   } catch (e) { ok(false, 'vessel type drill crashed: ' + e.message); }
 
   section('Tester feedback 24.11 — desktop Profile: the phone field is not locked behind «Ready to accept job offers»');

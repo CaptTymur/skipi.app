@@ -13852,11 +13852,17 @@ function renderWorkEntryForm(entry){
     return h;
 }
 
+function workVesselTypeList(){
+    var list=((types&&types.vessel_types&&types.vessel_types.length)?types.vessel_types:
+        ["Bulk Carrier","Container Ship","Tanker","Oil Tanker","Chemical Tanker","Product Tanker","LNG Carrier","LPG Carrier","General Cargo","Ro-Ro","Car Carrier","Reefer","Passenger","Cruise Ship","Ferry","Offshore Support","AHTS","PSV","Tug","OSV","Yacht","Other"]).slice();
+    // Tugs are common enough to be a listed type, not only a typed «Other».
+    if(list.indexOf('Tug')===-1)list.push('Tug');
+    return list;
+}
 async function populateWorkEntryFormControls(entry){
     entry=entry||{};
     // Populate dropdowns from loaded taxonomies
-    var vList=(types&&types.vessel_types&&types.vessel_types.length)?types.vessel_types:
-        ["Bulk Carrier","Container Ship","Tanker","Oil Tanker","Chemical Tanker","Product Tanker","LNG Carrier","LPG Carrier","General Cargo","Ro-Ro","Car Carrier","Reefer","Passenger","Cruise Ship","Ferry","Offshore Support","AHTS","PSV","Tug","OSV","Yacht","Other"];
+    var vList=workVesselTypeList();
     var pList=(types&&types.ranks&&types.ranks.length)?types.ranks:RANKS;
     await populateWorkVesselControl(entry);
     populateWorkTypeControl(vList,entry.vessel_type||'');
