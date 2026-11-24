@@ -22,11 +22,8 @@ window.SKIPI_REMOTE_CONFIG = {
   // not need an app release). Every entry is still verified: signature by the pinned key,
   // compatibility, the policy below, and the pack checksum.
   remoteSlugs: '*',
-  bundledVersions: {
-    'bnwas-time-anchor': '0.1.0',
-    'navigation-calculators': '0.1.0',
-    'ecdis-position-reminder': '0.1.0'
-  },
+  // Seafarer ships no bundled plugins (owner 24.11.2026): there is no bundled baseline.
+  bundledVersions: {},
 
   // Host identity for compatibility checks.
   host: { id: 'seafarer', version: '0.4.165' },
