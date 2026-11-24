@@ -320,6 +320,99 @@
     return loader.uninstall ? loader.uninstall(slug) : { ok: true };
   };
 
+  // ---- no bundled plugins (owner 24.11.2026): every plugin comes from the catalog ----
+  // Seafarer used to ship three plugins inside the app. «Старым — как было, новым — пусто»:
+  // a user who used them gets them installed from the catalog once (latest version), with
+  // the plugin's settings carried over from the old bundled storage; a new user starts with
+  // an empty Installed shelf. The decision is taken ONCE and recorded, so a plugin the user
+  // removes later never comes back by itself. With no network the plugins stay pending and
+  // the run is repeated on the next start / when Apps asks for the catalog.
+  var UNBUNDLE_KEY = 'skipi_plugins_unbundled_v1';
+  var FORMER_BUNDLED = ['bnwas-time-anchor', 'ecdis-position-reminder', 'navigation-calculators'];
+  var LEGACY_STATE_KEY = 'skipi_plugins_state';       // install/enable/last-opened of bundled plugins
+  var LEGACY_STORE_PREFIX = 'skipi_plugin_';          // + <slug> + '_' + <key>: the bundled plugin's own data
+  function readUnbundle() {
+    try { var v = JSON.parse(localStorage.getItem(UNBUNDLE_KEY) || 'null'); return v && Array.isArray(v.pending) ? v : null; } catch (e) { return null; }
+  }
+  function writeUnbundle(v) { try { localStorage.setItem(UNBUNDLE_KEY, JSON.stringify(v)); } catch (e) {} }
+  function legacyKeys() {
+    var out = [];
+    try { for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k && k.indexOf(LEGACY_STORE_PREFIX) === 0) out.push(k); } } catch (e) {}
+    return out;
+  }
+  function planUnbundle() {
+    var st = readUnbundle();
+    if (st) return st;
+    var legacy = null;
+    try { legacy = JSON.parse(localStorage.getItem(LEGACY_STATE_KEY) || 'null'); } catch (e) { legacy = null; }
+    var keys = legacyKeys();
+    // carry the plugins' own data over (never over data the catalog version already holds)
+    FORMER_BUNDLED.forEach(function (slug) {
+      var pre = LEGACY_STORE_PREFIX + slug + '_';
+      keys.forEach(function (k) {
+        if (k.indexOf(pre) !== 0) return;
+        var name = k.slice(pre.length);
+        if (hostStore.get(slug, name) === null) hostStore.set(slug, name, localStorage.getItem(k));
+      });
+    });
+    var used = !!(legacy && typeof legacy === 'object') || keys.length > 0;
+    var pending = [];
+    if (used) FORMER_BUNDLED.forEach(function (slug) {
+      var s = (legacy && legacy[slug]) || {};
+      if (s.installed === false) return;              // the user had uninstalled it
+      pending.push({ slug: slug, enabled: s.enabled !== false });
+    });
+    st = { pending: pending, decided_at: nowIso() };
+    writeUnbundle(st);
+    return st;
+  }
+  var unbundleRun = null;
+  function runUnbundle() {
+    if (unbundleRun) return unbundleRun;
+    var st = planUnbundle();
+    if (!st.pending.length) return Promise.resolve({ ok: true, pending: 0 });
+    var queue = st.pending.slice();
+    function drop(slug) {
+      var cur = readUnbundle() || { pending: [] };
+      cur.pending = cur.pending.filter(function (x) { return x.slug !== slug; });
+      writeUnbundle(cur);
+    }
+    function next() {
+      var item = queue.shift();
+      if (!item) return Promise.resolve();
+      if (remoteRecord(item.slug)) { drop(item.slug); return next(); }   // already from the catalog
+      return window.SkipiRemoteInstall(item.slug, { allowNetwork: true }).then(function (res) {
+        if (res && res.ok) {
+          if (item.enabled === false) {
+            var reg = readRemoteRegistry();
+            if (reg[item.slug]) { reg[item.slug].enabled = false; writeRemoteRegistry(reg); }
+          }
+          drop(item.slug);
+        }
+        return next();
+      }, function () { return next(); });
+    }
+    unbundleRun = next().then(function () {
+      unbundleRun = null;
+      return { ok: true, pending: (readUnbundle() || { pending: [] }).pending.length };
+    });
+    return unbundleRun;
+  }
+  window.SkipiRemoteUnbundle = runUnbundle;
+  // Apps asks for the catalog when it opens: let a pending move finish first (bounded), so the
+  // shelf it renders already has the user's plugins.
+  var listBase = window.SkipiRemoteList;
+  window.SkipiRemoteList = function () {
+    var st = readUnbundle();
+    if (st && !st.pending.length) return listBase();
+    var bounded = new Promise(function (resolve) {
+      var t = setTimeout(resolve, 8000);
+      runUnbundle().then(function () { clearTimeout(t); resolve(); }, function () { clearTimeout(t); resolve(); });
+    });
+    return bounded.then(listBase);
+  };
+  try { runUnbundle(); } catch (e) {}
+
   // '*' = catalog-driven: any slug may be remote; whether it IS is decided per mount below
   // (a verified remote install shown by the host). A list keeps the old fixed routing.
   var REMOTE_ALL = CFG.remoteSlugs === '*';

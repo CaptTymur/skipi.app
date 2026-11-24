@@ -344,9 +344,11 @@
       __remoteCatalogFetchedAt = 0;
     }
     function remoteRefreshCatalog(cb){
-      if(typeof window.SkipiRemoteList !== 'function'){ if(!__remoteCatalogCache) __remoteCatalogCache = []; if(cb) cb(); return; }
+      // Every outcome stamps the fetch time: the callers re-render and ask again "if stale", so an
+      // unstamped failure (no catalog source, or a rejected request) would loop forever.
+      if(typeof window.SkipiRemoteList !== 'function'){ if(!__remoteCatalogCache) __remoteCatalogCache = []; __remoteCatalogFetchedAt = Date.now(); if(cb) cb(); return; }
       window.SkipiRemoteList().then(function(list){ __remoteCatalogCache = list || []; __remoteCatalogFetchedAt = Date.now(); if(cb) cb(); },
-                                    function(){ if(!__remoteCatalogCache) __remoteCatalogCache = []; if(cb) cb(); });
+                                    function(){ if(!__remoteCatalogCache) __remoteCatalogCache = []; __remoteCatalogFetchedAt = Date.now(); if(cb) cb(); });
     }
     function remoteRefreshCatalogIfStale(onRefreshed){
       if(!remoteStagingOn()) return;
