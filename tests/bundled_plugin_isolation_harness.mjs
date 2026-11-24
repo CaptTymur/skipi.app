@@ -837,7 +837,7 @@ function bootMobile(opts) {
   const mm = mobileHtml(doc);
   ok(mm.includes('data-qa="mobile-menu-screen"') && !mm.includes('data-qa="mobile-menu-btn"'), 'home (no consent) IS the menu screen — the grid, and no ☰ (nothing left for it to open)');
   ok(!mm.includes('id="mobile-assistant-input"'), 'home (no consent) shows no composer — consent is asked in the Assistant section, not on home');
-  ok((mm.match(/fam-app-tile/g) || []).length === 14 && !mm.includes('data-qa="home-hero"'), 'home injects the 14-icon grid (11 modules + Profile + Feedback + Language) and no family hero');
+  ok((mm.match(/fam-app-tile/g) || []).length === 12 && !mm.includes('data-qa="home-hero"'), 'home injects the 12-icon grid (11 modules + Profile) and no family hero');
   ok(doc.getElementById('mobile-bottom-nav').style.display === 'none', 'bottom rail hidden on the native home');
   const consented = bootMobile({ seed: { 'skipi-assistant-consent': '1' } });
   await settleVm();
@@ -939,9 +939,9 @@ function bootMobile(opts) {
     ok(mm.includes(`data-mview="${v}"`) && mm.includes(`mobileShow('${v}')`), `menu grid routes '${v}' through mobileShow`);
   }
   ok(mm.includes('id="mobile-home-packages"'), 'Packages keeps its tile id (the presence drills mount on it) and now opens the real module — see PKG1');
-  ok((mm.match(/fam-app-tile/g) || []).length === 14, 'exactly 14 icons: 11 module icons + Profile + Feedback + Language (the wide language row owner asked to remove on 06.09 became the third menu-only icon — see LANG1)');
+  ok((mm.match(/fam-app-tile/g) || []).length === 12, 'exactly 12 icons: 11 module icons + Profile (Feedback and Language moved behind the header gear, owner 24.11 — see LANG1)');
   ok(mm.includes('data-qa="menu-tile-profile"') && mm.includes("mobileShow('profile')"), 'Profile tile routes to the profile screen (its only other entry, the rail meter, is hidden natively)');
-  ok(mm.includes('data-qa="menu-tile-feedback"') && mm.includes('openMobileFeedbackMenu()'), 'Feedback tile routes to the feedback menu (its only other entry, the header «!», is hidden natively)');
+  ok(!mm.includes('data-qa="menu-tile-feedback"') && !mm.includes('data-qa="mobile-menu-language"'), 'no Feedback and no Language tile on the menu (owner 24.11: both are behind the header gear)');
   const idx = (v) => mm.indexOf(`data-mview="${v}"`);
   ok(idx('docs') >= 0 && idx('docs') < idx('experience') && idx('experience') < idx('cv') && ['dispatch', 'jobs', 'information', 'vessels', 'myvessel', 'apps', 'assistant'].every((v) => idx(v) > idx('cv')), 'first three tiles are Documents · Experience · CV (sketch 2)');
   ok(!mm.includes('data-qa="mobile-menu-btn"'), 'no ☰ on the menu screen (sketch 2: no bottom panel at all)');
@@ -993,7 +993,7 @@ function bootMobile(opts) {
   sandbox.mobileShow('home');
   const mm = mobileHtml(doc);
   ok(mm.includes('data-qa="assistant-demo-banner"') && mm.includes('mobileCreateProfile()'), 'demo banner with «create my profile» renders on home (through step 0 since 06.09 — see ONB1)');
-  ok(mm.includes('data-qa="mobile-menu-screen"') && (mm.match(/fam-app-tile/g) || []).length === 14, 'demo home keeps the full 14-icon grid under the banner (no dead end)');
+  ok(mm.includes('data-qa="mobile-menu-screen"') && (mm.match(/fam-app-tile/g) || []).length === 12, 'demo home keeps the full 12-icon grid under the banner (no dead end)');
   sandbox.mobileIsDemo = false;
   sandbox.mobileShow('home');
   ok(!mobileHtml(doc).includes('data-qa="assistant-demo-banner"'), 'no demo banner on a real vault');
@@ -1020,7 +1020,7 @@ function bootMobile(opts) {
   const ma = mobileHtml(off.doc);
   ok(ma.includes('data-qa="assistant-offline"') && ma.includes('data-qa="mobile-menu-btn"') && ma.includes('id="mobile-assistant-input"'), 'the Assistant section offline: honest offline banner, ☰ and composer still there');
   off.sandbox.mobileShow('menu');
-  ok((mobileHtml(off.doc).match(/fam-app-tile/g) || []).length === 14, 'menu renders all icons offline');
+  ok((mobileHtml(off.doc).match(/fam-app-tile/g) || []).length === 12, 'menu renders all icons offline');
   const on = bootMobile({ seed: consent, onLine: true });
   await settleVm();
   on.sandbox.mobileShow('home');
@@ -1590,7 +1590,7 @@ function installNavHistory(app) {
     app.runTimers(0);
     const mm = mobileHtml(doc);
     ok(mm.includes('data-qa="mobile-menu-screen"'), 'menu screen renders');
-    ok((mm.match(/fam-app-tile/g) || []).length === 14, 'exactly 14 icons on the menu: 11 modules + Profile + Feedback + Language');
+    ok((mm.match(/fam-app-tile/g) || []).length === 12, 'exactly 12 icons on the menu: 11 modules + Profile');
     ok(!mm.includes('fam-module-desc') && !mm.includes('fam-chip'), 'the rendered menu carries no descriptions and no status chips at all');
     const docsBtn = doc.getElementById('mhb-docs');
     const label = doc.getElementById('mhn-docs');
@@ -1690,7 +1690,7 @@ function installNavHistory(app) {
     sandbox.mobileShow('home'); app.runTimers(0);
     const home = mobileHtml(doc);
     ok(sandbox.mobileView === 'home' && home.includes('data-qa="mobile-menu-screen"'), 'HG1a: the native home renders the menu screen — the module grid');
-    ok((home.match(/fam-app-tile/g) || []).length === 14 && home.includes('data-qa="menu-tile-profile"') && home.includes('data-qa="menu-tile-feedback"') && home.includes('data-qa="mobile-menu-language"'), 'HG1a: 14 icons on the home: 11 modules + Profile · Feedback · Language');
+    ok((home.match(/fam-app-tile/g) || []).length === 12 && home.includes('data-qa="menu-tile-profile"') && !home.includes('data-qa="menu-tile-feedback"') && !home.includes('data-qa="mobile-menu-language"'), 'HG1a: 12 icons on the home: 11 modules + Profile');
     ok(!home.includes('id="mobile-assistant-input"') && !home.includes('data-qa="mobile-menu-btn"') && !home.includes('data-qa="home-hero"'), 'HG1a: no chat composer, no ☰ and no family hero on the native home');
     ok(doc.getElementById('mobile-bottom-nav').style.display === 'none' && doc.getElementById('mobile-top-back').style.display === 'none', 'HG1a: no bottom rail and no ‹ at the root');
     ok(/function renderMobileHome\(\)\{[\s\S]{0,1200}?if\(isNativeMobile\(\)\)\{[\s\S]{0,200}?renderMobileMenu\(\);/.test(HTML), 'HG1a: one markup source — renderMobileHome delegates to renderMobileMenu on native (no second copy of the grid)');
@@ -2095,9 +2095,9 @@ const appsTileTag = (h, id) => {
     const { sandbox, doc } = app;
     sandbox.mobileShow('menu'); app.runTimers(0);
     const mm = mobileHtml(doc);
-    ok((mm.match(/fam-app-tile/g) || []).length === 14, 'menu still shows 14 icons: 11 modules + Profile + Feedback + Language (got ' + (mm.match(/fam-app-tile/g) || []).length + ')');
+    ok((mm.match(/fam-app-tile/g) || []).length === 12, 'menu still shows 12 icons: 11 modules + Profile (got ' + (mm.match(/fam-app-tile/g) || []).length + ')');
     ok(tplButtons().length === 11 && !/apps-icon-tile/.test(MODULE_TPL), 'the module template itself is not touched by the Apps restyle');
-    ok(mm.includes('data-qa="menu-tile-profile"') && mm.includes('data-qa="menu-tile-feedback"'), 'Profile and Feedback tiles still there');
+    ok(mm.includes('data-qa="menu-tile-profile"'), 'Profile tile still there');
   } catch (e) { ok(false, 'AG5 crashed before it could assert: ' + e.message); }
 }
 
@@ -4615,53 +4615,34 @@ const stripCodeComments = (text) => text.split('\n').map((line) => {
 }
 
 {
-  section('LANG1 — the interface language can be changed without knowing English (user report B6, 06.09; re-shaped by OWNER 06.09)');
-  // Owner, looking at the iPad simulator: «эту полосу с выбором языка отсюда можно убрать». The wide
-  // row is gone — but DELETING it outright would put bug B6 straight back (the language
-  // used to be three taps deep inside Settings → Application, labelled in English, and
-  // users did not find it). So the invariant this drill defends is NOT «there is a row»;
-  // it is: on the Menu screen there is a VISIBLE language control, it shows the current
-  // language in words, and one tap opens the chooser without a trip into Settings.
-  const menu = HTML.slice(HTML.indexOf('function renderMobileMenu(){'), HTML.indexOf('function currentUiLangLabel('));
-  ok(/data-qa="mobile-menu-language"/.test(menu) === false && /'mobile-menu-language'/.test(menu),
-    'the Menu screen still carries the language control (now as a tile in the same icon grid as Profile and Feedback)');
-  ok(/mobileMenuIconTile\('mobile-menu-language','openMobileLanguageMenu\(\)'/.test(menu),
-    'and tapping it opens the chooser — not Settings, not a screen change');
-  ok(/currentUiLangLabel\(\)\)?\n?\s*\+'<\/div>'/.test(menu) || /currentUiLangLabel\(\)/.test(menu),
-    'the tile shows the CURRENT language as its own sub-label (the icon carries the state, the way the owner asked)');
-  ok(/function currentUiLangLabel\(\)\{[\s\S]{0,300}UI_LANG_OPTIONS\[i\]\[1\]/.test(HTML),
-    'that sub-label is the language written in its own language, taken from UI_LANG_OPTIONS');
-  ok(/<span class="fam-app-sublabel">/.test(HTML) && /\.fam-app-tile \.fam-app-sublabel \{[^}]*font-size:11px/.test(HTML),
-    'and it is really VISIBLE — a styled second line on the tile, not a long-press hint');
-  ok(/function openMobileLanguageMenu\(\)\{[\s\S]{0,900}UI_LANG_OPTIONS\.forEach/.test(HTML), 'the chooser lists every configured UI language');
-  ok(/function mobileSetUiLang\(lang\)\{[\s\S]{0,240}setUiLang\(lang\);[\s\S]{0,240}renderMobileShell\(\);/.test(HTML), 'choosing one applies it and repaints the shell immediately');
+  section('LANG1 — language and feedback live behind the header gear, not on the Menu grid (OWNER 24.11)');
+  // History: B6 (06.09) put a language tile on the Menu because the old Settings were
+  // labelled in English. Owner 24.11, looking at 0.4.199: «раз у нас есть колесико настроек —
+  // из меню можно убрать значок выбора языка и отзыв». The invariant now: neither tile is on
+  // the grid, and BOTH functions are reachable from the settings shell the gear opens —
+  // the language list (each language written in its own language) and a Feedback section.
+  const menu = HTML.slice(HTML.indexOf('function renderMobileMenu(){'), HTML.indexOf('var MOBILE_HOME_MODULE_L10N='));
+  ok(menu.length > 0 && !/mobile-menu-language|menu-tile-feedback/.test(menu), 'renderMobileMenu emits no Language and no Feedback tile');
+  ok(!/function openMobileLanguageMenu\(/.test(HTML) && !/function mobileSetUiLang\(/.test(HTML), 'the Menu-only language chooser is gone with its tile (no dead code)');
+  ok(/languages: UI_LANG_OPTIONS\.map\(/.test(HTML) && /setUiLang: function\(lang\)\{ return setUiLang\(lang\); \}/.test(HTML),
+    'the settings shell gets every configured UI language and the real setter');
   ok(/\['ru','Русский'\]/.test(HTML), 'Russian is one of them, written in Russian — the user has to recognise it without reading English');
-  // and the real render agrees with the bytes: the tile is on the screen, in the grid
+  const fb = HTML.slice(HTML.indexOf('function feedbackSection(){'), HTML.indexOf('function accountSection(){'));
+  ok(/id:'feedback'/.test(fb) && /mobileFeedbackActionsHtml\(\)/.test(fb), 'the settings shell has a Feedback section built from the same two actions as the feedback menu');
+  const fa = HTML.slice(HTML.indexOf('function mobileFeedbackActionsHtml(){'), HTML.indexOf('function openMobileFeedbackMenu(){'));
+  ok(/closeUnifiedSettings\(\);openFeedbackDialog\(/.test(fa) && /closeUnifiedSettings\(\);reportIssue\(\{kind:/.test(fa) && fa.length > 0, 'rate the app and report a problem — and both close the settings overlay first, so the dialog is not hidden under it');
+  ok(/appSpecificSections: \[[^\]]*feedbackSection\(\)[^\]]*\]/.test(HTML), 'and the section is really handed to the settings module');
   {
     const app = installNavHistory(bootMobile({ seed: {} }));
     await settleVm();
     app.sandbox.mobileShow('menu'); app.runTimers(0);
     const mm = mobileHtml(app.doc);
-    ok(mm.includes('data-qa="mobile-menu-language"'), 'LANG1 (render): the language tile really is on the Menu screen');
-    ok(/class="fam-app-sublabel">English</.test(mm), 'LANG1 (render): and it prints the current language — English on a default install');
-    // the chooser appends itself to <body>; the fake DOM has no insertAdjacentHTML,
-    // so capture what the real function emits instead of asserting on a stub screen
-    let dlg = '';
-    const prevInsert = app.doc.body.insertAdjacentHTML;
-    app.doc.body.insertAdjacentHTML = (pos, html) => { dlg += String(html); };
-    try { app.sandbox.openMobileLanguageMenu(); } finally { app.doc.body.insertAdjacentHTML = prevInsert; }
-    ok(/data-qa="mobile-language-menu"/.test(dlg), 'LANG1 (render): tapping it opens the chooser in place');
-    for (const loc of ['ru', 'en', 'tl', 'hi', 'id']) ok(dlg.includes('data-qa="mobile-language-option-' + loc + '"'), 'LANG1 (render): the chooser offers ' + loc);
-    ok(!/openSettings\(/.test(dlg), 'LANG1 (render): and it does NOT push the user into Settings to change the language');
+    ok(!mm.includes('data-qa="mobile-menu-language"') && !mm.includes('data-qa="menu-tile-feedback"'), 'LANG1 (render): neither tile is on the Menu screen');
   }
-  // negatives
-  const noTile = HTML.replace(/\+mobileMenuIconTile\('mobile-menu-language'[\s\S]*?currentUiLangLabel\(\)\)\n/, '');
-  ok(noTile !== HTML, 'the negative mutation really removed the tile');
-  ok(!/mobile-menu-language/.test(noTile.slice(noTile.indexOf('function renderMobileMenu(){'), noTile.indexOf('function currentUiLangLabel('))),
-    'NEGATIVE: removing the language control from the Menu screen turns this drill red (that is bug B6 coming back)');
-  const noSub = HTML.replace("          currentUiLangLabel())", '          )');
-  ok(!/currentUiLangLabel\(\)/.test(noSub.slice(noSub.indexOf('function renderMobileMenu(){'), noSub.indexOf('function currentUiLangLabel('))),
-    'NEGATIVE: dropping the current-language sub-label turns it red too — an icon that does not show its state is not a fix');
+  // negative
+  const noSection = HTML.replace(', feedbackSection() ],', ' ],');
+  ok(noSection !== HTML && !/appSpecificSections: \[[^\]]*feedbackSection\(\)/.test(noSection),
+    'NEGATIVE: dropping the Feedback section from the settings shell turns this drill red — the tile is gone, so that would leave no way to send feedback');
 }
 
 
@@ -7060,8 +7041,8 @@ async function s1Boot(map, consent, opts) {
     'HA7: and the assistant view still manages the bottom rail exactly as before');
   nat.sandbox.mobileNavBack(); nat.runTimers(0);
   ok(nat.sandbox.mobileView === 'home', 'HA7: ‹ from the assistant still returns to the home grid');
-  ok((natHome.match(/fam-app-tile/g) || []).length === 14,
-    'HA8: hiding changed no count — the menu grid still renders 14 tiles (11 modules + Profile + Feedback + Language)');
+  ok((natHome.match(/fam-app-tile/g) || []).length === 12,
+    'HA8: hiding changed no count — the menu grid still renders 12 tiles (11 modules + Profile)');
   ok(/https:\/\/assistant\.skipi\.app\/register/.test(HTML),
     'HA8: the SaaS side is untouched — the register route still points at assistant.skipi.app');
   } catch (e) { ok(false, 'hide-assistant proof crashed before it could assert: ' + e.message); }

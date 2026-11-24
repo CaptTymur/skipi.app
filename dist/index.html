@@ -7374,7 +7374,7 @@ function mobileHomeActionHtml(icon,title,sub,onclick){
     return '<button class="mobile-primary-action" type="button" onclick="'+onclick+'"><span class="mobile-action-icon">'+icon+'</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(title)+'</span><span class="mobile-action-sub">'+mobileEsc(sub)+'</span></span></button>';
 }
 function mobileMenuIconTile(qa,onclick,label,hint,svg,sub){
-    // The three menu-only entries (Profile, Feedback, Language) share the module-grid
+    // The menu-only entry (Profile) shares the module-grid
     // icon shape so the ☰ screen reads as ONE grid of app icons (owner 06.09).
     // `sub` is optional: a tile that carries state shows it in words under the label.
     return '<button class="fam-app-tile" type="button" data-qa="'+qa+'" onclick="'+onclick+'"'
@@ -7422,10 +7422,10 @@ function renderMobileHome(){
     mobileHomeLocalizeModules();
 }
 // Menu screen (DIRECTIVE 01.09, sketch 2): same header; the module grid verbatim from
-// #mobile-home-modules-tpl (Documents · Experience · CV first), plus Profile, Feedback and
-// Language tiles — the first two have no other entry point on the native build (rail meter,
-// header «!» are hidden), and Language replaced the wide row owner asked to remove on 06.09
-// while staying on this screen and one tap away (bug B6). No ☰ here.
+// #mobile-home-modules-tpl (Documents · Experience · CV first), plus the Profile tile, which
+// has no other entry point on the native build (the rail meter is hidden). Language and
+// Feedback live behind the header gear (owner 24.11): Settings → Application → Language,
+// and the «Feedback» section of the settings shell. No ☰ here.
 function renderMobileMenu(){
     var ru=getUiLang()==='ru';
     var tpl=document.getElementById('mobile-home-modules-tpl');
@@ -7437,47 +7437,9 @@ function renderMobileMenu(){
       +mobileMenuIconTile('menu-tile-profile',"mobileShow('profile')",ru?'Профиль':'Profile',
           (ru?'Заполненность профиля и документов':'Profile completeness and details')+' — '+pct+'%',
           '<circle cx="12" cy="8.5" r="3.6"/><path d="M4.5 20a7.5 7.5 0 0115 0"/>')
-      +mobileMenuIconTile('menu-tile-feedback','openMobileFeedbackMenu()',ru?'Отзыв':'Feedback',
-          ru?'Оценить или сообщить о проблеме':'Rate the app or report a problem',
-          '<path d="M12 3.6l2.6 5.3 5.8.9-4.2 4.1 1 5.7L12 16.9l-5.2 2.7 1-5.7-4.2-4.1 5.8-.9z"/>')
-      +mobileMenuIconTile('mobile-menu-language','openMobileLanguageMenu()',ru?'Язык':'Language',
-          ru?'Язык интерфейса приложения':'Interface language of the app',
-          '<circle cx="12" cy="12" r="8.4"/><path d="M3.6 12h16.8"/><path d="M12 3.6c2.2 2.4 3.4 5.3 3.4 8.4s-1.2 6-3.4 8.4c-2.2-2.4-3.4-5.3-3.4-8.4S9.8 6 12 3.6z"/>',
-          currentUiLangLabel())
       +'</div>';
     mobileMainHtml(h);
     mobileHomeLocalizeModules();
-}
-// The current language written in its OWN language — the Menu icon shows it, so the
-// user recognises the state without reading English (user report B6, 06.09).
-function currentUiLangLabel(){
-    var cur=getUiLang();
-    for(var i=0;i<UI_LANG_OPTIONS.length;i++){ if(UI_LANG_OPTIONS[i][0]===cur)return UI_LANG_OPTIONS[i][1]; }
-    return cur;
-}
-function closeMobileLanguageMenu(){
-    var el=document.getElementById('mobile-language-menu');
-    if(el)el.remove();
-}
-function openMobileLanguageMenu(){
-    closeMobileLanguageMenu();
-    var ru=getUiLang()==='ru', cur=getUiLang();
-    var h='<div id="mobile-language-menu" class="modal-overlay open" data-qa="mobile-language-menu" onclick="if(event.target===this)closeMobileLanguageMenu()">';
-    h+='<div class="modal-panel" style="max-width:420px;">';
-    h+='<h3>'+mobileEsc(ru?'Язык':'Language')+'</h3>';
-    UI_LANG_OPTIONS.forEach(function(o){
-        h+='<button class="mobile-primary-action" type="button" data-qa="mobile-language-option-'+escAttr(o[0])+'" onclick="mobileSetUiLang(\''+escAttr(o[0])+'\')">'
-          +'<span class="mobile-action-icon">'+(cur===o[0]?'✓':'·')+'</span>'
-          +'<span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(o[1])+'</span></span></button>';
-    });
-    h+='<div class="skipi-feedback-actions"><button class="btn btn-outline btn-sm" onclick="closeMobileLanguageMenu()">'+mobileEsc(ru?'Закрыть':'Close')+'</button></div>';
-    h+='</div></div>';
-    document.body.insertAdjacentHTML('beforeend',h);
-}
-function mobileSetUiLang(lang){
-    setUiLang(lang);
-    closeMobileLanguageMenu();
-    try{ renderMobileShell(); }catch(e){}
 }
 var MOBILE_HOME_MODULE_L10N={
     docs:['Документы','Сертификаты и личные файлы'],
@@ -11177,14 +11139,22 @@ function closeMobileFeedbackMenu(){
     if(el)el.remove();
 }
 
+// The two feedback actions — ONE markup source for the feedback menu and for the
+// «Feedback» section of the settings shell (owner 24.11: the Menu tile is gone). Both
+// overlays are closed first: the dialogs append to <body> and would sit under them.
+function mobileFeedbackActionsHtml(){
+    var h='';
+    h+='<button class="mobile-primary-action" type="button" onclick="closeMobileFeedbackMenu();if(window.closeUnifiedSettings)closeUnifiedSettings();openFeedbackDialog(\'mobile-top-feedback\')"><span class="mobile-action-icon">★</span><span class="mobile-action-copy"><span class="mobile-action-title">'+feedbackEsc(tr('feedback.menu_rate_title'))+'</span><span class="mobile-action-sub">'+feedbackEsc(tr('feedback.menu_rate_desc'))+'</span></span></button>';
+    h+='<button class="mobile-primary-action" type="button" onclick="closeMobileFeedbackMenu();if(window.closeUnifiedSettings)closeUnifiedSettings();reportIssue({kind:\'bug report\',askKind:false,context:\'mobile-top-problem\'})"><span class="mobile-action-icon">!</span><span class="mobile-action-copy"><span class="mobile-action-title">'+feedbackEsc(tr('feedback.menu_problem_title'))+'</span><span class="mobile-action-sub">'+feedbackEsc(tr('feedback.menu_problem_desc'))+'</span></span></button>';
+    return h;
+}
 function openMobileFeedbackMenu(){
     closeMobileFeedbackMenu();
     var h='<div id="mobile-feedback-menu" class="modal-overlay open" onclick="if(event.target===this)closeMobileFeedbackMenu()">';
     h+='<div class="modal-panel" style="max-width:420px;">';
     h+='<h3>'+feedbackEsc(tr('feedback.menu_title'))+'</h3>';
     h+='<div class="skipi-feedback-note">'+feedbackEsc(tr('feedback.menu_desc'))+'</div>';
-    h+='<button class="mobile-primary-action" type="button" onclick="closeMobileFeedbackMenu();openFeedbackDialog(\'mobile-top-feedback\')"><span class="mobile-action-icon">★</span><span class="mobile-action-copy"><span class="mobile-action-title">'+feedbackEsc(tr('feedback.menu_rate_title'))+'</span><span class="mobile-action-sub">'+feedbackEsc(tr('feedback.menu_rate_desc'))+'</span></span></button>';
-    h+='<button class="mobile-primary-action" type="button" onclick="closeMobileFeedbackMenu();reportIssue({kind:\'bug report\',askKind:false,context:\'mobile-top-problem\'})"><span class="mobile-action-icon">!</span><span class="mobile-action-copy"><span class="mobile-action-title">'+feedbackEsc(tr('feedback.menu_problem_title'))+'</span><span class="mobile-action-sub">'+feedbackEsc(tr('feedback.menu_problem_desc'))+'</span></span></button>';
+    h+=mobileFeedbackActionsHtml();
     h+='<div class="skipi-feedback-actions"><button class="btn btn-outline btn-sm" onclick="closeMobileFeedbackMenu()">'+feedbackEsc(tr('feedback.later'))+'</button></div>';
     h+='</div></div>';
     document.body.insertAdjacentHTML('beforeend',h);
@@ -20080,6 +20050,13 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
             return accountSyncSectionHtml();
         }};
     }
+    // «Feedback» — rate the app / report a problem. On the native build the header «!»
+    // is hidden and the Menu tile is gone (owner 24.11), so this section is the entry.
+    function feedbackSection(){
+        return {id:'feedback',order:900,label:getUiLang()==='ru'?'Отзыв':'Feedback',icon:'★',renderHtml:function(ctx){
+            return '<div class="section-desc" style="margin-bottom:12px;">'+ctx.escapeHtml(tr('feedback.menu_desc'))+'</div>'+mobileFeedbackActionsHtml();
+        }};
+    }
     function accountSection(){
         return {
             // Account must come FIRST (owner 11.11). Two ways exist in 0.3.3:
@@ -20152,7 +20129,7 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
             captions: { enabled: false },
             profile: { enabled: false },
             storage: { enabled: false },
-            appSpecificSections: [ seafarerSection(), syncSection(), accountSection() ],
+            appSpecificSections: [ seafarerSection(), syncSection(), accountSection(), feedbackSection() ],
 
             onError: function(err, context){ try{ logError('settings:'+context,err); }catch(e){} }
         };
