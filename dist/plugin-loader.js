@@ -91,9 +91,29 @@
     function checkPolicy(entry) {
       var perms = entry.permissions || [];
       for (var i = 0; i < perms.length; i++) if (policy.maxPermissions.indexOf(perms[i]) < 0) return { ok: false, reason: 'permission not allowed: ' + perms[i] };
-      var caps = entry.capabilities || {}, req = policy.requireCapabilities;
+      var caps = entry.capabilities || {}, req = policy.requireCapabilities || {};
       for (var k in req) if (Object.prototype.hasOwnProperty.call(req, k)) {
         if (caps[k] !== req[k]) return { ok: false, reason: 'capability ' + k + '=' + JSON.stringify(caps[k]) + ' violates policy (' + JSON.stringify(req[k]) + ')' };
+      }
+      return checkNetworkPolicy(perms, caps.network);
+    }
+    // Network is all-or-nothing and explicit: either no `network` permission and
+    // capabilities.network 'none'/absent, or the permission PLUS an allowlist of https
+    // prefixes, every one on an origin the host policy names. Anything else is rejected,
+    // so a plugin can never hold the permission without a signed, bounded list of addresses.
+    function checkNetworkPolicy(perms, net) {
+      var wants = perms.indexOf('network') >= 0;
+      var none = (net === undefined || net === null || net === 'none');
+      if (!wants) return none ? { ok: true } : { ok: false, reason: 'capability network declared without the network permission' };
+      if (none) return { ok: false, reason: 'network permission without a network allowlist' };
+      var origins = policy.networkOrigins;
+      if (!Array.isArray(origins) || !origins.length) return { ok: false, reason: 'network is not allowed by host policy' };
+      var allow = net && net.allow;
+      if (typeof net !== 'object' || !Array.isArray(allow) || !allow.length || allow.length > 8) return { ok: false, reason: 'network allowlist is missing or malformed' };
+      for (var i = 0; i < allow.length; i++) {
+        var u; try { u = new URL(String(allow[i])); } catch (e) { return { ok: false, reason: 'network allowlist entry is not a URL' }; }
+        if (typeof allow[i] !== 'string' || u.protocol !== 'https:' || u.username || u.password || u.search || u.hash) return { ok: false, reason: 'network allowlist entry must be a plain https prefix' };
+        if (origins.indexOf(u.origin) < 0) return { ok: false, reason: 'network origin not allowed: ' + u.origin };
       }
       return { ok: true };
     }

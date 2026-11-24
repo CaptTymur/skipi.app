@@ -63,15 +63,41 @@
       var r = remoteRegistryAll()[id];
       return r && r.installed ? r : null;
     }
+    // Text of a catalog field in the UI language. A field is either a plain string or
+    // a {en, ru, …} map; English is the fallback.
+    function entryText(v){
+      if(v == null) return '';
+      if(typeof v === 'string') return v;
+      if(typeof v === 'object'){ var l = getUiLang(); return String(v[l] || v.en || v.ru || ''); }
+      return String(v);
+    }
+    // A catalog icon is one or two glyphs (emoji). Anything else — markup, long text — is replaced.
+    function entryIcon(v, fallback){
+      var t = typeof v === 'string' ? v : '';
+      return (t && t.length <= 8 && !/[<>&"'\s]/.test(t)) ? t : (fallback || '▦');
+    }
+    // Hosts a plugin may reach, from the signed entry's network allowlist ("api.skipi.app").
+    function remoteNetworkHosts(entry){
+      var allow = entry && entry.capabilities && entry.capabilities.network && entry.capabilities.network.allow;
+      var out = [];
+      (Array.isArray(allow) ? allow : []).forEach(function(u){
+        var m = /^https:\/\/([^\/?#]+)/.exec(String(u)); if(m && out.indexOf(m[1]) < 0) out.push(m[1]);
+      });
+      return out;
+    }
     function remotePermissionsFor(entry){
       var perms = (entry && entry.permissions) || [];
+      var hosts = perms.indexOf('network') >= 0 ? remoteNetworkHosts(entry) : [];
       return {
-        server_access:false,
+        server_access:hosts.length > 0,
+        network_hosts:hosts,
+        file_save:perms.indexOf('file_save') >= 0,
+        file_pick:perms.indexOf('file_pick') >= 0,
         documents_access:false,
         account_required:false,
         analytics:false,
         audio_alert:perms.indexOf('audio_alert') >= 0,
-        local_only:true
+        local_only:hosts.length === 0
       };
     }
     function remoteInstalledEntryFor(id){
@@ -83,10 +109,10 @@
         remote:true,
         firstParty:true,
         category:entry.category || bundled.category || 'utils',
-        icon:entry.icon || bundled.icon || '▦',
-        name:rec.name || rec.title || entry.name || entry.title || id,
-        short:bundled.id ? 'Updated first-party plugin · works offline after install' : 'Installed remote first-party plugin · works offline after install',
-        description:bundled.description || 'Signed first-party plugin installed from the production catalog and cached locally for offline use.',
+        icon:entryIcon(entry.icon, bundled.icon),
+        name:entryText(entry.name || entry.title) || rec.name || rec.title || id,
+        short:entryText(entry.short) || (bundled.id ? 'Updated first-party plugin · works offline after install' : 'Installed remote first-party plugin · works offline after install'),
+        description:entryText(entry.description) || bundled.description || 'Signed first-party plugin installed from the production catalog and cached locally for offline use.',
         safety_note:bundled.safety_note || 'Runs inside Skipi sandbox. Catalog signature, policy, compatibility and pack checksum are verified before install and before offline launch.',
         permissions:remotePermissionsFor(entry),
         enabled:rec.enabled !== false,
@@ -118,7 +144,8 @@
       return remote;
     }
     function pluginById(id){
-      return remoteOverrideEntryFor(id) || bundledPluginById(id) || remoteInstalledEntryFor(id) || null;
+      return remoteOverrideEntryFor(id) || bundledPluginById(id) || remoteInstalledEntryFor(id)
+        || (remoteStagingOn() && remoteCatalogEntry(id) ? remoteEntryFor(id) : null);
     }
     function pluginCatLabel(key){
       var c = pluginCategories().find(function(x){ return x.key === key; });
@@ -198,16 +225,34 @@
       if(Object.prototype.hasOwnProperty.call(deps, 'featureRemoteDelivery')) return !!deps.featureRemoteDelivery;
       try{ return !!window.FEATURE_REMOTE_PLUGIN_DELIVERY; }catch(e){ return false; }
     }
+    // remoteSlugs:'*' (v1.1) — the SIGNED CATALOG decides which plugins exist, so a new
+    // plugin needs no home release. A list keeps the old behaviour (only those slugs).
+    function remoteCatalogDriven(){
+      var cfg = remoteConfig();
+      return !!cfg && cfg.remoteSlugs === '*';
+    }
+    function remoteKnownSlugs(){
+      var cfg = remoteConfig();
+      if(!remoteCatalogDriven()) return ((cfg && cfg.remoteSlugs) || []).slice();
+      var out = [];
+      (__remoteCatalogCache || []).forEach(function(e){ if(e && e.slug && out.indexOf(e.slug) < 0) out.push(e.slug); });
+      Object.keys(remoteRegistryAll()).forEach(function(id){ if(remoteInstalledMeta(id) && out.indexOf(id) < 0) out.push(id); });
+      return out;
+    }
     function remoteStagingSlugs(){
       if(!remoteStagingOn()) return [];
-      var cfg = remoteConfig(), slugs = cfg.remoteSlugs || [];
-      return slugs.filter(function(s){
+      return remoteKnownSlugs().filter(function(s){
         return !bundledPluginById(s) || remoteUpdateAvailable(s);
       });
     }
     function remoteConfiguredSlug(slug){
-      var cfg = remoteConfig();
-      return ((cfg && cfg.remoteSlugs) || []).indexOf(slug) >= 0;
+      return remoteKnownSlugs().indexOf(slug) >= 0;
+    }
+    // Catalog plugins the user does not have yet (not bundled, not installed) — the "Available" shelf.
+    function remoteAvailableList(){
+      if(!remoteStagingOn()) return [];
+      return remoteKnownSlugs().filter(function(s){ return !bundledPluginById(s) && !remoteInstalledMeta(s) && remoteCatalogEntry(s); })
+        .map(function(s){ return remoteEntryFor(s); });
     }
     function remoteCatalogName(slug){
       if(__remoteCatalogCache){
@@ -279,11 +324,11 @@
         id:slug,
         remote:true,
         firstParty:true,
-        category:'utils',
-        icon:'▦',
-        name:remoteCatalogName(slug) || slug,
-        short:'Signed first-party plugin · install once, use offline',
-        description:'Signed first-party plugin from the production catalog. Install caches a verified pack for offline use.',
+        category:entry.category || 'utils',
+        icon:entryIcon(entry.icon),
+        name:entryText(entry.name || entry.title) || slug,
+        short:entryText(entry.short) || 'Signed first-party plugin · install once, use offline',
+        description:entryText(entry.description) || 'Signed first-party plugin from the production catalog. Install caches a verified pack for offline use.',
         safety_note:'Runs inside Skipi sandbox. Signature, policy, compatibility and checksum are verified before install.',
         permissions:remotePermissionsFor(entry),
         version:entry.version,
@@ -402,6 +447,12 @@
       else showApps();
     }
     function pluginSelect(id){ pluginHostState.selectedId = id; pluginHostState.openId = null; pluginHostState.surface = 'manage'; pluginRerender(); }
+    // Detail page opened from the launcher's "Available" shelf: Back returns to the launcher.
+    function pluginPreview(id){ pluginHostState.selectedId = id; pluginHostState.openId = null; pluginHostState.surface = 'launcher'; pluginRerender(); }
+    function pluginDetailBackLabel(){
+      var ru = getUiLang() === 'ru';
+      return pluginHostState.surface === 'launcher' ? 'Apps' : (ru ? 'Управление плагинами' : 'Plugin management');
+    }
     function pluginBack(){
       if(pluginHostState.openId){ pluginClose(); }
       else { pluginHostState.selectedId = null; pluginRerender(); }
@@ -433,7 +484,7 @@
       pluginHostState.openId = null;
       var from = pluginHostState.openedFrom; pluginHostState.openedFrom = null;
       if(from === 'launcher'){ pluginHostState.surface = 'launcher'; pluginHostState.selectedId = null; }
-      else if(from === 'detail'){ pluginHostState.surface = 'manage'; }
+      else if(from === 'detail'){ /* back to the detail page; its surface (launcher or manage) is kept */ }
       else if(from === 'manage'){ pluginHostState.surface = 'manage'; pluginHostState.selectedId = null; }
       pluginRerender();
     }
@@ -445,6 +496,9 @@
         var used = !!r[1];
         h += '<div class="apps-perm-row '+(used?'used':'clear')+'"><span class="apps-perm-dot">'+(used?'●':'✓')+'</span><span>'+(used?esc(r[0])+' used':'No '+esc(String(r[0]).toLowerCase()))+'</span></div>';
       });
+      if(perm.network_hosts && perm.network_hosts.length) h += '<div class="apps-perm-row used" data-qa="plugin-perm-network"><span class="apps-perm-dot">●</span><span>'+esc((getUiLang()==='ru'?'Сеть — только: ':'Network — only: ')+perm.network_hosts.join(', '))+'</span></div>';
+      if(perm.file_save) h += '<div class="apps-perm-row used"><span class="apps-perm-dot">●</span><span>'+esc(getUiLang()==='ru'?'Сохраняет файлы — куда вы укажете':'Saves files — where you choose')+'</span></div>';
+      if(perm.file_pick) h += '<div class="apps-perm-row used"><span class="apps-perm-dot">●</span><span>'+esc(getUiLang()==='ru'?'Открывает файлы — только выбранные вами':'Opens files — only the ones you pick')+'</span></div>';
       if(perm.audio_alert) h += '<div class="apps-perm-row used"><span class="apps-perm-dot">♪</span><span>Plays audio alerts</span></div>';
       if(perm.local_only) h += '<div class="apps-perm-row clear"><span class="apps-perm-dot">✓</span><span>Runs locally inside Skipi — no internet, no external app</span></div>';
       h += '</div>';
@@ -477,7 +531,6 @@
       var seen = {}, items = [];
       function push(p){ if(!p || !p.id || seen[p.id]) return; seen[p.id] = true; items.push(p); }
       plugins.forEach(function(p){ if(!p.comingSoon && pluginStatus(p.id) === 'installed') push(pluginById(p.id) || p); });
-      if(typeof shouldUseMobileShell === 'function' && shouldUseMobileShell()) return items;
       Object.keys(remoteRegistryAll()).forEach(function(id){
         if(bundledPluginById(id)) return;
         if(pluginStatus(id) === 'installed'){ var p = remoteInstalledEntryFor(id); if(p) push(p); }
@@ -506,24 +559,48 @@
             : pluginReadyChip())
         + '</button></div>';
     }
+    function pluginAvailableTileHtml(p){
+      var ru = getUiLang() === 'ru';
+      return '<div class="apps-icon-tile" data-qa="plugin-available-'+escAttr(p.id)+'">'
+        + '<button type="button" data-qa="plugin-preview-'+escAttr(p.id)+'" onclick="pluginPreview(\''+jsString(p.id)+'\')" title="'+escAttr(pluginNameMetaLine(p))+'">'
+        + '<span class="apps-icon-tile-icon">'+esc(p.icon||'▢')+'</span>'
+        + '<span class="apps-icon-tile-name">'+esc(p.name)+'</span>'
+        + (pluginMetaLine(p)?'<span class="apps-icon-tile-meta">'+esc(pluginMetaLine(p))+'</span>':'')
+        + '<span class="apps-badge live">'+esc(ru?'Установить':'Install')+'</span>'
+        + '</button></div>';
+    }
+    function pluginLauncherMatch(p, q){
+      return !q || ((p.name||'')+' '+(p.short||'')).toLowerCase().indexOf(q) >= 0;
+    }
     function pluginLauncherResultsHtml(){
       var ru = getUiLang() === 'ru';
-      var installed = pluginInstalledList();
-      if(!installed.length){
+      var q = (pluginHostState.search || '').trim().toLowerCase();
+      var installedAll = pluginInstalledList();
+      var availableAll = remoteAvailableList();
+      var installed = installedAll.filter(function(p){ return pluginLauncherMatch(p, q); });
+      var available = availableAll.filter(function(p){ return pluginLauncherMatch(p, q); });
+      if(!installedAll.length && !availableAll.length){
         return '<div class="apps-empty fam-state-panel" data-qa="plugin-empty-state" data-qa2="state-empty-panel">'
-          + '<div class="apps-empty-note fam-state-copy">'+esc(ru?'Установленных плагинов пока нет. Откройте настройки, чтобы проверить доступные модули.':'No installed plugins yet. Open plugin settings to see available modules.')+'</div>'
+          + '<div class="apps-empty-note fam-state-copy">'+esc(ru?'Установленных плагинов пока нет. Откройте настройки, чтобы проверить доступные модули.':'No installed plugins yet. Open settings to check available modules.')+'</div>'
           + '<button class="fam-primary-action" type="button" onclick="pluginOpenManage()">'+esc(ru?'Настройки плагинов':'Plugin settings')+'</button>'
           + '</div>';
       }
-      var items = pluginLauncherFiltered();
-      if(!items.length){
+      if(!installed.length && !available.length){
         return '<div class="apps-empty fam-state-panel" data-qa="plugin-empty-state" data-context="search" data-qa2="state-empty-panel">'
-          + '<div class="apps-empty-note fam-state-copy">'+esc(ru?'Ничего не найдено среди установленных плагинов.':'Nothing found among installed plugins.')+'</div>'
+          + '<div class="apps-empty-note fam-state-copy">'+esc(ru?'Ничего не найдено.':'Nothing found.')+'</div>'
           + '</div>';
       }
-      var h = '<div class="apps-cat-title">'+esc(ru?'Установленные плагины':'Installed plugins')+'</div><div class="apps-launcher-grid">';
-      items.forEach(function(p){ h += pluginIconTileHtml(p); });
-      h += '</div>';
+      var h = '';
+      if(installed.length){
+        h += '<div class="apps-cat-title" data-qa="apps-shelf-installed">'+esc(ru?'Установленные плагины':'Installed plugins')+'</div><div class="apps-launcher-grid">';
+        installed.forEach(function(p){ h += pluginIconTileHtml(p); });
+        h += '</div>';
+      }
+      if(available.length){
+        h += '<div class="apps-cat-title" data-qa="apps-shelf-available">'+esc(ru?'Доступно для установки':'Available to install')+'</div><div class="apps-launcher-grid">';
+        available.forEach(function(p){ h += pluginAvailableTileHtml(p); });
+        h += '</div>';
+      }
       return h;
     }
     function pluginLauncherHtml(){
@@ -538,7 +615,7 @@
       h += '<div class="apps-search"><label class="apps-search-label" for="apps-search-field">'+esc(ru?'Найти плагин':'Find a plugin')+'</label>'
         + '<input id="apps-search-field" type="text" data-qa="apps-search-input" value="'+escAttr(pluginHostState.search||'')+'" oninput="pluginLauncherSearch(this.value)" placeholder="'+escAttr(ru?'Название плагина':'Plugin name')+'"></div>';
       h += '<div id="apps-launcher-results">'+pluginLauncherResultsHtml()+'</div>';
-      h += '<div class="apps-launcher-foot">'+esc(ru?'Только установленные плагины. Управление, политики и обновления — через ⚙.':'Installed plugins only. Management, policies and updates — via ⚙.')+'</div>';
+      h += '<div class="apps-launcher-foot">'+esc(ru?'Установленные и доступные плагины. Отключение, удаление и обновления — через ⚙.':'Installed and available plugins. Disable, remove and update — via ⚙.')+'</div>';
       h += '</div>';
       return h;
     }
@@ -609,7 +686,7 @@
         + ' <button class="btn btn-outline btn-sm" type="button" data-qa="remote-plugin-uninstall-'+escAttr(slug)+'" onclick="pluginUninstall(\''+jsString(slug)+'\')">Remove</button>';
       else actions = '<button class="btn btn-accent btn-sm" type="button" data-qa="remote-plugin-install-'+escAttr(slug)+'" onclick="pluginInstall(\''+jsString(slug)+'\')">Install</button>';
       return '<div class="apps-tile" data-qa="remote-plugin-tile-'+escAttr(slug)+'">'
-        + '<span class="apps-tile-icon">'+e.icon+'</span>'
+        + '<span class="apps-tile-icon">'+esc(e.icon)+'</span>'
         + '<span class="apps-tile-body"><span class="apps-tile-name">'+esc(e.name)+'</span>'
         + '<span class="apps-tile-sub">'+esc(pluginSubLine(e))+'</span><span class="apps-badge live">'+(st==='available'?'Remote · verified':(st==='disabled'?'Installed · disabled':'Installed · offline-ready'))+'</span>'
         + '<span class="apps-actions" style="margin-top:8px;">'+actions+'</span></span></div>';
@@ -643,7 +720,7 @@
       if(!p) return pluginListHtml();
       var st = pluginStatus(p.id);
       var h = '<div class="apps-screen apps-detail">';
-      h += '<button class="apps-back" type="button" onclick="pluginBack()">← '+esc(getUiLang()==='ru'?'Управление плагинами':'Plugin management')+'</button>';
+      h += '<button class="apps-back" type="button" onclick="pluginBack()">← '+esc(pluginDetailBackLabel())+'</button>';
       h += '<div class="apps-detail-head"><span class="apps-tile-icon big">'+(p.icon||'▢')+'</span>'
         + '<div><div class="apps-detail-name">'+esc(p.name)+'</div>'
         + '<div class="apps-detail-cat">'+esc([pluginCatLabel(p.category)].concat(pluginMetaParts(p)).join(' · '))+(p.comingSoon?' · Coming soon':(p.firstParty?' · First-party plugin':''))+'</div></div></div>';
@@ -720,7 +797,7 @@
       h += '<div class="apps-search"><label class="apps-search-label" for="apps-search-field">'+esc(ru?'Найти плагин':'Find a plugin')+'</label>'
         + '<input id="apps-search-field" type="text" data-qa="apps-search-input" value="'+escAttr(pluginHostState.search||'')+'" oninput="pluginLauncherSearch(this.value)" placeholder="'+escAttr(ru?'Название плагина':'Plugin name')+'"></div>';
       h += '<div id="apps-launcher-results">'+pluginLauncherResultsHtml()+'</div>';
-      h += '<div class="apps-launcher-foot">'+esc(ru?'Только установленные плагины. Управление, политики и обновления — через ⚙.':'Installed plugins only. Management, policies and updates — via ⚙.')+'</div>';
+      h += '<div class="apps-launcher-foot">'+esc(ru?'Установленные и доступные плагины. Отключение, удаление и обновления — через ⚙.':'Installed and available plugins. Disable, remove and update — via ⚙.')+'</div>';
       h += '</div>';
       mobileMainHtml(h);
       remoteRefreshCatalogIfStale(function(){
@@ -748,6 +825,19 @@
             + '<span class="mobile-action-sub">'+esc(pluginSubLine(p))+'</span></span></button>';
         });
       });
+      var remote = remoteStagingSlugs().filter(function(sl){ return !bundledPluginById(sl); });
+      if(remote.length){
+        h += '<div class="mobile-section-title" data-qa="mobile-remote-plugins">'+esc(ru?'Из каталога Skipi':'From the Skipi catalog')+'</div>';
+        remote.forEach(function(sl){
+          var e = remoteEntryFor(sl), st = pluginStatus(sl);
+          var tag = remoteUpdateAvailable(sl) ? ' <span class="apps-badge live">Update available</span>'
+            : (st === 'installed' ? ' <span class="apps-badge live">installed</span>' : (st === 'disabled' ? ' <span class="apps-badge soon">disabled</span>' : ' <span class="apps-badge live">'+esc(ru?'доступен':'available')+'</span>'));
+          h += '<button class="mobile-primary-action" type="button" data-qa="plugin-settings-'+escAttr(sl)+'" onclick="pluginSelect(\''+jsString(sl)+'\')">'
+            + '<span class="mobile-action-icon">'+esc(e.icon||'▢')+'</span>'
+            + '<span class="mobile-action-copy"><span class="mobile-action-title">'+esc(e.name)+tag+'</span>'
+            + '<span class="mobile-action-sub">'+esc(pluginSubLine(e))+'</span></span></button>';
+        });
+      }
       mobileMainHtml(h);
       remoteRefreshCatalogIfStale(function(){
         if(pluginHostState.openId || pluginHostState.selectedId) return;
@@ -767,7 +857,7 @@
     function pluginMobileDetail(p){
       if(!p){ pluginHostState.selectedId = null; return renderMobileApps(); }
       var st = pluginStatus(p.id);
-      var h = '<button class="mobile-home-btn" type="button" onclick="pluginBack()"><span class="mobile-home-btn-icon">←</span><span>'+esc(getUiLang()==='ru'?'Управление плагинами':'Plugin management')+'</span></button>';
+      var h = '<button class="mobile-home-btn" type="button" onclick="pluginBack()"><span class="mobile-home-btn-icon">←</span><span>'+esc(pluginDetailBackLabel())+'</span></button>';
       h += '<div class="mobile-primary-action" style="cursor:default;"><span class="mobile-action-icon">'+(p.icon||'▢')+'</span>'
         + '<span class="mobile-action-copy"><span class="mobile-action-title">'+esc(p.name)+'</span>'
         + '<span class="mobile-action-sub">'+esc([pluginCatLabel(p.category)].concat(pluginMetaParts(p)).join(' · '))+(p.comingSoon?' · Coming soon':(p.firstParty?' · First-party plugin':''))+'</span></span></div>';
@@ -830,6 +920,9 @@
       pluginBack:pluginBack,
       pluginBackToLauncher:pluginBackToLauncher,
       pluginSelect:pluginSelect,
+      pluginPreview:pluginPreview,
+      remoteAvailableList:remoteAvailableList,
+      remoteCatalogDriven:remoteCatalogDriven,
       pluginRerender:pluginRerender,
       bundledPluginById:bundledPluginById,
       remoteRegistryAll:remoteRegistryAll,

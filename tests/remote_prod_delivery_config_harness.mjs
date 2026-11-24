@@ -13,7 +13,10 @@ const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 const CONFIG_FILE = `${ROOT}/dist/plugin-host-config.js`;
 const BOOT_FILE = `${ROOT}/dist/plugin-remote-boot.js`;
 const CATALOG_URL = 'https://api.skipi.app/seafarer/releases/plugins/v1/catalog.json';
-const EXPECTED_SLUGS = ['bnwas-time-anchor', 'navigation-calculators', 'ecdis-position-reminder'];
+// The three plugins that also ship BUNDLED. Since 24.11.2026 the route set is the signed
+// catalog itself (remoteSlugs '*'), so the live catalog may grow; these three must stay in it.
+const BUNDLED_SLUGS = ['bnwas-time-anchor', 'navigation-calculators', 'ecdis-position-reminder'];
+const LOADER_FILE = `${ROOT}/dist/plugin-loader.js`;
 const EXPECTED_VERSION = '0.4.165';
 const EXPECTED_FINGERPRINT = '28e1987f3a533e56f431a4777ac5da9e5797770c552786df3147264d6a3df5d4';
 
@@ -213,6 +216,105 @@ async function testCentralCatalogKillSwitchFallsBackBundled() {
   ok(runtimeOpens === 0, 'and still never opens the remote runtime');
 }
 
+// The REAL loader, a throwaway signing key, a fake catalog: what the policy step lets through.
+async function testNetworkPolicy(cfg) {
+  const { subtle } = crypto.webcrypto;
+  const kp = await subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+  const pub = await subtle.exportKey('jwk', kp.publicKey); pub.kid = 'unit-key';
+  const ctx = { window: {}, TextEncoder, URL, atob, crypto: crypto.webcrypto, console };
+  ctx.window.window = ctx.window;
+  vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(LOADER_FILE, 'utf8'), ctx, { filename: LOADER_FILE });
+  const L = ctx.window.SkipiPluginLoader;
+  const sha = (str) => crypto.createHash('sha256').update(str).digest('hex');
+  async function verdict(permissions, capabilities, policy) {
+    const pack = JSON.stringify({ id: 'app.x', slug: 'x', version: '1.0.0', files: { 'index.js': '', 'index.css': '' } });
+    const entry = { id: 'app.x', slug: 'x', version: '1.0.0', packUrl: 'packs/x.json', sha256: sha(pack),
+      compat: { host: ['seafarer'], minHostVersion: '0.1.0' }, permissions, capabilities };
+    const sig = await subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, kp.privateKey, new TextEncoder().encode(L.canonical(entry)));
+    entry.signature = Buffer.from(sig).toString('base64');
+    const catalog = JSON.stringify({ keyId: 'unit-key', plugins: [entry] });
+    const mem = new Map();
+    const loader = L.create({
+      catalogUrl: 'https://unit.test/v1/catalog.json', host: { id: 'seafarer', version: '0.4.199' }, policy: policy || cfg.policy,
+      pinnedPublicKeys: { 'unit-key': pub },
+      cache: { get: (k) => (mem.has(k) ? mem.get(k) : null), set: (k, v) => mem.set(k, v), remove: (k) => mem.delete(k), keys: () => [...mem.keys()] },
+      fetch: (url) => Promise.resolve(/catalog\.json$/.test(url) ? catalog : pack),
+    });
+    return loader.install('x');
+  }
+  const BASE = { documents: 'none', account: 'none', analytics: 'none', server_upload: false };
+  const net = (allow) => Object.assign({}, BASE, { network: { allow } });
+  const API = 'https://api.skipi.app/draft-survey/v1/';
+
+  let r = await verdict(['local_storage'], Object.assign({}, BASE, { network: 'none' }));
+  ok(r.ok === true, 'NET: an offline plugin (network "none") still installs — the three live plugins are unaffected');
+  r = await verdict(['local_storage', 'network'], net([API]));
+  ok(r.ok === true, 'NET: network permission + an https allowlist on api.skipi.app installs');
+  r = await verdict(['network'], Object.assign({}, BASE, { network: 'none' }));
+  ok(r.ok === false && r.stage === 'policy', 'NET: the network permission without an allowlist is rejected');
+  r = await verdict(['local_storage'], net([API]));
+  ok(r.ok === false && r.stage === 'policy', 'NET: an allowlist without the network permission is rejected');
+  for (const [bad, why] of [
+    [['https://evil.example/x/'], 'another origin'],
+    [['http://api.skipi.app/draft-survey/v1/'], 'plain http'],
+    [['https://api.skipi.app.evil.example/'], 'a look-alike origin'],
+    [['https://api.skipi.app:8444/'], 'another port'],
+    [['https://user:pw@api.skipi.app/'], 'userinfo'],
+    [['https://api.skipi.app/x?y=1'], 'a query string'],
+    [[API, 'https://evil.example/'], 'one bad entry among good ones'],
+    [[], 'an empty list'],
+    ['https://api.skipi.app/', 'a string instead of a list'],
+  ]) {
+    r = await verdict(['network'], net(bad));
+    ok(r.ok === false && r.stage === 'policy', 'NET: rejected — ' + why);
+  }
+  r = await verdict(['network'], net([API]), Object.assign({}, cfg.policy, { networkOrigins: undefined }));
+  ok(r.ok === false && r.stage === 'policy', 'NET: a host policy without networkOrigins allows no network at all');
+  r = await verdict(['local_storage', 'file_save'], Object.assign({}, BASE, { network: 'none' }));
+  ok(r.ok === false && r.stage === 'policy', 'NET: a permission outside maxPermissions (file_save) is still rejected');
+  r = await verdict(['local_storage'], Object.assign({}, BASE, { network: 'none', documents: 'read' }));
+  ok(r.ok === false && r.stage === 'policy', 'NET: documents access is still rejected');
+}
+
+// The runtime must be handed the grants of the SIGNED ENTRY, not whatever the pack says of itself.
+async function testRuntimeGrantsComeFromSignedEntry() {
+  const bootCode = fs.readFileSync(BOOT_FILE, 'utf8');
+  let runtimeCfg = null;
+  const entry = { slug: 'x', permissions: ['local_storage', 'network'], capabilities: { network: { allow: ['https://api.skipi.app/draft-survey/v1/'] } } };
+  const greedyPack = { files: { 'index.js': '' }, permissions: ['local_storage', 'network', 'file_save'], network: { allow: ['https://evil.example/'] } };
+  let installResult = { ok: true, entry, pack: greedyPack, source: 'network/network' };
+  const store = new Map();
+  const ctx = {
+    console: { info() {}, warn() {} }, setTimeout, clearTimeout,
+    localStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) },
+    window: {
+      FEATURE_REMOTE_PLUGIN_DELIVERY: true,
+      SKIPI_REMOTE_CONFIG: { catalogUrl: 'https://unit.test/catalog.json', remoteSlugs: '*', host: { id: 'seafarer', version: '0.4.199' }, policy: {}, pinnedPublicKeys: {}, pinnedPublicKey: {} },
+      SkipiPluginLoader: { create: () => ({ getCatalog: () => Promise.resolve({ source: 'network', catalog: { plugins: [] } }), install: () => Promise.resolve(installResult) }) },
+      SkipiPluginRuntime: { create: (c) => { runtimeCfg = c; return { open: () => Promise.resolve({ ok: true }), close() {} }; } },
+      SkipiPluginHost: { mount: () => Promise.resolve({ ok: true }), unmount() {} },
+    },
+    document: { getElementById: () => ({ innerHTML: '' }) },
+  };
+  ctx.window.window = ctx.window; ctx.window.localStorage = ctx.localStorage;
+  vm.createContext(ctx);
+  vm.runInContext(bootCode, ctx, { filename: BOOT_FILE });
+  ok(!!runtimeCfg && runtimeCfg.host && typeof runtimeCfg.host.net === 'object' && typeof runtimeCfg.host.net.fetch !== 'function',
+    'GRANT: the home opts into plugin network with the runtime\'s own safe transport (no custom fetch)');
+  ok(!runtimeCfg.host.files, 'GRANT: files are NOT opted in yet (no adapter in this home)');
+  const r = await runtimeCfg.loader.install('x');
+  ok(r.ok && JSON.stringify(r.pack.permissions) === JSON.stringify(['local_storage', 'network']), 'GRANT: permissions handed to the runtime are the signed entry\'s, not the pack\'s own (file_save dropped)');
+  ok(JSON.stringify(r.pack.network) === JSON.stringify({ allow: ['https://api.skipi.app/draft-survey/v1/'] }), 'GRANT: the network allowlist is the signed entry\'s, not the pack\'s own (evil.example dropped)');
+  ok(greedyPack.permissions.length === 3 && greedyPack.network.allow[0] === 'https://evil.example/', 'GRANT: the cached pack object itself is not mutated');
+  installResult = { ok: true, entry: { slug: 'y', permissions: ['local_storage'], capabilities: { network: 'none' } }, pack: { files: {}, permissions: ['local_storage', 'network'], network: { allow: ['https://api.skipi.app/'] } }, source: 'x' };
+  const r2 = await runtimeCfg.loader.install('y');
+  ok(r2.ok && !r2.pack.network && r2.pack.permissions.indexOf('network') < 0, 'GRANT: an entry without network yields no network grant, whatever the pack claims');
+  installResult = { ok: false, stage: 'integrity', reason: 'sha256 mismatch' };
+  const r3 = await runtimeCfg.loader.install('x');
+  ok(r3.ok === false && r3.stage === 'integrity', 'GRANT: a failed verification passes through untouched (fail-closed)');
+}
+
 (async function main() {
   const win = runConfig();
   const cfg = win.SKIPI_REMOTE_CONFIG;
@@ -225,8 +327,13 @@ async function testCentralCatalogKillSwitchFallsBackBundled() {
   testGateRequiresHostMountSeam();
 
   ok(cfg.catalogUrl === CATALOG_URL, 'catalogUrl is production api.skipi.app path');
-  ok(JSON.stringify(cfg.remoteSlugs) === JSON.stringify(EXPECTED_SLUGS), 'remoteSlugs exactly match B5 production set');
-  ok(!cfg.remoteSlugs.includes('ship-photo-collection'), 'ship-photo-collection is not routed in production');
+  ok(cfg.remoteSlugs === '*', "remoteSlugs is '*': the signed catalog decides which plugins exist (owner 24.11.2026)");
+  ok(JSON.stringify(cfg.policy.maxPermissions) === JSON.stringify(['local_storage', 'audio_alert', 'network']), 'policy grants at most local_storage, audio_alert, network');
+  ok(JSON.stringify(cfg.policy.networkOrigins) === JSON.stringify(['https://api.skipi.app']), 'plugin network is bounded to https://api.skipi.app');
+  ok(cfg.policy.requireCapabilities.documents === 'none' && cfg.policy.requireCapabilities.account === 'none' && cfg.policy.requireCapabilities.analytics === 'none' && cfg.policy.requireCapabilities.server_upload === false,
+    'documents / account / analytics / server_upload stay forbidden');
+  await testNetworkPolicy(cfg);
+  await testRuntimeGrantsComeFromSignedEntry();
   ok(cfg.host && cfg.host.id === 'seafarer', 'host id is seafarer');
   ok(cfg.host && cfg.host.version === EXPECTED_VERSION, 'host version is release version 0.4.165');
 
@@ -240,7 +347,8 @@ async function testCentralCatalogKillSwitchFallsBackBundled() {
   const catalog = JSON.parse((await get(CATALOG_URL)).toString('utf8'));
   ok(catalog.env === 'production', 'live catalog env is production');
   ok(catalog.keyId === 'skipi-firstparty-prod-v1', 'live catalog keyId selects prod key');
-  ok(JSON.stringify((catalog.plugins || []).map((p) => p.slug)) === JSON.stringify(EXPECTED_SLUGS), 'live catalog slug order matches route set');
+  const liveSlugs = (catalog.plugins || []).map((p) => p.slug);
+  ok(BUNDLED_SLUGS.every((sl) => liveSlugs.includes(sl)), 'live catalog still carries the three bundled plugins');
 
   for (const entry of catalog.plugins || []) {
     ok(verifySignature(entry, prodKey), `${entry.slug} signature verifies with pinned prod key`);

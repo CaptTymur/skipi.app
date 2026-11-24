@@ -179,9 +179,29 @@
       return (sw.catalog && sw.catalog.plugins) || [];
     }, function () { return []; });
   };
+  // What the runtime may GRANT comes from the SIGNED catalog entry — the same object the
+  // policy step judged — never from the pack's own copy: permissions and the network
+  // allowlist are taken from the entry, so a pack cannot grant itself more than was checked.
+  var runtimeLoader = {
+    install: function (slug) {
+      return loader.install(slug).then(function (r) {
+        if (!r || !r.ok) return r;
+        var e = r.entry || {}, caps = e.capabilities || {};
+        var pack = {};
+        Object.keys(r.pack || {}).forEach(function (k) { if (k !== 'network' && k !== 'permissions') pack[k] = r.pack[k]; });
+        pack.permissions = (e.permissions || []).slice();
+        if (pack.permissions.indexOf('network') >= 0 && caps.network && Array.isArray(caps.network.allow)) pack.network = { allow: caps.network.allow.slice() };
+        return { ok: true, entry: r.entry, pack: pack, source: r.source };
+      });
+    }
+  };
   var runtime = window.SkipiPluginRuntime.create({
-    enabled: true, loader: loader,
+    enabled: true, loader: runtimeLoader,
     host: {
+      // Network for plugins (owner 24.11.2026) — opt-in. The runtime performs the request
+      // itself with the host document's fetch, credentials omitted and redirects refused,
+      // and only to the plugin's signed allowlist. No host token is ever attached.
+      net: {},
       theme: { get: getTheme },
       storage: hostStore,
       navigation: { setTitle: function () {}, closePlugin: function () {} },
@@ -281,7 +301,11 @@
     return loader.uninstall ? loader.uninstall(slug) : { ok: true };
   };
 
-  var REMOTE = CFG.remoteSlugs || [];
+  // '*' = catalog-driven: any slug may be remote; whether it IS is decided per mount below
+  // (a verified remote install shown by the host). A list keeps the old fixed routing.
+  var REMOTE_ALL = CFG.remoteSlugs === '*';
+  var REMOTE = REMOTE_ALL ? [] : (CFG.remoteSlugs || []);
+  function isRemoteSlug(id) { return REMOTE_ALL || REMOTE.indexOf(id) >= 0; }
   var currentRemote = null;
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]; }); }
@@ -349,7 +373,7 @@
     // Keying the mount on the raw registry record instead would route an UNVERIFIED remote
     // record to the remote runtime while the tile, metadata and version on screen still say
     // bundled - the same identity split that made No.380 hard to read. One source of truth.
-    if (REMOTE.indexOf(id) < 0) return bundledMount(id, container);
+    if (!isRemoteSlug(id)) return bundledMount(id, container);
     var shown = (typeof window.pluginById === 'function') ? window.pluginById(id) : null;
     var takeOver = shown ? shown.remote === true : !!remoteRecord(id);
     if (!takeOver) return bundledMount(id, container);
@@ -384,5 +408,5 @@
     return origUnmount ? origUnmount.apply(host, arguments) : undefined;
   };
 
-  try { console.info('[remote-plugins] ON · production catalog · isolated runtime · remote slugs: ' + REMOTE.join(', ')); } catch (e) {}
+  try { console.info('[remote-plugins] ON · production catalog · isolated runtime · remote slugs: ' + (REMOTE_ALL ? 'catalog-driven' : REMOTE.join(', '))); } catch (e) {}
 })();
