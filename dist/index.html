@@ -4071,10 +4071,15 @@ async function init() {
             // remembered vault WITHOUT a token → the fork with this vault parked
             // (Sign in resumes it); a remembered DEMO is closed + forgotten first —
             // the demo is not a session, the next cold start shows the fork again.
+            // Desktop too (owner 24.11): a remembered demo went to loadVault(), the gate rose OVER it,
+            // Sign in resumed the demo and wrote the token into it — the seafarer landed in «Skipi Demo»
+            // instead of the account. The demo is never resumed: forgotten, then the no-vault path below
+            // (gate → Sign in → the account is downloaded, initNoVaultLanding).
             if(isNativeMobile()&&!(await _hasLoginToken())){
                 if(await _efOpenVaultIsDemo()){ try{await invoke('close_vault',{forget:true});}catch(_){} }
                 else { _loginGatePending=info; showEntryFork(); return; }
-            }else{ await loadVault(info); return; }
+            }else if(await _efOpenVaultIsDemo()){ try{await invoke('close_vault',{forget:true});}catch(_){} }
+            else{ await loadVault(info); return; }
         }catch(e){}}
         if(!lv&&shouldUseMobileShell()){
             var recent=[];
@@ -6279,22 +6284,23 @@ async function renderMobileCv(){
         var p=data.personal||{};
         var certs=data.certificates||[];
         var work=sortWorkEntries(data.work_history);
-        // №260: the phone draws the SAME form as the desktop showCv — the same 15 fields in the
-        // same row() order (one column here), Salary expectations, certificates and sea service
-        // with the desktop columns. Labels stay English: the form is a document for the employer.
+        // №260: the phone draws the SAME form as the desktop showCv — the same 15 fields, Salary
+        // expectations, certificates and sea service with the desktop columns. One column reads top
+        // to bottom, so the names stay together (the desktop row() order interleaves two columns).
+        // Labels stay English: the form is a document for the employer.
         var fields=[
             ['Position',p.rank||sp.rank],
             ['Readiness',sp.available_from],
             ['Experience',mobileCvSeaExperience(data.total_sea_days)],
-            ['Citizenship',sp.nationality],
             ['Last name',sp.surname],
-            ['Marital status',sp.marital_status],
             ['First name',sp.first_name],
-            ['Children',sp.children_count],
             ['Middle name',sp.middle_name],
-            ['English level',sp.english_level],
             ['Birth date',sp.date_of_birth],
             ['Birth place',sp.place_of_birth],
+            ['Citizenship',sp.nationality],
+            ['Marital status',sp.marital_status],
+            ['Children',sp.children_count],
+            ['English level',sp.english_level],
             ['Home address',sp.home_address],
             ['Phone',sp.phones],
             ['Email',sp.email]
@@ -9843,7 +9849,11 @@ var AIRPORT_HUBS = [
 // ========== Forced seafarer profile ==========
 var _forcedProfileActive=false;
 function profileOfferFieldIds(prefix){
-    return [prefix+'-min_salary',prefix+'-min_salary_currency',prefix+'-nearest_airport',prefix+'-nearest_intl_airport',prefix+'-available_from',prefix+'-phones',prefix+'-preferred_messenger'];
+    var ids=[prefix+'-min_salary',prefix+'-min_salary_currency',prefix+'-nearest_airport',prefix+'-nearest_intl_airport',prefix+'-available_from'];
+    // Profile (sp): the phone is a contact detail shown in the CV — editable whether or not the
+    // seafarer is open to offers. The first-run form (fp) keeps it with its availability block.
+    if(prefix!=='sp')ids.push(prefix+'-phones',prefix+'-preferred_messenger');
+    return ids;
 }
 function setOfferFieldsEnabled(prefix,on){
     profileOfferFieldIds(prefix).forEach(function(id){
@@ -10469,7 +10479,7 @@ function _lgTxt(){
     return ru ? {
         title:'Вход в Skipi', sub:'Введите email и пароль вашего аккаунта Skipi.',
         email:'Email', pass:'Пароль', submit:'Войти', signing:'Вход…',
-        noacct:'Нет аккаунта?', register:'Регистрация',
+        noacct:'Нет аккаунта?', register:'Регистрация', forgot:'Забыли пароль?',
         fill:'Введите email и пароль.',
         net:'Нет связи с сервером Skipi. Проверьте интернет и повторите.',
         creds:'Неверный email или пароль.',
@@ -10478,7 +10488,7 @@ function _lgTxt(){
     } : {
         title:'Sign in to Skipi', sub:'Use your Skipi account email and password.',
         email:'Email', pass:'Password', submit:'Sign in', signing:'Signing in…',
-        noacct:'No account?', register:'Register',
+        noacct:'No account?', register:'Register', forgot:'Forgot password?',
         fill:'Enter your email and password.',
         net:'Cannot reach the Skipi server. Check your internet connection and try again.',
         creds:'Wrong email or password.',
@@ -10492,6 +10502,22 @@ function _lgApplyI18n(){
     set('lg-title',t.title);set('lg-sub',t.sub);set('lg-email-label',t.email);
     set('lg-pass-label',t.pass);set('lg-submit',t.submit);set('lg-noacct',t.noacct);
     set('lg-register',t.register);
+    // «Forgot password?» — created here, not in the markup (the gate markup is the pinned desktop
+    // static region, see _lgError). Opens the web recovery page: email in, letter out.
+    var fg=document.getElementById('lg-forgot');
+    var reg=document.getElementById('lg-register');
+    if(!fg&&reg&&reg.parentNode){
+        var row=document.createElement('div');
+        row.style.cssText='margin-top:8px;';
+        fg=document.createElement('a');
+        fg.setAttribute('id','lg-forgot');
+        fg.setAttribute('href','#');
+        fg.style.cssText='color:var(--accent);text-decoration:none;';
+        fg.onclick=function(ev){if(ev&&ev.preventDefault)ev.preventDefault();openForgotPasswordPage();return false;};
+        row.appendChild(fg);
+        reg.parentNode.appendChild(row);
+    }
+    if(fg)fg.textContent=t.forgot;
 }
 // msg — human text in the UI language; detail — optional technical line shown
 // small UNDER the message (never instead of it). Both go to the error log.
@@ -10587,6 +10613,10 @@ async function openExternalUrlSafe(url){
 async function openRegisterPage(){
     // Registration is reused as-is on the web — open it in the system browser.
     return openExternalUrlSafe('https://assistant.skipi.app/register');
+}
+async function openForgotPasswordPage(){
+    // Password recovery is reused as-is on the web, like registration.
+    return openExternalUrlSafe('https://assistant.skipi.app/reset');
 }
 async function appLogoutToGate(){
     closeSettings();
@@ -13732,7 +13762,7 @@ function applyWorkVesselPreset(){
         if(el&&!String(el.value||'').trim()&&val!=null)el.value=String(val);
     }
     fillIfEmpty('wh-imo',picked.imo);
-    fillIfEmpty('wh-type',picked.vessel_type);
+    if(!workTypeValue()&&picked.vessel_type)populateWorkTypeControl(workTypeList,picked.vessel_type);
     fillIfEmpty('wh-flag',picked.flag);
     fillIfEmpty('wh-company',picked.company);
 }
@@ -13812,6 +13842,40 @@ function workPositionValue(){
     return (sel.value||'').trim();
 }
 
+// Vessel type: the list plus «Other» with a typed value — the phone form takes free text, so a type
+// typed there (Tug, Dredger, …) must stay editable and enterable on the desktop too.
+var workTypeList=[];
+function populateWorkTypeControl(list,current){
+    var sel=document.getElementById('wh-type');
+    if(!sel)return;
+    current=String(current||'').trim();
+    workTypeList=workPositionList(list);
+    var known=current&&workTypeList.indexOf(current)!==-1;
+    populateSelect(sel,workTypeList,known?current:'','-- Select type --');
+    var custom=document.getElementById('wh-type_custom');
+    if(custom)custom.value=current&&!known?current:'';
+    if(current&&!known)sel.value='Other';
+    syncWorkTypeCustom(false);
+}
+function syncWorkTypeCustom(focus){
+    var sel=document.getElementById('wh-type');
+    var custom=document.getElementById('wh-type_custom');
+    if(!sel||!custom)return;
+    var show=sel.value==='Other';
+    custom.style.display=show?'block':'none';
+    if(!show)custom.value='';
+    if(show&&focus)custom.focus();
+}
+function workTypeValue(){
+    var sel=document.getElementById('wh-type');
+    if(!sel)return '';
+    if(sel.value==='Other'){
+        var custom=document.getElementById('wh-type_custom');
+        return custom?(custom.value||'').trim():'';
+    }
+    return (sel.value||'').trim();
+}
+
 function renderWorkEntryForm(entry){
     oneAccountCapture('experience',entry,true);
     entry=entry||null;
@@ -13824,7 +13888,7 @@ function renderWorkEntryForm(entry){
     h+='<div class="field-grid">';
     h+='<div class="field"><label>Vessel Name *</label><select id="wh-vessel" onchange="syncWorkVesselCustom(true);applyWorkVesselPreset()"></select><input id="wh-vessel_custom" placeholder="Type vessel name" autocomplete="off" value="'+val('vessel_name')+'" style="display:none;margin-top:6px;"></div>';
     h+='<div class="field"><label>IMO Number *</label><input id="wh-imo" inputmode="numeric" placeholder="1234567" required value="'+val('imo')+'"><div style="font-size:10px;color:var(--text2);margin-top:3px;">7 digits required for vessel database and reviews.</div></div>';
-    h+='<div class="field"><label>Vessel Type</label><select id="wh-type"></select></div>';
+    h+='<div class="field"><label>Vessel Type</label><select id="wh-type" onchange="syncWorkTypeCustom(true)"></select><input id="wh-type_custom" placeholder="Type vessel type" autocomplete="off" style="display:none;margin-top:6px;"></div>';
     h+='<div class="field"><label>DWT</label><input id="wh-dwt" type="text" inputmode="numeric" placeholder="e.g. 82000" value="'+val('dwt')+'"></div>';
     h+='<div class="field"><label>TEU</label><input id="wh-teu" type="text" inputmode="numeric" placeholder="container ships" value="'+val('teu')+'"></div>';
     h+='<div class="field"><label>Flag</label><input id="wh-flag" placeholder="Start typing… (Panama, Liberia, Marshall Islands, …)" autocomplete="off" value="'+val('flag')+'"></div>';
@@ -13844,14 +13908,20 @@ function renderWorkEntryForm(entry){
     return h;
 }
 
+function workVesselTypeList(){
+    var list=((types&&types.vessel_types&&types.vessel_types.length)?types.vessel_types:
+        ["Bulk Carrier","Container Ship","Tanker","Oil Tanker","Chemical Tanker","Product Tanker","LNG Carrier","LPG Carrier","General Cargo","Ro-Ro","Car Carrier","Reefer","Passenger","Cruise Ship","Ferry","Offshore Support","AHTS","PSV","Tug","OSV","Yacht","Other"]).slice();
+    // Tugs are common enough to be a listed type, not only a typed «Other».
+    if(list.indexOf('Tug')===-1)list.push('Tug');
+    return list;
+}
 async function populateWorkEntryFormControls(entry){
     entry=entry||{};
     // Populate dropdowns from loaded taxonomies
-    var vList=(types&&types.vessel_types&&types.vessel_types.length)?types.vessel_types:
-        ["Bulk Carrier","Container Ship","Tanker","Oil Tanker","Chemical Tanker","Product Tanker","LNG Carrier","LPG Carrier","General Cargo","Ro-Ro","Car Carrier","Reefer","Passenger","Cruise Ship","Ferry","Offshore Support","AHTS","PSV","Tug","OSV","Yacht","Other"];
+    var vList=workVesselTypeList();
     var pList=(types&&types.ranks&&types.ranks.length)?types.ranks:RANKS;
     await populateWorkVesselControl(entry);
-    populateSelect(document.getElementById('wh-type'),workFormListWithCurrent(vList,entry.vessel_type),entry.vessel_type||'','-- Select type --');
+    populateWorkTypeControl(vList,entry.vessel_type||'');
     populateWorkPositionControl(pList,entry.position||'');
     var flagEl=document.getElementById('wh-flag');
     if(flagEl){
@@ -13918,7 +13988,7 @@ function readWorkFormPayload(){
     }
     return {
         vesselName:vessel,
-        vesselType:v('wh-type'),
+        vesselType:workTypeValue(),
         imo:imo,
         flag:v('wh-flag'),
         company:v('wh-company'),
