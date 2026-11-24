@@ -391,6 +391,12 @@ const BOTH_INSTALLED = {
   skipi_remote_plugins_state: JSON.stringify(Object.assign({},
     JSON.parse(BNWAS_INSTALLED.skipi_remote_plugins_state), JSON.parse(NAVCALC_INSTALLED.skipi_remote_plugins_state)))
 };
+// A catalog for the «Find a plugin» tab (host-ui 1.2): the Apps UI asks window.SkipiRemoteList.
+const CATALOG_OFFERS = [
+  { slug: 'draft-survey', id: 'app.skipi.plugins.draft-survey', version: '0.1.0', name: { en: 'Draft Survey', ru: 'Драфт-сюрвей' }, short: 'Cargo by draught survey', icon: '⚖', category: 'utils', permissions: ['local_storage'] },
+  { slug: 'ecdis-position-reminder', id: 'app.skipi.plugins.ecdis-position-reminder', version: '0.1.1', name: 'ECDIS Position Reminder', short: 'Position-fix reminder', icon: '📍', category: 'safety', permissions: ['local_storage', 'audio_alert'] },
+];
+const withCatalog = (app) => { app.sandbox.SkipiRemoteList = () => Promise.resolve(CATALOG_OFFERS); return app; };
 const appsHtml = (doc) => String((doc.getElementById('scr-content') || {}).innerHTML || '');
 
 function remoteCanonical(v) {
@@ -617,7 +623,9 @@ async function runRemoteInstallOfflineHarness() {
   sandbox.showApps();
   const h = appsHtml(doc);
   ok(h.includes('data-qa="seafarer-module-apps"'), 'launcher root carries seafarer-module-apps');
-  ok(h.includes('data-qa="apps-search-input"'), 'search input hook present');
+  // Owner 24.11.2026: two tabs — «Установленные» and «Найти плагин»; the search field lives on the second.
+  ok(/data-qa="apps-tab-installed"[^>]*aria-selected="true"/.test(h) && h.includes('data-qa="apps-tab-find"'), 'both tabs render and Apps opens on Installed');
+  ok(!h.includes('data-qa="apps-search-input"'), 'no search field on the Installed tab');
   ok(h.includes('data-qa="plugins-settings-open"'), 'gear (plugins-settings-open) hook present');
   // Owner 24.11.2026: no bundled plugins — a NEW user starts with an empty Installed shelf.
   ok(!/data-qa="plugin-tile-(bnwas-time-anchor|ecdis-position-reminder|navigation-calculators)"/.test(h), 'a new user has NO plugin installed by default (nothing is bundled)');
@@ -660,18 +668,26 @@ async function runRemoteInstallOfflineHarness() {
 }
 
 {
-  section('desktop launcher v1 — search is installed-only (State C semantics)');
-  const { sandbox } = bootApp({ seed: BNWAS_INSTALLED });
+  section('desktop launcher — «Find a plugin» tab: search field + catalog offers by category');
+  const { sandbox, doc } = withCatalog(bootApp({ seed: BNWAS_INSTALLED }));
   await settleVm();
+  sandbox.showApps();
+  await settleVm();
+  sandbox.pluginLauncherTab('find');
+  const find = appsHtml(doc);
+  ok(/data-qa="apps-tab-find"[^>]*aria-selected="true"/.test(find) && find.includes('data-qa="apps-search-input"'), 'the Find tab is selected and carries the search field');
+  ok(find.includes('data-qa="plugin-preview-draft-survey"') && find.includes('data-qa="plugin-preview-ecdis-position-reminder"'), 'it offers the catalog plugins the user does not have');
+  ok(!find.includes('plugin-tile-bnwas-time-anchor'), 'and not the installed one');
+  ok(find.indexOf('apps-find-category-safety') >= 0 && find.indexOf('apps-find-category-safety') < find.indexOf('plugin-preview-ecdis-position-reminder')
+    && find.indexOf('apps-find-category-utils') < find.indexOf('plugin-preview-draft-survey'), 'offers stand under their category headings (Safety, Utils)');
   sandbox.pluginHostState.search = 'zzz-no-such-plugin';
   const none = sandbox.pluginLauncherResultsHtml();
   ok(none.includes('data-qa="plugin-empty-state"') && none.includes('data-context="search"'), 'no-match search renders the search-context empty state');
-  sandbox.pluginHostState.search = 'bnwas';
+  sandbox.pluginHostState.search = 'DRAFT';
   const hit = sandbox.pluginLauncherResultsHtml();
-  ok(hit.includes('data-qa="plugin-tile-bnwas-time-anchor"'), 'matching installed plugin stays in results');
-  sandbox.pluginHostState.search = 'distance';
-  const cat = sandbox.pluginLauncherResultsHtml();
-  ok(!cat.includes('distance-tables'), 'removed placeholder name never matches launcher search');
+  ok(hit.includes('plugin-preview-draft-survey') && !hit.includes('plugin-preview-ecdis-position-reminder'), 'search filters the offers, case-insensitively');
+  sandbox.pluginLauncherTab('installed');
+  ok(sandbox.pluginLauncherResultsHtml().includes('data-qa="plugin-tile-bnwas-time-anchor"') && sandbox.pluginHostState.search === '', 'back on Installed the user sees their plugin, and the query is cleared');
 }
 
 {
@@ -743,7 +759,7 @@ function bootMobile(opts) {
   sandbox.mobileShow('apps');
   const h = mobileHtml(doc);
   ok(h.includes('data-qa="seafarer-module-apps"'), 'launcher root hook renders in #mobile-main');
-  ok(h.includes('data-qa="apps-search-input"'), 'apps-search-input renders');
+  ok(/data-qa="apps-tab-installed"[^>]*aria-selected="true"/.test(h) && h.includes('data-qa="apps-tab-find"'), 'both tabs render, Installed first');
   ok(h.includes('data-qa="plugins-settings-open"'), 'plugins-settings-open (gear) renders');
   ok(h.includes('data-qa="plugin-tile-bnwas-time-anchor"') && h.includes('data-qa="plugin-open-bnwas-time-anchor"'), 'plugin-tile-/plugin-open-<id> render for the installed plugin');
   // Canonical rail (волна №73): 5 pinned module slots; Home lives in the
@@ -777,17 +793,22 @@ function bootMobile(opts) {
   empty.sandbox.mobileShow('apps');
   const hB = mobileHtml(empty.doc);
   ok(hB.includes('data-qa="plugin-empty-state"') && !hB.includes('data-context="search"'), 'State B renders the empty hook (not search context)');
-  ok(hB.includes('pluginOpenManage()'), 'State B CTA routes to manage');
-  const inst = bootMobile({ seed: BNWAS_INSTALLED });
+  ok(/data-qa="plugin-empty-find"[^>]*onclick="pluginLauncherTab\('find'\)"/.test(hB), 'State B CTA leads to the «Find a plugin» tab');
+  const inst = withCatalog(bootMobile({ seed: BNWAS_INSTALLED }));
   await settleVm();
   inst.sandbox.mobileShow('apps');
+  await settleVm();
+  inst.sandbox.pluginLauncherTab('find');
+  const hF = mobileHtml(inst.doc);
+  ok(hF.includes('data-qa="apps-search-input"') && hF.includes('data-qa="plugin-preview-draft-survey"') && !hF.includes('plugin-tile-bnwas-time-anchor'),
+    'the Find tab on the phone: search field + catalog offers, no installed plugins');
   inst.sandbox.pluginHostState.search = 'no-such-plugin';
   const hC = inst.sandbox.pluginLauncherResultsHtml();
   ok(hC.includes('data-qa="plugin-empty-state"') && hC.includes('data-context="search"'), 'State C is a distinct search-context empty state');
-  inst.sandbox.pluginHostState.search = 'BNWAS';
-  ok(inst.sandbox.pluginLauncherResultsHtml().includes('plugin-tile-bnwas-time-anchor'), 'search match is case-insensitive on installed plugins');
-  inst.sandbox.pluginHostState.search = 'draft';
-  ok(!inst.sandbox.pluginLauncherResultsHtml().includes('draft-survey'), 'removed placeholder names never match');
+  inst.sandbox.pluginHostState.search = 'ecdis';
+  ok(inst.sandbox.pluginLauncherResultsHtml().includes('plugin-preview-ecdis-position-reminder'), 'search match is case-insensitive on the offers');
+  inst.sandbox.pluginHostState.search = 'distance';
+  ok(!inst.sandbox.pluginLauncherResultsHtml().includes('distance-tables'), 'removed placeholder names never match');
 }
 
 {
@@ -820,7 +841,7 @@ function bootMobile(opts) {
   sandbox.pluginBack();
   ok(sandbox.pluginHostState.selectedId === null && sandbox.pluginHostState.surface === 'manage', 'detail back -> manage list');
   sandbox.pluginBackToLauncher();
-  ok(mobileHtml(doc).includes('data-qa="apps-search-input"'), '«← Apps» returns to the launcher');
+  ok(mobileHtml(doc).includes('data-qa="apps-tabs"'), '«← Apps» returns to the launcher');
   sandbox.pluginLaunch('bnwas-time-anchor');
   sandbox.pluginClose();
   ok(sandbox.pluginHostState.surface === 'launcher', 'UHOST-11: opened from launcher -> closes to launcher');
@@ -2191,7 +2212,9 @@ const appsTileTag = (h, id) => {
     ok(fn.length > 50, 'mobileAppsIconizeTiles located in the shipped bytes');
     ok(!/document\.getElementById\(\s*'apps-launcher-results'\s*\)/.test(fn), 'no GLOBAL getElementById for the launcher-results id');
     ok(/main\.querySelector\(\s*'#apps-launcher-results'\s*\)/.test(fn), 'the launcher-results node is looked up INSIDE #mobile-main');
-    ok((HOST_UI_MODULE.match(/id="apps-launcher-results"/g) || []).length >= 2, 'the module really emits that id on both the desktop and the mobile launcher (got ' + (HOST_UI_MODULE.match(/id="apps-launcher-results"/g) || []).length + ')');
+    // host-ui 1.2: desktop and mobile share ONE launcher body (pluginLauncherBodyHtml), so the id is emitted once in the source and lands in both launchers.
+    ok((HOST_UI_MODULE.match(/id="apps-launcher-results"/g) || []).length >= 1 && (HOST_UI_MODULE.match(/h \+= pluginLauncherBodyHtml\(\);/g) || []).length === 2,
+      'the module really emits that id on both the desktop and the mobile launcher (one shared body, used by both)');
     // Behavioural: a node carrying that id OUTSIDE #mobile-main is left untouched.
     const OLD = '<div class="apps-icon-tile" data-qa="plugin-tile-desk"><button type="button" data-qa="plugin-open-desk" onclick="pluginLaunch(\'desk\')" title="Desk"><span class="apps-icon-tile-icon">D</span><span class="apps-icon-tile-name">Desk</span></button></div>';
     const outside = doc.createElement('div');

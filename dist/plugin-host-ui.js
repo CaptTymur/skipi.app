@@ -147,9 +147,14 @@
       return remoteOverrideEntryFor(id) || bundledPluginById(id) || remoteInstalledEntryFor(id)
         || (remoteStagingOn() && remoteCatalogEntry(id) ? remoteEntryFor(id) : null);
     }
+    // A category may carry labels per UI language: { key, label, labels:{ ru:'…' } }.
+    function catLabel(c){
+      var lang = getUiLang();
+      return (c && c.labels && c.labels[lang]) || (c && c.label) || '';
+    }
     function pluginCatLabel(key){
       var c = pluginCategories().find(function(x){ return x.key === key; });
-      return c ? c.label : key;
+      return c ? catLabel(c) : key;
     }
     function pluginVersionValue(p){
       return p && p.version ? String(p.version) : '';
@@ -361,7 +366,7 @@
         if(typeof window.SkipiRemoteInstall !== 'function'){ showToast('Remote install is unavailable.','error'); return; }
         showToast('Installing '+p.name+'…','info');
         window.SkipiRemoteInstall(id).then(function(res){
-          if(res && res.ok){ remoteCatalogInvalidate(); showToast(p.name+' installed for offline use.','success'); }
+          if(res && res.ok){ remoteCatalogInvalidate(); pluginHostState.tab = 'installed'; showToast(p.name+' installed for offline use.','success'); }
           else showToast('Could not install '+p.name+': '+((res && res.reason) || 'verification failed'),'error');
           pluginRerender();
         }, function(e){ showToast('Could not install '+p.name+': '+((e && e.message) || e),'error'); pluginRerender(); });
@@ -574,35 +579,84 @@
     function pluginLauncherMatch(p, q){
       return !q || ((p.name||'')+' '+(p.short||'')).toLowerCase().indexOf(q) >= 0;
     }
-    function pluginLauncherResultsHtml(){
+    // Apps has two tabs (owner 24.11.2026): "Installed" — what the user has, and "Find a plugin" —
+    // a search field and the catalog plugins they do not have yet, grouped by category.
+    function pluginLauncherTabValue(){ return pluginHostState.tab === 'find' ? 'find' : 'installed'; }
+    function pluginLauncherTab(tab){
+      pluginHostState.tab = tab === 'find' ? 'find' : 'installed';
+      pluginHostState.search = '';
+      pluginRerender();
+    }
+    function pluginLauncherTabsHtml(){
+      var ru = getUiLang() === 'ru', cur = pluginLauncherTabValue();
+      function tab(key, label){
+        return '<button type="button" role="tab" class="apps-tab'+(cur===key?' active':'')+'" data-qa="apps-tab-'+key+'" aria-selected="'+(cur===key?'true':'false')+'" onclick="pluginLauncherTab(\''+key+'\')">'+esc(label)+'</button>';
+      }
+      return '<div class="apps-tabs" role="tablist" data-qa="apps-tabs">'
+        + tab('installed', ru?'Установленные':'Installed')
+        + tab('find', ru?'Найти плагин':'Find a plugin')
+        + '</div>';
+    }
+    function pluginInstalledTabHtml(){
       var ru = getUiLang() === 'ru';
-      var q = (pluginHostState.search || '').trim().toLowerCase();
-      var installedAll = pluginInstalledList();
-      var availableAll = remoteAvailableList();
-      var installed = installedAll.filter(function(p){ return pluginLauncherMatch(p, q); });
-      var available = availableAll.filter(function(p){ return pluginLauncherMatch(p, q); });
-      if(!installedAll.length && !availableAll.length){
+      var installed = pluginInstalledList();
+      if(!installed.length){
         return '<div class="apps-empty fam-state-panel" data-qa="plugin-empty-state" data-qa2="state-empty-panel">'
-          + '<div class="apps-empty-note fam-state-copy">'+esc(ru?'Установленных плагинов пока нет. Откройте настройки, чтобы проверить доступные модули.':'No installed plugins yet. Open settings to check available modules.')+'</div>'
-          + '<button class="fam-primary-action" type="button" onclick="pluginOpenManage()">'+esc(ru?'Настройки плагинов':'Plugin settings')+'</button>'
+          + '<div class="apps-empty-note fam-state-copy">'+esc(ru?'Установленных плагинов пока нет.':'No installed plugins yet.')+'</div>'
+          + '<button class="fam-primary-action" type="button" data-qa="plugin-empty-find" onclick="pluginLauncherTab(\'find\')">'+esc(ru?'Найти плагин':'Find a plugin')+'</button>'
           + '</div>';
       }
-      if(!installed.length && !available.length){
+      var h = '<div class="apps-launcher-grid" data-qa="apps-shelf-installed">';
+      installed.forEach(function(p){ h += pluginIconTileHtml(p); });
+      return h + '</div>';
+    }
+    function pluginFindTabHtml(){
+      var ru = getUiLang() === 'ru';
+      var q = (pluginHostState.search || '').trim().toLowerCase();
+      var all = remoteAvailableList();
+      if(!all.length){
+        var offline = false; try{ offline = (navigator.onLine === false); }catch(e){}
+        return '<div class="apps-empty fam-state-panel" data-qa="plugin-empty-state" data-context="catalog" data-qa2="state-empty-panel">'
+          + '<div class="apps-empty-note fam-state-copy">'+esc(offline
+              ? (ru?'Каталог плагинов недоступен без сети.':'The plugin catalog is not available offline.')
+              : (ru?'Новых плагинов в каталоге нет — всё доступное уже установлено.':'Nothing new in the catalog — everything available is already installed.'))+'</div>'
+          + '</div>';
+      }
+      var found = all.filter(function(p){ return pluginLauncherMatch(p, q); });
+      if(!found.length){
         return '<div class="apps-empty fam-state-panel" data-qa="plugin-empty-state" data-context="search" data-qa2="state-empty-panel">'
           + '<div class="apps-empty-note fam-state-copy">'+esc(ru?'Ничего не найдено.':'Nothing found.')+'</div>'
           + '</div>';
       }
+      // by category, in the home's category order; anything else goes last under "Other"
+      var known = pluginCategories().map(function(c){ return c.key; });
+      var groups = pluginCategories().map(function(c){ return { key:c.key, label:catLabel(c), items:[] }; });
+      var other = { key:'other', label:(ru?'Другое':'Other'), items:[] };
+      found.forEach(function(p){
+        var at = known.indexOf(p.category);
+        (at >= 0 ? groups[at] : other).items.push(p);
+      });
+      groups.push(other);
       var h = '';
-      if(installed.length){
-        h += '<div class="apps-cat-title" data-qa="apps-shelf-installed">'+esc(ru?'Установленные плагины':'Installed plugins')+'</div><div class="apps-launcher-grid">';
-        installed.forEach(function(p){ h += pluginIconTileHtml(p); });
+      groups.forEach(function(g){
+        if(!g.items.length) return;
+        h += '<div class="apps-cat-title" data-qa="apps-find-category-'+escAttr(g.key)+'">'+esc(g.label)+'</div><div class="apps-launcher-grid">';
+        g.items.forEach(function(p){ h += pluginAvailableTileHtml(p); });
         h += '</div>';
-      }
-      if(available.length){
-        h += '<div class="apps-cat-title" data-qa="apps-shelf-available">'+esc(ru?'Доступно для установки':'Available to install')+'</div><div class="apps-launcher-grid">';
-        available.forEach(function(p){ h += pluginAvailableTileHtml(p); });
-        h += '</div>';
-      }
+      });
+      return h;
+    }
+    function pluginLauncherResultsHtml(){
+      return pluginLauncherTabValue() === 'find' ? pluginFindTabHtml() : pluginInstalledTabHtml();
+    }
+    // tabs + (on "Find a plugin") the search field + the results box; shared by desktop and mobile
+    function pluginLauncherBodyHtml(){
+      var ru = getUiLang() === 'ru', find = pluginLauncherTabValue() === 'find';
+      var h = pluginLauncherTabsHtml();
+      if(find) h += '<div class="apps-search"><label class="apps-search-label" for="apps-search-field">'+esc(ru?'Поиск по каталогу':'Search the catalog')+'</label>'
+        + '<input id="apps-search-field" type="text" data-qa="apps-search-input" value="'+escAttr(pluginHostState.search||'')+'" oninput="pluginLauncherSearch(this.value)" placeholder="'+escAttr(ru?'Название плагина':'Plugin name')+'"></div>';
+      h += '<div id="apps-launcher-results">'+pluginLauncherResultsHtml()+'</div>';
+      h += '<div class="apps-launcher-foot">'+esc(ru?'Отключение, удаление и обновления плагинов — через ⚙.':'Disable, remove and update plugins — via ⚙.')+'</div>';
       return h;
     }
     function pluginLauncherHtml(){
@@ -614,10 +668,7 @@
         + '<div class="apps-head-sub">'+esc(ru?homeShortName:homeName)+'</div></div>'
         + '<button class="apps-gear-btn" type="button" data-qa="plugins-settings-open" onclick="pluginOpenManage()" title="'+escAttr(ru?'Настройки плагинов':'Plugin settings')+'" aria-label="'+escAttr(ru?'Настройки плагинов':'Plugin settings')+'">&#9881;</button></div>';
       if(offline) h += '<div class="apps-offline" data-qa="plugin-offline-state">'+esc(ru?'Оффлайн — установленные плагины продолжают работать.':'Offline — installed plugins keep working.')+'</div>';
-      h += '<div class="apps-search"><label class="apps-search-label" for="apps-search-field">'+esc(ru?'Найти плагин':'Find a plugin')+'</label>'
-        + '<input id="apps-search-field" type="text" data-qa="apps-search-input" value="'+escAttr(pluginHostState.search||'')+'" oninput="pluginLauncherSearch(this.value)" placeholder="'+escAttr(ru?'Название плагина':'Plugin name')+'"></div>';
-      h += '<div id="apps-launcher-results">'+pluginLauncherResultsHtml()+'</div>';
-      h += '<div class="apps-launcher-foot">'+esc(ru?'Установленные и доступные плагины. Отключение, удаление и обновления — через ⚙.':'Installed and available plugins. Disable, remove and update — via ⚙.')+'</div>';
+      h += pluginLauncherBodyHtml();
       h += '</div>';
       return h;
     }
@@ -630,7 +681,7 @@
       pluginCategories().forEach(function(cat){
         var items = plugins.filter(function(p){ return p.category === cat.key; });
         if(!items.length) return;
-        h += '<div class="apps-cat-title">'+esc(cat.label)+'</div><div class="apps-grid">';
+        h += '<div class="apps-cat-title">'+esc(catLabel(cat))+'</div><div class="apps-grid">';
         items.forEach(function(p){ h += pluginManageTileHtml(p); });
         h += '</div>';
       });
@@ -667,7 +718,7 @@
       pluginCategories().forEach(function(cat){
         var items = plugins.filter(function(p){ return p.category === cat.key; });
         if(!items.length) return;
-        h += '<div class="apps-cat-title">'+esc(cat.label)+'</div><div class="apps-grid">';
+        h += '<div class="apps-cat-title">'+esc(catLabel(cat))+'</div><div class="apps-grid">';
         items.forEach(function(p){ h += pluginTileHtml(p); });
         h += '</div>';
       });
@@ -800,10 +851,7 @@
         + '<div class="mobile-apps-head-sub">'+esc(ru?homeShortName:homeName)+'</div></div>'
         + '<button class="apps-gear-btn" type="button" data-qa="plugins-settings-open" onclick="pluginOpenManage()" title="'+escAttr(ru?'Настройки плагинов':'Plugin settings')+'" aria-label="'+escAttr(ru?'Настройки плагинов':'Plugin settings')+'">&#9881;</button></div>';
       if(offline) h += '<div class="apps-offline" data-qa="plugin-offline-state">'+esc(ru?'Оффлайн — установленные плагины продолжают работать.':'Offline — installed plugins keep working.')+'</div>';
-      h += '<div class="apps-search"><label class="apps-search-label" for="apps-search-field">'+esc(ru?'Найти плагин':'Find a plugin')+'</label>'
-        + '<input id="apps-search-field" type="text" data-qa="apps-search-input" value="'+escAttr(pluginHostState.search||'')+'" oninput="pluginLauncherSearch(this.value)" placeholder="'+escAttr(ru?'Название плагина':'Plugin name')+'"></div>';
-      h += '<div id="apps-launcher-results">'+pluginLauncherResultsHtml()+'</div>';
-      h += '<div class="apps-launcher-foot">'+esc(ru?'Установленные и доступные плагины. Отключение, удаление и обновления — через ⚙.':'Installed and available plugins. Disable, remove and update — via ⚙.')+'</div>';
+      h += pluginLauncherBodyHtml();
       h += '</div>';
       mobileMainHtml(h);
       remoteRefreshCatalogIfStale(function(){
@@ -819,7 +867,7 @@
       pluginCategories().forEach(function(cat){
         var items = plugins.filter(function(p){ return p.category === cat.key; });
         if(!items.length) return;
-        h += '<div class="mobile-section-title">'+esc(cat.label)+'</div>';
+        h += '<div class="mobile-section-title">'+esc(catLabel(cat))+'</div>';
         items.forEach(function(p){
           var soon = !!p.comingSoon, st = pluginStatus(p.id);
           var tag = soon ? ' <span class="apps-badge soon">soon</span>'
@@ -892,6 +940,7 @@
       pluginInstalledList:pluginInstalledList,
       pluginLauncherFiltered:pluginLauncherFiltered,
       pluginLauncherSearch:pluginLauncherSearch,
+      pluginLauncherTab:pluginLauncherTab,
       pluginLauncherResultsHtml:pluginLauncherResultsHtml,
       pluginLauncherHtml:pluginLauncherHtml,
       pluginManageHtml:pluginManageHtml,

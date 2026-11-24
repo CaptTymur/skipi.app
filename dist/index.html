@@ -1180,6 +1180,11 @@ body.mobile-native .mobile-brand-wrap, body.mobile-native #mobile-feedback-btn, 
 .apps-launcher-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
 .apps-gear-btn { background:var(--surface); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:17px; width:38px; height:38px; cursor:pointer; flex:0 0 auto; }
 .apps-gear-btn:hover { border-color:var(--accent); color:var(--accent); }
+.apps-tabs { display:flex; gap:6px; margin:14px 0 4px; padding:4px; background:var(--surface); border:1px solid var(--border); border-radius:10px; max-width:420px; }
+.apps-tab { flex:1 1 0; min-height:38px; padding:8px 10px; border:0; border-radius:7px; background:transparent; color:var(--text2); font-size:13px; font-weight:700; cursor:pointer; }
+.apps-tab.active { background:var(--accent); color:#fff; }
+body.mobile-mode .apps-tabs { max-width:none; }
+body.mobile-mode .apps-tab { min-height:44px; font-size:14px; }
 .apps-search { margin:14px 0 6px; max-width:420px; }
 .apps-search-label { display:block; font-size:12px; font-weight:700; color:var(--text2); margin-bottom:5px; }
 .apps-search input { width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); font-size:13px; }
@@ -11776,10 +11781,10 @@ function myVesselLeave(){
 //       "Skipi Plugin Lab", "2026-06-23 — Skipi Plugins — coordination protocol".
 
 var SKIPI_PLUGIN_CATEGORIES = [
-    {key:'safety',    label:'Safety / Watchkeeping'},
-    {key:'utils',     label:'Utils'},
-    {key:'education', label:'Education'},
-    {key:'reports',   label:'Reports'}
+    {key:'safety',    label:'Safety / Watchkeeping', labels:{ru:'Безопасность и вахта'}},
+    {key:'utils',     label:'Utils',                 labels:{ru:'Утилиты'}},
+    {key:'education', label:'Education',             labels:{ru:'Обучение'}},
+    {key:'reports',   label:'Reports',               labels:{ru:'Отчёты'}}
 ];
 
 // Local/static registry of bundled first-party plugins — tile metadata only,
