@@ -40,7 +40,20 @@
   // use the live app version for compatibility checks when available
   if (window.APP_VERSION && CFG.host) CFG.host.version = String(window.APP_VERSION);
 
+  // A network that does not answer must not hold a launch: the loader falls back to its
+  // verified cache when a request fails, so every request is given a time limit.
+  var FETCH_TIMEOUT_MS = 5000;
+  function timedFetch(url) {
+    var ctl = (typeof AbortController === 'function') ? new AbortController() : null;
+    var timer = ctl ? setTimeout(function () { try { ctl.abort(); } catch (e) {} }, FETCH_TIMEOUT_MS) : null;
+    return fetch(url, ctl ? { cache: 'no-store', signal: ctl.signal } : { cache: 'no-store' }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.text();
+    }).then(function (t) { if (timer) clearTimeout(timer); return t; }, function (e) { if (timer) clearTimeout(timer); throw e; });
+  }
+
   var loader = window.SkipiPluginLoader.create({
+    fetch: timedFetch,
     catalogUrl: CFG.catalogUrl, host: CFG.host, policy: CFG.policy,
     pinnedPublicKey: CFG.pinnedPublicKey,
     pinnedPublicKeys: CFG.pinnedPublicKeys,
@@ -184,7 +197,13 @@
   // allowlist are taken from the entry, so a pack cannot grant itself more than was checked.
   var runtimeLoader = {
     install: function (slug) {
-      return loader.install(slug).then(function (r) {
+      // A launch is LOCAL (owner 24.11.2026): the installed pack is taken from the verified
+      // cache (signature, policy and checksum are checked again) and is not downloaded on
+      // every open. Updates are fetched before this, by SkipiRemoteEnsureLatest. Only an
+      // empty or damaged cache goes back to the network.
+      return loader.install(slug, { allowNetwork: false }).then(function (r) {
+        return (r && r.ok) ? r : loader.install(slug);
+      }).then(function (r) {
         if (!r || !r.ok) return r;
         var e = r.entry || {}, caps = e.capabilities || {};
         var pack = {};
@@ -380,7 +399,13 @@
     if (centralDelivery.checked && centralDelivery.enabled === false) return bundledMount(id, container);
     var el = container || document.getElementById('plugin-host-container');
     if (!el) return Promise.resolve(remoteFailed({ stage: 'mount', reason: 'no container' }));
-    if (currentRemote === id && host.current && host.current.id === id) return Promise.resolve({ ok: true });
+    if (currentRemote === id && host.current && host.current.id === id) {
+      // «Already open» is true only while THIS container still holds the frame. A screen left
+      // without host.unmount (top «‹» button) is rendered again with a new, empty container.
+      if (typeof el.querySelector === 'function' && el.querySelector('iframe')) return Promise.resolve({ ok: true });
+      try { runtime.close(); } catch (e) {}
+      host.current = null;
+    }
     currentRemote = id;
     if (!remoteEnabled(id)) return Promise.resolve(remoteFailed({ stage: 'policy', reason: 'disabled' }));
     el.innerHTML = loadingHtml();
