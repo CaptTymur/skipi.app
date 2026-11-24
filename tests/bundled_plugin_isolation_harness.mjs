@@ -1436,6 +1436,32 @@ const efGateMarkup = () => HTML.slice(HTML.indexOf('id="login-gate-overlay"'), H
 }
 
 {
+  // Owner 24.11 (desktop): signed in and landed in «Skipi Demo» with an empty profile and «Open your own profile
+  // to enable synchronization». init() handed a remembered DEMO to loadVault(); the gate went up OVER it, Sign in
+  // resumed the demo and app_login wrote the token into it — so even later starts reopened the demo, «signed in».
+  section('desktop cold start with last vault = DEMO: the demo is never resumed → close_vault{forget:true} → gate → Sign in downloads the account');
+  for (const tokenInDemo of [false, true]) {
+    const tag = tokenInDemo ? '(token already written into the demo)' : '(no token)';
+    let closed = false;
+    const { doc, spies, sandbox, calls } = await efBoot({
+      get_last_vault: '/demo', open_vault: EF_DEMO,
+      get_profile_status: () => ({ is_demo: closed ? '' : '1' }),
+      close_vault: () => { closed = true; return {}; },
+      app_login_status: () => ({ logged_in: tokenInDemo && !closed }),
+    }, { platform: 'linux' });
+    ok(efCalled(calls, 'close_vault', (a) => a && a.forget === true).length === 1, 'desktop demo ' + tag + ': the remembered demo is closed AND forgotten');
+    ok(spies.showLoginGate.length === 1 && efGateShown(doc), 'desktop demo ' + tag + ': the login gate is shown');
+    ok(sandbox._loginGatePending === null, 'desktop demo ' + tag + ': nothing is parked — Sign in does not resume the demo');
+    ok(typeof sandbox._loginGateNext === 'function' && /initNoVaultLanding\(/.test(String(sandbox._loginGateNext)), 'desktop demo ' + tag + ': after Sign in → the account landing (download from the account)');
+    ok(spies.initNoVaultLanding.length === 0, 'desktop demo ' + tag + ': nothing is downloaded before Sign in');
+  }
+  {
+    const { spies, sandbox, calls } = await efBoot({ get_last_vault: '/v', open_vault: EF_REAL, get_profile_status: { is_demo: '' }, app_login_status: { logged_in: false } }, { platform: 'linux' });
+    ok(efCalled(calls, 'close_vault').length === 0 && sandbox._loginGatePending === EF_REAL && spies.showLoginGate.length === 1, 'PRESERVE: a remembered REAL vault on desktop is kept and resumed after Sign in');
+  }
+}
+
+{
   section('entry fork (D13) — S3 cold start via the RECENT list: same native no-session check as the remembered vault (Supervisor Н1)');
   // Н1 (AUDIT-2026-09-06-seafarer-entry-fork-close): close_vault{forget:true} writes `{}` into the
   // config, but the demo directory stays on disk and get_recent_vaults RE-FINDS it on Android by

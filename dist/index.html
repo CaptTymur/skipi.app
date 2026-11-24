@@ -4040,10 +4040,15 @@ async function init() {
             // remembered vault WITHOUT a token → the fork with this vault parked
             // (Sign in resumes it); a remembered DEMO is closed + forgotten first —
             // the demo is not a session, the next cold start shows the fork again.
+            // Desktop too (owner 24.11): a remembered demo went to loadVault(), the gate rose OVER it,
+            // Sign in resumed the demo and wrote the token into it — the seafarer landed in «Skipi Demo»
+            // instead of the account. The demo is never resumed: forgotten, then the no-vault path below
+            // (gate → Sign in → the account is downloaded, initNoVaultLanding).
             if(isNativeMobile()&&!(await _hasLoginToken())){
                 if(await _efOpenVaultIsDemo()){ try{await invoke('close_vault',{forget:true});}catch(_){} }
                 else { _loginGatePending=info; showEntryFork(); return; }
-            }else{ await loadVault(info); return; }
+            }else if(await _efOpenVaultIsDemo()){ try{await invoke('close_vault',{forget:true});}catch(_){} }
+            else{ await loadVault(info); return; }
         }catch(e){}}
         if(!lv&&shouldUseMobileShell()){
             var recent=[];
