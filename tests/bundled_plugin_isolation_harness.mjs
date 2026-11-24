@@ -2143,6 +2143,10 @@ const appsTileTag = (h, id) => {
       ok(/data-hint="v1"/.test(emoji), 'an unknown plugin id falls back to the meta line the launcher printed, never to an empty hint');
       ok(/data-hint="v1 · Update available"/.test(upd) && !/apps-badge/.test(upd), '«Update available» moves into the hint instead of a second text line in the tile');
       ok(t('<div>nothing to do</div>') === '<div>nothing to do</div>', 'markup without launcher tiles comes back byte-identical');
+      // host-ui 1.1: a catalog plugin that is not installed yet (the «Available» shelf)
+      const avail = t('<div class="apps-icon-tile" data-qa="plugin-available-y"><button type="button" data-qa="plugin-preview-y" onclick="pluginPreview(\'y\')" title="Y &#183; v1"><span class="apps-icon-tile-icon">⚖</span><span class="apps-icon-tile-name">Y</span><span class="apps-icon-tile-meta">v1</span><span class="apps-badge live">Install</span></button></div>');
+      ok(/class="fam-app-tile"/.test(avail) && !/apps-icon-tile/.test(avail) && !/apps-badge/.test(avail), 'an «available» catalog tile gets the same icon shape as an installed one');
+      ok(/data-qa="plugin-available-y"/.test(avail) && /data-qa="plugin-preview-y"/.test(avail) && /onclick="pluginPreview\('y'\)"/.test(avail) && !/plugin-open-y/.test(avail), 'and it keeps its own hooks: it opens the plugin page (Install), it does not launch');
     }
   } catch (e) { ok(false, 'AG7 crashed before it could assert: ' + e.message); }
 }

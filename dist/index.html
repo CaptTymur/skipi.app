@@ -11889,7 +11889,10 @@ function mobileAppsTileIconHtml(raw){
 function mobileAppsIconizeHtml(html){
   var src=String(html==null?'':html);
   if(src.indexOf('class="apps-icon-tile"')<0)return src;
-  return src.replace(/<div class="apps-icon-tile" data-qa="plugin-tile-([^"]*)">([\s\S]*?)<\/button><\/div>/g,function(whole,id,inner){
+  // Two tile kinds since host-ui 1.1: an installed plugin (plugin-tile-, opens it) and a
+  // catalog plugin not installed yet (plugin-available-, opens its page with Install).
+  // Both get the same icon shape; the shelf heading above says which is which.
+  return src.replace(/<div class="apps-icon-tile" data-qa="plugin-(tile|available)-([^"]*)">([\s\S]*?)<\/button><\/div>/g,function(whole,kind,id,inner){
     var pick=function(re){var m=re.exec(inner);return m?m[1]:'';};
     var onclick=pick(/onclick="([^"]*)"/);
     var name=pick(/<span class="apps-icon-tile-name">([\s\S]*?)<\/span>/);
@@ -11906,8 +11909,10 @@ function mobileAppsIconizeHtml(html){
     if(inner.indexOf('data-qa="plugin-update-available-')>=0){
       hint=hint+' · '+(getUiLang()==='ru'?'Доступно обновление':'Update available');
     }
-    return '<div class="fam-app-cell" data-qa="plugin-tile-'+id+'">'
-      +'<button class="fam-app-tile" type="button" data-qa="plugin-open-'+id+'" onclick="'+onclick+'"'
+    var cellQa=(kind==='tile')?'data-qa="plugin-tile-'+id+'"':'data-qa="plugin-available-'+id+'"';
+    var btnQa=(kind==='tile')?'data-qa="plugin-open-'+id+'"':'data-qa="plugin-preview-'+id+'"';
+    return '<div class="fam-app-cell" '+cellQa+'>'
+      +'<button class="fam-app-tile" type="button" '+btnQa+' onclick="'+onclick+'"'
       +' onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()"'
       +' onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()"'
       +' data-hint="'+hint+'" title="'+hint+'" aria-label="'+name+'">'
