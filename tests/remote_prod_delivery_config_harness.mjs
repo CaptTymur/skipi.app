@@ -387,6 +387,81 @@ async function testLaunchIsLocal() {
   ok(failed && aborted, 'LOCAL: a network that does not answer is cut off (the launch falls back to the cache instead of hanging)');
 }
 
+
+// Owner 24.11.2026: Seafarer ships NO bundled plugins — every plugin comes from the catalog.
+// «Старым — как было, новым — пусто»: a user who used the formerly bundled plugins gets them
+// installed from the catalog on the first online start, with their settings carried over;
+// a new user starts with an empty Installed shelf.
+function bootForUnbundle(seed, opts) {
+  opts = opts || {};
+  const bootCode = fs.readFileSync(BOOT_FILE, 'utf8');
+  const store = new Map(Object.entries(seed || {}));
+  const installs = [];
+  const SLUGS = ['bnwas-time-anchor', 'ecdis-position-reminder', 'navigation-calculators', 'draft-survey'];
+  const entries = SLUGS.map((slug) => ({ slug, id: 'app.skipi.plugins.' + slug, name: slug, version: '9.9.9', permissions: ['local_storage'], capabilities: { network: 'none' } }));
+  const ctx = {
+    console: { info() {}, warn() {} }, setTimeout, clearTimeout, AbortController, fetch: () => Promise.reject(new Error('unused')),
+    localStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k),
+      key: (i) => [...store.keys()][i] ?? null, get length() { return store.size; } },
+    window: {
+      FEATURE_REMOTE_PLUGIN_DELIVERY: true,
+      SKIPI_REMOTE_CONFIG: { catalogUrl: 'https://unit.test/catalog.json', remoteSlugs: '*', host: { id: 'seafarer', version: EXPECTED_VERSION }, policy: {}, pinnedPublicKeys: {}, pinnedPublicKey: {} },
+      SkipiPluginLoader: { create: () => ({
+        getCatalog: () => (opts.offline ? Promise.reject(new Error('offline')) : Promise.resolve({ source: 'network', catalog: { plugins: entries } })),
+        install: (slug) => { installs.push(slug); if (opts.offline) return Promise.resolve({ ok: false, stage: 'catalog', reason: 'offline' });
+          const e = entries.find((x) => x.slug === slug); return Promise.resolve({ ok: true, entry: e, pack: { files: {} }, source: 'network/network' }); },
+      }) },
+      SkipiPluginRuntime: { create: () => ({ open: () => Promise.resolve({ ok: true }), close() {} }) },
+      SkipiPluginHost: { mount: () => Promise.resolve({ ok: true }), unmount() {} },
+    },
+    document: { getElementById: () => null },
+  };
+  ctx.window.window = ctx.window; ctx.window.localStorage = ctx.localStorage;
+  vm.createContext(ctx);
+  vm.runInContext(bootCode, ctx, { filename: BOOT_FILE });
+  const reg = () => JSON.parse(store.get('skipi_remote_plugins_state') || '{}');
+  return { win: ctx.window, store, installs, reg };
+}
+
+async function testUnbundleMigration() {
+  // a NEW user: nothing in storage — nothing is installed for them
+  let b = bootForUnbundle({});
+  await b.win.SkipiRemoteUnbundle();
+  ok(b.installs.length === 0 && Object.keys(b.reg()).length === 0, 'UNBUNDLE: a new user gets no plugin installed on their behalf (empty Installed shelf)');
+  ok(JSON.parse(b.store.get('skipi_plugins_unbundled_v1')).pending.length === 0, 'UNBUNDLE: and the decision is recorded once');
+
+  // an EXISTING user: opened BNWAS, keeps ECDIS settings, uninstalled the calculators, disabled nothing
+  const seed = {
+    skipi_plugins_state: JSON.stringify({ 'bnwas-time-anchor': { last_opened_at: '2026-10-01T00:00:00Z' }, 'navigation-calculators': { installed: false }, 'ecdis-position-reminder': { enabled: false } }),
+    'skipi_plugin_ecdis-position-reminder_settings': '{"interval":30}',
+    'skipi_plugin_bnwas-time-anchor_journal': '[1,2]',
+    'skpd_h.bnwas-time-anchor.journal': '[9]',
+  };
+  b = bootForUnbundle(seed);
+  await b.win.SkipiRemoteUnbundle();
+  ok(JSON.stringify(b.installs.slice().sort()) === JSON.stringify(['bnwas-time-anchor', 'ecdis-position-reminder']), 'UNBUNDLE: an existing user gets the formerly bundled plugins from the catalog — except the one they had uninstalled');
+  ok(b.reg()['bnwas-time-anchor'] && b.reg()['bnwas-time-anchor'].installed && b.reg()['bnwas-time-anchor'].enabled !== false, 'UNBUNDLE: the plugin is installed and enabled');
+  ok(b.reg()['ecdis-position-reminder'] && b.reg()['ecdis-position-reminder'].enabled === false, 'UNBUNDLE: a plugin the user had disabled stays disabled');
+  ok(!b.reg()['draft-survey'], 'UNBUNDLE: a catalog plugin that was never bundled is not installed on the user\'s behalf');
+  ok(b.store.get('skpd_h.ecdis-position-reminder.settings') === '{"interval":30}', 'UNBUNDLE: plugin settings are carried over to the catalog plugin\'s storage');
+  ok(b.store.get('skpd_h.bnwas-time-anchor.journal') === '[9]', 'UNBUNDLE: data the catalog version already holds is not overwritten');
+  ok(JSON.parse(b.store.get('skipi_plugins_unbundled_v1')).pending.length === 0, 'UNBUNDLE: nothing is left pending after a successful run');
+  const n = b.installs.length;
+  await b.win.SkipiRemoteUnbundle();
+  ok(b.installs.length === n, 'UNBUNDLE: it runs once — a later start installs nothing again');
+  // the user uninstalls BNWAS later: it must not come back by itself
+  await b.win.SkipiRemoteUninstall('bnwas-time-anchor');
+  await b.win.SkipiRemoteUnbundle();
+  ok(!b.reg()['bnwas-time-anchor'] && b.installs.length === n, 'UNBUNDLE: a plugin the user removes afterwards does not reinstall itself');
+
+  // OFFLINE on the first start after the update: keep it pending, finish when the network is back
+  b = bootForUnbundle(seed, { offline: true });
+  await b.win.SkipiRemoteUnbundle();
+  const pend = JSON.parse(b.store.get('skipi_plugins_unbundled_v1')).pending.map((x) => x.slug).sort();
+  ok(JSON.stringify(pend) === JSON.stringify(['bnwas-time-anchor', 'ecdis-position-reminder']) && Object.keys(b.reg()).length === 0, 'UNBUNDLE: with no network the plugins stay pending (nothing half-installed)');
+  ok(b.store.get('skpd_h.ecdis-position-reminder.settings') === '{"interval":30}', 'UNBUNDLE: settings are carried over even before the network is back');
+}
+
 (async function main() {
   const win = runConfig();
   const cfg = win.SKIPI_REMOTE_CONFIG;
@@ -408,6 +483,7 @@ async function testLaunchIsLocal() {
   await testRuntimeGrantsComeFromSignedEntry();
   await testReopenAfterContainerWasDestroyed();
   await testLaunchIsLocal();
+  await testUnbundleMigration();
   ok(cfg.host && cfg.host.id === 'seafarer', 'host id is seafarer');
   ok(cfg.host && cfg.host.version === EXPECTED_VERSION, 'host version is release version 0.4.165');
 
