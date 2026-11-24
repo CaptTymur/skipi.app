@@ -73,8 +73,9 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
 async function mountSync(){const s=mountedSyncSettings();s.sandbox.scheduleSeafarerFormLoad();s.scheduled.shift()();await flush();assert.equal(s.loads(),1,'actual callback still loads profile');assert.equal(s.legacy.innerHTML,'','stale legacy form still cleared');assert.equal(s.requests.length,1,'actual unified post-mount callback requests sync status');assert.equal(s.requests[0].name,'get_account_sync_status');return s;}
 let mounted=await mountSync();
 mounted.requests[0].resolve({enabled:false,state:'disabled',account_email:'synthetic@example.invalid',conflicts:[]});await flush();
-assert.equal(mounted.active.buttons.length,1,'actual callback/status response renders Enable in mounted unified panel');
-assert.ok(mounted.active.html.includes('Enable account sync'));
+// Owner 24.11: sync runs under the hood — a signed-in profile about to join shows no Enable switch.
+assert.equal(mounted.active.buttons.length,0,'actual callback/status response renders no Enable switch in mounted unified panel');
+assert.ok(mounted.active.html.includes('Synchronizing'));
 assert.equal(mounted.competing.innerHTML,'','competing mobile/legacy copy never receives unified status');
 assert.equal(mounted.requests.length,1,'mount never enables synchronization automatically');
 for(const change of ['close','replace','replaceRoot']){
@@ -91,9 +92,10 @@ assert.ok(mounted.active.html.includes('documents are synchronized'));assert.equ
 for(const language of ['en','ru']){
     const s=await mountSync();s.sandbox.getUiLang=()=>language;
     s.requests[0].resolve({enabled:false,state:'disabled',conflicts:[]});await flush();
-    assert.ok(s.active.html.includes(language==='ru'?'Включить синхронизацию':'Enable account sync'));
+    assert.ok(s.active.html.includes(language==='ru'?'Синхронизация…':'Synchronizing…'));
+    // Owner 24.11: no version choice — a difference is settled by the sync itself (account_sync.rs settle_conflict).
     s.sandbox.oneAccountSyncRender({enabled:true,state:'conflict',conflicts:[{kind:'profile',id:'main',local:{name:'local'},remote:{name:'remote'},revision:1}]},s.active);
-    const row=s.active.children[0];assert.equal(row.children[2].textContent,language==='ru'?'Оставить версию устройства':'Keep this device version');assert.equal(row.children[3].textContent,language==='ru'?'Использовать версию аккаунта':'Use account version');assert.ok(row.children[1].textContent.startsWith(language==='ru'?'На устройстве: ':'This device: '));
+    assert.equal(s.active.children.length,0,'no version choice rows');assert.ok(!s.active.html.includes('data-sync-action'));assert.ok(s.active.html.includes(language==='ru'?'Синхронизация…':'Synchronizing…'));
     s.sandbox.oneAccountSyncRender({state:'error',error:'raw server error <retry>',conflicts:[]},s.active);assert.ok(s.active.html.includes(language==='ru'?'Синхронизация требует внимания':'Sync needs attention'));assert.ok(s.active.html.includes('raw server error &lt;retry&gt;'));
     s.sandbox.invoke=async()=>({consent_notice_version:NOTICE,consent_context:'synthetic-context'});let consent;s.sandbox.uiConfirm=async message=>{consent=message;return false;};s.sandbox.confirm=message=>{consent=message;return false;};await s.sandbox.oneAccountSyncEnable();assert.ok(consent.includes(s.sandbox.accountSyncNotice[language].title));assert.equal(s.requests.length,1,'declined real consent never enables sync');
 }

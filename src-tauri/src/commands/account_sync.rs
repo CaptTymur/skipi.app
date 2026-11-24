@@ -270,6 +270,16 @@ pub mod vault_sync {
         }
         Ok(())
     }
+    /// Owner 24.11: consent is given once per account, not per device. With `notice` the user has
+    /// just accepted it on this device; without it the device asks to join under the account's
+    /// existing consent (`consent_account`) — the server answers `current_consent_required` when
+    /// the account never consented, and only then is the notice shown.
+    fn grant_body(device: &str, notice: Option<&Value>) -> Value {
+        match notice {
+            Some(n) => json!({"device_id":device,"consent_vault":true,"consent":n}),
+            None => json!({"device_id":device,"consent_vault":true,"consent_account":true}),
+        }
+    }
     fn has_current_consent(conn: &Connection) -> bool {
         let receipt = db::get_vault_info_value(conn,"sync_consent_receipt")
             .and_then(|s| serde_json::from_str::<Value>(&s).ok()).unwrap_or(Value::Null);
@@ -1470,13 +1480,19 @@ pub mod vault_sync {
                         && text(&e["data"], "category") == doc.category
                 })
                 .collect();
-            if matches.len() != 1 {
+            // Several devices may each have uploaded the same empty scaffold already; join the first
+            // of them (stable order) instead of uploading one more copy of it.
+            if matches.iter().any(|e| text(e, "id") == doc.id) {
                 continue;
             }
-            let id = text(matches[0], "id");
-            if id == doc.id || docs.iter().any(|d| d.id == id) {
+            let Some(id) = matches
+                .iter()
+                .map(|e| text(e, "id"))
+                .filter(|id| !docs.iter().any(|d| d.id == *id))
+                .min()
+            else {
                 continue;
-            }
+            };
             // This is a generated scaffold, not a user's independently filled record.
             conn.execute(
                 "UPDATE documents SET id=?1 WHERE id=?2",
@@ -1486,27 +1502,52 @@ pub mod vault_sync {
         }
         Ok(())
     }
-    fn changed_remote_conflict(
+    /// Owner 24.11 («оно должно быть под капотом и никак незаметно для пользователя»): sync never
+    /// asks which version to keep. A difference between this device and the account is settled at
+    /// once: the version being synchronized now — this device's — wins (the later sync wins), and
+    /// the account's version stays in local recovery (`recovery_metadata`) and in the server history.
+    /// One exception keeps data: a local deletion never removes a remote edit — the remote version
+    /// is restored instead. Returns the queued mutation, or None when the remote side is taken.
+    fn settle_conflict_queue(
         conn: &Connection,
-        account: &str,
-        old: &Value,
-        local: &Value,
+        root: &Path,
+        pin: &Pin,
+        kind: &str,
+        id: &str,
+        remote: &Value,
+    ) -> Result<Option<Value>, String> {
+        let local = current_entity(&scan(conn, root, &pin.account)?, kind, id);
+        if local["deleted"] == true {
+            if remote["deleted"] == true {
+                write_ledger(conn, &pin.account, remote, &content_hash(&local), None, None)?;
+            }
+            return Ok(None);
+        }
+        recovery_metadata(root, kind, id, remote)?;
+        transaction(conn, || queue_entity(conn, root, pin, &local, remote)).map(Some)
+    }
+    /// Settles one difference (see `settle_conflict_queue`). Returns true when the remote state
+    /// changed, so the caller refreshes the manifest.
+    fn settle_conflict(
+        state: &AppState,
+        pin: &Pin,
+        client: &reqwest::blocking::Client,
+        k: &str,
         remote: &Value,
     ) -> Result<bool, String> {
-        let baseline = &old["baseline"];
-        if remote["revision"] != baseline["revision"] {
-            record_conflict(
-                conn,
-                account,
-                baseline,
-                text(old, "local_hash"),
-                None,
-                local,
-                remote,
-            )?;
-            return Ok(true);
+        let mut parts = k.splitn(2, ':');
+        let kind = parts.next().unwrap_or("");
+        let id = parts.next().unwrap_or("");
+        let (queued, local_hash) = pinned(state, pin, |conn, root| {
+            let q = settle_conflict_queue(conn, root, pin, kind, id, remote)?;
+            let local = current_entity(&scan(conn, root, &pin.account)?, kind, id);
+            Ok((q, content_hash(&local)))
+        })?;
+        match queued {
+            Some(q) => send_queue(state, pin, client, &q),
+            None if remote["deleted"] == true => Ok(false),
+            None => apply_remote(state, pin, client, remote, &local_hash).map(|_| false),
         }
-        Ok(false)
     }
     fn record_sync_error(state: &AppState, pin: &Pin, message: &str) -> Result<(),String> {
         pinned(state,pin,|conn,_| {
@@ -1571,6 +1612,13 @@ pub mod vault_sync {
                 })?;
                 if let Some(old) = &old {
                     if !old["conflict"].is_null() {
+                        // Owner 24.11: no version choice — a difference recorded earlier (or by a
+                        // 409 below) is settled here, on the next pass.
+                        if let Some(r) = remote.get(&k).cloned() {
+                            if settle_conflict(state, &pin, &client, &k, &r)? {
+                                remote = manifest(&client, &pin)?.1;
+                            }
+                        }
                         continue;
                     }
                     if !old["queued"].is_null() {
@@ -1626,9 +1674,11 @@ pub mod vault_sync {
                                 }
                                 continue;
                             }
-                            if pinned(state, &pin, |conn, _| {
-                                changed_remote_conflict(conn, &pin.account, old, &local, r)
-                            })? {
+                            if remote_changed {
+                                let r = r.clone();
+                                if settle_conflict(state, &pin, &client, &k, &r)? {
+                                    remote = manifest(&client, &pin)?.1;
+                                }
                                 continue;
                             }
                             if local["deleted"] == true && r["deleted"] == true {
@@ -1658,9 +1708,10 @@ pub mod vault_sync {
                                 write_ledger(conn, &pin.account, r, &local_hash, None, None)
                             })?;
                         } else {
-                            pinned(state, &pin, |conn, _| {
-                                record_conflict(conn, &pin.account, r, "", None, &local, r)
-                            })?;
+                            let r = r.clone();
+                            if settle_conflict(state, &pin, &client, &k, &r)? {
+                                remote = manifest(&client, &pin)?.1;
+                            }
                         }
                     }
                 }
@@ -1815,6 +1866,16 @@ pub mod vault_sync {
             return Err("Explicit consent is required to restore account data".into());
         }
         let notice = validate_consent(consent_notice)?;
+        restore_with_grant(state, parent_dir, Some(notice), context, base)
+    }
+    // notice = None: join under the account's existing consent (see grant_body).
+    fn restore_with_grant(
+        state: &AppState,
+        parent_dir: &Path,
+        notice: Option<&Value>,
+        context: &str,
+        base: &str,
+    ) -> Result<Value, String> {
         let _single = state.sync_worker.lock().unwrap_or_else(|e| e.into_inner());
         let (pending, epoch) = restore_session(state, context)?;
         let client = client()?;
@@ -1823,7 +1884,7 @@ pub mod vault_sync {
             client
                 .post(format!("{base}/api/app/vault-token"))
                 .bearer_auth(&pending.token)
-                .json(&json!({"device_id":device,"consent_vault":true,"consent":notice})),
+                .json(&grant_body(&device, notice)),
         )?;
         if code != 200 {
             return Err(consent_response_error(code, &grant));
@@ -1839,7 +1900,7 @@ pub mod vault_sync {
         {
             return Err("Invalid account binding response".into());
         }
-        validate_receipt(&grant["consent_receipt"], &account, &device, Some(notice))?;
+        validate_receipt(&grant["consent_receipt"], &account, &device, notice)?;
         restore_session(state, context)?;
         let (code, body) = http_json(
             client
@@ -1979,17 +2040,23 @@ pub mod vault_sync {
         consent: bool,
         restore_context: String,
         consent_notice: Option<Value>,
+        account_consent: Option<bool>,
     ) -> Result<Value, String> {
         tauri::async_runtime::spawn_blocking(move || {
             let parent = app.path().app_data_dir().map_err(err)?.join("vaults");
-            let mut result = restore_from_account(
-                &app.state::<AppState>(),
-                &parent,
-                consent,
-                consent_notice.as_ref(),
-                &restore_context,
-                &assistant_api_base(),
-            )?;
+            let state = app.state::<AppState>();
+            let mut result = if !consent && account_consent == Some(true) {
+                restore_with_grant(&state, &parent, None, &restore_context, &assistant_api_base())?
+            } else {
+                restore_from_account(
+                    &state,
+                    &parent,
+                    consent,
+                    consent_notice.as_ref(),
+                    &restore_context,
+                    &assistant_api_base(),
+                )?
+            };
             if let Some(path) = result["path"].as_str() {
                 crate::save_last_vault(path);
             }
@@ -2062,20 +2129,24 @@ pub mod vault_sync {
         consent: bool,
         consent_context: Option<String>,
         consent_notice: Option<Value>,
+        account_consent: Option<bool>,
     ) -> Result<Value, String> {
-        if !consent {
+        let by_account = !consent && account_consent == Some(true);
+        if !consent && !by_account {
             return Err("Explicit consent is required to synchronize profile, sea service and all attached files".into());
         }
-        validate_consent(consent_notice.as_ref())?;
+        if !by_account {
+            validate_consent(consent_notice.as_ref())?;
+        }
         tauri::async_runtime::spawn_blocking(move||{
             let state=app.state::<AppState>();let _single=state.sync_worker.lock().unwrap_or_else(|e|e.into_inner());
             let(path,vault,epoch,parent,device)=prepare_enable(&state,consent_context.as_deref())?;
-            let notice=validate_consent(consent_notice.as_ref())?;
-            let(s,v)=http_json(client()?.post(api("/api/app/vault-token")).bearer_auth(&parent).json(&json!({"device_id":device,"consent_vault":true,"consent":notice})))?;
+            let notice=if by_account{None}else{Some(validate_consent(consent_notice.as_ref())?)};
+            let(s,v)=http_json(client()?.post(api("/api/app/vault-token")).bearer_auth(&parent).json(&grant_body(&device,notice)))?;
             if s!=200{return Err(consent_response_error(s,&v))}
             let account=text(&v,"account_id");let token=text(&v,"token");
             if v["schema"]!=1||text(&v,"scope")!="seafarer-profile+vault"||text(&v,"device_id")!=device||account.is_empty()||token.is_empty(){return Err("Invalid account binding response".into())}
-            validate_receipt(&v["consent_receipt"],account,&device,Some(notice))?;
+            validate_receipt(&v["consent_receipt"],account,&device,notice)?;
             let path_lock=state.vault_path.lock().unwrap_or_else(|e|e.into_inner());let conn=state.conn.lock().unwrap_or_else(|e|e.into_inner());let conn=conn.as_ref().ok_or("Vault closed")?;
             if path_lock.as_ref()!=Some(&path)||state.sync_epoch.load(Ordering::SeqCst)!=epoch||db::get_vault_info_value(conn,"sync_vault_uuid").as_deref()!=Some(&vault)||super::super::app_login::stored_user_token(conn).as_deref()!=Some(&parent){return Err("Vault or login changed during consent".into())}
             if let Some(bound)=db::get_vault_info_value(conn,"sync_account_id").filter(|s|!s.is_empty()){if bound!=account{return Err("This local profile belongs to another sync account. Open or create a separate profile.".into())}}
@@ -2255,7 +2326,12 @@ pub mod vault_sync {
                     let bytes = if first.starts_with("POST ") {
                         let start = input.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
                         let body: Value = serde_json::from_slice(&input[start..]).unwrap();
-                        assert_eq!(body["consent"],current_notice());
+                        if scenario == "account" {
+                            assert_eq!(body["consent_account"], true, "joins under the account's consent");
+                            assert!(body["consent"].is_null(), "no notice is claimed for a device that did not show it");
+                        } else {
+                            assert_eq!(body["consent"],current_notice());
+                        }
                         json!({"consent_receipt":if scenario=="missing-receipt"{Value::Null}else{test_receipt("synthetic-account",body["device_id"].as_str().unwrap())},"schema":1,"scope":"seafarer-profile+vault","device_id":body["device_id"],"account_id":if scenario=="foreign"{"foreign-account"}else{"synthetic-account"},"token":"synthetic-child"}).to_string().into_bytes()
                     } else if first.contains("/manifest ") {
                         if scenario == "race" {
@@ -2408,6 +2484,32 @@ pub mod vault_sync {
                 fs::remove_dir_all(root).unwrap();
             }
         }
+        // Owner 24.11: a second device of an account that already consented downloads it without a
+        // consent window — the request carries no notice claim, only `consent_account`.
+        #[test]
+        fn restore_under_account_consent_shows_no_notice_and_downloads() {
+            let (root, state, context) = restore_fixture();
+            let (base, requests, stop, task) = restore_server(state.clone(), "account");
+            let result = restore_with_grant(&state, &root.join("restores"), None, &context, &base);
+            stop.store(true, Ordering::SeqCst);
+            task.join().unwrap();
+            assert_eq!(result.unwrap()["outcome"], "restored");
+            assert!(requests.lock().unwrap().iter().any(|r| r.starts_with("POST /api/app/vault-token ")));
+            assert!(state.login_pending.lock().unwrap().is_none());
+            drop(state);
+            fs::remove_dir_all(root).unwrap();
+        }
+        #[test]
+        fn grant_body_claims_a_notice_only_when_it_was_shown() {
+            let shown = grant_body("dev-1", Some(&current_notice()));
+            assert_eq!(shown["consent"], current_notice());
+            assert!(shown["consent_account"].is_null());
+            let joined = grant_body("dev-1", None);
+            assert_eq!(joined["consent_account"], true);
+            assert!(joined["consent"].is_null());
+            assert_eq!(joined["consent_vault"], true);
+            assert_eq!(joined["device_id"], "dev-1");
+        }
         #[test]
         fn restore_cancel_stale_context_and_existing_profile_do_not_start_http() {
             let (root, state, context) = restore_fixture();
@@ -2544,6 +2646,66 @@ pub mod vault_sync {
             e["revision"] = json!(1);
             e
         }
+        fn test_pin(root: &Path) -> Pin {
+            Pin { path: root.to_path_buf(), vault: uid(), account: "public-A".into(), token: "synthetic".into(), parent: "synthetic".into(), epoch: 0 }
+        }
+        // Owner 24.11 («ненужное пользовательское действие… должно быть под капотом»): the photo on the
+        // phone met the account's old photo on first link and waited for a version choice in Settings.
+        #[test]
+        fn difference_is_settled_for_this_device_without_a_version_choice() {
+            let (root, conn) = fixture();
+            let pin = test_pin(&root);
+            db::set_vault_info(&conn, "personal_first_name", "Device").unwrap();
+            let mut remote = entity("profile", "main", json!({"personal_first_name":"QA"}), Value::Null);
+            remote["revision"] = json!(1);
+            // A difference recorded by an older build is settled too, not left waiting.
+            let local = scan(&conn, &root, &pin.account).unwrap()["profile:main"].clone();
+            record_conflict(&conn, &pin.account, &remote, "", None, &local, &remote).unwrap();
+            let q = settle_conflict_queue(&conn, &root, &pin, "profile", "main", &remote).unwrap().expect("this device's version is queued");
+            assert_eq!(q["request"]["expected_revision"], 1, "replaces exactly the account version it saw (CAS)");
+            assert_eq!(q["request"]["data"]["personal_first_name"], "Device");
+            let entry = ledger(&conn, &pin.account).unwrap()["profile:main"].clone();
+            assert!(entry["conflict"].is_null(), "no version choice is left for the user");
+            assert!(!entry["queued"].is_null());
+            assert!(root.join("_sync").join("recovery").exists(), "the account version is kept for recovery");
+            drop(conn);
+            fs::remove_dir_all(root).unwrap();
+        }
+        #[test]
+        fn local_deletion_never_removes_a_remote_edit() {
+            let (root, conn) = fixture();
+            let pin = test_pin(&root);
+            let mut remote = wire_doc("edited-elsewhere", None);
+            remote["revision"] = json!(2);
+            assert!(settle_conflict_queue(&conn, &root, &pin, "document", "edited-elsewhere", &remote).unwrap().is_none(), "the remote edit is taken, nothing is deleted on the server");
+            assert!(ledger(&conn, &pin.account).unwrap().get("document:edited-elsewhere").map(|e| e["queued"].is_null()).unwrap_or(true));
+            let mut gone = deleted("document", "edited-elsewhere");
+            gone["revision"] = json!(3);
+            assert!(settle_conflict_queue(&conn, &root, &pin, "document", "edited-elsewhere", &gone).unwrap().is_none());
+            assert!(ledger(&conn, &pin.account).unwrap()["document:edited-elsewhere"]["conflict"].is_null(), "both deleted: settled");
+            drop(conn);
+            fs::remove_dir_all(root).unwrap();
+        }
+        #[test]
+        fn empty_scaffold_joins_the_first_of_duplicated_account_slots() {
+            let (root, conn) = fixture();
+            let mut local = wire_doc("local-scaffold", None);
+            for (k, v) in [("template_id", json!("passport")), ("title", json!("Passport (Travel)")), ("category", json!("Passport")), ("notes", Value::Null), ("field_statuses", Value::Null)] {
+                local["data"][k] = v;
+            }
+            apply_entity(&conn, &root, &local, None).unwrap();
+            let mut remote = BTreeMap::new();
+            for id in ["dup-b", "dup-a"] {
+                let mut d = local.clone();
+                d["id"] = json!(id);
+                remote.insert(key("document", id), d);
+            }
+            map_empty_framework_rows(&conn, "public-A", &remote).unwrap();
+            let ids: Vec<String> = db::get_all_docs(&conn).unwrap().into_iter().map(|d| d.id).collect();
+            assert_eq!(ids, vec!["dup-a".to_string()], "joined the first duplicate instead of uploading a third copy");
+            drop(conn);
+            fs::remove_dir_all(root).unwrap();
+        }
         #[test]
         fn legacy_sea_service_with_unknown_imo_and_empty_fields_round_trips() {
             let (root, conn) = fixture();
@@ -2627,15 +2789,19 @@ pub mod vault_sync {
             let mut local = baseline.clone();
             local["deleted"] = json!(true);
             local["data"] = Value::Null;
-            let old = json!({"baseline":baseline,"local_hash":content_hash(&baseline)});
+            // Owner 24.11: no version choice any more — a local parent deletion against a changed
+            // remote revision takes the remote version (restored by apply_remote in run_sync); it
+            // never queues the deletion and never upgrades the CAS revision.
+            write_ledger(&conn, "A", &baseline, &content_hash(&baseline), None, None).unwrap();
+            assert_eq!(local["deleted"], true, "the parent is gone locally (not in the vault)");
+            let pin = Pin { path: root.clone(), vault: uid(), account: "A".into(), token: "synthetic".into(), parent: "synthetic".into(), epoch: 0 };
             assert!(
-                changed_remote_conflict(&conn, "A", &old, &local, &remote).unwrap(),
+                settle_conflict_queue(&conn, &root, &pin, "experience", "work", &remote).unwrap().is_none(),
                 "child revision protects unseen evidence even if parent metadata matches"
             );
             let rows = ledger(&conn, "A").unwrap();
-            assert!(!rows["experience:work"]["conflict"].is_null());
-            assert!(rows["experience:work"]["queued"].is_null());
-            assert_eq!(rows["experience:work"]["baseline"]["revision"], 1);
+            assert!(rows["experience:work"]["queued"].is_null(), "the deletion is not sent");
+            assert_eq!(rows["experience:work"]["baseline"]["revision"], 1, "CAS revision is not upgraded");
             drop(conn);
             fs::remove_dir_all(root).unwrap();
         }

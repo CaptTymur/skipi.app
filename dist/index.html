@@ -1819,8 +1819,9 @@ async function oneAccountSyncRequestConsent(mode,status){
     n.paragraphs.forEach(function(p){html+='<p>'+esc(p)+'</p>';});
     html+='<p><a href="#" onclick="openExternalUrlSafe(accountSyncNotice.privacy_url);return false;">'+esc(n.privacy_label)+'</a></p>';
     // №976 (OWNER 19.11): the download consent after sign-in is ONE tap — the two statements
-    // stay in the text, the checkboxes stay for enabling sync from Settings.
-    var oneTap=mode==='restore';
+    // stay in the text, the checkboxes stay for enabling sync from Settings. Owner 24.11: the
+    // automatic join (mode 'link', oneAccountAutoLink) is one tap too, shown once per account.
+    var oneTap=mode==='restore'||mode==='link';
     if(oneTap)html+='<p>'+esc(n.sync_label)+'</p><p>'+esc(n.health_label)+'</p>';
     var accepted=await uiConfirm(html,{allowHtml:true,confirmLabel:mode==='restore'?n.accept_restore:n.accept_enable,cancelLabel:n.cancel,requiredChecks:oneTap?[]:[n.sync_label,n.health_label]});
     if(accepted!==true)return null;
@@ -1855,18 +1856,17 @@ function oneAccountSyncRender(status,target){
         var withdrawn=String(status.error||'').includes('Sync consent was withdrawn.');
         status=Object.assign({},status,{error:withdrawn?(getUiLang()==='ru'?'Согласие отозвано. Сначала возобновите синхронизацию в аккаунте, затем включите её на этом устройстве.':'Consent was withdrawn. Resume sync in your account, then enable it on this device.'):(getUiLang()==='ru'?'Чтобы продолжить синхронизацию, прочитайте новое уведомление и подтвердите оба согласия. До этого новые изменения остаются на устройстве.':'To continue sync, read the updated notice and confirm both choices. Until then, new changes stay on this device.')});
     }
-    el.innerHTML='<strong>'+esc(t.title)+'</strong><div>'+esc(account)+'</div><div>'+esc(t.messages[displayState]||displayState)+'</div>'+(status.error?'<div>'+esc(status.error)+'</div>':'')+(status.enabled?'<button class="btn btn-outline" type="button" data-sync-action="retry">'+esc(t.retry)+'</button> <button class="btn btn-outline" type="button" data-sync-action="disable">'+esc(t.disable)+'</button>':'<button class="btn btn-outline" type="button" data-sync-action="enable">'+esc(t.enable)+'</button>');
-    (status.enabled===true?status.conflicts||[]:[]).forEach(function(c){
-        var row=document.createElement('div');row.style.marginTop='12px';
-        var label=document.createElement('div');label.textContent=c.kind+' · '+c.id;row.appendChild(label);
-        var preview=document.createElement('pre');preview.style.whiteSpace='pre-wrap';preview.textContent=t.device+JSON.stringify(c.local)+'\n'+t.account+JSON.stringify(c.remote);row.appendChild(preview);
-        ['local','remote'].forEach(function(choice){var button=document.createElement('button');button.type='button';button.className='btn btn-outline';button.textContent=choice==='local'?t.local:t.remote;button.onclick=function(){oneAccountSyncResolve(c.kind,c.id,choice,c.revision);};row.appendChild(button);});el.appendChild(row);
-    });
+    // Owner 24.11: sync runs under the hood — no «Sync now», no «Pause», no version choice (a
+    // difference is settled by the sync itself, account_sync.rs settle_conflict). The only control
+    // left is consent, and only after this account's notice was declined.
+    var declined=status.enabled!==true&&status.consent_context&&oneAccountAutoLinkDone===status.consent_context;
+    if(displayState==='conflict'||(!declined&&displayState==='disabled'))displayState='syncing';
+    el.innerHTML='<strong>'+esc(t.title)+'</strong><div>'+esc(account)+'</div><div>'+esc(t.messages[displayState]||displayState)+'</div>'+(status.error?'<div>'+esc(status.error)+'</div>':'')+(declined?'<button class="btn btn-outline" type="button" data-sync-action="enable">'+esc(t.enable)+'</button>':'');
     el.querySelectorAll('[data-sync-action]').forEach(function(b){b.onclick=function(){var a=b.getAttribute('data-sync-action');if(a==='enable')oneAccountSyncEnable();else if(a==='retry')oneAccountSyncRun();else oneAccountSyncDisable();};});
 }
 async function oneAccountSyncRun(){
     if(window.__SKIPI_WEBDESKTOP__||oneAccountSyncBusy||(typeof accountRestoreBusy!=='undefined'&&accountRestoreBusy))return;oneAccountSyncBusy=true;
-    try{var status=await invoke('get_account_sync_status');if(typeof accountRestoreBusy!=='undefined'&&accountRestoreBusy)return;if(!status.enabled){oneAccountSyncRender(status);return;}oneAccountSyncRender(Object.assign({},status,{state:'syncing'}));oneAccountSyncRender(await invoke('sync_account_now'));await oneAccountSyncRefreshLists();}
+    try{var status=await invoke('get_account_sync_status');if(typeof accountRestoreBusy!=='undefined'&&accountRestoreBusy)return;if(!status.enabled&&await oneAccountAutoLink(status))status=await invoke('get_account_sync_status');if(!status.enabled){oneAccountSyncRender(status);return;}oneAccountSyncRender(Object.assign({},status,{state:'syncing'}));oneAccountSyncRender(await invoke('sync_account_now'));await oneAccountSyncRefreshLists();}
     catch(e){oneAccountSyncRender(Object.assign({},oneAccountSyncLast||{},{state:'error',error:String(e)}));}
     finally{oneAccountSyncBusy=false;}
 }
@@ -1876,6 +1876,35 @@ async function oneAccountSyncRefreshLists(){
     allDocs=await invoke('get_documents');
     if(typeof renderTree==='function'&&document.getElementById('tree'))renderTree();
     if(typeof mobileView!=='undefined'&&mobileView==='docs'&&typeof renderMobileDocs==='function')renderMobileDocs();
+}
+// Owner 24.11 («ненужное пользовательское действие… должно быть под капотом и никак незаметно для
+// пользователя»): a signed-in profile is synchronized with no switch. The device joins under the
+// ACCOUNT's consent (given once, on any device); the notice is shown only when the server answers
+// that this account never consented — once per sign-in context, never in a loop.
+var oneAccountAutoLinkDone=null;
+function oneAccountConsentNeeded(e){return /consent is required/i.test(String((e&&e.message)||e||''));}
+async function oneAccountAutoLink(status){
+    if(window.__SKIPI_WEBDESKTOP__||!status||status.logged_in!==true||status.profile_open!==true)return false;
+    var context=status.consent_context;
+    if(typeof context!=='string'||!context||oneAccountAutoLinkDone===context)return false;
+    try{
+        await invoke('enable_account_sync',{consent:false,consentContext:context,consentNotice:null,accountConsent:true});
+        return true;
+    }catch(e){
+        if(!oneAccountConsentNeeded(e)){
+            // The demo or a profile of another account is final for this context; a network
+            // failure is retried on the next sync trigger (online / visible / any edit).
+            if(/own profile|another sync account|changed/i.test(String((e&&e.message)||e)))oneAccountAutoLinkDone=context;
+            logError('account_sync_link',e);return false;
+        }
+    }
+    oneAccountAutoLinkDone=context;
+    var consent=await oneAccountSyncRequestConsent('link',status);
+    if(!consent)return false;
+    var after=await invoke('get_account_sync_status');
+    if(!after||after.consent_context!==context||after.consent_notice_version!==consent.notice_version)return false;
+    await invoke('enable_account_sync',{consent:true,consentContext:context,consentNotice:consent});
+    return true;
 }
 function oneAccountSyncSchedule(){if(oneAccountSyncTimer)clearTimeout(oneAccountSyncTimer);oneAccountSyncTimer=setTimeout(async function(){oneAccountSyncTimer=null;await oneAccountSyncRun();},1200);}
 async function oneAccountSyncEnable(){
@@ -18443,11 +18472,20 @@ async function restoreAccountProfile(){
         if(before.logged_in!==true)throw new Error(ru?'Войдите в аккаунт, чтобы подключить его данные.':'Sign in to connect your account data.');
         if(before.profile_open!==false)throw new Error(ru?'Закройте текущий профиль перед загрузкой данных в новый профиль.':'Close the current profile before downloading data into a new profile.');
         if(!before.restore_context)throw new Error(oneAccountSyncTexts().contextChanged);
-        var consent=await oneAccountSyncRequestConsent('restore',before);
-        if(!consent)return 'cancel';
-        var after=await invoke('get_account_sync_status');
-        if(after.restore_context!==before.restore_context||after.profile_open!==false||after.logged_in!==true||after.consent_notice_version!==consent.notice_version)throw new Error(oneAccountSyncTexts().contextChanged);
-        var result=await invoke('restore_account_profile',{consent:true,restoreContext:before.restore_context,consentNotice:consent});
+        // Owner 24.11: consent is once per account — a device of an account that already consented
+        // downloads without a window (accountConsent, no notice claimed); the notice is shown only
+        // when the server answers that this account never consented, and then it is what is sent.
+        var request={consent:false,restoreContext:before.restore_context,consentNotice:null,accountConsent:true},result=null;
+        while(!result){
+            try{result=await invoke('restore_account_profile',request);}
+            catch(e){if(request.accountConsent!==true||!oneAccountConsentNeeded(e))throw e;}
+            if(result)break;
+            var consent=await oneAccountSyncRequestConsent('restore',before);
+            if(!consent)return 'cancel';
+            var after=await invoke('get_account_sync_status');
+            if(after.restore_context!==before.restore_context||after.profile_open!==false||after.logged_in!==true||after.consent_notice_version!==consent.notice_version)throw new Error(oneAccountSyncTexts().contextChanged);
+            request={consent:true,restoreContext:before.restore_context,consentNotice:consent};
+        }
         if(result.outcome==='empty'){
             // №976: an empty account → an empty cache opened straight away; the profile is
             // filled inside the app (home banner), not in a wizard before it.
