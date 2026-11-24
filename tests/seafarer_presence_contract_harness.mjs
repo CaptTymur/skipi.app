@@ -1060,7 +1060,7 @@ section('mobile rail canon — 5 fixed slots, header home+gear, modules-first Ap
   ok(/data-qa="plugin-open-/.test(appsTileBody) && /data-qa="plugin-tile-/.test(appsTileBody), 'plugin-tile-/plugin-open- id hooks survive the restyle');
   // (e) the main menu grid is untouched by the Apps restyle.
   const menuTpl = (() => { const i = html.indexOf('<template id="mobile-home-modules-tpl">'); const j = html.indexOf('</template>', i); return i >= 0 && j > i ? html.slice(i, j) : ''; })();
-  ok((menuTpl.match(/fam-app-tile/g) || []).length === 11, 'the ☰ module grid still holds exactly 11 fam-app-tile icons');
+  ok((menuTpl.match(/fam-app-tile/g) || []).length === 12, 'the ☰ module grid still holds exactly 12 fam-app-tile icons');
   ok(!/apps-icon-tile|apps-module-tiles/.test(menuTpl), 'no Apps-screen markup leaked into the module grid template');
 }
 

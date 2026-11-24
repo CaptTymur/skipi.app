@@ -891,7 +891,7 @@ function bootMobile(opts) {
   const mm = mobileHtml(doc);
   ok(mm.includes('data-qa="mobile-menu-screen"') && !mm.includes('data-qa="mobile-menu-btn"'), 'home (no consent) IS the menu screen — the grid, and no ☰ (nothing left for it to open)');
   ok(!mm.includes('id="mobile-assistant-input"'), 'home (no consent) shows no composer — consent is asked in the Assistant section, not on home');
-  ok((mm.match(/fam-app-tile/g) || []).length === 12 && !mm.includes('data-qa="home-hero"'), 'home injects the 12-icon grid (11 modules + Profile) and no family hero');
+  ok((mm.match(/fam-app-tile/g) || []).length === 13 && !mm.includes('data-qa="home-hero"'), 'home injects the 13-icon grid (12 modules + Profile) and no family hero');
   ok(doc.getElementById('mobile-bottom-nav').style.display === 'none', 'bottom rail hidden on the native home');
   const consented = bootMobile({ seed: { 'skipi-assistant-consent': '1' } });
   await settleVm();
@@ -982,7 +982,7 @@ function bootMobile(opts) {
 }
 
 {
-  section('family UI base — module grid covers all 11 modules — on the MENU screen behind ☰ (owner 05.09, sketch 2)');
+  section('family UI base — module grid covers all 12 modules — on the MENU screen behind ☰ (owner 05.09, sketch 2)');
   const { sandbox, doc } = bootMobile({ seed: {} });
   await settleVm();
   sandbox.mobileShow('menu');
@@ -993,7 +993,7 @@ function bootMobile(opts) {
     ok(mm.includes(`data-mview="${v}"`) && mm.includes(`mobileShow('${v}')`), `menu grid routes '${v}' through mobileShow`);
   }
   ok(mm.includes('id="mobile-home-packages"'), 'Packages keeps its tile id (the presence drills mount on it) and now opens the real module — see PKG1');
-  ok((mm.match(/fam-app-tile/g) || []).length === 12, 'exactly 12 icons: 11 module icons + Profile (Feedback and Language moved behind the header gear, owner 24.11 — see LANG1)');
+  ok((mm.match(/fam-app-tile/g) || []).length === 13, 'exactly 13 icons: 12 module icons + Profile (Feedback and Language moved behind the header gear, owner 24.11 — see LANG1)');
   ok(mm.includes('data-qa="menu-tile-profile"') && mm.includes("mobileShow('profile')"), 'Profile tile routes to the profile screen (its only other entry, the rail meter, is hidden natively)');
   ok(!mm.includes('data-qa="menu-tile-feedback"') && !mm.includes('data-qa="mobile-menu-language"'), 'no Feedback and no Language tile on the menu (owner 24.11: both are behind the header gear)');
   const idx = (v) => mm.indexOf(`data-mview="${v}"`);
@@ -1047,7 +1047,7 @@ function bootMobile(opts) {
   sandbox.mobileShow('home');
   const mm = mobileHtml(doc);
   ok(mm.includes('data-qa="assistant-demo-banner"') && mm.includes('mobileCreateProfile()'), 'demo banner with «create my profile» renders on home (through step 0 since 06.09 — see ONB1)');
-  ok(mm.includes('data-qa="mobile-menu-screen"') && (mm.match(/fam-app-tile/g) || []).length === 12, 'demo home keeps the full 12-icon grid under the banner (no dead end)');
+  ok(mm.includes('data-qa="mobile-menu-screen"') && (mm.match(/fam-app-tile/g) || []).length === 13, 'demo home keeps the full 13-icon grid under the banner (no dead end)');
   sandbox.mobileIsDemo = false;
   sandbox.mobileShow('home');
   ok(!mobileHtml(doc).includes('data-qa="assistant-demo-banner"'), 'no demo banner on a real vault');
@@ -1074,7 +1074,7 @@ function bootMobile(opts) {
   const ma = mobileHtml(off.doc);
   ok(ma.includes('data-qa="assistant-offline"') && ma.includes('data-qa="mobile-menu-btn"') && ma.includes('id="mobile-assistant-input"'), 'the Assistant section offline: honest offline banner, ☰ and composer still there');
   off.sandbox.mobileShow('menu');
-  ok((mobileHtml(off.doc).match(/fam-app-tile/g) || []).length === 12, 'menu renders all icons offline');
+  ok((mobileHtml(off.doc).match(/fam-app-tile/g) || []).length === 13, 'menu renders all icons offline');
   const on = bootMobile({ seed: consent, onLine: true });
   await settleVm();
   on.sandbox.mobileShow('home');
@@ -1149,7 +1149,7 @@ function bootMobile(opts) {
   ok(doc.body.classList.contains('mobile-mode') && !doc.body.classList.contains('mobile-native'), 'mobile-mode without mobile-native on linux');
   sandbox.mobileShow('home');
   const mm = mobileHtml(doc);
-  ok(mm.includes('data-qa="home-hero"') && (mm.match(/fam-app-tile/g) || []).length === 11, 'old home: hero + the same 11-icon grid');
+  ok(mm.includes('data-qa="home-hero"') && (mm.match(/fam-app-tile/g) || []).length === 12, 'old home: hero + the same 12-icon grid');
   ok(!mm.includes('data-qa="mobile-menu-btn"'), 'no ☰ on the old shell');
   ok(doc.getElementById('mobile-bottom-nav').style.display === 'flex', 'old shell keeps the 5-slot rail visible');
   sandbox.mobileShow('assistant');
@@ -1489,7 +1489,7 @@ const MODULE_TPL = (() => {
   const j = HTML.indexOf('</template>', i);
   return i >= 0 && j > i ? HTML.slice(i, j) : '';
 })();
-const MODULE_KEYS = ['docs', 'experience', 'cv', 'packages', 'dispatch', 'jobs', 'information', 'vessels', 'myvessel', 'apps', 'assistant'];
+const MODULE_KEYS = ['docs', 'experience', 'cv', 'packages', 'dispatch', 'jobs', 'information', 'vessels', 'myvessel', 'apps', 'aiconnect', 'assistant'];
 const tplButtons = () => (MODULE_TPL.match(/<button[\s\S]*?<\/button>/g) || []);
 const tplButtonOf = (k) => tplButtons().find((b) => b.includes(k === 'packages' ? 'id="mobile-home-packages"' : `data-mview="${k}"`)) || '';
 const cssRule = (sel) => {
@@ -1533,9 +1533,9 @@ function installNavHistory(app) {
   section('module icon grid (IG1) — 11 icons, order and navigation unchanged (owner 06.09, DECISIONS 302)');
   ok(MODULE_TPL.length > 200, '#mobile-home-modules-tpl extracted from dist/index.html');
   const btns = tplButtons();
-  ok(btns.length === 11, 'template holds exactly 11 module buttons (got ' + btns.length + ')');
+  ok(btns.length === 12, 'template holds exactly 12 module buttons (got ' + btns.length + ')');
   ok(/class="fam-app-grid"/.test(MODULE_TPL), 'grid container uses fam-app-grid');
-  ok((MODULE_TPL.match(/fam-app-tile/g) || []).length === 11, 'each of the 11 buttons is a fam-app-tile');
+  ok((MODULE_TPL.match(/fam-app-tile/g) || []).length === 12, 'each of the 12 buttons is a fam-app-tile');
   ok(MODULE_TPL.includes('id="mobile-module-rail"'), 'container keeps the mobile-module-rail id the presence contract mounts on');
   for (const v of MODULE_KEYS.filter((k) => k !== 'packages')) {
     ok(MODULE_TPL.includes(`data-mview="${v}"`) && MODULE_TPL.includes(`mobileShow('${v}')`), `'${v}' keeps data-mview + the same mobileShow route`);
@@ -1549,8 +1549,8 @@ function installNavHistory(app) {
 {
   section('module icon grid (IG2) — short label stays, description moves to data-hint, status chips gone');
   const btns = tplButtons();
-  ok(btns.length === 11 && btns.every((b) => /data-hint="[^"]{3,}"/.test(b)), 'every icon carries a non-empty data-hint (the old description)');
-  ok(btns.length === 11 && btns.every((b) => /class="fam-app-label"[^>]*>[^<]{1,18}</.test(b)), 'every icon carries a visible short fam-app-label');
+  ok(btns.length === 12 && btns.every((b) => /data-hint="[^"]{3,}"/.test(b)), 'every icon carries a non-empty data-hint (the old description)');
+  ok(btns.length === 12 && btns.every((b) => /class="fam-app-label"[^>]*>[^<]{1,18}</.test(b)), 'every icon carries a visible short fam-app-label');
   ok(!/fam-module-desc/.test(MODULE_TPL), 'no fam-module-desc left in the template');
   ok(!/fam-chip/.test(MODULE_TPL), 'no fam-chip left in the template');
   ok(!/ready/.test(MODULE_TPL), "no 'ready' readiness marker left in the template (owner: «указатель готовности спрятать»)");
@@ -1562,8 +1562,8 @@ function installNavHistory(app) {
 {
   section('module icon grid (IG3) — one outline icon style, no letter/emoji placeholders');
   const btns = tplButtons();
-  ok(btns.length === 11 && btns.every((b) => /<svg viewBox="0 0 24 24"/.test(b)), 'every icon is an inline 24×24 SVG');
-  ok((MODULE_TPL.match(/<svg /g) || []).length === 11, 'exactly 11 icon SVGs, one per module');
+  ok(btns.length === 12 && btns.every((b) => /<svg viewBox="0 0 24 24"/.test(b)), 'every icon is an inline 24×24 SVG');
+  ok((MODULE_TPL.match(/<svg /g) || []).length === 12, 'exactly 12 icon SVGs, one per module');
   ok(!/&#9633;|&#9873;|&#9993;|&#9872;|&#9875;|&#9638;|&#128172;/.test(MODULE_TPL), 'the old symbol placeholders (▢ ⚑ ✉ ⚓ ▨ 💬) are gone');
   ok(!/fam-module-icon/.test(MODULE_TPL), 'the old letter placeholders (CV / P / J / i) in fam-module-icon boxes are gone');
   const icon = cssRule('.fam-app-tile .fam-app-icon-box svg');
@@ -1583,8 +1583,8 @@ function installNavHistory(app) {
     const hint = doc.getElementById('mobile-module-hint');
     ok(!!btn && !!hint, 'icon button + the single hint node exist in the shell');
     ok((HTML.match(/id="mobile-module-hint"/g) || []).length === 1, 'exactly ONE hint node on the screen (not one per icon)');
-    ok((MODULE_TPL.match(/onpointerdown="mobileHintPress\(this\)"/g) || []).length === 11, 'every icon arms the long-press on pointerdown');
-    ok((MODULE_TPL.match(/onpointerup="mobileHintRelease\(\)"/g) || []).length === 11 && (MODULE_TPL.match(/onpointercancel="mobileHintRelease\(\)"/g) || []).length === 11, 'every icon releases the hint on pointerup/pointercancel');
+    ok((MODULE_TPL.match(/onpointerdown="mobileHintPress\(this\)"/g) || []).length === 12, 'every icon arms the long-press on pointerdown');
+    ok((MODULE_TPL.match(/onpointerup="mobileHintRelease\(\)"/g) || []).length === 12 && (MODULE_TPL.match(/onpointercancel="mobileHintRelease\(\)"/g) || []).length === 12, 'every icon releases the hint on pointerup/pointercancel');
     app.timers.length = 0;
     sandbox.mobileHintPress(btn);
     ok(hint.style.display !== 'block', 'hint stays hidden while the press is still short');
@@ -1626,7 +1626,7 @@ function installNavHistory(app) {
   const btns = tplButtons();
   const labelOf = (b) => { const m = /class="fam-app-label"[^>]*>([^<]+)</.exec(b); return m ? m[1] : ''; };
   const ariaOf = (b) => { const m = /aria-label="([^"]+)"/.exec(b); return m ? m[1] : ''; };
-  ok(btns.length === 11 && btns.every((b) => ariaOf(b) && ariaOf(b) === labelOf(b)), 'aria-label equals the visible label on every icon');
+  ok(btns.length === 12 && btns.every((b) => ariaOf(b) && ariaOf(b) === labelOf(b)), 'aria-label equals the visible label on every icon');
   ok(btns.every((b) => !/aria-describedby/.test(b)), 'no icon carries a permanent aria-describedby to an empty node (Supervisor Н5)');
   ok(cssNum('.fam-app-tile', 'min-height') >= 48, 'icon tap target is at least 48 px tall (got ' + cssNum('.fam-app-tile', 'min-height') + ')');
   ok(cssNum('.fam-app-tile .fam-app-icon-box', 'width') >= 48 && cssNum('.fam-app-tile .fam-app-icon-box', 'height') >= 48, 'icon box itself is at least 48×48 px');
@@ -1635,7 +1635,7 @@ function installNavHistory(app) {
 }
 
 {
-  section('module icon grid (IG6) — real menu render: 11 module icons + Profile/Feedback/Language; RU keeps the i18n keys');
+  section('module icon grid (IG6) — real menu render: 12 module icons + Profile/Feedback/Language; RU keeps the i18n keys');
   try {
     const app = installNavHistory(bootMobile({ seed: { 'skipi-ui-language': 'ru' } }));
     await settleVm();
@@ -1644,7 +1644,7 @@ function installNavHistory(app) {
     app.runTimers(0);
     const mm = mobileHtml(doc);
     ok(mm.includes('data-qa="mobile-menu-screen"'), 'menu screen renders');
-    ok((mm.match(/fam-app-tile/g) || []).length === 12, 'exactly 12 icons on the menu: 11 modules + Profile');
+    ok((mm.match(/fam-app-tile/g) || []).length === 13, 'exactly 13 icons on the menu: 12 modules + Profile');
     ok(!mm.includes('fam-module-desc') && !mm.includes('fam-chip'), 'the rendered menu carries no descriptions and no status chips at all');
     const docsBtn = doc.getElementById('mhb-docs');
     const label = doc.getElementById('mhn-docs');
@@ -1744,7 +1744,7 @@ function installNavHistory(app) {
     sandbox.mobileShow('home'); app.runTimers(0);
     const home = mobileHtml(doc);
     ok(sandbox.mobileView === 'home' && home.includes('data-qa="mobile-menu-screen"'), 'HG1a: the native home renders the menu screen — the module grid');
-    ok((home.match(/fam-app-tile/g) || []).length === 12 && home.includes('data-qa="menu-tile-profile"') && !home.includes('data-qa="menu-tile-feedback"') && !home.includes('data-qa="mobile-menu-language"'), 'HG1a: 12 icons on the home: 11 modules + Profile');
+    ok((home.match(/fam-app-tile/g) || []).length === 13 && home.includes('data-qa="menu-tile-profile"') && !home.includes('data-qa="menu-tile-feedback"') && !home.includes('data-qa="mobile-menu-language"'), 'HG1a: 13 icons on the home: 12 modules + Profile');
     ok(!home.includes('id="mobile-assistant-input"') && !home.includes('data-qa="mobile-menu-btn"') && !home.includes('data-qa="home-hero"'), 'HG1a: no chat composer, no ☰ and no family hero on the native home');
     ok(doc.getElementById('mobile-bottom-nav').style.display === 'none' && doc.getElementById('mobile-top-back').style.display === 'none', 'HG1a: no bottom rail and no ‹ at the root');
     ok(/function renderMobileHome\(\)\{[\s\S]{0,1200}?if\(isNativeMobile\(\)\)\{[\s\S]{0,200}?renderMobileMenu\(\);/.test(HTML), 'HG1a: one markup source — renderMobileHome delegates to renderMobileMenu on native (no second copy of the grid)');
@@ -1777,7 +1777,7 @@ function installNavHistory(app) {
     web.sandbox.applyMobileMode();
     web.sandbox.mobileShow('home');
     const wh = mobileHtml(web.doc);
-    ok(web.sandbox.isNativeMobile() === false && wh.includes('data-qa="home-hero"') && (wh.match(/fam-app-tile/g) || []).length === 11 && !wh.includes('data-qa="mobile-menu-screen"'), 'HG1d: web ≤720px (isNativeMobile=false) keeps the family home: hero + 11 icons, no menu wrapper');
+    ok(web.sandbox.isNativeMobile() === false && wh.includes('data-qa="home-hero"') && (wh.match(/fam-app-tile/g) || []).length === 12 && !wh.includes('data-qa="mobile-menu-screen"'), 'HG1d: web ≤720px (isNativeMobile=false) keeps the family home: hero + 12 icons, no menu wrapper');
   } catch (e) { ok(false, 'mobile home grid (HG1) crashed before it could assert: ' + e.message); }
 }
 
@@ -2149,8 +2149,8 @@ const appsTileTag = (h, id) => {
     const { sandbox, doc } = app;
     sandbox.mobileShow('menu'); app.runTimers(0);
     const mm = mobileHtml(doc);
-    ok((mm.match(/fam-app-tile/g) || []).length === 12, 'menu still shows 12 icons: 11 modules + Profile (got ' + (mm.match(/fam-app-tile/g) || []).length + ')');
-    ok(tplButtons().length === 11 && !/apps-icon-tile/.test(MODULE_TPL), 'the module template itself is not touched by the Apps restyle');
+    ok((mm.match(/fam-app-tile/g) || []).length === 13, 'menu still shows 13 icons: 12 modules + Profile (got ' + (mm.match(/fam-app-tile/g) || []).length + ')');
+    ok(tplButtons().length === 12 && !/apps-icon-tile/.test(MODULE_TPL), 'the module template itself is not touched by the Apps restyle');
     ok(mm.includes('data-qa="menu-tile-profile"'), 'Profile tile still there');
   } catch (e) { ok(false, 'AG5 crashed before it could assert: ' + e.message); }
 }
@@ -7074,8 +7074,8 @@ async function s1Boot(map, consent, opts) {
     'HA7: and the assistant view still manages the bottom rail exactly as before');
   nat.sandbox.mobileNavBack(); nat.runTimers(0);
   ok(nat.sandbox.mobileView === 'home', 'HA7: ‹ from the assistant still returns to the home grid');
-  ok((natHome.match(/fam-app-tile/g) || []).length === 12,
-    'HA8: hiding changed no count — the menu grid still renders 12 tiles (11 modules + Profile)');
+  ok((natHome.match(/fam-app-tile/g) || []).length === 13,
+    'HA8: hiding changed no count — the menu grid still renders 13 tiles (12 modules + Profile)');
   ok(/https:\/\/assistant\.skipi\.app\/register/.test(HTML),
     'HA8: the SaaS side is untouched — the register route still points at assistant.skipi.app');
   } catch (e) { ok(false, 'hide-assistant proof crashed before it could assert: ' + e.message); }
