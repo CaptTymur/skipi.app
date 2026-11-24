@@ -197,7 +197,8 @@ if (init !== null) {
   ok(s2.length > 0 && /isNativeMobile\(\)\s*&&\s*!\s*\(\s*await\s+_hasLoginToken\(\)\s*\)/.test(s2), 'G7: S2-cold — init() checks the token natively before handing the remembered vault to loadVault()');
   ok(/_loginGatePending\s*=\s*info;\s*showEntryFork\(\);\s*return;/.test(s2), 'G7: S2-cold — the vault is parked (_loginGatePending=info) and the fork shown; Sign in resumes the SAME vault');
   ok(/close_vault',\s*\{\s*forget\s*:\s*true\s*\}/.test(s2) && /_efOpenVaultIsDemo\(\)/.test(s2), 'G7: S2-cold — a remembered DEMO vault is closed + forgotten (close_vault{forget:true}), never auto-opened');
-  ok(/\}\s*else\s*\{\s*await\s+loadVault\(info\);\s*return;\s*\}/.test(s2), 'G7: S2-cold — with a session (or on desktop) the remembered vault still loads as today');
+  ok(/\}\s*else\s*\{\s*await\s+loadVault\(info\);\s*return;\s*\}/.test(s2), 'G7: S2-cold — with a session (or on desktop) a remembered REAL vault still loads as today');
+  ok(/\}\s*else\s+if\s*\(\s*await\s+_efOpenVaultIsDemo\(\)\s*\)\s*\{\s*try\s*\{\s*await\s+invoke\('close_vault',\s*\{\s*forget\s*:\s*true\s*\}\);/.test(s2), 'S2-cold (owner 24.11) — on desktop / with a session a remembered DEMO is closed + forgotten too, never handed to loadVault()');
   // G8 / S3 (Supervisor Н1, AUDIT-2026-09-06-seafarer-entry-fork-close): the RECENT list is a third
   // cold-start site. close_vault{forget:true} empties the config, but the demo stays on disk and the
   // Android get_recent_vaults scan re-finds it — so this loop MUST carry the same native no-session
