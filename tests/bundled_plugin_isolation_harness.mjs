@@ -5164,7 +5164,9 @@ async function bootCv({ platform = 'android', lang = 'en', ...fx } = {}) {
   await cvSettle();
   return { ...app, toasts, html: mobileHtml(app.doc) };
 }
-const CV_LABELS = ['Position', 'Readiness', 'Experience', 'Citizenship', 'Last name', 'Marital status', 'First name', 'Children', 'Middle name', 'English level', 'Birth date', 'Birth place', 'Home address', 'Phone', 'Email'];
+// One column on the phone reads top to bottom, so the name fields stay together (the desktop row() order
+// interleaved its two columns: «Marital status» landed between «Last name» and «First name»).
+const CV_LABELS = ['Position', 'Readiness', 'Experience', 'Last name', 'First name', 'Middle name', 'Birth date', 'Birth place', 'Citizenship', 'Marital status', 'Children', 'English level', 'Home address', 'Phone', 'Email'];
 const CERT_COLS = ['Title', 'Number', 'Place of issue', 'Issued', 'Valid'];
 const SEA_COLS = ['Vessel', 'Flag', 'Type', 'Rank', 'From', 'Till', 'Company'];
 const cvLabelAt = (html, label) => html.indexOf('<div class="mobile-cv-label">' + label + '</div>');
@@ -5183,7 +5185,7 @@ const CV_DL = '/sdcard/Download/';
     ok(!html.includes('Seafarer application preview'), 'the old «Seafarer application preview» sub-line is gone');
     const idx = CV_LABELS.map((l) => cvLabelAt(html, l));
     CV_LABELS.forEach((l, i) => ok(idx[i] >= 0, '(a) label «' + l + '» is rendered as a .mobile-cv-label'));
-    ok(idx.every((v, i) => i === 0 || v > idx[i - 1]), '(a) the 15 labels appear in the desktop row() order (indexOf strictly increasing)');
+    ok(idx.every((v, i) => i === 0 || v > idx[i - 1]), '(a) the 15 desktop labels appear in one-column reading order: names together, then birth, then status (indexOf strictly increasing)');
     ok(!html.includes('<div class="mobile-cv-label">Available from</div>') && !html.includes('<div class="mobile-cv-label">Minimum salary</div>'), 'the preview-only labels «Available from» / «Minimum salary» are gone (Readiness / Minimum instead)');
     ok(html.includes('<div class="mobile-cv-fields">') && !html.includes('<div class="mobile-cv-grid">'), 'personal details are one column (.mobile-cv-fields), not the 2-column .mobile-cv-grid');
     ok(cvFieldValue(html, 'Position') === '2nd Officer' && cvFieldValue(html, 'Readiness') === '2026-10-01' && cvFieldValue(html, 'Citizenship') === 'Ukrainian', 'Position / Readiness / Citizenship carry the fixture values');
@@ -7241,6 +7243,38 @@ async function s1Boot(map, consent, opts) {
     'D control: an unverified remote record cannot override the bundled entry');
   ok(D.mounted && D.bundledDriven && !D.remoteDriven,
     'D control: it mounts the BUNDLED plugin and never reaches the remote runtime');
+}
+
+{
+  section('Tester feedback 24.11 — desktop Sea Service: vessel type accepts a typed value («Other»), like the phone');
+  try {
+    const { sandbox, doc } = bootApp({ seed: {} });
+    await settleVm();
+    const html = String(sandbox.renderWorkEntryForm(null));
+    ok(html.includes('id="wh-type_custom"') && html.includes("syncWorkTypeCustom(true)"), 'the form has a «Type vessel type» input next to the #wh-type select');
+    const sel = doc._make('select', { id: 'wh-type' });
+    const custom = doc._make('input', { id: 'wh-type_custom' });
+    sandbox.populateWorkTypeControl(['Bulk Carrier', 'Oil Tanker'], 'Tug');
+    ok(String(sel.innerHTML).includes('<option value="Other"'), 'the list ends with «Other»');
+    ok(sel.value === 'Other' && custom.value === 'Tug' && custom.style.display === 'block', 'a type typed on the phone («Tug») opens as Other + the typed text');
+    ok(sandbox.workTypeValue() === 'Tug', 'the typed type is what gets saved');
+    sel.value = 'Oil Tanker'; // the VM select does not derive .value from the «selected» option the way a browser does
+    sandbox.populateWorkTypeControl(['Bulk Carrier', 'Oil Tanker'], 'Oil Tanker');
+    ok(String(sel.innerHTML).includes('<option value="Oil Tanker" selected>'), 'a listed type is preselected in the list');
+    ok(custom.style.display === 'none' && custom.value === '', 'a listed type keeps the plain select (no text input)');
+    ok(sandbox.workTypeValue() === 'Oil Tanker', 'a listed type is saved as picked');
+  } catch (e) { ok(false, 'vessel type drill crashed: ' + e.message); }
+
+  section('Tester feedback 24.11 — desktop Profile: the phone field is not locked behind «Ready to accept job offers»');
+  try {
+    const { sandbox } = bootApp({ seed: {} });
+    await settleVm();
+    const sp = Array.from(sandbox.profileOfferFieldIds('sp'));
+    ok(!sp.includes('sp-phones') && !sp.includes('sp-preferred_messenger'), 'Profile (sp): phone + messenger stay editable with the checkbox off');
+    ok(sp.includes('sp-min_salary') && sp.includes('sp-nearest_airport') && sp.includes('sp-available_from'), 'PRESERVE: salary / airports / available date are still offer-only');
+    const fp = Array.from(sandbox.profileOfferFieldIds('fp'));
+    ok(fp.includes('fp-phones') && fp.includes('fp-preferred_messenger'), 'PRESERVE: the first-run form (fp) still gates phones — its checkbox sits above them with a hint');
+  } catch (e) { ok(false, 'profile phone drill crashed: ' + e.message); }
 }
 
 console.log('\n' + (fail === 0 ? 'ALL GREEN' : 'FAILURES') + ': ' + pass + ' passed, ' + fail + ' failed');
