@@ -1859,9 +1859,11 @@ function oneAccountSyncRender(status,target){
     // Owner 24.11: sync runs under the hood — no «Sync now», no «Pause», no version choice (a
     // difference is settled by the sync itself, account_sync.rs settle_conflict). The only control
     // left is consent, and only after this account's notice was declined.
-    var declined=status.enabled!==true&&status.consent_context&&oneAccountAutoLinkDone===status.consent_context;
-    if(displayState==='conflict'||(!declined&&displayState==='disabled'))displayState='syncing';
-    el.innerHTML='<strong>'+esc(t.title)+'</strong><div>'+esc(account)+'</div><div>'+esc(t.messages[displayState]||displayState)+'</div>'+(status.error?'<div>'+esc(status.error)+'</div>':'')+(declined?'<button class="btn btn-outline" type="button" data-sync-action="enable">'+esc(t.enable)+'</button>':'');
+    var declined=status.enabled!==true&&!!status.consent_context&&oneAccountAutoLinkDone===status.consent_context;
+    var needsConsent=declined||status.consent_required===true;
+    var joining=status.enabled!==true&&!needsConsent&&status.logged_in===true&&status.profile_open===true;
+    if(displayState==='conflict'||(joining&&displayState==='disabled'))displayState='syncing';
+    el.innerHTML='<strong>'+esc(t.title)+'</strong><div>'+esc(account)+'</div><div>'+esc(t.messages[displayState]||displayState)+'</div>'+(status.error?'<div>'+esc(status.error)+'</div>':'')+(needsConsent?'<button class="btn btn-outline" type="button" data-sync-action="enable">'+esc(t.enable)+'</button>':'');
     el.querySelectorAll('[data-sync-action]').forEach(function(b){b.onclick=function(){var a=b.getAttribute('data-sync-action');if(a==='enable')oneAccountSyncEnable();else if(a==='retry')oneAccountSyncRun();else oneAccountSyncDisable();};});
 }
 async function oneAccountSyncRun(){
