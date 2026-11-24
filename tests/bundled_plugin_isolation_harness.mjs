@@ -40,7 +40,7 @@ const HOST_UI_MODULE = fs.readFileSync(path.join(DIST, 'plugin-host-ui.js'), 'ut
 const SETTINGS_MODULE = fs.readFileSync(path.join(DIST, 'skipi-settings.js'), 'utf8');
 const ACCOUNT_DELETE_RS = fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'commands', 'account_delete.rs'), 'utf8');
 const LIB_RS = fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'lib.rs'), 'utf8');
-const HOST_RUNTIME_BRIDGE_SHA256 = '0a37e0fa3c27592882467bd9a2fc59ddc825919f3ab59f906d1752e9a6da3e81';
+const HOST_RUNTIME_BRIDGE_SHA256 = 'a469713f704d42118392051c12bf45defac8c4f587dc5fee72d0988a2489d184';
 
 const PDIR = path.join(DIST, 'plugins', 'bnwas-time-anchor');
 const FILES = {

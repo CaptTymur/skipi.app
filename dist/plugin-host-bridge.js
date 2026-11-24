@@ -134,7 +134,11 @@
     var s = ''; for (var i = 0; i < a.length; i++) s += a[i].toString(16).padStart(2, '0'); return s;
   }
   function buildSrcdoc(nonce, token, noCsp) {
-    var csp = "default-src 'none'; script-src 'nonce-" + nonce + "'; style-src 'nonce-" + nonce + "'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'";
+    // 'wasm-unsafe-eval' (v1.1) lets the plugin's OWN verified code instantiate a WebAssembly
+    // module it carries in its pack (e.g. a calculation core). It permits wasm compilation only —
+    // not eval, not inline script, not network: connect-src stays 'none' and a wasm module can
+    // reach nothing the plugin's JS cannot.
+    var csp = "default-src 'none'; script-src 'nonce-" + nonce + "' 'wasm-unsafe-eval'; style-src 'nonce-" + nonce + "'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'";
     var cspMeta = noCsp ? '' : '<meta http-equiv="Content-Security-Policy" content="' + csp + '">';
     var boot = 'window.__SKIPI_TOKEN__=' + JSON.stringify(token) + ';\n';
     return '<!doctype html><html><head><meta charset="utf-8">'
