@@ -1180,6 +1180,11 @@ body.mobile-native .mobile-brand-wrap, body.mobile-native #mobile-feedback-btn, 
 .apps-launcher-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
 .apps-gear-btn { background:var(--surface); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:17px; width:38px; height:38px; cursor:pointer; flex:0 0 auto; }
 .apps-gear-btn:hover { border-color:var(--accent); color:var(--accent); }
+.apps-tabs { display:flex; gap:6px; margin:14px 0 4px; padding:4px; background:var(--surface); border:1px solid var(--border); border-radius:10px; max-width:420px; }
+.apps-tab { flex:1 1 0; min-height:38px; padding:8px 10px; border:0; border-radius:7px; background:transparent; color:var(--text2); font-size:13px; font-weight:700; cursor:pointer; }
+.apps-tab.active { background:var(--accent); color:#fff; }
+body.mobile-mode .apps-tabs { max-width:none; }
+body.mobile-mode .apps-tab { min-height:44px; font-size:14px; }
 .apps-search { margin:14px 0 6px; max-width:420px; }
 .apps-search-label { display:block; font-size:12px; font-weight:700; color:var(--text2); margin-bottom:5px; }
 .apps-search input { width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); font-size:13px; }
@@ -11776,59 +11781,18 @@ function myVesselLeave(){
 //       "Skipi Plugin Lab", "2026-06-23 — Skipi Plugins — coordination protocol".
 
 var SKIPI_PLUGIN_CATEGORIES = [
-    {key:'safety',    label:'Safety / Watchkeeping'},
-    {key:'utils',     label:'Utils'},
-    {key:'education', label:'Education'},
-    {key:'reports',   label:'Reports'}
+    {key:'safety',    label:'Safety / Watchkeeping', labels:{ru:'Безопасность и вахта'}},
+    {key:'utils',     label:'Utils',                 labels:{ru:'Утилиты'}},
+    {key:'education', label:'Education',             labels:{ru:'Обучение'}},
+    {key:'reports',   label:'Reports',               labels:{ru:'Отчёты'}}
 ];
 
 // Local/static registry of bundled first-party plugins — tile metadata only,
 // NO plugin logic. `bundle` points at the artifact folder under dist/plugins/.
-var SKIPI_PLUGIN_REGISTRY = [
-    {
-        id:'bnwas-time-anchor',
-        manifestId:'app.skipi.plugins.bnwas-time-anchor',
-        name:'BNWAS / Time Anchor',
-        version:'0.1.0',
-        category:'safety',
-        icon:'⏱️',
-        short:'Personal watchkeeping timer and time-anchor. Bundled first-party plugin.',
-        description:'Personal watchkeeping timer and time-anchor tool for mariners. A bundled first-party plugin that runs inside Skipi Seafarer. Offline, no account. Timer/alarm logic is built and validated in the BNWAS plugin lab and ships as a reviewed artifact.',
-        safety_note:'Not certified bridge equipment. Does not replace vessel BNWAS, lookout duties, bridge procedures or company SMS.',
-        permissions:{ server_access:false, documents_access:false, account_required:false, analytics:false, audio_alert:true, local_only:true },
-        bundle:'plugins/bnwas-time-anchor/',
-        firstParty:true
-    },
-    {
-        id:'ecdis-position-reminder',
-        manifestId:'app.skipi.plugins.ecdis-position-reminder',
-        name:'ECDIS Position Reminder',
-        version:'0.1.0',
-        category:'safety',
-        icon:'📍',
-        short:'Position-fix reminder aligned to clock marks. Bundled first-party plugin.',
-        description:'Local position-fix reminder for watchkeeping. Default mode follows the prototype: a 60-minute reminder aligned to clock marks. The plugin runs inside Skipi Seafarer, works offline, stores only its own settings and produces its alarm locally.',
-        safety_note:'Personal reminder only. Not certified bridge equipment. Does not replace ECDIS, paper chart procedures, bridge log entries, watchkeeping duties, company SMS or master standing orders.',
-        permissions:{ server_access:false, documents_access:false, account_required:false, analytics:false, audio_alert:true, local_only:true },
-        bundle:'plugins/ecdis-position-reminder/',
-        firstParty:true
-    },
-    {
-        id:'navigation-calculators',
-        manifestId:'app.skipi.plugins.navigation-calculators',
-        name:'Navigation Calculators',
-        version:'0.1.0',
-        toolCount:4,
-        category:'utils',
-        icon:'▦',
-        short:'Offline navigation calculators. Bundled first-party plugin.',
-        description:'Navigation calculation tools packaged as a reviewed first-party plugin. Runs locally inside the Skipi sandbox with no account, no network and no document access.',
-        safety_note:'Training and planning aid only. Always verify results against official tables, publications and approved navigation equipment before use.',
-        permissions:{ server_access:false, documents_access:false, account_required:false, analytics:false, audio_alert:false, local_only:true },
-        bundle:'plugins/navigation-calculators/',
-        firstParty:true
-    }
-];
+// EMPTY since 24.11.2026 (owner): Seafarer ships no bundled plugins, every plugin comes
+// from the signed catalog (Apps → «Доступно»). Users of the three formerly bundled
+// plugins are moved to the catalog versions once, by plugin-remote-boot.js.
+var SKIPI_PLUGIN_REGISTRY = [];
 
 // surface: which Apps screen the user is on ('launcher' = compact installed-only
 // primary surface, 'manage' = full catalog/lifecycle behind the gear).

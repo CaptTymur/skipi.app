@@ -42,7 +42,9 @@ const ACCOUNT_DELETE_RS = fs.readFileSync(path.join(__dirname, '..', 'src-tauri'
 const LIB_RS = fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'lib.rs'), 'utf8');
 const HOST_RUNTIME_BRIDGE_SHA256 = 'a469713f704d42118392051c12bf45defac8c4f587dc5fee72d0988a2489d184';
 
-const PDIR = path.join(DIST, 'plugins', 'bnwas-time-anchor');
+// Since 24.11.2026 Seafarer ships NO bundled plugins (owner: every plugin comes from the catalog).
+// The isolation drills below still need real plugin bytes, so the BNWAS artifact lives on as a fixture.
+const PDIR = path.join(__dirname, 'fixtures', 'plugins', 'bnwas-time-anchor');
 const FILES = {
   'plugin.json': fs.readFileSync(path.join(PDIR, 'plugin.json')),
   'index.js': fs.readFileSync(path.join(PDIR, 'index.js')),
@@ -342,6 +344,9 @@ function bootApp({ seed = {}, onLine = true, platform = 'linux', withSettings = 
   // Same for @skipi/settings when a drill needs the REAL unified shell: without it the
   // adapter takes its fail-closed branch and the legacy screen answers instead.
   if (withSettings) vm.runInContext(SETTINGS_MODULE, sandbox, { filename: 'dist/skipi-settings.js' });
+  // The shipped remote-delivery config (flag ON, catalog-driven slugs) — the Apps UI reads it to
+  // show plugins installed from the catalog, which since 24.11.2026 is the only kind there is.
+  vm.runInContext(CONFIG, sandbox, { filename: 'dist/plugin-host-config.js' });
   const scripts = Array.from(HTML.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi))
     .filter(([, a]) => !/\ssrc\s*=/.test(a || ''))
     .map(([, , c]) => c);
@@ -350,7 +355,18 @@ function bootApp({ seed = {}, onLine = true, platform = 'linux', withSettings = 
 }
 
 const settleVm = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
-const BNWAS_INSTALLED = { skipi_plugins_state: JSON.stringify({ 'bnwas-time-anchor': { installed: true, enabled: true } }) };
+// Seafarer ships no bundled plugins since 24.11.2026: an installed plugin is one the user
+// installed from the catalog, i.e. a record in the remote registry (what SkipiRemoteInstall writes).
+const BNWAS_INSTALLED = {
+  skipi_remote_plugins_state: JSON.stringify({
+    'bnwas-time-anchor': {
+      installed: true, enabled: true, slug: 'bnwas-time-anchor', id: 'app.skipi.plugins.bnwas-time-anchor',
+      name: 'BNWAS / Time Anchor', title: 'BNWAS / Time Anchor', version: '0.1.0',
+      entry: { slug: 'bnwas-time-anchor', id: 'app.skipi.plugins.bnwas-time-anchor', name: 'BNWAS / Time Anchor', version: '0.1.0',
+        short: 'Personal watchkeeping timer and time-anchor.', icon: '⏱️', category: 'safety', permissions: ['local_storage', 'audio_alert'] }
+    }
+  })
+};
 const ALL_BUNDLED_UNINSTALLED = {
   skipi_plugins_state: JSON.stringify({
     'bnwas-time-anchor': { installed: false, enabled: false },
@@ -371,6 +387,16 @@ const NAVCALC_INSTALLED = {
     }
   })
 };
+const BOTH_INSTALLED = {
+  skipi_remote_plugins_state: JSON.stringify(Object.assign({},
+    JSON.parse(BNWAS_INSTALLED.skipi_remote_plugins_state), JSON.parse(NAVCALC_INSTALLED.skipi_remote_plugins_state)))
+};
+// A catalog for the «Find a plugin» tab (host-ui 1.2): the Apps UI asks window.SkipiRemoteList.
+const CATALOG_OFFERS = [
+  { slug: 'draft-survey', id: 'app.skipi.plugins.draft-survey', version: '0.1.0', name: { en: 'Draft Survey', ru: 'Драфт-сюрвей' }, short: 'Cargo by draught survey', icon: '⚖', category: 'utils', permissions: ['local_storage'] },
+  { slug: 'ecdis-position-reminder', id: 'app.skipi.plugins.ecdis-position-reminder', version: '0.1.1', name: 'ECDIS Position Reminder', short: 'Position-fix reminder', icon: '📍', category: 'safety', permissions: ['local_storage', 'audio_alert'] },
+];
+const withCatalog = (app) => { app.sandbox.SkipiRemoteList = () => Promise.resolve(CATALOG_OFFERS); return app; };
 const appsHtml = (doc) => String((doc.getElementById('scr-content') || {}).innerHTML || '');
 
 function remoteCanonical(v) {
@@ -597,31 +623,37 @@ async function runRemoteInstallOfflineHarness() {
   sandbox.showApps();
   const h = appsHtml(doc);
   ok(h.includes('data-qa="seafarer-module-apps"'), 'launcher root carries seafarer-module-apps');
-  ok(h.includes('data-qa="apps-search-input"'), 'search input hook present');
+  // Owner 24.11.2026: two tabs — «Установленные» and «Найти плагин»; the search field lives on the second.
+  ok(/data-qa="apps-tab-installed"[^>]*aria-selected="true"/.test(h) && h.includes('data-qa="apps-tab-find"'), 'both tabs render and Apps opens on Installed');
+  ok(!h.includes('data-qa="apps-search-input"'), 'no search field on the Installed tab');
   ok(h.includes('data-qa="plugins-settings-open"'), 'gear (plugins-settings-open) hook present');
-  ok(h.includes('data-qa="plugin-tile-bnwas-time-anchor"'), 'BNWAS bundled plugin tile is installed by default');
-  ok(h.includes('data-qa="plugin-tile-ecdis-position-reminder"'), 'ECDIS bundled plugin tile is installed by default');
-  ok(h.includes('data-qa="plugin-tile-navigation-calculators"'), 'Navigation Calculators bundled plugin tile is installed by default');
-  ok(h.includes('data-qa="plugin-open-bnwas-time-anchor"'), 'plugin open hook present');
+  // Owner 24.11.2026: no bundled plugins — a NEW user starts with an empty Installed shelf.
+  ok(!/data-qa="plugin-tile-(bnwas-time-anchor|ecdis-position-reminder|navigation-calculators)"/.test(h), 'a new user has NO plugin installed by default (nothing is bundled)');
+  ok(h.includes('data-qa="plugin-empty-state"'), 'and sees the empty state that leads to the catalog');
   ok(!h.includes('plugin-tile-distance-tables'), 'coming-soon plugin is NOT in the launcher grid');
-  ok(!h.includes('data-qa="plugin-empty-state"'), 'no empty state while a plugin is installed');
   ok(!h.includes('data-qa="plugin-offline-state"'), 'no offline state while navigator.onLine is true');
+  const inst = bootApp({ seed: BNWAS_INSTALLED });
+  await settleVm();
+  inst.sandbox.showApps();
+  const hi = appsHtml(inst.doc);
+  ok(hi.includes('data-qa="plugin-tile-bnwas-time-anchor"') && hi.includes('data-qa="plugin-open-bnwas-time-anchor"'), 'a plugin installed from the catalog has its tile and open hook');
+  ok(!hi.includes('data-qa="plugin-empty-state"'), 'no empty state while a plugin is installed');
 }
 
 {
-  section('desktop launcher v1 — stale remote state dedupes against bundled plugins');
-  const { sandbox, doc } = bootApp({ seed: { ...BNWAS_INSTALLED, ...NAVCALC_INSTALLED } });
+  section('desktop launcher v1 — two catalog installs: one tile each, uninstall removes');
+  const { sandbox, doc } = bootApp({ seed: BOTH_INSTALLED });
   await settleVm();
   sandbox.showApps();
   const h = appsHtml(doc);
-  ok(h.includes('data-qa="plugin-tile-bnwas-time-anchor"'), 'bundled installed plugin remains in Installed');
-  ok(h.includes('data-qa="plugin-tile-ecdis-position-reminder"'), 'ECDIS stays visible without old localStorage state');
-  ok((h.match(/data-qa="plugin-tile-navigation-calculators"/g) || []).length === 1, 'stale remote Navigation Calculators does not duplicate the bundled tile');
+  ok((h.match(/data-qa="plugin-tile-bnwas-time-anchor"/g) || []).length === 1, 'the first installed plugin has exactly one tile');
+  ok(!h.includes('data-qa="plugin-tile-ecdis-position-reminder"'), 'a plugin that is not installed has no Installed tile (nothing is bundled)');
+  ok((h.match(/data-qa="plugin-tile-navigation-calculators"/g) || []).length === 1, 'the second installed plugin has exactly one tile');
   ok(h.includes('data-qa="plugin-open-navigation-calculators"'), 'Navigation Calculators has an Installed open hook');
   sandbox.pluginUninstall('navigation-calculators');
   sandbox.showApps();
   const after = appsHtml(doc);
-  ok(!after.includes('plugin-tile-navigation-calculators'), 'uninstall hides the bundled plugin and clears stale remote shadow state');
+  ok(!after.includes('plugin-tile-navigation-calculators') && after.includes('plugin-tile-bnwas-time-anchor'), 'uninstall removes that plugin and leaves the other');
 }
 
 {
@@ -636,18 +668,26 @@ async function runRemoteInstallOfflineHarness() {
 }
 
 {
-  section('desktop launcher v1 — search is installed-only (State C semantics)');
-  const { sandbox } = bootApp({ seed: BNWAS_INSTALLED });
+  section('desktop launcher — «Find a plugin» tab: search field + catalog offers by category');
+  const { sandbox, doc } = withCatalog(bootApp({ seed: BNWAS_INSTALLED }));
   await settleVm();
+  sandbox.showApps();
+  await settleVm();
+  sandbox.pluginLauncherTab('find');
+  const find = appsHtml(doc);
+  ok(/data-qa="apps-tab-find"[^>]*aria-selected="true"/.test(find) && find.includes('data-qa="apps-search-input"'), 'the Find tab is selected and carries the search field');
+  ok(find.includes('data-qa="plugin-preview-draft-survey"') && find.includes('data-qa="plugin-preview-ecdis-position-reminder"'), 'it offers the catalog plugins the user does not have');
+  ok(!find.includes('plugin-tile-bnwas-time-anchor'), 'and not the installed one');
+  ok(find.indexOf('apps-find-category-safety') >= 0 && find.indexOf('apps-find-category-safety') < find.indexOf('plugin-preview-ecdis-position-reminder')
+    && find.indexOf('apps-find-category-utils') < find.indexOf('plugin-preview-draft-survey'), 'offers stand under their category headings (Safety, Utils)');
   sandbox.pluginHostState.search = 'zzz-no-such-plugin';
   const none = sandbox.pluginLauncherResultsHtml();
   ok(none.includes('data-qa="plugin-empty-state"') && none.includes('data-context="search"'), 'no-match search renders the search-context empty state');
-  sandbox.pluginHostState.search = 'bnwas';
+  sandbox.pluginHostState.search = 'DRAFT';
   const hit = sandbox.pluginLauncherResultsHtml();
-  ok(hit.includes('data-qa="plugin-tile-bnwas-time-anchor"'), 'matching installed plugin stays in results');
-  sandbox.pluginHostState.search = 'distance';
-  const cat = sandbox.pluginLauncherResultsHtml();
-  ok(!cat.includes('distance-tables'), 'removed placeholder name never matches launcher search');
+  ok(hit.includes('plugin-preview-draft-survey') && !hit.includes('plugin-preview-ecdis-position-reminder'), 'search filters the offers, case-insensitively');
+  sandbox.pluginLauncherTab('installed');
+  ok(sandbox.pluginLauncherResultsHtml().includes('data-qa="plugin-tile-bnwas-time-anchor"') && sandbox.pluginHostState.search === '', 'back on Installed the user sees their plugin, and the query is cleared');
 }
 
 {
@@ -664,15 +704,15 @@ async function runRemoteInstallOfflineHarness() {
 
 {
   section('desktop launcher v1 — manage behind the gear, lifecycle not on primary');
-  const { sandbox, doc } = bootApp({ seed: BNWAS_INSTALLED });
+  const { sandbox, doc } = bootApp({ seed: BOTH_INSTALLED });
   await settleVm();
   sandbox.showApps();
   const launcher = appsHtml(doc);
   ok(!/pluginInstall\(/.test(launcher) && !/pluginDisable\(/.test(launcher) && !/pluginUninstall\(/.test(launcher), 'no Install/Disable/Remove on the primary surface');
   sandbox.pluginOpenManage();
   const manage = appsHtml(doc);
-  ok(manage.includes('data-qa="plugin-settings-bnwas-time-anchor"'), 'manage carries plugin-settings-<id> hooks');
-  ok(manage.includes('plugin-settings-navigation-calculators'), 'manage carries real Navigation Calculators plugin');
+  ok(manage.includes('data-qa="remote-plugin-tile-bnwas-time-anchor"'), 'manage carries the tile of a plugin installed from the catalog');
+  ok(manage.includes('data-qa="remote-plugin-tile-navigation-calculators"') && manage.includes('data-qa="remote-plugin-uninstall-navigation-calculators"'), 'with its lifecycle actions (Remove) — for every installed plugin');
   ok(!/plugin-settings-(distance-tables|draft-survey|education|reports)/.test(manage), 'manage has no coming-soon placeholder tiles');
   ok(manage.includes('pluginBackToLauncher()'), 'manage has the explicit «← Apps» return');
   ok(!manage.includes('Staging · remote') && !manage.includes('dev gate') && !manage.includes('transport not connected'), 'desktop manage no longer exposes staging/dev-gate remote copy');
@@ -719,7 +759,7 @@ function bootMobile(opts) {
   sandbox.mobileShow('apps');
   const h = mobileHtml(doc);
   ok(h.includes('data-qa="seafarer-module-apps"'), 'launcher root hook renders in #mobile-main');
-  ok(h.includes('data-qa="apps-search-input"'), 'apps-search-input renders');
+  ok(/data-qa="apps-tab-installed"[^>]*aria-selected="true"/.test(h) && h.includes('data-qa="apps-tab-find"'), 'both tabs render, Installed first');
   ok(h.includes('data-qa="plugins-settings-open"'), 'plugins-settings-open (gear) renders');
   ok(h.includes('data-qa="plugin-tile-bnwas-time-anchor"') && h.includes('data-qa="plugin-open-bnwas-time-anchor"'), 'plugin-tile-/plugin-open-<id> render for the installed plugin');
   // Canonical rail (волна №73): 5 pinned module slots; Home lives in the
@@ -734,7 +774,7 @@ function bootMobile(opts) {
 
 {
   section('mobile v2 (M2) — installed-only grid');
-  const { sandbox, doc } = bootMobile({ seed: BNWAS_INSTALLED });
+  const { sandbox, doc } = bootMobile({ seed: BOTH_INSTALLED });
   await settleVm();
   sandbox.mobileShow('apps');
   const h = mobileHtml(doc);
@@ -742,7 +782,7 @@ function bootMobile(opts) {
   ok(h.includes('apps-launcher-grid'), 'installed grid renders');
   sandbox.pluginOpenManage();
   const m = mobileHtml(doc);
-  ok(m.includes('plugin-settings-navigation-calculators'), 'real Navigation Calculators lives behind the gear');
+  ok(m.includes('plugin-settings-navigation-calculators') && m.includes('plugin-settings-bnwas-time-anchor'), 'every installed catalog plugin lives behind the gear');
   ok(!/plugin-settings-(distance-tables|draft-survey|education|reports)/.test(m), 'coming-soon placeholders do not live behind the gear');
 }
 
@@ -753,17 +793,22 @@ function bootMobile(opts) {
   empty.sandbox.mobileShow('apps');
   const hB = mobileHtml(empty.doc);
   ok(hB.includes('data-qa="plugin-empty-state"') && !hB.includes('data-context="search"'), 'State B renders the empty hook (not search context)');
-  ok(hB.includes('pluginOpenManage()'), 'State B CTA routes to manage');
-  const inst = bootMobile({ seed: BNWAS_INSTALLED });
+  ok(/data-qa="plugin-empty-find"[^>]*onclick="pluginLauncherTab\('find'\)"/.test(hB), 'State B CTA leads to the «Find a plugin» tab');
+  const inst = withCatalog(bootMobile({ seed: BNWAS_INSTALLED }));
   await settleVm();
   inst.sandbox.mobileShow('apps');
+  await settleVm();
+  inst.sandbox.pluginLauncherTab('find');
+  const hF = mobileHtml(inst.doc);
+  ok(hF.includes('data-qa="apps-search-input"') && hF.includes('data-qa="plugin-preview-draft-survey"') && !hF.includes('plugin-tile-bnwas-time-anchor'),
+    'the Find tab on the phone: search field + catalog offers, no installed plugins');
   inst.sandbox.pluginHostState.search = 'no-such-plugin';
   const hC = inst.sandbox.pluginLauncherResultsHtml();
   ok(hC.includes('data-qa="plugin-empty-state"') && hC.includes('data-context="search"'), 'State C is a distinct search-context empty state');
-  inst.sandbox.pluginHostState.search = 'BNWAS';
-  ok(inst.sandbox.pluginLauncherResultsHtml().includes('plugin-tile-bnwas-time-anchor'), 'search match is case-insensitive on installed plugins');
-  inst.sandbox.pluginHostState.search = 'draft';
-  ok(!inst.sandbox.pluginLauncherResultsHtml().includes('draft-survey'), 'removed placeholder names never match');
+  inst.sandbox.pluginHostState.search = 'ecdis';
+  ok(inst.sandbox.pluginLauncherResultsHtml().includes('plugin-preview-ecdis-position-reminder'), 'search match is case-insensitive on the offers');
+  inst.sandbox.pluginHostState.search = 'distance';
+  ok(!inst.sandbox.pluginLauncherResultsHtml().includes('distance-tables'), 'removed placeholder names never match');
 }
 
 {
@@ -796,7 +841,7 @@ function bootMobile(opts) {
   sandbox.pluginBack();
   ok(sandbox.pluginHostState.selectedId === null && sandbox.pluginHostState.surface === 'manage', 'detail back -> manage list');
   sandbox.pluginBackToLauncher();
-  ok(mobileHtml(doc).includes('data-qa="apps-search-input"'), '«← Apps» returns to the launcher');
+  ok(mobileHtml(doc).includes('data-qa="apps-tabs"'), '«← Apps» returns to the launcher');
   sandbox.pluginLaunch('bnwas-time-anchor');
   sandbox.pluginClose();
   ok(sandbox.pluginHostState.surface === 'launcher', 'UHOST-11: opened from launcher -> closes to launcher');
@@ -2167,7 +2212,9 @@ const appsTileTag = (h, id) => {
     ok(fn.length > 50, 'mobileAppsIconizeTiles located in the shipped bytes');
     ok(!/document\.getElementById\(\s*'apps-launcher-results'\s*\)/.test(fn), 'no GLOBAL getElementById for the launcher-results id');
     ok(/main\.querySelector\(\s*'#apps-launcher-results'\s*\)/.test(fn), 'the launcher-results node is looked up INSIDE #mobile-main');
-    ok((HOST_UI_MODULE.match(/id="apps-launcher-results"/g) || []).length >= 2, 'the module really emits that id on both the desktop and the mobile launcher (got ' + (HOST_UI_MODULE.match(/id="apps-launcher-results"/g) || []).length + ')');
+    // host-ui 1.2: desktop and mobile share ONE launcher body (pluginLauncherBodyHtml), so the id is emitted once in the source and lands in both launchers.
+    ok((HOST_UI_MODULE.match(/id="apps-launcher-results"/g) || []).length >= 1 && (HOST_UI_MODULE.match(/h \+= pluginLauncherBodyHtml\(\);/g) || []).length === 2,
+      'the module really emits that id on both the desktop and the mobile launcher (one shared body, used by both)');
     // Behavioural: a node carrying that id OUTSIDE #mobile-main is left untouched.
     const OLD = '<div class="apps-icon-tile" data-qa="plugin-tile-desk"><button type="button" data-qa="plugin-open-desk" onclick="pluginLaunch(\'desk\')" title="Desk"><span class="apps-icon-tile-icon">D</span><span class="apps-icon-tile-name">Desk</span></button></div>';
     const outside = doc.createElement('div');
@@ -3404,12 +3451,9 @@ const centredFullScreen = (html) => fullScreenDecls(html).filter(({ l }) => !fsA
 // So there is no extension filter any more. A file leaves the scan ONLY by being
 // named in DIST_NOT_SCANNED below, with the reason it cannot carry copy — and that
 // reason is verified in NOPAY3, not taken on trust.
-const DIST_NOT_SCANNED = [
-  { file: 'plugins/bnwas-time-anchor/assets/.gitkeep',
-    why: 'an empty-directory marker: git cannot store an empty assets/ folder, so this placeholder stands in for it. The BNWAS bundle has no binary assets at all — its alarm tones are synthesised at runtime — and the file is 0 bytes, which NOPAY3 asserts instead of believing' },
-  { file: 'plugins/navigation-calculators/assets/.gitkeep',
-    why: 'the same empty-directory marker for the calculators bundle, whose assets/ is empty because every calculator is embedded inside index.js; NOPAY3 asserts the 0 bytes, so the moment anyone writes copy into it the drill goes red' },
-];
+// Empty since 24.11.2026: the two exclusions were the empty assets/.gitkeep markers of bundled
+// plugins, and Seafarer ships no bundled plugins any more. Every file under dist/ is scanned.
+const DIST_NOT_SCANNED = [];
 // The exact set the scan MUST read, BY NAME. A lower bound («at least 20 assets»)
 // would let six of them disappear in silence and stay green (Supervisor Н-C, 06.09);
 // this list reddens on a file that vanishes just as loudly as on one that appears.
@@ -3422,14 +3466,6 @@ const SHIPPED_EXPECTED = [
   'skipi-assistant.css', 'skipi-assistant.js',
   'skipi-settings.css', 'skipi-settings.js',
   'vessel-db.css', 'vessel-db.js',
-  'plugins/bnwas-time-anchor/CHANGELOG.md', 'plugins/bnwas-time-anchor/REPORT.md',
-  'plugins/bnwas-time-anchor/checksums.json', 'plugins/bnwas-time-anchor/index.css',
-  'plugins/bnwas-time-anchor/index.js', 'plugins/bnwas-time-anchor/plugin.json',
-  'plugins/ecdis-position-reminder/checksums.json', 'plugins/ecdis-position-reminder/index.css',
-  'plugins/ecdis-position-reminder/index.js', 'plugins/ecdis-position-reminder/plugin.json',
-  'plugins/navigation-calculators/CHANGELOG.md', 'plugins/navigation-calculators/REPORT.md',
-  'plugins/navigation-calculators/checksums.json', 'plugins/navigation-calculators/index.css',
-  'plugins/navigation-calculators/index.js', 'plugins/navigation-calculators/plugin.json',
 ];
 const DIST_ALL = [];
 (function walk(dir) {
@@ -3456,24 +3492,12 @@ const NOPAY_WORDS_ALLOW = [
     why: 'intelligence.js prints the market band as «Range: USD p25-p75 per month. Sample N» — the same wage statistic, with its sample size, shown to the seafarer' },
   { re: /purchasing[-\s]power/gi,
     why: 'Numbeo «purchasing power» is the cost-of-living index behind the salary lens — the economics term, and nothing in it is bought inside the app' },
-  { re: /hostApi\.theme\.subscribe/g,
-    why: 'the bundled plugins subscribe to the HOST THEME through the plugin API — pub/sub code in a callback registration, a word that never reaches a screen' },
   { re: /subscribe: function \(cb\)/g,
     why: 'the publisher side of that same theme pub/sub, defined in plugin-host-bridge.js — the API the two plugins above call, not an offer to the user' },
-  { re: /\(get \/ subscribe\)/g,
-    why: 'a header comment in the BNWAS plugin listing which host APIs it uses (theme get / subscribe) — a comment about code, stripped from nothing and rendered nowhere' },
-  { re: /theme subscription and empties the container/g,
-    why: 'a header comment in the calculators plugin describing what unmount() tears down — the theme pub/sub again, in prose about the code' },
   { re: /subscription: '<svg/g,
     why: 'an unused icon key in the vendored @skipi/settings icon set (zero references anywhere else in the dist) — the name of an SVG path, not screen copy' },
   { re: /billing: '<svg/g,
     why: 'the neighbouring unused icon key in that same vendored @skipi/settings icon set (also zero references anywhere in the dist) — an SVG path name, and this home ships no billing screen for it to open' },
-  { re: /`hostApi\.theme\.get\(\)` \/ `subscribe\(\)`/g,
-    why: 'the BNWAS CHANGELOG line «Uses `hostApi.theme.get()` / `subscribe()` for light/dark base» — developer provenance about the theme pub/sub API, in a file no screen ever renders' },
-  { re: /`hostApi\.theme\.get\(\)\/subscribe\(\)`/g,
-    why: 'the same theme pub/sub sentence in the calculators CHANGELOG («skins both the shell and the open calculator») — again the host API, again a provenance document and not copy' },
-  { re: /theme\.subscribe re-skins the open calc/g,
-    why: 'the calculators REPORT describing what its contract test proved about the theme pub/sub — prose about a test result, and the word is the API name' },
   // Н-F, 06.09: the two entries below are the ENTIRE price the dist pays for the
   // «plan» and «monthly» rules added with that finding. One each — a rule that needs
   // a third exception is the wrong rule and gets re-worded instead.
@@ -3481,13 +3505,8 @@ const NOPAY_WORDS_ALLOW = [
     why: 'intelligence.js career guidance «Check internet access, joining window, relief plan, and repatriation terms before accepting» — the RELIEF plan is when a crew replacement comes aboard so the seafarer can go home, a contract term to check with an employer and not a tariff sold here' },
   { re: /offered monthly salary/gi,
     why: 'the Offer Check card in intelligence.js says «Type an offered monthly salary» — the wage an employer offered THIS seafarer, typed in locally and compared with the market band; it is income to him, not a charge from us' },
-  // The two below are the ENTIRE price the dist pays for the «unlock» rule added by
-  // the no-paywall-language slice (06.09). Both are the browser autoplay concept,
-  // in a bundled plugin, and neither is copy about access to a feature.
-  { re: /Web Audio is unlocked on the user's "Start watch" gesture/g,
-    why: 'the BNWAS provenance REPORT describing the browser AUTOPLAY policy — a Web Audio context is «unlocked» by a user gesture; it is the platform’s own term for sound being allowed to start, in a document no screen renders' },
-  { re: /\/\/ unlock audio on the user gesture/g,
-    why: 'the one line of BNWAS code that does exactly that, in a comment — the same Web Audio autoplay concept, and comments reach no screen' },
+  // (The «unlock» rule had two exceptions, both in the bundled BNWAS plugin; with no bundled
+  // plugins since 24.11.2026 it has none.)
 ];
 
 // [family, label, pattern] — matched case-insensitively on WORD/PATH boundaries, not
@@ -3657,7 +3676,7 @@ const nopayScan = (files, family) => NOPAY_RULES.filter(([fam]) => fam === famil
   }
   const bytes = SHIPPED_TEXT.reduce((acc, f) => acc + f.text.length, 0);
   ok(bytes > 500000, 'and those were real reads, not empty ones (' + bytes + ' bytes)');
-  for (const must of ['index.html', 'skipi-assistant.js', 'intelligence.js', 'skipi-settings.js', 'plugins/navigation-calculators/index.js']) {
+  for (const must of ['index.html', 'skipi-assistant.js', 'intelligence.js', 'skipi-settings.js', 'plugin-host-ui.js']) {
     ok(SHIPPED_TEXT.some((f) => f.file === must), 'the scan reaches ' + must);
   }
 }
@@ -3747,7 +3766,7 @@ const nopayScan = (files, family) => NOPAY_RULES.filter(([fam]) => fam === famil
   const lookalikes = [{
     file: 'control.js',
     text: 'Minimum salary per month; unsubscribes from host theme; display.reset(); '
-      + 'fetch("/payload"); local purchasing power index; hostApi.theme.subscribe(cb); '
+      + 'fetch("/payload"); local purchasing power index; subscribe: function (cb) {}; '
       // Н-F, 06.09: the two declared exceptions and the words deliberately left out
       // of the rules — sort order, master’s standing orders, the SF Pro font.
       + 'Check internet access, joining window, relief plan, and repatriation terms; '
@@ -4012,9 +4031,9 @@ const stripCodeComments = (text) => text.split('\n').map((line) => {
     'exactly ONE open_external_url call site in the whole shipped dist, and it is in index.html (found: ' + JSON.stringify(callSites) + ')');
   // window.open() is the silent fallback that made the second door mute. It has no
   // business in the app shell at all; the bundled plugins are a declared exception.
-  const WINDOW_OPEN_ALLOW = [
-    { prefix: 'plugins/', why: 'the bundled navigation-calculators pack ships legacy NGA calculator markup that calls window.open() for its own popups, and the plugin SHIMS those calls into an inline panel of its own; none of it is an external Skipi door, and a home may not rewrite a bundled plugin in place' },
-  ];
+  // No exception since 24.11.2026: the only one was the bundled navigation-calculators pack, and
+  // Seafarer ships no bundled plugins any more.
+  const WINDOW_OPEN_ALLOW = [];
   const stripJs = stripCodeComments;
   const windowOpens = SHIPPED_TEXT
     .filter((f) => !WINDOW_OPEN_ALLOW.some((a) => f.file.startsWith(a.prefix)))
@@ -4022,8 +4041,8 @@ const stripCodeComments = (text) => text.split('\n').map((line) => {
     .filter((x) => x.n > 0);
   ok(windowOpens.length === 0,
     'no shell asset falls back to window.open() — it returns null inside a WKWebView and answers nothing (offenders: ' + JSON.stringify(windowOpens) + ')');
-  ok(WINDOW_OPEN_ALLOW.every((a) => a.why.length > 60 && SHIPPED_TEXT.some((f) => f.file.startsWith(a.prefix) && /window\.open\(/.test(f.text))),
-    'and the one exception is real, current and explained (the bundled plugins really do contain window.open)');
+  ok(WINDOW_OPEN_ALLOW.length === 0 && !SHIPPED_TEXT.some((f) => f.file.startsWith('plugins/')),
+    'and there is no exception left: nothing ships under dist/plugins/ (no bundled plugins)');
   const INTEL = SHIPPED_TEXT.find((f) => f.file === 'intelligence.js').text;
   ok(/async function openInformationSource\(url\)\{\s*\n\s*return openExternalUrlSafe\(url\);\s*\n\}/.test(INTEL),
     'the Information «source» link goes through the same answering helper as every other door');
@@ -4397,8 +4416,6 @@ const stripCodeComments = (text) => text.split('\n').map((line) => {
   ok(/backend/.test(stripCode("h+='Photo upload appears after backend';")),
     'and it does NOT touch a string literal on a code line — which is exactly where the defect lived');
   const LEAK_ALLOW = [
-    { re: /No backend endpoint\./g, file: 'plugins/bnwas-time-anchor/REPORT.md',
-      why: 'the BNWAS plugin’s provenance REPORT saying what the bundle does NOT do (no network, no backend endpoint) — a developer document that ships inside dist/ but is never rendered on any screen' },
     { re: /comingSoon/g, file: 'plugin-host-ui.js',
       why: 'the vendored @skipi/plugin-host-ui catalog flag and its badge: a truthful status about a THIRD-PARTY plugin in the catalog, not a statement that this app is unfinished; the home may not patch a vendored module in place' },
     { re: /Coming soon/g, file: 'plugin-host-ui.js',
@@ -7086,11 +7103,16 @@ async function s1Boot(map, consent, opts) {
             + cut('var SKIPI_PLUGIN_REGISTRY = [', '// openedFrom records where a plugin was opened from', 'registry');
   const BLK_CREATE = cut('var pluginHostState = {', '// The module attaches window.showApps but not window.renderMobileApps', 'create');
   const BLK_RUNTIME = cut('var SkipiBundledStore = {', '// ---- shared permissions/safety panel ----', 'runtime');
-  ok(BLK.length > 1000 && BLK_CREATE.length > 200 && BLK_RUNTIME.length > 2000,
-    'the three index.html blocks are located by markers, not by line numbers');
+  ok(BLK.length > 300 && /var SKIPI_PLUGIN_REGISTRY = \[\];/.test(BLK) && BLK_CREATE.length > 200 && BLK_RUNTIME.length > 2000,
+    'the three index.html blocks are located by markers, not by line numbers (and the shipped registry is EMPTY — no bundled plugins)');
+  // Seafarer ships no bundled plugins since 24.11.2026, but the bundled host glue is still in
+  // index.html. The two CONTROLS of this drill (A, D) need a plugin that mounts the bundled way,
+  // so they put ONE fixture entry into the registry; B and C run on the shipped, empty registry.
+  const BUNDLED_FIXTURE = { id: 'bnwas-time-anchor', manifestId: 'app.skipi.plugins.bnwas-time-anchor', name: 'BNWAS / Time Anchor',
+    version: '0.1.0', category: 'safety', icon: 'x', short: 'fixture', permissions: {}, bundle: 'plugins/bnwas-time-anchor/', firstParty: true };
 
   const SLUG380 = 'bnwas-time-anchor', MID380 = 'app.skipi.plugins.bnwas-time-anchor';
-  const boot380 = ({ seed = {}, mobile = false } = {}) => {
+  const boot380 = ({ seed = {}, mobile = false, bundledFixture = false } = {}) => {
     const store = new Map(Object.entries(seed).map(([k, v]) => [k, String(v)]));
     const els = new Map();
     const mk = (id) => ({ id, innerHTML: '', style: {}, attrs: {},
@@ -7131,6 +7153,7 @@ async function s1Boot(map, consent, opts) {
     vm.createContext(sb);
     vm.runInContext(HOST_UI_MODULE, sb, { filename: 'dist/plugin-host-ui.js' });
     vm.runInContext(BLK, sb, { filename: 'index.html#registry' });
+    if (bundledFixture) sb.SKIPI_PLUGIN_REGISTRY.push(BUNDLED_FIXTURE);
     vm.runInContext(BLK_CREATE, sb, { filename: 'index.html#create' });
     vm.runInContext(BLK_RUNTIME, sb, { filename: 'index.html#runtime' });
     vm.runInContext(CONFIG, sb, { filename: 'dist/plugin-host-config.js' });
@@ -7165,8 +7188,8 @@ async function s1Boot(map, consent, opts) {
   // so the title cannot discriminate. The pending NOTE can (BACKLOG No.966).
   const PENDING_NOTE = 'Plugin artifact is not bundled yet';
 
-  const open380 = async (seed, mobile) => {
-    const h = boot380({ seed, mobile });
+  const open380 = async (seed, mobile, bundledFixture) => {
+    const h = boot380({ seed, mobile, bundledFixture });
     const shown = h.sb.pluginById(SLUG380);
     h.sb.pluginLaunch(SLUG380);
     const gotFrame = await waitUntil(() => h.container()._child && h.container()._child._tag === 'iframe', 40);
@@ -7189,7 +7212,7 @@ async function s1Boot(map, consent, opts) {
   };
 
   // A — POSITIVE CONTROL: if this goes red the drill is blind and every verdict below is void.
-  const A = await open380(BUNDLED380, false);
+  const A = await open380(BUNDLED380, false, true);
   ok(A.patched === undefined || true, 'context built');
   ok(!!A.shown && !!A.shown.bundle && !A.shown.remote, 'A control: pluginById returns the bundled entry');
   ok(A.mounted && A.bundledDriven && !A.remoteDriven,
@@ -7210,7 +7233,7 @@ async function s1Boot(map, consent, opts) {
   ok(!C.falsePending && C.remoteDriven, 'C: the mobile render path reaches the remote runtime too');
 
   // D — NEGATIVE CONTROL: an unverified remote record must not win.
-  const D = await open380(UNVERIFIED380, false);
+  const D = await open380(UNVERIFIED380, false, true);
   ok(!!D.shown && !D.shown.remote && D.shown.version === '0.1.0',
     'D control: an unverified remote record cannot override the bundled entry');
   ok(D.mounted && D.bundledDriven && !D.remoteDriven,
