@@ -315,6 +315,78 @@ async function testRuntimeGrantsComeFromSignedEntry() {
   ok(r3.ok === false && r3.stage === 'integrity', 'GRANT: a failed verification passes through untouched (fail-closed)');
 }
 
+
+// Owner 24.11.2026: «открыл Apps, нажал Драфт-сюрвей — 20 секунд висит Loading». The screen was
+// left with the top «‹» button: the plugin's container was destroyed WITHOUT host.unmount, the boot
+// still believed the plugin was mounted and answered «already open» into a fresh, empty container.
+// And a launch must be LOCAL: an installed plugin opens from the verified cache, not by downloading
+// the pack again, and a silent network must not hold the launch.
+function bootWithInstalledPlugin(opts) {
+  const bootCode = fs.readFileSync(BOOT_FILE, 'utf8');
+  const SLUG = 'draft-survey', VER = '0.1.0';
+  const entry = { slug: SLUG, id: 'app.skipi.plugins.' + SLUG, name: 'Draft Survey', version: VER, permissions: ['local_storage'], capabilities: { network: 'none' } };
+  const store = new Map([['skipi_remote_plugins_state', JSON.stringify({ [SLUG]: { installed: true, enabled: true, slug: SLUG, id: entry.id, version: VER, entry } })]]);
+  const calls = { opens: 0, closes: 0, installs: [] };
+  let runtimeCfg = null, loaderCfg = null;
+  const ctx = {
+    console: { info() {}, warn() {} }, setTimeout: opts.setTimeout || setTimeout, clearTimeout,
+    fetch: opts.fetch, AbortController,
+    localStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) },
+    window: {
+      FEATURE_REMOTE_PLUGIN_DELIVERY: true,
+      SKIPI_REMOTE_CONFIG: { catalogUrl: 'https://unit.test/catalog.json', remoteSlugs: '*', host: { id: 'seafarer', version: EXPECTED_VERSION }, policy: {}, pinnedPublicKeys: {}, pinnedPublicKey: {} },
+      SkipiPluginLoader: { create: (c) => { loaderCfg = c; return {
+        getCatalog: () => Promise.resolve({ source: 'network', catalog: { plugins: [entry] } }),
+        install: (slug, o) => { calls.installs.push(o && o.allowNetwork === false ? 'cache' : 'network'); return Promise.resolve(opts.install ? opts.install(o) : { ok: true, entry, pack: { files: {} }, source: 'x' }); },
+      }; } },
+      SkipiPluginRuntime: { create: (c) => { runtimeCfg = c; return {
+        open: (id, el) => { calls.opens += 1; el.frame = {}; return Promise.resolve({ ok: true }); },
+        close: () => { calls.closes += 1; },
+      }; } },
+      SkipiPluginHost: { mount: () => Promise.resolve({ ok: true }), unmount() {} },
+    },
+    document: { getElementById: () => null },
+  };
+  ctx.window.window = ctx.window; ctx.window.localStorage = ctx.localStorage;
+  vm.createContext(ctx);
+  vm.runInContext(bootCode, ctx, { filename: BOOT_FILE });
+  const container = () => { const el = { innerHTML: '', frame: null }; el.querySelector = (q) => (q === 'iframe' ? el.frame : null); return el; };
+  return { win: ctx.window, calls, SLUG, container, runtimeCfg: () => runtimeCfg, loaderCfg: () => loaderCfg };
+}
+
+async function testReopenAfterContainerWasDestroyed() {
+  const b = bootWithInstalledPlugin({});
+  const first = b.container();
+  let r = await b.win.SkipiPluginHost.mount(b.SLUG, first);
+  ok(r && r.ok && b.calls.opens === 1, 'REOPEN: the first open mounts the plugin frame');
+  r = await b.win.SkipiPluginHost.mount(b.SLUG, first);
+  ok(r && r.ok && b.calls.opens === 1, 'REOPEN: a repeated mount into the SAME live container does not remount');
+  const second = b.container(); // the screen was left without unmount and rendered again: a new, empty container
+  r = await b.win.SkipiPluginHost.mount(b.SLUG, second);
+  ok(r && r.ok && b.calls.opens === 2 && !!second.frame, 'REOPEN: a fresh container gets a real frame (no «already open» into an empty box)');
+  ok(b.calls.closes >= 1, 'REOPEN: the stale frame is closed before the new one opens');
+}
+
+async function testLaunchIsLocal() {
+  let b = bootWithInstalledPlugin({});
+  let r = await b.runtimeCfg().loader.install(b.SLUG);
+  ok(r.ok && JSON.stringify(b.calls.installs) === JSON.stringify(['cache']), 'LOCAL: an installed plugin launches from the verified cache — the pack is not downloaded again');
+  b = bootWithInstalledPlugin({ install: (o) => (o && o.allowNetwork === false ? { ok: false, reason: 'pack unavailable (offline and not cached)' } : { ok: true, entry: { slug: 'draft-survey', permissions: [] }, pack: { files: {} }, source: 'network/network' }) });
+  r = await b.runtimeCfg().loader.install(b.SLUG);
+  ok(r.ok && JSON.stringify(b.calls.installs) === JSON.stringify(['cache', 'network']), 'LOCAL: an empty or damaged cache falls back to the network (verified again)');
+
+  // a silent network: the request never answers — the loader's fetch must give up by itself
+  let aborted = false;
+  b = bootWithInstalledPlugin({
+    setTimeout: (fn) => { Promise.resolve().then(fn); return 0; },
+    fetch: (url, init) => new Promise((res, rej) => { init.signal.addEventListener('abort', () => { aborted = true; rej(new Error('aborted')); }); }),
+  });
+  ok(typeof b.loaderCfg().fetch === 'function', 'LOCAL: the home gives the loader a fetch with a time limit');
+  let failed = false;
+  await b.loaderCfg().fetch('https://unit.test/catalog.json').catch(() => { failed = true; });
+  ok(failed && aborted, 'LOCAL: a network that does not answer is cut off (the launch falls back to the cache instead of hanging)');
+}
+
 (async function main() {
   const win = runConfig();
   const cfg = win.SKIPI_REMOTE_CONFIG;
@@ -334,6 +406,8 @@ async function testRuntimeGrantsComeFromSignedEntry() {
     'documents / account / analytics / server_upload stay forbidden');
   await testNetworkPolicy(cfg);
   await testRuntimeGrantsComeFromSignedEntry();
+  await testReopenAfterContainerWasDestroyed();
+  await testLaunchIsLocal();
   ok(cfg.host && cfg.host.id === 'seafarer', 'host id is seafarer');
   ok(cfg.host && cfg.host.version === EXPECTED_VERSION, 'host version is release version 0.4.165');
 
