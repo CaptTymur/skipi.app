@@ -7281,5 +7281,29 @@ async function s1Boot(map, consent, opts) {
   } catch (e) { ok(false, 'profile phone drill crashed: ' + e.message); }
 }
 
+{
+  section('Sign-in screen — «Forgot password?» opens the account recovery page (email → letter), like Register');
+  try {
+    const opened = [];
+    const { sandbox, doc } = bootApp({ seed: {}, invokeOverride: async (cmd, args) => { if (cmd === 'open_external_url') { opened.push(String(args && args.url)); return true; } return undefined; } });
+    await settleVm();
+    const row = doc._make('div', {});
+    doc.getElementById('lg-register').parentNode = row; // the VM does not build the tree; the browser does
+    sandbox.getUiLang = () => 'en';
+    sandbox._lgApplyI18n();
+    const link = doc.getElementById('lg-forgot');
+    ok(!!link && link.textContent === 'Forgot password?', 'the gate shows a «Forgot password?» link');
+    ok(!!link && row.children.some((c) => c === link || (c.children || []).includes(link)), 'it sits in the links block under the Sign in button');
+    sandbox._lgApplyI18n();
+    ok(doc._all.filter((el) => el.id === 'lg-forgot').length === 1, 'opening the gate again does not duplicate the link');
+    sandbox.getUiLang = () => 'ru';
+    sandbox._lgApplyI18n();
+    ok(link && link.textContent === 'Забыли пароль?', 'RU: «Забыли пароль?»');
+    if (link && typeof link.onclick === 'function') { link.onclick({ preventDefault() {} }); await settleVm(); }
+    ok(opened.length === 1 && opened[0] === 'https://assistant.skipi.app/reset', 'a click opens assistant.skipi.app/reset in the system browser');
+    ok(!/id="lg-forgot"/.test(HTML), 'the link is created in JS (the frozen gate markup is untouched)');
+  } catch (e) { ok(false, 'forgot password drill crashed: ' + e.message); }
+}
+
 console.log('\n' + (fail === 0 ? 'ALL GREEN' : 'FAILURES') + ': ' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail === 0 ? 0 : 1);

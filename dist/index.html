@@ -10443,7 +10443,7 @@ function _lgTxt(){
     return ru ? {
         title:'Вход в Skipi', sub:'Введите email и пароль вашего аккаунта Skipi.',
         email:'Email', pass:'Пароль', submit:'Войти', signing:'Вход…',
-        noacct:'Нет аккаунта?', register:'Регистрация',
+        noacct:'Нет аккаунта?', register:'Регистрация', forgot:'Забыли пароль?',
         fill:'Введите email и пароль.',
         net:'Нет связи с сервером Skipi. Проверьте интернет и повторите.',
         creds:'Неверный email или пароль.',
@@ -10452,7 +10452,7 @@ function _lgTxt(){
     } : {
         title:'Sign in to Skipi', sub:'Use your Skipi account email and password.',
         email:'Email', pass:'Password', submit:'Sign in', signing:'Signing in…',
-        noacct:'No account?', register:'Register',
+        noacct:'No account?', register:'Register', forgot:'Forgot password?',
         fill:'Enter your email and password.',
         net:'Cannot reach the Skipi server. Check your internet connection and try again.',
         creds:'Wrong email or password.',
@@ -10466,6 +10466,22 @@ function _lgApplyI18n(){
     set('lg-title',t.title);set('lg-sub',t.sub);set('lg-email-label',t.email);
     set('lg-pass-label',t.pass);set('lg-submit',t.submit);set('lg-noacct',t.noacct);
     set('lg-register',t.register);
+    // «Forgot password?» — created here, not in the markup (the gate markup is the pinned desktop
+    // static region, see _lgError). Opens the web recovery page: email in, letter out.
+    var fg=document.getElementById('lg-forgot');
+    var reg=document.getElementById('lg-register');
+    if(!fg&&reg&&reg.parentNode){
+        var row=document.createElement('div');
+        row.style.cssText='margin-top:8px;';
+        fg=document.createElement('a');
+        fg.setAttribute('id','lg-forgot');
+        fg.setAttribute('href','#');
+        fg.style.cssText='color:var(--accent);text-decoration:none;';
+        fg.onclick=function(ev){if(ev&&ev.preventDefault)ev.preventDefault();openForgotPasswordPage();return false;};
+        row.appendChild(fg);
+        reg.parentNode.appendChild(row);
+    }
+    if(fg)fg.textContent=t.forgot;
 }
 // msg — human text in the UI language; detail — optional technical line shown
 // small UNDER the message (never instead of it). Both go to the error log.
@@ -10561,6 +10577,10 @@ async function openExternalUrlSafe(url){
 async function openRegisterPage(){
     // Registration is reused as-is on the web — open it in the system browser.
     return openExternalUrlSafe('https://assistant.skipi.app/register');
+}
+async function openForgotPasswordPage(){
+    // Password recovery is reused as-is on the web, like registration.
+    return openExternalUrlSafe('https://assistant.skipi.app/reset');
 }
 async function appLogoutToGate(){
     closeSettings();
