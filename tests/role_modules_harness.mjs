@@ -17,7 +17,9 @@ const ctx = {};
 vm.runInNewContext(m[0].replace('var ROLE_MODULES', 'ROLE_MODULES'), ctx);
 const keys = (role) => Array.from(ctx.ROLE_MODULES[role], (x) => x.k);
 assert.deepEqual(Array.from(Object.keys(ctx.ROLE_MODULES)), ['crewing', 'broker'], 'seafarer keeps its own shell');
-assert.deepEqual(keys('crewing'), ['documents', 'cv', 'vessels', 'ports', 'apps', 'crewflow', 'company', 'seafarers']);
+// Owner 25.11.2026: crewing is Crew Flow, Compliance Profile, Seafarers DB for now; Vessel DB stays;
+// Documents is not a tab (a viewer opened from inside), Port DB is not built yet.
+assert.deepEqual(keys('crewing'), ['crewflow', 'compliance', 'seafarers', 'vessels']);
 assert.deepEqual(keys('broker'), ['vessels', 'ports', 'apps', 'bazar']);
 for (const role of ['crewing', 'broker']) {
   for (const mod of ctx.ROLE_MODULES[role]) {

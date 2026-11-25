@@ -11745,15 +11745,14 @@ function accountFirstRegister(){ openRegisterPage(); }
 // `view` = a module that already exists in this code base and does not depend on a seafarer
 // profile; a module without `view` is not carried over yet and says so honestly.
 var ROLE_MODULES={
+    // Owner 25.11.2026 (after the first sign-in): for now crewing is three modules — Crew Flow,
+    // Compliance Profile, Seafarers DB — and Vessel DB stays. Documents is a viewer of a
+    // seafarer's documents opened from inside those modules, not a tab; Port DB is not built yet.
     crewing:[
-        {k:'documents',ru:'Документы',en:'Documents'},
-        {k:'cv',ru:'CV',en:'CV'},
-        {k:'vessels',view:'vessels',ru:'База судов',en:'Vessel DB'},
-        {k:'ports',ru:'База портов',en:'Port DB'},
-        {k:'apps',view:'apps',ru:'Приложения',en:'Apps'},
         {k:'crewflow',ru:'Crew Flow',en:'Crew Flow',from:'Skipi Crewing'},
-        {k:'company',ru:'Профиль компании',en:'Company Profile',from:'Skipi Crewing'},
-        {k:'seafarers',ru:'База моряков',en:'Seafarer DB',from:'Skipi Crewing'}
+        {k:'compliance',ru:'Профиль соответствия',en:'Compliance Profile',from:'Skipi Crewing'},
+        {k:'seafarers',ru:'База моряков',en:'Seafarers DB',from:'Skipi Crewing'},
+        {k:'vessels',view:'vessels',ru:'База судов',en:'Vessel DB'}
     ],
     broker:[
         {k:'vessels',view:'vessels',ru:'База судов',en:'Vessel DB'},
@@ -11816,14 +11815,13 @@ function roleShowModule(k){
     var tab=document.getElementById('mt-role-'+k);
     if(tab)tab.classList.add('active');
 }
-// First screen of a role cache: the first module of the role that already works here.
+// First screen of a role cache: the first module of the role.
 function roleOpenDefault(){
     var mods=roleModules();
     if(!mods)return;
     if(shouldUseMobileShell()){ mobileShow('home'); return; }
-    var first=mods.filter(function(m){ return !!m.view; })[0]||mods[0];
     hide('statusbar'); // the document counters belong to the seafarer shell
-    roleShowModule(first.k);
+    roleShowModule(mods[0].k);
 }
 function renderMobileRoleMenu(){
     var h='<div class="mobile-menu" data-qa="mobile-role-menu"><div class="fam-app-grid">';
