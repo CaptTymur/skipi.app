@@ -112,7 +112,7 @@ pub(crate) fn base64_encode(data: &[u8]) -> String {
 pub fn run() {
     use commands::{
         account_sync, agency_mailing, ai, app_login, assistant, cv_commands, documents, email,
-        jobs, mail_intent, messaging, packages, profile, review, vault, work_history,
+        jobs, mail_intent, messaging, motion, packages, profile, review, vault, work_history,
     };
 
     tauri::Builder::default()
@@ -149,6 +149,11 @@ pub fn run() {
             vault::get_default_vault_parent,
             vault::get_linux_install_type,
             vault::open_external_url,
+            // Motion sensors + keep-awake for plugins (host-runtime 1.2)
+            motion::plugin_motion_start,
+            motion::plugin_motion_drain,
+            motion::plugin_motion_stop,
+            motion::plugin_keep_awake,
             vault::install_deb_update,
             vault::set_window_title,
             vault::create_vault,

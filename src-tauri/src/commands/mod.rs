@@ -13,6 +13,7 @@ pub mod email;
 pub mod jobs;
 pub mod mail_intent;
 pub mod messaging;
+pub mod motion;
 pub mod packages;
 pub mod profile;
 pub mod review;

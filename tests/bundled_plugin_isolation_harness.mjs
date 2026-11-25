@@ -40,7 +40,7 @@ const HOST_UI_MODULE = fs.readFileSync(path.join(DIST, 'plugin-host-ui.js'), 'ut
 const SETTINGS_MODULE = fs.readFileSync(path.join(DIST, 'skipi-settings.js'), 'utf8');
 const ACCOUNT_DELETE_RS = fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'commands', 'account_delete.rs'), 'utf8');
 const LIB_RS = fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'lib.rs'), 'utf8');
-const HOST_RUNTIME_BRIDGE_SHA256 = 'a469713f704d42118392051c12bf45defac8c4f587dc5fee72d0988a2489d184';
+const HOST_RUNTIME_BRIDGE_SHA256 = 'b8263301d1bbf853fb660e8a37ef5e22a594cd39e715153aee980ac68d9f3d7e';
 
 // Since 24.11.2026 Seafarer ships NO bundled plugins (owner: every plugin comes from the catalog).
 // The isolation drills below still need real plugin bytes, so the BNWAS artifact lives on as a fixture.
