@@ -6441,7 +6441,8 @@ for (const lang of ['en','ru']) {
     vm.runInContext("mobileAddMode='choose';",app.sandbox);app.sandbox.allDocs=[];
     app.sandbox.renderMobileAdd();
     const addHtml=app.doc.getElementById('mobile-main').innerHTML;
-    ok(addHtml.includes('data-qa="doc-intake-photo"')&&addHtml.includes("mobileBeginAdd('photo')")&&addHtml.includes('data-qa="doc-intake-file"')&&addHtml.includes("mobileBeginAdd('file')")&&(addHtml.match(/class="mobile-primary-action/g)||[]).length===2,'016B mobile Add offers camera and file, both through recognition '+lang);
+    ok(addHtml.includes('data-qa="doc-intake-photo"')&&addHtml.includes("mobileBeginAdd('photo')")&&addHtml.includes('data-qa="doc-intake-file"')&&addHtml.includes("mobileBeginAdd('file')")&&addHtml.includes('data-qa="doc-intake-gallery"')&&addHtml.includes("mobileBeginAdd('gallery')")&&(addHtml.match(/class="mobile-primary-action/g)||[]).length===3,'016B mobile Add offers camera, gallery and file, all through recognition '+lang);
+    {const attrs={};app.doc.getElementById('mobile-file-input').setAttribute=(k,v)=>{attrs[k]=v;};app.doc.getElementById('mobile-file-input').removeAttribute=k=>{delete attrs[k];attrs['-'+k]=true;};app.doc.getElementById('mobile-file-input').click=()=>{};app.sandbox.mobileBeginAdd('gallery');ok(attrs.accept==='image/*'&&attrs['-capture']===true&&!('capture' in attrs),'016B gallery opens images without the camera '+lang);}
     app.sandbox.renderMobileDocs();
     const listHtml=app.doc.getElementById('mobile-main').innerHTML;
     ok(listHtml.indexOf('data-qa="doc-intake-plus"')>=0&&listHtml.indexOf('data-qa="doc-intake-plus"')<listHtml.indexOf('mobile-search')&&listHtml.includes("mobileShow('add')"),'016B the mobile Documents list starts with the green plus '+lang);
