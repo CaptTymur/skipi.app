@@ -6442,6 +6442,9 @@ for (const lang of ['en','ru']) {
     app.sandbox.renderMobileAdd();
     const addHtml=app.doc.getElementById('mobile-main').innerHTML;
     ok(addHtml.includes('data-qa="doc-intake-plus"')&&(addHtml.match(/mobile-primary-action/g)||[]).length===1,'016B mobile Add shows one primary green plus '+lang);
+    app.sandbox.renderMobileDocs();
+    const listHtml=app.doc.getElementById('mobile-main').innerHTML;
+    ok(listHtml.indexOf('data-qa="doc-intake-plus"')>=0&&listHtml.indexOf('data-qa="doc-intake-plus"')<listHtml.indexOf('mobile-search')&&listHtml.includes("mobileBeginAdd('file')"),'016B the mobile Documents list starts with the green plus '+lang);
   }catch(e){ok(false,'016B green plus '+e.message);}
   try {
     const app=await bootA5Experience({lang,work:A5_WORK});

@@ -8261,7 +8261,9 @@ function mobileDocsBodyHtml(){
     return h;
 }
 function renderMobileDocs(){
-    var h='<input class="mobile-search" type="search" placeholder="'+mobileSetupText('Search documents','Поиск документов')+'" value="'+mobileEsc(mobileDocsSearch)+'" oninput="mobileSetDocsSearch(this.value)">';
+    // tasks/016: the one green «+» of the whole structure lives on the list itself.
+    var h='<button class="mobile-primary-action doc-intake-plus" data-qa="doc-intake-plus" type="button" onclick="mobileBeginAdd(\'file\')"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileSetupText('Add document','Добавить документ')+'</span><span class="mobile-action-sub">'+mobileSetupText('Photo or file — no need to look for the right slot.','Фото или файл — искать нужный слот не нужно.')+'</span></span></button>';
+    h+='<input class="mobile-search" type="search" placeholder="'+mobileSetupText('Search documents','Поиск документов')+'" value="'+mobileEsc(mobileDocsSearch)+'" oninput="mobileSetDocsSearch(this.value)">';
     h+='<div id="mobile-docs-body">'+mobileDocsBodyHtml()+'</div>';
     mobileMainHtml(h);
     setTimeout(function(){hydrateDocumentThumbnails(document.getElementById('mobile-main'));},0);
