@@ -6436,6 +6436,28 @@ for (const lang of ['en','ru']) {
     ok(c.app.sandbox.docIntakeStatementHtml().includes(ru?'существующий не изменится':'the existing one stays as it is'),'016B says an existing filed document stays '+lang);
     await c.app.sandbox.docIntakeConfirm();
     ok(c.sent.find(x=>x[0]==='add_custom_doc')[1].title==='Passport (Travel) — ZZ9'&&c.sent.find(x=>x[0]==='attach_file_bytes')[1].docId==='new-row','016B second document of a type goes beside, not over '+lang);
+    // 4b. account sync moves the revision between our writes → each write names the
+    // current revision, and a «changed since you opened it» refusal is retried.
+    {
+      const live={id:'slot-passport',template_id:'passport',title:'Passport (Travel)',category:'Passport',file_name:null,field_statuses:'{}',sync_revision:'r1'};
+      c=await start({template_id:'passport',doc_number:'AB1'},[live]);
+      Object.assign(c.values,{'doc-intake-type':'passport','doc-intake-doc_number':'AB1'});
+      const log=[];let refused=false;
+      c.app.sandbox.invoke=async(cmd,args)=>{
+        if(cmd==='get_documents')return c.app.sandbox.allDocs;
+        log.push([cmd,args.expectedRevision]);
+        if(cmd==='update_doc_field'&&!refused){refused=true;live.sync_revision='r3';throw 'This item changed since you opened it. Your form is retained; reload and compare before saving.';}
+        if(cmd==='attach_file_bytes')live.sync_revision='r2';
+        return {};};
+      await c.app.sandbox.docIntakeConfirm();
+      ok(JSON.stringify(log)===JSON.stringify([['attach_file_bytes','r1'],['update_doc_field','r2'],['update_doc_field','r3'],['update_field_statuses','r3']]),'016B writes follow the live revision and retry a sync refusal ('+JSON.stringify(log)+') '+lang);
+      ok(!c.toasts.some(x=>x[1]==='error'),'016B a sync refusal in the middle does not fail the confirmation '+lang);
+      c=await start({template_id:'passport'},[live]);
+      Object.assign(c.values,{'doc-intake-type':'passport'});
+      c.app.sandbox.invoke=async(cmd)=>{if(cmd==='get_documents')return c.app.sandbox.allDocs;throw 'disk full';};
+      await c.app.sandbox.docIntakeConfirm();
+      ok(c.toasts.some(x=>x[1]==='error'&&String(x[0]).includes('disk full')),'016B other failures are reported, not retried forever '+lang);
+    }
     // 5. the mobile Add screen leads with the one green plus
     const app=await bootA5II(lang);
     vm.runInContext("mobileAddMode='choose';",app.sandbox);app.sandbox.allDocs=[];

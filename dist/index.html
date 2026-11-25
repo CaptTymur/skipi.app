@@ -4704,6 +4704,23 @@ function docIntakeRender(){
     document.body.insertAdjacentHTML('beforeend',h);
     if(docIntake.status==='confirm')docIntakeRefresh();
 }
+// One write of the confirmed document. With account sync on, every document
+// write must name the revision it edits, and background sync can move that
+// revision between our own consecutive writes. This is the seafarer's fresh
+// confirmation, not a stale form, so each write reads the current revision and
+// a «changed since you opened it» refusal is retried on the newest one.
+async function docIntakeWrite(command,args,docId){
+    for(var attempt=0;;attempt++){
+        var call=Object.assign({},args);
+        try{
+            var docs=await invoke('get_documents');
+            var row=(docs||[]).find(function(x){return x&&x.id===docId;});
+            if(row&&row.sync_revision!=null)call.expectedRevision=row.sync_revision;
+        }catch(e0){}
+        try{return await invoke(command,call);}
+        catch(e){if(attempt>=3||String(e).indexOf('changed since you opened')<0)throw e;}
+    }
+}
 var docIntakeBusy=false;
 async function docIntakeConfirm(){
     if(!docIntake||docIntake.status!=='confirm'||docIntakeBusy)return;
@@ -4722,16 +4739,16 @@ async function docIntakeConfirm(){
             if(tpl&&docIntakeHasFiledSlot(tpl.id))newTitle=title+' — '+(values.doc_number||new Date().toISOString().slice(0,10));
             target=await invoke('add_custom_doc',{title:newTitle,category:tpl?tpl.category:'Custom',hasExpiry:tpl?!!tpl.has_expiry:!!values.valid_to,isPermanent:false});
         }
-        if(intake.sourcePath)await invoke('attach_file',{docId:target.id,sourcePath:intake.sourcePath});
-        else await invoke('attach_file_bytes',{docId:target.id,fileName:intake.fileName,dataBase64:intake.dataBase64});
+        if(intake.sourcePath)await docIntakeWrite('attach_file',{docId:target.id,sourcePath:intake.sourcePath},target.id);
+        else await docIntakeWrite('attach_file_bytes',{docId:target.id,fileName:intake.fileName,dataBase64:intake.dataBase64},target.id);
         var statuses={};try{statuses=JSON.parse(target.field_statuses||'{}')||{};}catch(e0){statuses={};}
         delete statuses.not_applicable;
         for(var f in values){
             if(!values[f])continue;
-            await invoke('update_doc_field',{id:target.id,field:f,value:values[f]});
+            await docIntakeWrite('update_doc_field',{id:target.id,field:f,value:values[f]},target.id);
             statuses[f]='verified';
         }
-        await invoke('update_field_statuses',{id:target.id,statuses:JSON.stringify(statuses)});
+        await docIntakeWrite('update_field_statuses',{id:target.id,statuses:JSON.stringify(statuses)},target.id);
         docIntake=null;docIntakeRender();
         allDocs=await invoke('get_documents');
         selectedDocId=target.id;
