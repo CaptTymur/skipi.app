@@ -12666,6 +12666,7 @@ function docTreeKindBadge(d){
 }
 
 function renderTree(){
+    try{docIntakeMountButton();}catch(e){}
     var cats={};
     allDocs.forEach(function(d){
         var hay=((d.title||'')+' '+(d.category||'')).toLowerCase();
@@ -13087,7 +13088,7 @@ async function showDashboard(){
     var requiredMissing=requiredSummary.loaded?requiredSummary.missing:null;
     var c={expired:0,critical:0,warning:0,warning_soft:0,valid:0,none:0};
     uploadedDocs.forEach(function(d){c[classify(d)]++;});
-    var h='<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap;"><h2 style="font-size:18px;margin:0;">Dashboard</h2><button class="btn btn-accent btn-sm" onclick="showAddCustomDoc()">+ Add custom certificate</button></div>';
+    var h='<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap;"><h2 style="font-size:18px;margin:0;">Dashboard</h2><span><button class="btn btn-sm doc-intake-plus" data-qa="doc-intake-plus" onclick="docIntakePick()">+ '+docIntakeT('Add document','Добавить документ')+'</button> <button class="btn btn-outline btn-sm" onclick="showAddCustomDoc()">+ Add custom certificate</button></span></div>';
 
     // Profile completeness header (if seafarer profile is set)
     var profile=null;
