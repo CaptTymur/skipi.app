@@ -96,6 +96,7 @@ class MainActivity : TauriActivity() {
   private var motionPeriodUs = 0          // 0 = sensors not wanted
   private var motionRegistered = false
   private var motionHasGyro = false
+  private var motionLastRowNs = 0L
   @Volatile private var gyroSeen = false
   @Volatile private var gyroX = 0f
   @Volatile private var gyroY = 0f
@@ -108,6 +109,13 @@ class MainActivity : TauriActivity() {
           gyroX = event.values[0]; gyroY = event.values[1]; gyroZ = event.values[2]; gyroSeen = true
         }
         Sensor.TYPE_ACCELEROMETER -> synchronized(motionLock) {
+          // The system may deliver faster than asked (another client of the same sensor; measured
+          // on a Pixel 7: ~118 Hz for a 50 Hz request). Readings closer than 0.6 of the asked
+          // period are skipped, so the stream stays near the asked rate (here every 2nd → 59 Hz)
+          // and never falls below it. Each row carries its own time; the plugin relies on that.
+          val sinceLast = event.timestamp - motionLastRowNs
+          if (motionLastRowNs != 0L && sinceLast >= 0 && sinceLast < motionPeriodUs * 600L) return
+          motionLastRowNs = event.timestamp
           // The page stopped draining (hidden, busy): keep the newest ~1 minute, drop the rest.
           if (motionRowCount >= MOTION_MAX_ROWS) { motionRows.setLength(0); motionRowCount = 0 }
           motionRows.append(event.timestamp / 1.0e6).append(',')
@@ -145,6 +153,7 @@ class MainActivity : TauriActivity() {
     motionThread = null
     motionRegistered = false
     gyroSeen = false
+    motionLastRowNs = 0L
   }
 
   /** Returns "OK <rateHz> <gyro 0|1>" or "ERROR:<reason>". */
