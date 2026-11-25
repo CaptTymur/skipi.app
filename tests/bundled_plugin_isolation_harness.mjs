@@ -6441,10 +6441,10 @@ for (const lang of ['en','ru']) {
     vm.runInContext("mobileAddMode='choose';",app.sandbox);app.sandbox.allDocs=[];
     app.sandbox.renderMobileAdd();
     const addHtml=app.doc.getElementById('mobile-main').innerHTML;
-    ok(addHtml.includes('data-qa="doc-intake-plus"')&&(addHtml.match(/mobile-primary-action/g)||[]).length===1,'016B mobile Add shows one primary green plus '+lang);
+    ok(addHtml.includes('data-qa="doc-intake-photo"')&&addHtml.includes("mobileBeginAdd('photo')")&&addHtml.includes('data-qa="doc-intake-file"')&&addHtml.includes("mobileBeginAdd('file')")&&(addHtml.match(/class="mobile-primary-action/g)||[]).length===2,'016B mobile Add offers camera and file, both through recognition '+lang);
     app.sandbox.renderMobileDocs();
     const listHtml=app.doc.getElementById('mobile-main').innerHTML;
-    ok(listHtml.indexOf('data-qa="doc-intake-plus"')>=0&&listHtml.indexOf('data-qa="doc-intake-plus"')<listHtml.indexOf('mobile-search')&&listHtml.includes("mobileBeginAdd('file')"),'016B the mobile Documents list starts with the green plus '+lang);
+    ok(listHtml.indexOf('data-qa="doc-intake-plus"')>=0&&listHtml.indexOf('data-qa="doc-intake-plus"')<listHtml.indexOf('mobile-search')&&listHtml.includes("mobileShow('add')"),'016B the mobile Documents list starts with the green plus '+lang);
   }catch(e){ok(false,'016B green plus '+e.message);}
   try {
     const app=await bootA5Experience({lang,work:A5_WORK});
