@@ -17,7 +17,7 @@ const CATALOG_URL = 'https://api.skipi.app/seafarer/releases/plugins/v1/catalog.
 // catalog itself (remoteSlugs '*'), so the live catalog may grow; these three must stay in it.
 const BUNDLED_SLUGS = ['bnwas-time-anchor', 'navigation-calculators', 'ecdis-position-reminder'];
 const LOADER_FILE = `${ROOT}/dist/plugin-loader.js`;
-const EXPECTED_VERSION = '0.4.165';
+const EXPECTED_VERSION = '0.4.203';
 const EXPECTED_FINGERPRINT = '28e1987f3a533e56f431a4777ac5da9e5797770c552786df3147264d6a3df5d4';
 
 let failures = 0;
@@ -273,6 +273,8 @@ async function testNetworkPolicy(cfg) {
   ok(r.ok === false && r.stage === 'policy', 'NET: a host policy without networkOrigins allows no network at all');
   r = await verdict(['local_storage', 'file_save'], Object.assign({}, BASE, { network: 'none' }));
   ok(r.ok === false && r.stage === 'policy', 'NET: a permission outside maxPermissions (file_save) is still rejected');
+  r = await verdict(['local_storage', 'motion', 'keep_awake'], Object.assign({}, BASE, { network: 'none' }));
+  ok(r.ok === true, 'MOTION: a plugin asking for motion + keep_awake (the Clinometer) installs');
   r = await verdict(['local_storage'], Object.assign({}, BASE, { network: 'none', documents: 'read' }));
   ok(r.ok === false && r.stage === 'policy', 'NET: documents access is still rejected');
 }
@@ -315,6 +317,100 @@ async function testRuntimeGrantsComeFromSignedEntry() {
   ok(r3.ok === false && r3.stage === 'integrity', 'GRANT: a failed verification passes through untouched (fail-closed)');
 }
 
+
+// Owner 25.11.2026: the Clinometer runs on the phone's sensors and is for phones only. The plugin
+// frame cannot read sensors, so the home serves them (runtime 1.2 host.motion / host.screen) from
+// the native commands; a catalog entry with compat.platforms is offered only on those platforms.
+async function testMotionAdapterAndPhoneOnlyPlugins() {
+  const bootCode = fs.readFileSync(BOOT_FILE, 'utf8');
+  const phoneOnly = { slug: 'marine-clinometer', compat: { host: ['seafarer'], platforms: ['android', 'ios'] } };
+  const everywhere = { slug: 'navigation-calculators', compat: { host: ['seafarer'] } };
+  function boot(userAgent, native) {
+    let runtimeCfg = null; const installs = []; const timers = new Map(); let nextTimer = 0;
+    const store = new Map();
+    const ctx = {
+      console: { info() {}, warn() {} }, setTimeout, clearTimeout,
+      setInterval: (fn) => { timers.set(++nextTimer, fn); return nextTimer; },
+      clearInterval: (id) => { timers.delete(id); },
+      navigator: { userAgent },
+      localStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) },
+      window: {
+        FEATURE_REMOTE_PLUGIN_DELIVERY: true,
+        SKIPI_REMOTE_CONFIG: { catalogUrl: 'https://unit.test/catalog.json', remoteSlugs: '*', host: { id: 'seafarer', version: '0.4.203' }, policy: {}, pinnedPublicKeys: {}, pinnedPublicKey: {} },
+        SkipiPluginLoader: { create: () => ({
+          getCatalog: () => Promise.resolve({ source: 'network', catalog: { plugins: [phoneOnly, everywhere] } }),
+          install: (slug) => { installs.push(slug); return Promise.resolve({ ok: true, entry: slug === phoneOnly.slug ? phoneOnly : everywhere, pack: { files: {} } }); },
+        }) },
+        SkipiPluginRuntime: { create: (c) => { runtimeCfg = c; return { open: () => Promise.resolve({ ok: true }), close() {} }; } },
+        SkipiPluginHost: { mount: () => Promise.resolve({ ok: true }), unmount() {} },
+        __TAURI__: native ? { core: { invoke: native } } : undefined,
+      },
+      document: { getElementById: () => ({ innerHTML: '' }) },
+    };
+    ctx.window.window = ctx.window; ctx.window.localStorage = ctx.localStorage;
+    store.set('skipi_plugins_unbundled_v1', JSON.stringify({ pending: [] }));
+    vm.createContext(ctx);
+    vm.runInContext(bootCode, ctx, { filename: BOOT_FILE });
+    return { win: ctx.window, host: runtimeCfg.host, installs, timers, tickAll: () => [...timers.values()].forEach((fn) => fn()) };
+  }
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+  const ANDROID = 'Mozilla/5.0 (Linux; Android 14; Pixel 6) AppleWebKit/537.36', IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)', LINUX = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15';
+
+  // ---- phones only ----
+  for (const [ua, name] of [[ANDROID, 'Android'], [IPHONE, 'iPhone']]) {
+    const b = boot(ua);
+    const list = await b.win.SkipiRemoteList();
+    ok(list.length === 2 && list.some((e) => e.slug === phoneOnly.slug), 'PHONE: on ' + name + ' a phones-only plugin is offered in the catalog');
+    const r = await b.win.SkipiRemoteInstall(phoneOnly.slug, { allowNetwork: true });
+    ok(r && r.ok === true && b.installs.includes(phoneOnly.slug), 'PHONE: on ' + name + ' it installs');
+  }
+  {
+    const b = boot(LINUX);
+    const list = await b.win.SkipiRemoteList();
+    ok(list.length === 1 && list[0].slug === everywhere.slug, 'PHONE: on desktop a phones-only plugin is not offered; plugins without compat.platforms are unaffected');
+    const r = await b.win.SkipiRemoteInstall(phoneOnly.slug, { allowNetwork: true });
+    ok(r && r.ok === false && r.stage === 'platform' && b.installs.length === 0, 'PHONE: on desktop it is not installed either (the loader is never asked)');
+    const r2 = await b.win.SkipiRemoteInstall(everywhere.slug, { allowNetwork: true });
+    ok(r2 && r2.ok === true, 'PHONE: other plugins still install on desktop');
+  }
+
+  // ---- motion + keep-awake adapters ----
+  {
+    const calls = []; let rows = [[1000, 0, 0, 9.81, 0, 0, 0]];
+    const native = (cmd, args) => {
+      calls.push({ cmd, args });
+      if (cmd === 'plugin_motion_start') return Promise.resolve({ ok: true, rateHz: 50, source: 'android-sensor-manager', platform: 'android', gyro: true });
+      if (cmd === 'plugin_motion_drain') return Promise.resolve(rows);
+      return Promise.resolve(null);
+    };
+    const b = boot(ANDROID, native);
+    ok(b.host.motion && typeof b.host.motion.start === 'function' && typeof b.host.motion.stop === 'function' && b.host.screen && typeof b.host.screen.keepAwake === 'function',
+      'MOTION: the home opts into host.motion and host.screen (runtime 1.2)');
+    const pushed = []; let alive = true;
+    const res = await b.host.motion.start('marine-clinometer', { rateHz: 50 }, (r) => { pushed.push(r); return alive; });
+    ok(res.ok === true && res.rateHz === 50 && res.platform === 'android' && calls[0].cmd === 'plugin_motion_start' && calls[0].args.rateHz === 50, 'MOTION: start asks the native sensors and reports the actual rate');
+    ok(b.timers.size === 1, 'MOTION: a drain timer runs while the sensors are on');
+    b.tickAll(); await settle();
+    ok(pushed.length === 1 && pushed[0] === rows, 'MOTION: drained rows are pushed to the runtime');
+    alive = false; rows = [];
+    b.tickAll(); await settle();
+    ok(b.timers.size === 0 && calls.some((c) => c.cmd === 'plugin_motion_stop'), 'MOTION: once the runtime says the plugin is gone (push → false) the timer and the sensors stop');
+    await b.host.motion.start('marine-clinometer', { rateHz: 50 }, () => true);
+    b.host.motion.stop('marine-clinometer'); await settle();
+    ok(b.timers.size === 0 && calls.filter((c) => c.cmd === 'plugin_motion_stop').length === 2, 'MOTION: stop() stops the timer and the native sensors');
+    const k = await b.host.screen.keepAwake('marine-clinometer', 1);
+    const last = calls[calls.length - 1];
+    ok(k.ok === true && last.cmd === 'plugin_keep_awake' && last.args.on === true, 'MOTION: keepAwake reaches the native command as a boolean');
+  }
+  {
+    const b = boot(LINUX, (cmd) => (cmd === 'plugin_motion_start' ? Promise.resolve({ ok: false, rateHz: 0, source: 'none', platform: 'desktop', gyro: false, reason: 'no-sensors' }) : Promise.resolve(null)));
+    const res = await b.host.motion.start('marine-clinometer', { rateHz: 50 }, () => true);
+    ok(res.ok === false && res.reason === 'no-sensors' && b.timers.size === 0, 'MOTION: on desktop start answers no-sensors and no timer runs');
+    const b2 = boot(LINUX, null);
+    const res2 = await b2.host.motion.start('marine-clinometer', { rateHz: 50 }, () => true);
+    ok(res2.ok === false && b2.timers.size === 0, 'MOTION: without the native bridge start is refused, nothing throws');
+  }
+}
 
 // Owner 24.11.2026: «открыл Apps, нажал Драфт-сюрвей — 20 секунд висит Loading». The screen was
 // left with the top «‹» button: the plugin's container was destroyed WITHOUT host.unmount, the boot
@@ -475,17 +571,18 @@ async function testUnbundleMigration() {
 
   ok(cfg.catalogUrl === CATALOG_URL, 'catalogUrl is production api.skipi.app path');
   ok(cfg.remoteSlugs === '*', "remoteSlugs is '*': the signed catalog decides which plugins exist (owner 24.11.2026)");
-  ok(JSON.stringify(cfg.policy.maxPermissions) === JSON.stringify(['local_storage', 'audio_alert', 'network']), 'policy grants at most local_storage, audio_alert, network');
+  ok(JSON.stringify(cfg.policy.maxPermissions) === JSON.stringify(['local_storage', 'audio_alert', 'network', 'motion', 'keep_awake']), 'policy grants at most local_storage, audio_alert, network, motion, keep_awake');
   ok(JSON.stringify(cfg.policy.networkOrigins) === JSON.stringify(['https://api.skipi.app']), 'plugin network is bounded to https://api.skipi.app');
   ok(cfg.policy.requireCapabilities.documents === 'none' && cfg.policy.requireCapabilities.account === 'none' && cfg.policy.requireCapabilities.analytics === 'none' && cfg.policy.requireCapabilities.server_upload === false,
     'documents / account / analytics / server_upload stay forbidden');
   await testNetworkPolicy(cfg);
   await testRuntimeGrantsComeFromSignedEntry();
+  await testMotionAdapterAndPhoneOnlyPlugins();
   await testReopenAfterContainerWasDestroyed();
   await testLaunchIsLocal();
   await testUnbundleMigration();
   ok(cfg.host && cfg.host.id === 'seafarer', 'host id is seafarer');
-  ok(cfg.host && cfg.host.version === EXPECTED_VERSION, 'host version is release version 0.4.165');
+  ok(cfg.host && cfg.host.version === EXPECTED_VERSION, 'host version is the plugin-host level 0.4.203 (motion + keep-awake)');
 
   ok(!!prodKey, 'prod public key is present');
   ok(prodKey && !Object.prototype.hasOwnProperty.call(prodKey, 'd'), 'prod public key has no private d');

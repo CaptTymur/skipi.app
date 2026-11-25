@@ -26,7 +26,7 @@ window.SKIPI_REMOTE_CONFIG = {
   bundledVersions: {},
 
   // Host identity for compatibility checks.
-  host: { id: 'seafarer', version: '0.4.165' },
+  host: { id: 'seafarer', version: '0.4.203' },
 
   // First-party policy (v2). Plugins exceeding this are rejected.
   // Network (owner 24.11.2026): a plugin may use the network ONLY through the host
@@ -34,7 +34,9 @@ window.SKIPI_REMOTE_CONFIG = {
   // `network` permission, and ONLY to https prefixes listed in its signed entry
   // (capabilities.network.allow), each of which must sit on one of networkOrigins.
   policy: {
-    maxPermissions: ['local_storage', 'audio_alert', 'network'],
+    // Motion sensors and keep-awake (owner 25.11.2026, the Clinometer): served by the host
+    // (hostApi.motion / hostApi.screen, runtime 1.2) — the sandbox itself gets no sensor access.
+    maxPermissions: ['local_storage', 'audio_alert', 'network', 'motion', 'keep_awake'],
     requireCapabilities: { documents: 'none', account: 'none', analytics: 'none', server_upload: false },
     networkOrigins: ['https://api.skipi.app']
   },

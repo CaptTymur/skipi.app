@@ -12,6 +12,9 @@
        (v1.1: host-mediated net.fetch / files.* — by grant + signed allowlist; the
        frame's own CSP stays connect-src 'none');
      - the host enforces the plugin's granted permissions on every bridge message;
+     - v1.2: host-mediated motion sensors
+       (hostApi.motion, grant 'motion') and keep-awake (hostApi.screen, grant
+       'keep_awake'); the frame still has no sensor or wake-lock access of its own;
      - the plugin runtime contract is unchanged: it still calls
        window.SkipiPlugins[slug].mount(container, hostApi) — container is the
        frame's own body, hostApi is a bridge proxy.
@@ -28,7 +31,7 @@
 (function () {
   'use strict';
   var TOKEN = window.__SKIPI_TOKEN__ || '';   // per-mount capability token (set by host)
-  var slug = null, theme = 'dark', nonce = '', themeSubs = [], pending = {}, seq = 0;
+  var slug = null, theme = 'dark', nonce = '', themeSubs = [], pending = {}, seq = 0, motionSubs = [];
   function send(m) { try { parent.postMessage(Object.assign({ ch: 'skipi-plugin', v: 1, token: TOKEN }, m), '*'); } catch (e) {} }
 
   function selfCheck() {
@@ -85,6 +88,16 @@
         save: function (f) { if (!has('file_save')) return notGranted('file_save'); f = f || {}; return rpc('files.save', { name: f.name, mime: f.mime, text: f.text, base64: f.base64 }); },
         pick: function (o) { if (!has('file_pick')) return notGranted('file_pick'); o = o || {}; return rpc('files.pick', { accept: o.accept, multiple: !!o.multiple }); }
       },
+      // v1.2: motion samples are pushed by the host while started; the frame never
+      // touches DeviceMotion / native sensors itself.
+      motion: {
+        start: function (o) { if (!has('motion')) return notGranted('motion'); o = o || {}; return rpc('motion.start', { rateHz: o.rateHz }); },
+        stop: function () { if (has('motion')) send({ type: 'motion.stop' }); },
+        onSamples: function (cb) { motionSubs.push(cb); return function () { motionSubs = motionSubs.filter(function (f) { return f !== cb; }); }; }
+      },
+      screen: {
+        keepAwake: function (on) { if (!has('keep_awake')) return notGranted('keep_awake'); return rpc('screen.keepAwake', { on: !!on }); }
+      },
       audio: { playLoop: function () {}, stop: function () {} },
       permissions: { listGranted: function () { return perms.slice(); } }
     };
@@ -117,6 +130,9 @@
       send({ type: 'resize', height: document.body.scrollHeight });
     } else if (m.type === 'storage.result') {
       var cb = pending[m.id]; if (cb) { delete pending[m.id]; cb(m.value); }
+    } else if (m.type === 'motion.batch') {
+      var b = { seq: m.seq, samples: m.samples };
+      motionSubs.forEach(function (cb) { try { cb(b); } catch (e) {} });
     } else if (m.type === 'rpc.result') {
       var cb2 = pending[m.id]; if (cb2) { delete pending[m.id]; cb2(m); }
     } else if (m.type === 'unmount') {
@@ -244,6 +260,8 @@
     var hostId = (cfg.host && cfg.host.id) || null;   // non-secret host app id (e.g. 'seafarer')
     var netApi = (cfg.host && cfg.host.net) || null;      // opt-in: absent → net.fetch is refused
     var filesApi = (cfg.host && cfg.host.files) || null;  // opt-in: absent → files.* are refused
+    var motionApi = (cfg.host && cfg.host.motion) || null;  // v1.2, opt-in: absent → motion.* refused
+    var screenApi = (cfg.host && cfg.host.screen) || null;  // v1.2, opt-in: absent → screen.* refused
     var active = null;   // single active plugin frame
     var audit = [];
     var dbg = [];
@@ -281,6 +299,50 @@
       if (!filesApi || typeof filesApi[method] !== 'function') return deny(m, m.type, 'files are not available in this host');
       var slug = active.slug;
       rpcRun(m, function () { return filesApi[method](slug, arg); });
+    }
+
+    // ---- host-mediated motion + keep-awake (v1.2) ----
+    var MOTION_MAX_HZ = 100, MOTION_MAX_BATCH = 500;
+    function cleanRows(rows) {
+      var out = [];
+      if (!Array.isArray(rows)) return out;
+      for (var i = 0; i < rows.length && out.length < MOTION_MAX_BATCH; i++) {
+        var r = rows[i];
+        if (!Array.isArray(r) || (r.length !== 4 && r.length !== 7)) continue;
+        var ok = true, row = [];
+        for (var j = 0; j < r.length; j++) { var v = r[j]; if (j >= 4 && v === null) { row.push(null); continue; } if (typeof v !== 'number' || !isFinite(v)) { ok = false; break; } row.push(v); }
+        if (ok) out.push(row);
+      }
+      return out;
+    }
+    function handleMotionStart(m) {
+      if (!granted('motion')) return deny(m, 'motion.start', 'permission not granted: motion');
+      if (!motionApi || typeof motionApi.start !== 'function') return deny(m, 'motion.start', 'motion is not available in this host');
+      var tok = active.token, slug = active.slug, bseq = 0;
+      var rate = Math.max(1, Math.min(MOTION_MAX_HZ, Number(m.rateHz) || 50));
+      // push() delivers only to the mount that started the sensors; after close it is inert.
+      var push = function (rows) {
+        if (!active || active.token !== tok) return false;
+        var clean = cleanRows(rows);
+        if (clean.length) toFrame({ type: 'motion.batch', seq: ++bseq, samples: clean });
+        return true;
+      };
+      active.motionOn = true;
+      rpcRun(m, function () { return motionApi.start(slug, { rateHz: rate }, push); });
+    }
+    function stopMotion(a) {
+      if (a && a.motionOn && motionApi && typeof motionApi.stop === 'function') { try { motionApi.stop(a.slug); } catch (e) {} }
+      if (a) a.motionOn = false;
+    }
+    function handleKeepAwake(m) {
+      if (!granted('keep_awake')) return deny(m, 'screen.keepAwake', 'permission not granted: keep_awake');
+      if (!screenApi || typeof screenApi.keepAwake !== 'function') return deny(m, 'screen.keepAwake', 'keep-awake is not available in this host');
+      var slug = active.slug, on = !!m.on; active.awake = on;
+      rpcRun(m, function () { return screenApi.keepAwake(slug, on); });
+    }
+    function releaseAwake(a) {
+      if (a && a.awake && screenApi && typeof screenApi.keepAwake === 'function') { try { screenApi.keepAwake(a.slug, false); } catch (e) {} }
+      if (a) a.awake = false;
     }
 
     function sendInit() { toFrame({ type: 'init', slug: active.slug, manifest: active.manifest, css: active.css, js: active.js, theme: themeApi.get(), permissions: active.perms, nonce: active.nonce, hostId: hostId }); }
@@ -323,6 +385,11 @@
         case 'files.pick':
           handleFile(m, 'file_pick', 'pick', { accept: typeof m.accept === 'string' ? m.accept.slice(0, 200) : '', multiple: !!m.multiple });
           break;
+        case 'motion.start': handleMotionStart(m); break;
+        case 'motion.stop':
+          if (!granted('motion')) { audit.push('DENY motion.stop'); break; }
+          stopMotion(active); break;
+        case 'screen.keepAwake': handleKeepAwake(m); break;
         case 'nav.setTitle': nav.setTitle(m.title); break;
         case 'nav.close':
           var closeApi = active && active.api;
@@ -372,6 +439,8 @@
       },
       close() {
         if (!active) return;
+        // v1.2: the runtime itself releases sensors and keep-awake, whatever the plugin did
+        stopMotion(active); releaseAwake(active);
         toFrame({ type: 'unmount' });
         if (active.iframe.parentNode) active.iframe.parentNode.removeChild(active.iframe);
         active = null;

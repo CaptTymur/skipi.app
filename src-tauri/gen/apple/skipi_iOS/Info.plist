@@ -22,6 +22,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Skipi Seafarer uses the camera to photograph maritime documents and instruments so the app can recognize text in them (OCR).</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Skipi Seafarer reads the motion sensors when you open a plugin that measures heel and roll, such as the Clinometer.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Skipi Seafarer opens your photo library so you can attach existing photos of documents for text recognition.</string>
 	<key>UILaunchStoryboardName</key>

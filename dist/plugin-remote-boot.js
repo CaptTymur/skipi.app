@@ -186,10 +186,23 @@
   // Read-only helper so the Apps UI can LIST remote catalog entries when
   // ON (display only — opening still goes through the verified runtime). Resolves
   // to [] on any failure so the UI degrades to slug names.
+  // A catalog entry may name the platforms it is for (compat.platforms, e.g. ['android','ios']
+  // for a plugin that needs the phone's sensors). Elsewhere it is not offered and not installed.
+  var HOST_PLATFORM = (function () {
+    var ua = '';
+    try { ua = String(navigator.userAgent || ''); } catch (e) {}
+    if (/Android/i.test(ua)) return 'android';
+    if (/iPhone|iPad|iPod/i.test(ua)) return 'ios';
+    return 'desktop';
+  })();
+  function platformAllows(entry) {
+    var p = entry && entry.compat && entry.compat.platforms;
+    return !Array.isArray(p) || !p.length || p.indexOf(HOST_PLATFORM) >= 0;
+  }
   window.SkipiRemoteList = function () {
     return ensureCentralDelivery({ allowNetwork: true }).then(function (sw) {
       if (!sw.enabled) return [];
-      return (sw.catalog && sw.catalog.plugins) || [];
+      return ((sw.catalog && sw.catalog.plugins) || []).filter(platformAllows);
     }, function () { return []; });
   };
   // What the runtime may GRANT comes from the SIGNED catalog entry — the same object the
@@ -214,6 +227,48 @@
       });
     }
   };
+  // ---- motion sensors + keep-awake for plugins (runtime 1.2, grants `motion` / `keep_awake`) ----
+  // The plugin frame cannot read sensors. The app reads them natively (commands/motion.rs:
+  // Android SensorManager, iOS CoreMotion) and this adapter drains the buffered rows about
+  // every 100 ms into the runtime, which forwards them only to the plugin that asked.
+  // On desktop there are no sensors: start answers {ok:false, reason:'no-sensors'}.
+  function nativeInvoke(cmd, args) {
+    var t = window.__TAURI__;
+    if (!t || !t.core || typeof t.core.invoke !== 'function') return Promise.reject(new Error('native bridge unavailable'));
+    return t.core.invoke(cmd, args || {});
+  }
+  var MOTION_DRAIN_MS = 100;
+  var motionTimer = null;
+  function motionHalt() {
+    if (motionTimer) { clearInterval(motionTimer); motionTimer = null; }
+    return nativeInvoke('plugin_motion_stop').then(function () {}, function () {});
+  }
+  var hostMotion = {
+    start: function (slug, opts, push) {
+      if (motionTimer) { clearInterval(motionTimer); motionTimer = null; }
+      return nativeInvoke('plugin_motion_start', { rateHz: opts && opts.rateHz }).then(function (r) {
+        if (!r || !r.ok) return { ok: false, reason: (r && r.reason) || 'no-sensors' };
+        var busy = false;
+        motionTimer = setInterval(function () {
+          if (busy) return;
+          busy = true;
+          nativeInvoke('plugin_motion_drain').then(function (rows) {
+            busy = false;
+            // push() answers false once the plugin that started the sensors is closed
+            if (push(Array.isArray(rows) ? rows : []) === false) motionHalt();
+          }, function () { busy = false; });
+        }, MOTION_DRAIN_MS);
+        return { ok: true, rateHz: r.rateHz, source: r.source, platform: r.platform };
+      }, function () { return { ok: false, reason: 'no-sensors' }; });
+    },
+    stop: function () { motionHalt(); }
+  };
+  var hostScreen = {
+    keepAwake: function (slug, on) {
+      return nativeInvoke('plugin_keep_awake', { on: !!on }).then(function () { return { ok: true }; }, function () { return { ok: false }; });
+    }
+  };
+
   var runtime = window.SkipiPluginRuntime.create({
     enabled: true, loader: runtimeLoader,
     host: {
@@ -221,6 +276,8 @@
       // itself with the host document's fetch, credentials omitted and redirects refused,
       // and only to the plugin's signed allowlist. No host token is ever attached.
       net: {},
+      motion: hostMotion,
+      screen: hostScreen,
       theme: { get: getTheme },
       storage: hostStore,
       navigation: { setTitle: function () {}, closePlugin: function () {} },
@@ -245,6 +302,8 @@
   window.SkipiRemoteInstall = function (slug, opts) {
     return ensureCentralDelivery({ allowNetwork: opts && opts.allowNetwork }).then(function (sw) {
       if (!sw.enabled) return centralDisabledResult();
+      var listed = findCatalogEntry(sw.catalog, slug);
+      if (listed && !platformAllows(listed)) return { ok: false, stage: 'platform', reason: 'this plugin works on phones only' };
       return loader.install(slug, opts).then(function (res) {
         if (res && res.ok) persistInstalled(res.entry, res.pack);
         return handleInstallResult(slug, res);
@@ -437,6 +496,7 @@
       case 'integrity': return 'Couldn\u2019t verify this plugin \u2014 checksum mismatch. Not installed.';
       case 'revocation': return 'Plugin update blocked \u2014 this package was revoked. Skipi kept it disabled.';
       case 'downgrade': return 'Plugin update blocked \u2014 catalog rollback refused. The latest verified plugin stays cached.';
+      case 'platform': return 'This plugin works on a phone only \u2014 it uses the phone\u2019s sensors.';
       case 'compat': return 'Update Skipi to use this plugin \u2014 ' + (reason || 'it needs a newer app version.');
       case 'policy': return reason === 'disabled'
         ? 'This plugin is turned off \u2014 enable it in plugin settings.'
