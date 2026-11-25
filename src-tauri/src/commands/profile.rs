@@ -436,6 +436,26 @@ fn security_covered(docs: &[db::DocRecord], template_id: &str, today: &str) -> b
         .any(|covering| template_gap_reason(docs, covering, today).is_none())
 }
 
+/// The seafarer marked this slot «not applicable to me» (tasks/016): the mark
+/// lives in `field_statuses.not_applicable` (already synced as-is) and counts
+/// only while the slot has no file of its own.
+pub(crate) fn doc_marked_not_applicable(doc: &db::DocRecord) -> bool {
+    if doc_has_attached_file(doc) {
+        return false;
+    }
+    doc.field_statuses
+        .as_deref()
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+        .map(|v| v.get("not_applicable").map(|m| m.is_object()).unwrap_or(false))
+        .unwrap_or(false)
+}
+
+/// A required template the seafarer declared not applicable is not a gap.
+fn template_not_applicable(docs: &[db::DocRecord], template_id: &str) -> bool {
+    docs.iter()
+        .any(|d| d.template_id.as_deref() == Some(template_id) && doc_marked_not_applicable(d))
+}
+
 fn required_document_gaps(conn: &Connection) -> Result<Vec<serde_json::Value>, String> {
     let templates = current_required_profile_templates(conn)?;
     if templates.is_empty() {
@@ -450,6 +470,9 @@ fn required_document_gaps(conn: &Connection) -> Result<Vec<serde_json::Value>, S
     for template in templates.iter() {
         let reason = template_gap_reason(&docs, template, &today);
         if reason.is_some() && security_covered(&docs, template.id, &today) {
+            continue;
+        }
+        if reason.is_some() && template_not_applicable(&docs, template.id) {
             continue;
         }
         if let Some(reason) = reason {
@@ -1599,7 +1622,8 @@ fn required_profile_status_from_docs(
             let has = have.contains(t.id)
                 || security_covering_templates(t.id)
                     .iter()
-                    .any(|covering| have.contains(covering.id));
+                    .any(|covering| have.contains(covering.id))
+                || template_not_applicable(docs, t.id);
             if !has {
                 missing_ids.push(t.id.to_string());
             }
@@ -1970,6 +1994,40 @@ mod tests {
         assert!(gaps.is_empty(), "unexpected gaps: {gaps:?}");
         assert!(gap_reason(&gaps, "sso").is_none(), "sso must not appear as a gap");
         assert!(completeness_missing(&conn, "management", "chief_officer").is_empty());
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(vault_path);
+    }
+
+    #[test]
+    fn slot_marked_not_applicable_is_not_a_gap_until_it_gets_a_file() {
+        let (conn, vault_path) = coverage_vault("management", "master");
+        let mut slot = frameworks::record_from_profile_template(&catalog_template("sso"));
+        db::insert_doc(&conn, &slot).unwrap();
+        assert_eq!(gap_reason(&required_document_gaps(&conn).unwrap(), "sso").as_deref(), Some("no_file"));
+        assert!(completeness_missing(&conn, "management", "master").contains(&"sso".to_string()));
+
+        // Other field statuses alone do not close the slot.
+        db::update_field_statuses(&conn, &slot.id, r#"{"doc_number":"ai"}"#).unwrap();
+        assert_eq!(gap_reason(&required_document_gaps(&conn).unwrap(), "sso").as_deref(), Some("no_file"));
+
+        db::update_field_statuses(
+            &conn,
+            &slot.id,
+            r#"{"doc_number":"ai","not_applicable":{"reason":"Not a security officer"}}"#,
+        )
+        .unwrap();
+        let gaps = required_document_gaps(&conn).unwrap();
+        assert!(gap_reason(&gaps, "sso").is_none(), "marked slot must not be a gap: {gaps:?}");
+        // The mark closes only its own slot, it covers nothing else.
+        assert_eq!(gap_reason(&gaps, "dsd").as_deref(), Some("missing"));
+        let missing = completeness_missing(&conn, "management", "master");
+        assert!(!missing.contains(&"sso".to_string()) && missing.contains(&"dsd".to_string()));
+
+        // With a file of its own the document speaks for itself; the mark is ignored.
+        slot.file_name = Some("sso.pdf".to_string());
+        slot.field_statuses = Some(r#"{"not_applicable":{"reason":"x"}}"#.to_string());
+        assert!(!doc_marked_not_applicable(&slot));
 
         drop(conn);
         let _ = std::fs::remove_dir_all(vault_path);
