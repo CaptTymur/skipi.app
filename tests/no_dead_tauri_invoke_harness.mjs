@@ -41,7 +41,7 @@ function rustFiles(dir, acc) {
 const rustDefs = new Set();
 for (const f of rustFiles(join(root, 'src-tauri', 'src'), [])) {
   const src = readFileSync(f, 'utf8');
-  for (const m of src.matchAll(/#\[(?:tauri::)?command[^\]]*\]\s*(?:pub\s+)?(?:async\s+)?fn\s+([a-zA-Z0-9_]+)/g)) {
+  for (const m of src.matchAll(/#\[(?:tauri::)?command[^\]]*\]\s*(?:pub(?:\([a-z]+\))?\s+)?(?:async\s+)?fn\s+([a-zA-Z0-9_]+)/g)) {
     rustDefs.add(m[1]);
   }
 }

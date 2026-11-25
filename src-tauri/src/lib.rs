@@ -111,7 +111,7 @@ pub(crate) fn base64_encode(data: &[u8]) -> String {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     use commands::{
-        account_sync, agency_mailing, ai, app_login, assistant, cv_commands, documents, email,
+        account_sync, agency_mailing, ai, app_login, assistant, crewing, cv_commands, documents, email,
         jobs, mail_intent, messaging, packages, profile, review, vault, work_history,
     };
 
@@ -246,6 +246,35 @@ pub fn run() {
             app_login::app_login,
             app_login::app_logout,
             app_login::app_login_status,
+            crewing::crewing_connection,
+            commands::crewing_intake::crewing_intake_alias_list,
+            commands::crewing_intake::crewing_intake_alias_reveal,
+            commands::crewing_intake::crewing_intake_alias_create,
+            commands::crewing_intake::crewing_intake_alias_rotate,
+            commands::crewing_intake::crewing_intake_alias_pause,
+            commands::crewing_intake::crewing_intake_alias_resume,
+            commands::crewing_intake::crewing_intake_alias_revoke,
+            commands::crewing_intake::crewing_intake_candidate_submit,
+            commands::crewing_intake::crewing_intake_candidate_list,
+            commands::crewing_intake::crewing_intake_candidate_get,
+            commands::crewing_intake::crewing_intake_fact_list,
+            commands::crewing_intake::crewing_intake_fact_record,
+            commands::crewing_intake::crewing_intake_fact_correct,
+            commands::crewing_intake::crewing_intake_candidate_rank,
+            commands::crewing_intake::crewing_intake_rank_list,
+            commands::crewing_intake::crewing_intake_response_contact,
+            commands::crewing_intake::crewing_intake_shortlist_confirm,
+            commands::crewing_intake::crewing_intake_shortlist_withdraw,
+            commands::crewing_intake::crewing_intake_shortlist_hold,
+            commands::crewing_intake::crewing_intake_shortlist_release,
+            commands::crewing_intake::crewing_intake_profile_shortlist,
+            commands::crewing_intake::crewing_intake_matching_profile_list,
+            commands::crewing_intake::crewing_intake_matching_profile_publication,
+            commands::crewing_intake::crewing_intake_object_download,
+            commands::crewing_intake::crewing_intake_attachment_download,
+            commands::crewing_intake::crewing_intake_open_saved,
+            commands::crewing_intake::crewing_customer_letter_prepare,
+            commands::crewing_contact::open_mailto,
             // In-app account deletion (App Store 5.1.1(v))
             account_delete::delete_account,
             // CV
