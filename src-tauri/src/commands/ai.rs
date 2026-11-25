@@ -618,6 +618,174 @@ pub async fn ai_preview_recognize(
     .await
 }
 
+// ── tasks/016 (срез B): одна «+» на всю структуру ─────────────────────────
+// The seafarer adds a file without choosing a slot first: the same vision call
+// that reads the fields also says WHICH catalogue document this is. Nothing is
+// written here — the app shows the result and the seafarer confirms it.
+
+#[derive(serde::Serialize, Debug, Clone, PartialEq)]
+pub struct AiClassifyResult {
+    /// Catalogue id (profiles::all_seafarer_doc_templates) or None when the
+    /// document was not recognised as a catalogue type.
+    pub template_id: Option<String>,
+    pub template_title: Option<String>,
+    pub category: Option<String>,
+    pub has_expiry: Option<bool>,
+    pub doc_number: Option<String>,
+    pub issued_by: Option<String>,
+    pub valid_from: Option<String>,
+    pub valid_to: Option<String>,
+    pub title_suggestion: Option<String>,
+}
+
+/// BASE_PROMPT + the standard catalogue: the model picks one id or null.
+fn classify_prompt() -> String {
+    let mut list = String::new();
+    for t in crate::profiles::all_seafarer_doc_templates() {
+        list.push_str(&format!("- {} — {}\n", t.id, t.title));
+    }
+    format!(
+        "{}\n\n==== DOCUMENT TYPE (overrides the output format above) ====\n\
+         Also decide which ONE entry of the catalogue below this document is. \
+         Return the same JSON object with ONE MORE key, \"template_id\": the id \
+         exactly as written in the catalogue, or null when no entry clearly \
+         matches. Never invent an id and never guess from a partial match.\n\
+         CATALOGUE (id — title):\n{}==== END DOCUMENT TYPE ====",
+        BASE_PROMPT, list
+    )
+}
+
+/// The catalogue entry named by the model: its `template_id` when that is a
+/// real catalogue id, otherwise the title it read (alias table), otherwise None.
+fn classify_template(
+    content_text: &str,
+    title_suggestion: Option<&str>,
+) -> Option<crate::profiles::DocTemplate> {
+    let catalogue = crate::profiles::all_seafarer_doc_templates();
+    let named = content_text
+        .find('{')
+        .and_then(|start| content_text.rfind('}').map(|end| (start, end)))
+        .filter(|(start, end)| start < end)
+        .and_then(|(start, end)| {
+            serde_json::from_str::<serde_json::Value>(&repair_unquoted_scalars(
+                &content_text[start..=end],
+            ))
+            .ok()
+        })
+        .and_then(|v| v.get("template_id").and_then(|x| x.as_str()).map(|s| s.trim().to_string()))
+        .filter(|s| !s.is_empty());
+    if let Some(id) = named {
+        if let Some(t) = catalogue.into_iter().find(|t| t.id == id) {
+            return Some(t);
+        }
+        // An id outside the catalogue is not trusted and not "repaired".
+        return None;
+    }
+    title_suggestion
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .and_then(crate::profiles::doc_template_by_title_or_id)
+}
+
+fn classify_result(content_text: &str) -> Result<AiClassifyResult, String> {
+    let fields = parse_ai_result(content_text)?;
+    let template = classify_template(content_text, fields.title_suggestion.as_deref());
+    Ok(AiClassifyResult {
+        template_id: template.as_ref().map(|t| t.id.to_string()),
+        template_title: template.as_ref().map(|t| t.title.to_string()),
+        category: template.as_ref().map(|t| t.category.to_string()),
+        has_expiry: template.as_ref().map(|t| t.has_expiry),
+        doc_number: fields.doc_number,
+        issued_by: fields.issued_by,
+        valid_from: fields.valid_from,
+        valid_to: fields.valid_to,
+        title_suggestion: fields.title_suggestion,
+    })
+}
+
+/// Recognise a file that is not attached to any document yet. Cloud only (the
+/// seafarer's own key, else the Skipi server proxy); writes nothing. The file
+/// comes as bytes (phone picker) or as a path (desktop file dialog).
+#[tauri::command]
+pub async fn ai_classify_file(
+    app: tauri::AppHandle,
+    file_name: String,
+    data_base64: Option<String>,
+    source_path: Option<String>,
+    api_key: String,
+) -> Result<AiClassifyResult, String> {
+    const MAX_BYTES: u64 = 25 * 1024 * 1024;
+    let (file_name, data_base64) = match source_path.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
+        Some(path) => {
+            let size = fs::metadata(path)
+                .map_err(|e| format!("Cannot read file: {}", e))?
+                .len();
+            if size > MAX_BYTES {
+                return Err("File is too large (25 MB max)".to_string());
+            }
+            let data = fs::read(path).map_err(|e| format!("Cannot read file: {}", e))?;
+            let name = if file_name.trim().is_empty() {
+                PathBuf::from(path)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default()
+            } else {
+                file_name
+            };
+            (name, crate::base64_encode(&data))
+        }
+        None => (file_name, data_base64.unwrap_or_default()),
+    };
+    let ext = file_name.rsplit('.').next().unwrap_or("").to_lowercase();
+    let is_pdf = ext == "pdf";
+    let media_type: &'static str = if is_pdf {
+        "application/pdf"
+    } else {
+        match ext.as_str() {
+            "png" => "image/png",
+            "webp" => "image/webp",
+            "gif" => "image/gif",
+            _ => "image/jpeg",
+        }
+    };
+    if data_base64.trim().is_empty() {
+        return Err("No file to recognize".to_string());
+    }
+    let prompt = classify_prompt();
+    // Every blocking HTTP client lives inside spawn_blocking: built or dropped on
+    // the async runtime it panics («Cannot drop a runtime…», seen on Android).
+    tauri::async_runtime::spawn_blocking(move || -> Result<AiClassifyResult, String> {
+        use tauri::Manager;
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(120))
+            .build()
+            .map_err(|e| e.to_string())?;
+        let server_key: Option<String> = if api_key.trim().is_empty() {
+            let state = app.state::<AppState>();
+            let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+            let conn = conn_lock.as_ref().ok_or("No vault open")?;
+            Some(crate::commands::assistant::ensure_key(conn, &client)?)
+        } else {
+            None
+        };
+        let text = if let Some(skey) = server_key.as_ref() {
+            server_ocr_request(&client, skey, media_type, &data_base64, &prompt)?
+        } else {
+            let file_block = serde_json::json!({
+                "type": if is_pdf { "document" } else { "image" },
+                "source": { "type": "base64", "media_type": media_type, "data": data_base64 }
+            });
+            match claude_ocr_request(&client, &api_key, CLAUDE_OCR_PRIMARY_MODEL, &file_block, &prompt) {
+                Ok(text) if classify_result(&text).is_ok() => text,
+                _ => claude_ocr_request(&client, &api_key, CLAUDE_OCR_FALLBACK_MODEL, &file_block, &prompt)?,
+            }
+        };
+        classify_result(&text)
+    })
+    .await
+    .map_err(|e| format!("AI task failed: {}", e))?
+}
+
 fn require_recognition_snapshot(conn:&rusqlite::Connection,doc_id:&str,initial_revision:&str,initial_epoch:u64,current_epoch:u64)->Result<(),String>{
     if current_epoch!=initial_epoch{return Err("Vault changed during recognition; recognized data was not saved".into())}
     super::account_sync::vault_sync::require_edit_revision(conn,"document",doc_id,Some(&serde_json::Value::String(initial_revision.into())))
@@ -797,6 +965,44 @@ pub fn category_has_template(category: String) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn classify_prompt_keeps_the_ocr_rules_and_lists_the_whole_catalogue() {
+        let prompt = classify_prompt();
+        assert!(prompt.starts_with(BASE_PROMPT));
+        for t in crate::profiles::all_seafarer_doc_templates() {
+            assert!(prompt.contains(&format!("- {} — {}\n", t.id, t.title)), "{} missing", t.id);
+        }
+        assert!(prompt.contains("\"template_id\""));
+    }
+
+    #[test]
+    fn classify_result_takes_a_catalogue_id_and_the_fields() {
+        let r = classify_result(r#"{"doc_number":"AB123","issued_by":"Ukraine","valid_from":"2021-01-02","valid_to":"2031-01-02","title_suggestion":"Passport","template_id":"passport"}"#).unwrap();
+        assert_eq!(r.template_id.as_deref(), Some("passport"));
+        assert_eq!(r.category.as_deref(), Some("Passport"));
+        assert!(r.template_title.is_some());
+        assert_eq!(r.doc_number.as_deref(), Some("AB123"));
+        assert_eq!(r.valid_to.as_deref(), Some("2031-01-02"));
+    }
+
+    #[test]
+    fn classify_result_never_trusts_an_id_outside_the_catalogue() {
+        let r = classify_result(r#"{"doc_number":"X1","issued_by":null,"valid_from":null,"valid_to":null,"title_suggestion":"Passport","template_id":"made_up_certificate"}"#).unwrap();
+        assert_eq!(r.template_id, None, "an invented id is not repaired from the title");
+        assert_eq!(r.doc_number.as_deref(), Some("X1"));
+    }
+
+    #[test]
+    fn classify_result_without_an_id_falls_back_to_the_title_then_to_unknown() {
+        let by_title = classify_result(r#"{"doc_number":null,"issued_by":null,"valid_from":null,"valid_to":null,"title_suggestion":"Passport (Travel)","template_id":null}"#).unwrap();
+        assert_eq!(by_title.template_id.as_deref(), Some("passport"));
+        let unknown = classify_result(r#"{"doc_number":"7","issued_by":null,"valid_from":null,"valid_to":null,"title_suggestion":"Gym membership card","template_id":null}"#).unwrap();
+        assert_eq!(unknown.template_id, None);
+        assert_eq!(unknown.title_suggestion.as_deref(), Some("Gym membership card"));
+        assert!(classify_result("not json at all").is_err());
+    }
+
 
     fn parse(json: &str) -> AiRecognizeResult {
         parse_ai_result(json).expect("fixture must parse")
