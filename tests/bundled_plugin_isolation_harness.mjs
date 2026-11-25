@@ -2228,6 +2228,10 @@ const appsTileTag = (h, id) => {
       // Owner 24.11.2026: those who have the plugin must SEE that an update is available — the hint alone is invisible.
       ok(/<span class="fam-app-label">X<\/span><span class="fam-app-sublabel fam-app-update" data-qa="plugin-update-available-x">Update<\/span>/.test(upd), 'a tile with an update carries a visible «Update» line under its name');
       ok(!/fam-app-update/.test(emoji), 'a tile without an update has no such line');
+      // host-ui 1.3 (owner 25.11.2026): the average rating of a plugin is shown on its tile.
+      const rated = t(tile('⏱️', '<span class="apps-rating" data-qa="plugin-rating-x" title="Оценок: 3">★ 4.0</span>'));
+      ok(/<span class="fam-app-label">X<\/span><span class="fam-app-sublabel fam-app-rating" data-qa="plugin-rating-x">★ 4\.0<\/span>/.test(rated) && !/apps-rating/.test(rated), 'a rated plugin carries «★ 4.0» under its name on the phone tile');
+      ok(!/fam-app-rating/.test(emoji), 'a plugin nobody rated has no rating line');
       ok(t('<div>nothing to do</div>') === '<div>nothing to do</div>', 'markup without launcher tiles comes back byte-identical');
       // host-ui 1.1: a catalog plugin that is not installed yet (the «Available» shelf)
       const avail = t('<div class="apps-icon-tile" data-qa="plugin-available-y"><button type="button" data-qa="plugin-preview-y" onclick="pluginPreview(\'y\')" title="Y &#183; v1"><span class="apps-icon-tile-icon">⚖</span><span class="apps-icon-tile-name">Y</span><span class="apps-icon-tile-meta">v1</span><span class="apps-badge live">Install</span></button></div>');
