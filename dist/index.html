@@ -4272,8 +4272,25 @@ function securityCoveringDoc(cid,docs){
     });
     return found;
 }
+// tasks/016: the seafarer marked a slot «not applicable to me». The mark lives in
+// field_statuses.not_applicable ({reason}) — a field every client already syncs
+// as-is — and counts only while the slot has no file of its own.
+function docNotApplicable(d){
+    if(!d||String(d.file_name||'').trim())return null;
+    try{
+        var na=(JSON.parse(d.field_statuses||'{}')||{}).not_applicable;
+        return na&&typeof na==='object'?{reason:String(na.reason||'')}:null;
+    }catch(e){return null;}
+}
 function securityCoveredByAttached(cid,docs){
-    return !!securityCoveringDoc(cid,docs);
+    if(securityCoveringDoc(cid,docs))return true;
+    // A slot the seafarer declared not applicable is closed the same way: it
+    // leaves the required/missing counts (mirrors Rust template_not_applicable).
+    // Self-contained on purpose (same rule as docNotApplicable above).
+    return (docs||[]).some(function(x){
+        if(!(x&&x.template_id===cid)||String(x.file_name||'').trim())return false;
+        try{var na=(JSON.parse(x.field_statuses||'{}')||{}).not_applicable;return !!(na&&typeof na==='object');}catch(e){return false;}
+    });
 }
 // The one RU/EN hint for a covered slot (badge + regulatory-basis text). The
 // covering certificate is named by a UI string keyed on the covering template
@@ -4282,8 +4299,10 @@ function securityCoveredByAttached(cid,docs){
 function securityCoveredHint(d){
     var names={en:{sso:'Ship Security Officer (SSO)',dsd:'Designated Security Duties (DSD)'},
                ru:{sso:'Офицер охраны судна (SSO)',dsd:'Назначенные обязанности по охране (DSD)'}};
-    var c=securityCoveringDoc(d&&d.template_id,allDocs);
     var ru=getUiLang()==='ru';
+    var na=docNotApplicable(d);
+    if(na)return {label:ru?'Не применимо':'N/A',text:(ru?'Вы отметили: не применимо ко мне.':'You marked this as not applicable to you.')+(na.reason?(ru?' Причина: ':' Reason: ')+na.reason:'')};
+    var c=securityCoveringDoc(d&&d.template_id,allDocs);
     var name=c?(names[ru?'ru':'en'][c.template_id]||''):'';
     var text;
     if(name)text=ru?('Покрыт приложенным сертификатом '+name+' (STCW.7/Circ.22)'):('Covered by the attached '+name+' certificate (STCW.7/Circ.22)');
@@ -4528,6 +4547,52 @@ function showDocRequirement(ev){
     h+='<div style="margin-top:16px;text-align:right;"><button class="btn btn-accent btn-sm" onclick="closeDocRequirement()">OK</button></div>';
     h+='</div></div>';
     document.body.insertAdjacentHTML('beforeend',h);
+}
+
+// tasks/016: «Not applicable to me» — offered on any structure slot without a
+// file (required ones too); the reason is the seafarer's own words. One block
+// for the desktop and the mobile document card.
+var docNaEditingId=null;
+function docNaBlockHtml(d){
+    if(!d||String(d.file_name||'').trim())return '';
+    var na=docNotApplicable(d),id=jsString(d.id);
+    if(na){
+        return '<div data-qa="doc-na-state" style="margin-top:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg);font-size:13px;line-height:1.45;">'
+            +'<div style="font-weight:700;">'+mobileSetupText('Not applicable to me','Не применимо ко мне')+'</div>'
+            +(na.reason?'<div style="color:var(--text2);margin-top:2px;white-space:pre-wrap;">'+esc(na.reason)+'</div>':'')
+            +'<button class="btn btn-outline btn-sm" data-qa="doc-na-clear" style="margin-top:8px;" onclick="docNaSave(\''+id+'\',null)">'+mobileSetupText('It applies to me','Это применимо ко мне')+'</button></div>';
+    }
+    if(!d.template_id)return '';
+    if(docNaEditingId!==d.id){
+        return '<div style="margin-top:10px;"><button class="btn btn-outline btn-sm" data-qa="doc-na-open" onclick="docNaEdit(\''+id+'\')">'+mobileSetupText('Not applicable to me','Не применимо ко мне')+'</button></div>';
+    }
+    return '<div data-qa="doc-na-form" style="margin-top:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg);">'
+        +'<div style="font-size:13px;font-weight:700;margin-bottom:6px;">'+mobileSetupText('Why is it not applicable to you?','Почему это к вам не применимо?')+'</div>'
+        +'<textarea id="doc-na-reason" rows="3" maxlength="500" style="width:100%;box-sizing:border-box;font:inherit;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--surface,var(--bg));color:var(--text);" placeholder="'+mobileSetupText('For example: I do not work on tankers','Например: не работаю на танкерах')+'"></textarea>'
+        +'<div style="display:flex;gap:8px;margin-top:8px;"><button class="btn btn-accent btn-sm" data-qa="doc-na-save" onclick="docNaSave(\''+id+'\',(document.getElementById(\'doc-na-reason\')||{}).value||\'\')">'+mobileSetupText('Save','Сохранить')+'</button>'
+        +'<button class="btn btn-outline btn-sm" onclick="docNaEdit(null)">'+mobileSetupText('Cancel','Отмена')+'</button></div></div>';
+}
+function docNaRerender(){
+    var d=allDocs.find(function(x){return x.id===selectedDocId;});
+    if(isMobileMode()){renderMobileDoc();return;}
+    if(d)renderDoc(d);
+}
+function docNaEdit(id){docNaEditingId=id;docNaRerender();}
+// reason===null clears the mark; a string (may be empty) sets it.
+async function docNaSave(id,reason){
+    var d=allDocs.find(function(x){return x.id===id;});
+    if(!d)return;
+    var fs={};try{fs=JSON.parse(d.field_statuses||'{}')||{};}catch(e){fs={};}
+    if(reason===null)delete fs.not_applicable;
+    else fs.not_applicable={reason:String(reason||'').trim().slice(0,500),at:new Date().toISOString()};
+    try{
+        await invoke('update_field_statuses',{id:id,statuses:JSON.stringify(fs)});
+        d.field_statuses=JSON.stringify(fs);
+        docNaEditingId=null;
+        try{allDocs=await invoke('get_documents');}catch(e2){}
+        if(typeof renderTree==='function'){try{renderTree();updateStatus();}catch(e3){}}
+        docNaRerender();
+    }catch(e){showToast(mobileSetupText('Could not save: ','Не удалось сохранить: ')+e,'error');logError('docNaSave',e);}
 }
 
 function canDeleteDoc(d){
@@ -5396,6 +5461,7 @@ function mobileStats(){
 var documentThumbCache={};
 var documentThumbInFlight={};
 function mobileStatusPill(d){
+    if(docNotApplicable(d))return '<span class="mobile-pill ok">'+mobileSetupText('Not applicable','Не применимо')+'</span>';
     if(!d.file_name&&isCoveredRequiredDoc(d))return '<span class="mobile-pill ok">'+mobileSetupText('Covered','Покрыт')+'</span>';
     if(!d.file_name&&isActiveRequiredDoc(d))return '<span class="mobile-pill bad">'+mobileSetupText('Missing','Недостающий')+'</span>';
     if(!d.file_name)return '<span class="mobile-pill">'+mobileSetupText('No file','Без файла')+'</span>';
@@ -8519,6 +8585,7 @@ function renderMobileDoc(){
           +(canDeleteDoc(d)?'<button class="btn btn-outline btn-red" data-qa="mobile-doc-delete" onclick="mobileDeleteDoc(\''+jsString(d.id)+'\')">'+mobileSetupText('Delete','Удалить')+'</button>':'')
           +'</div>';
     }
+    h+=docNaBlockHtml(d);
     h+='</div>';
     if(d.file_name)h+='<div id="mobile-preview" class="mobile-preview">Loading preview...</div>';
     h+=mobileOcrPanel(d);
@@ -12546,6 +12613,7 @@ async function renderDoc(d){
         h+='<button class="btn btn-outline btn-sm btn-red" onclick="deleteDocFromView(\''+d.id+'\')">Delete</button>';
     }
     h+='</div>';
+    h+=docNaBlockHtml(d);
     h+='<div class="doc-meta">'+d.category+docKindMeta(d)+' <span class="badge '+bc+'">'+st+'</span>'+(dlt?' <span style="margin-left:6px;">'+dlt+'</span>':'')+(d.regulatory_basis?' <span class="reg-basis" title="Regulatory basis">'+d.regulatory_basis+'</span>':'')+'</div>';
 
     // AI scan buttons removed per UX decision (v0.4.11) — keep hidden status span
