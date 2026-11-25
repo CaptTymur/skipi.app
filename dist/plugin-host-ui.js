@@ -453,9 +453,9 @@
       if(shouldUseMobileShell()) renderMobileApps();
       else showApps();
     }
-    function pluginSelect(id){ pluginHostState.selectedId = id; pluginHostState.openId = null; pluginHostState.surface = 'manage'; pluginRerender(); }
+    function pluginSelect(id){ pluginHostState.selectedId = id; pluginHostState.openId = null; pluginHostState.surface = 'manage'; reviewsRefresh(id); pluginRerender(); }
     // Detail page opened from the launcher's "Available" shelf: Back returns to the launcher.
-    function pluginPreview(id){ pluginHostState.selectedId = id; pluginHostState.openId = null; pluginHostState.surface = 'launcher'; pluginRerender(); }
+    function pluginPreview(id){ pluginHostState.selectedId = id; pluginHostState.openId = null; pluginHostState.surface = 'launcher'; reviewsRefresh(id); pluginRerender(); }
     function pluginDetailBackLabel(){
       var ru = getUiLang() === 'ru';
       return pluginHostState.surface === 'launcher' ? 'Apps' : (ru ? 'Управление плагинами' : 'Plugin management');
@@ -831,6 +831,13 @@
         slot.busy = false; slot.error = String((e && e.message) || e || 'failed');
         pluginRerender();
       });
+    }
+    // Opening a plugin's page asks the home anew: the user may have signed in, and others may
+    // have written since. What is already on screen stays until the answer comes; a draft is kept.
+    function reviewsRefresh(id){
+      if(!reviewsApi) return;
+      var slot = reviewSlot(id);
+      if(slot.data || slot.error) reviewsLoad(id, true);
     }
     function pluginReviewStars(id, n){ var slot = reviewSlot(id); slot.stars = Math.max(1, Math.min(5, n|0)); slot.touched = true; pluginRerender(); }
     function pluginReviewDraft(id, text){ var slot = reviewSlot(id); slot.text = String(text == null ? '' : text).slice(0, REVIEW_TEXT_MAX); slot.touched = true; }
