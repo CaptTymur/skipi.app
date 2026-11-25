@@ -4570,10 +4570,18 @@ function docIntakeMountButton(){
     var legacy=document.getElementById('btn-add-custom');
     if(!legacy||!legacy.parentNode)return null;
     legacy.insertAdjacentHTML('beforebegin','<button id="btn-add-document" class="btn btn-sm doc-intake-plus" data-qa="doc-intake-plus" title="'+docIntakeT('Add a document: it is recognised and takes its place','Добавить документ: он распознаётся и встаёт на своё место')+'" onclick="docIntakePick()">+ '+docIntakeT('Add document','Добавить документ')+'</button> ');
-    legacy.classList.remove('btn-accent');legacy.classList.add('btn-outline');
+    legacy.style.display='none';
     return document.getElementById('btn-add-document');
 }
-function docIntakePick(){
+async function docIntakePick(){
+    // Desktop: the app's own file dialog (a path, like attachF); the phone and
+    // the web shell use the file input below.
+    if(!isMobileMode()&&!window.__SKIPI_WEBDESKTOP__&&typeof open==='function'){
+        var path=null;
+        try{path=await open({multiple:false,title:docIntakeT('Select document','Выберите документ'),filters:[{name:'Documents',extensions:['pdf','jpg','jpeg','png','webp']}]});}catch(e){path=null;}
+        if(path)docIntakeBegin({fileName:String(path).split(/[\\/]/).pop()||'document',sourcePath:String(path)});
+        return;
+    }
     var input=document.getElementById('doc-intake-input');
     if(!input){
         input=document.createElement('input');
@@ -4597,16 +4605,22 @@ async function docIntakePicked(files){
     var file=files&&files[0];
     if(!file)return;
     if(file.size>25*1024*1024){showToast(docIntakeT('File is too large (25 MB max).','Файл слишком большой (до 25 МБ).'),'error');return;}
-    docIntake={fileName:file.name||'document.jpg',dataBase64:'',status:'working',result:null,error:''};
+    var dataBase64='';
+    try{dataBase64=await docIntakeReadBase64(file);}
+    catch(e){showToast(docIntakeT('Could not read the file: ','Не удалось прочитать файл: ')+e,'error');return;}
+    await docIntakeBegin({fileName:file.name||'document.jpg',dataBase64:dataBase64});
+}
+// source = {fileName, dataBase64} (picker bytes) or {fileName, sourcePath} (desktop dialog)
+async function docIntakeBegin(source){
+    docIntake={fileName:source.fileName,dataBase64:source.dataBase64||'',sourcePath:source.sourcePath||'',status:'working',result:null,error:''};
     docIntakeRender();
     try{
-        docIntake.dataBase64=await docIntakeReadBase64(file);
         if(!docIntakeCatalog){try{docIntakeCatalog=await invoke('get_document_catalog');}catch(e0){docIntakeCatalog=[];}}
         var key='';
         try{key=await invoke('get_effective_api_key')||'';}catch(e1){key='';}
         var current=docIntake;
         try{
-            var result=await invoke('ai_classify_file',{fileName:current.fileName,dataBase64:current.dataBase64,apiKey:key||''});
+            var result=await invoke('ai_classify_file',{fileName:current.fileName,dataBase64:current.dataBase64||null,sourcePath:current.sourcePath||null,apiKey:key||''});
             if(docIntake!==current)return;
             current.result=result||{};
         }catch(e){
@@ -4619,7 +4633,7 @@ async function docIntakePicked(files){
         docIntakeRender();
     }catch(e){
         docIntake=null;docIntakeRender();
-        showToast(docIntakeT('Could not read the file: ','Не удалось прочитать файл: ')+e,'error');
+        showToast(docIntakeT('Could not start recognition: ','Не удалось начать распознавание: ')+e,'error');
     }
 }
 function docIntakeCancel(){docIntake=null;docIntakeRender();}
@@ -4707,7 +4721,8 @@ async function docIntakeConfirm(){
             if(tpl&&docIntakeHasFiledSlot(tpl.id))newTitle=title+' — '+(values.doc_number||new Date().toISOString().slice(0,10));
             target=await invoke('add_custom_doc',{title:newTitle,category:tpl?tpl.category:'Custom',hasExpiry:tpl?!!tpl.has_expiry:!!values.valid_to,isPermanent:false});
         }
-        await invoke('attach_file_bytes',{docId:target.id,fileName:intake.fileName,dataBase64:intake.dataBase64});
+        if(intake.sourcePath)await invoke('attach_file',{docId:target.id,sourcePath:intake.sourcePath});
+        else await invoke('attach_file_bytes',{docId:target.id,fileName:intake.fileName,dataBase64:intake.dataBase64});
         var statuses={};try{statuses=JSON.parse(target.field_statuses||'{}')||{};}catch(e0){statuses={};}
         delete statuses.not_applicable;
         for(var f in values){
@@ -11760,7 +11775,7 @@ function showView(v, opts){
         tabsEl.innerHTML='';
     }
     var addBtn=document.getElementById('btn-add-custom');
-    if(addBtn)addBtn.style.display=(v==='files')?'inline':'none';
+    if(addBtn)addBtn.style.display='none';
     var plusBtn=docIntakeMountButton();
     if(plusBtn)plusBtn.style.display=(v==='files')?'inline':'none';
     pkgMode=v==='packages';pkgSelected=[];
