@@ -112,7 +112,7 @@ pub(crate) fn base64_encode(data: &[u8]) -> String {
 pub fn run() {
     use commands::{
         account_sync, agency_mailing, ai, app_login, assistant, cv_commands, documents, email,
-        jobs, mail_intent, messaging, motion, packages, profile, review, vault, work_history,
+        jobs, mail_intent, messaging, motion, packages, plugin_device, profile, review, vault, work_history,
     };
 
     tauri::Builder::default()
@@ -154,6 +154,10 @@ pub fn run() {
             motion::plugin_motion_drain,
             motion::plugin_motion_stop,
             motion::plugin_keep_awake,
+            // Speech and vibration for plugins (host-runtime 1.3)
+            plugin_device::plugin_speak,
+            plugin_device::plugin_speech_stop,
+            plugin_device::plugin_vibrate,
             vault::install_deb_update,
             vault::set_window_title,
             vault::create_vault,
