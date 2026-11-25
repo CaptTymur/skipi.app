@@ -4686,6 +4686,7 @@ function docIntakeRender(){
         h+='<div data-qa="doc-intake-note" style="font-size:13px;color:var(--text2);margin-bottom:6px;">'+(known
             ?docIntakeT('Skipi recognised it. Correct anything that is wrong, then confirm.','Skipi распознал документ. Исправьте, если что-то не так, и подтвердите.')
             :docIntakeT('Skipi could not tell what this document is. Choose it yourself, then confirm.','Skipi не смог определить, что это за документ. Укажите сами и подтвердите.'))+'</div>';
+        if(docIntake.error)h+='<div data-qa="doc-intake-error" style="font-size:12px;color:var(--red);margin-bottom:6px;">'+docIntakeT('Recognition did not work: ','Распознавание не сработало: ')+esc(String(docIntake.error).slice(0,200))+'</div>';
         h+='<label style="'+label+'">'+docIntakeT('Document','Документ')+'</label><select id="doc-intake-type" data-qa="doc-intake-type" style="'+input+'" onchange="docIntakeRefresh()">';
         h+='<option value=""'+(known?'':' selected')+'>'+docIntakeT('— choose —','— выберите —')+'</option>';
         (docIntakeCatalog||[]).slice().sort(function(a,b){return String(a.title).localeCompare(String(b.title));}).forEach(function(t){
