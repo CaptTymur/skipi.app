@@ -4,6 +4,8 @@ pub mod ai;
 pub mod app_login;
 pub mod assistant;
 pub mod crewing;
+pub mod crewing_contact;
+pub mod crewing_intake;
 pub mod cv_commands;
 pub mod documents;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]

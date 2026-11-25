@@ -9,12 +9,13 @@
 //! short-lived workspace credential every `/api/crewings/{id}/…` read uses.
 //! No second password exists anywhere.
 //!
-//! Everything this module keeps lives in the account cache (`vault_info`) of
-//! the signed-in crewing account: the server's application session, the current
-//! workspace credential and the forwarding address once revealed (each reveal
-//! writes an audit row on the server, so it is asked once per address).
+//! What this module keeps lives in the account cache (`vault_info`) of the
+//! signed-in crewing account: the server's application session and the current
+//! workspace credential.
 //!
-//! The frontend never sees a credential: one command returns the screen's data.
+//! The frontend never sees a credential: `crewing_connection` names the server
+//! and the workspace, and the ported pilot commands (`crewing_intake.rs`) take
+//! the live credential from `live_connection`.
 
 use serde_json::{json, Value};
 use tauri::State;
@@ -33,8 +34,6 @@ const TRUSTED_ORIGINS: [&str; 4] = [
 ];
 const SESSION_KEY: &str = "crewing_app_session";
 const CONNECTION_KEY: &str = "crewing_connection";
-const ADDRESS_KEY: &str = "crewing_intake_address";
-const QUEUE_LIMIT: u32 = 50;
 
 /// Sign-in origin of the Crewing server. Debug builds may point it at a
 /// loopback stand (same rule as `assistant_api_base`).
@@ -132,21 +131,11 @@ fn post(
         .map_err(|e| CrewingError::new("network", e.to_string()))?)
 }
 
-fn get(client: &reqwest::blocking::Client, url: &str, bearer: &str) -> Result<Value, CrewingError> {
-    read(client
-        .get(url)
-        .bearer_auth(bearer)
-        .header("Accept", "application/json")
-        .send()
-        .map_err(|e| CrewingError::new("network", e.to_string()))?)
-}
-
 /// What the account cache holds between calls.
 #[derive(Clone, Debug, Default, PartialEq)]
 struct Kept {
     session: Option<String>,
     connection: Option<Value>,
-    address: Option<Value>,
 }
 
 /// The workspace credential is usable when it names a trusted server and has
@@ -225,92 +214,6 @@ fn connect(
     Ok(connection)
 }
 
-/// The forwarding address of the workspace's active alias. Revealed once per
-/// alias id + generation and kept; `None` when the workspace has no active alias
-/// or the server no longer stores the address.
-fn intake_address(
-    client: &reqwest::blocking::Client,
-    base: &str,
-    bearer: &str,
-    kept: &mut Kept,
-) -> Result<Option<String>, CrewingError> {
-    let aliases = get(client, &format!("{base}/intake-aliases"), bearer)?;
-    let active = aliases
-        .get("items")
-        .and_then(Value::as_array)
-        .and_then(|items| {
-            items
-                .iter()
-                .find(|a| a.get("state").and_then(Value::as_str) == Some("active"))
-        })
-        .cloned();
-    let Some(alias) = active else {
-        kept.address = None;
-        return Ok(None);
-    };
-    let id = alias.get("id").and_then(Value::as_str).unwrap_or("").to_string();
-    let generation = alias.get("generation").cloned().unwrap_or(Value::Null);
-    if let Some(known) = kept.address.as_ref() {
-        if known.get("alias_id").and_then(Value::as_str) == Some(id.as_str())
-            && known.get("generation") == Some(&generation)
-        {
-            return Ok(known
-                .get("address")
-                .and_then(Value::as_str)
-                .map(str::to_string));
-        }
-    }
-    let revealed = post(
-        client,
-        &format!("{base}/intake-aliases/{id}/reveal"),
-        Some(bearer),
-        json!({}),
-    )?;
-    let address = revealed
-        .get("address")
-        .and_then(Value::as_str)
-        .map(str::to_string);
-    kept.address = Some(json!({"alias_id": id, "generation": generation, "address": address}));
-    Ok(address)
-}
-
-fn overview(user_token: &str, kept: &mut Kept) -> Result<Value, CrewingError> {
-    let client = http_client()?;
-    let connection = connect(&client, user_token, kept)?;
-    let field = |k: &str| connection.get(k).and_then(Value::as_str).unwrap_or("").to_string();
-    let (bearer, base) = (
-        field("bearer_token"),
-        format!("{}/api/crewings/{}", field("server_url"), field("workspace_id")),
-    );
-    let address = intake_address(&client, &base, &bearer, kept)?;
-    let queue = get(
-        &client,
-        &format!("{base}/candidate-intake?limit={QUEUE_LIMIT}&offset=0"),
-        &bearer,
-    )?;
-    let profiles = get(
-        &client,
-        &format!("{base}/matching-profiles?include_archived=true"),
-        &bearer,
-    )?;
-    let profiles: Vec<Value> = profiles
-        .get("items")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .map(|p| json!({"id": p.get("id"), "name": p.get("name"), "rank": p.get("rank")}))
-                .collect()
-        })
-        .unwrap_or_default();
-    Ok(json!({
-        "address": address,
-        "items": queue.get("items").cloned().unwrap_or_else(|| json!([])),
-        "total": queue.get("total").cloned().unwrap_or(Value::Null),
-        "profiles": profiles,
-    }))
-}
-
 fn kept_value(conn: &rusqlite::Connection, key: &str) -> Option<Value> {
     db::get_vault_info_value(conn, key)
         .filter(|s| !s.trim().is_empty())
@@ -321,7 +224,6 @@ fn load_kept(conn: &rusqlite::Connection) -> Kept {
     Kept {
         session: db::get_vault_info_value(conn, SESSION_KEY).filter(|s| !s.trim().is_empty()),
         connection: kept_value(conn, CONNECTION_KEY),
-        address: kept_value(conn, ADDRESS_KEY),
     }
 }
 
@@ -329,15 +231,32 @@ fn store_kept(conn: &rusqlite::Connection, kept: &Kept) -> Result<(), String> {
     let text = |v: &Option<Value>| v.as_ref().map(Value::to_string).unwrap_or_default();
     db::set_vault_info(conn, SESSION_KEY, kept.session.as_deref().unwrap_or(""))
         .map_err(|e| e.to_string())?;
-    db::set_vault_info(conn, CONNECTION_KEY, &text(&kept.connection)).map_err(|e| e.to_string())?;
-    db::set_vault_info(conn, ADDRESS_KEY, &text(&kept.address)).map_err(|e| e.to_string())
+    db::set_vault_info(conn, CONNECTION_KEY, &text(&kept.connection)).map_err(|e| e.to_string())
 }
 
-/// Crew Flow screen data of the signed-in crewing account: the forwarding
-/// address, the newest candidates of the queue and the names of the matching
-/// profiles. Network runs with no cache lock held.
-#[tauri::command]
-pub async fn crewing_flow_overview(state: State<'_, AppState>) -> Result<Value, CrewingError> {
+/// The workspace the signed-in crewing account works in, with its live
+/// short credential. Stays in Rust.
+#[derive(Clone, Debug)]
+pub(crate) struct LiveConnection {
+    pub server_url: String,
+    pub workspace_id: String,
+    pub bearer_token: String,
+}
+
+impl LiveConnection {
+    /// What the screen echoes back with every call, so a request built for one
+    /// workspace is never sent to another after a re-login.
+    pub fn context(&self) -> String {
+        format!("skipi-account:{}", self.workspace_id)
+    }
+}
+
+/// A live workspace connection of the signed-in crewing account. Network runs
+/// with no cache lock held; what changed is written back only into the cache of
+/// the very sign-in that was used.
+pub(crate) async fn live_connection(
+    state: &State<'_, AppState>,
+) -> Result<LiveConnection, CrewingError> {
     let (user_token, before) = {
         let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
         let conn = lock
@@ -354,22 +273,39 @@ pub async fn crewing_flow_overview(state: State<'_, AppState>) -> Result<Value, 
         let token = user_token.clone();
         let mut kept = before.clone();
         tauri::async_runtime::spawn_blocking(move || {
-            let result = overview(&token, &mut kept);
+            let result = http_client().and_then(|client| connect(&client, &token, &mut kept));
             (result, kept)
         })
         .await
-        .map_err(|e| CrewingError::new("other", format!("crew flow task failed: {e}")))?
+        .map_err(|e| CrewingError::new("other", format!("crewing connection task failed: {e}")))?
     };
     if after != before {
         let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(conn) = lock.as_ref() {
-            // Only into the cache of the very sign-in that was used.
             if stored_user_token(conn).as_deref() == Some(user_token.as_str()) {
                 store_kept(conn, &after).map_err(|e| CrewingError::new("other", e))?;
             }
         }
     }
-    result
+    let connection = result?;
+    let field = |k: &str| connection.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+    Ok(LiveConnection {
+        server_url: field("server_url"),
+        workspace_id: field("workspace_id"),
+        bearer_token: field("bearer_token"),
+    })
+}
+
+/// Where the crewing modules work: server, workspace and the context word the
+/// screen sends back with every call. No credential.
+#[tauri::command]
+pub async fn crewing_connection(state: State<'_, AppState>) -> Result<Value, CrewingError> {
+    let live = live_connection(&state).await?;
+    Ok(json!({
+        "server_url": live.server_url,
+        "crewing_id": live.workspace_id,
+        "connection_context": live.context(),
+    }))
 }
 
 #[cfg(test)]
@@ -417,7 +353,6 @@ mod tests {
         let kept = Kept {
             session: Some("ska_session".into()),
             connection: Some(json!({"server_url": CREWING_ORIGIN, "workspace_id": "ws-1"})),
-            address: Some(json!({"alias_id": "a1", "generation": 1, "address": "x@in.skipi.app"})),
         };
         store_kept(&conn, &kept).unwrap();
         assert_eq!(load_kept(&conn), kept);
