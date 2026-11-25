@@ -27,6 +27,25 @@ for (const role of ['crewing', 'broker']) {
     if (mod.view) assert.ok(['vessels', 'apps'].includes(mod.view), `${role}/${mod.k} opens an existing role-neutral view`);
   }
 }
+// Crew Flow is live for crewing: read through the one Skipi sign-in, never a stub.
+{
+  const crewflow = Array.from(ctx.ROLE_MODULES.crewing).find((x) => x.k === 'crewflow');
+  assert.equal(crewflow.live, 'crewflow');
+  assert.ok(/invoke\('crewing_flow_overview'\)/.test(html), 'Crew Flow reads the Crewing server through its command');
+  const cmd = fs.readFileSync(new URL('../src-tauri/src/commands/crewing.rs', import.meta.url), 'utf8');
+  const lib = fs.readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
+  assert.ok(/crewing::crewing_flow_overview,/.test(lib), 'the command is registered');
+  assert.ok(/\/api\/app\/login\/skipi-account/.test(cmd) && !/"password"/.test(cmd), 'one sign-in: no second password is ever sent');
+  assert.ok(/"create_if_missing": false/.test(cmd), 'this app never creates a workspace');
+  // The fit rule of the queue, extracted and exercised.
+  const fn = html.match(/function crewFlowShare\(row\)\{[\s\S]*?\n\}/)[0];
+  const share = vm.runInNewContext('(' + fn.replace('function crewFlowShare', 'function') + ')');
+  assert.equal(share({ met: 7, missing: 2, unconfirmed: 1, total: 10, applicability: 'applicable' }), 70);
+  assert.equal(share({ met: 7, missing: 2, unconfirmed: 1, total: 10, applicability: 'unknown' }), null);
+  assert.equal(share({ met: 7, missing: 2, unconfirmed: 1, total: 10, stale: true }), null);
+  assert.equal(share({ met: 7, missing: 2, unconfirmed: 0, total: 10 }), null);
+  assert.equal(share({ met: 0, missing: 0, unconfirmed: 0, total: 0 }), null);
+}
 assert.ok(/if\(res&&res\.profile_mismatch\)\{[\s\S]{0,200}close_vault/.test(html), 'a login of another role closes the open cache');
 assert.ok(/if\(ROLE_MODULES\[role\]\)\{\s*try\{await openRoleAccountCache\(role\);return;\}/.test(html), 'role accounts skip the seafarer restore');
 console.log('role_modules_harness: ok');

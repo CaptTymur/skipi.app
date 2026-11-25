@@ -111,7 +111,7 @@ pub(crate) fn base64_encode(data: &[u8]) -> String {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     use commands::{
-        account_sync, agency_mailing, ai, app_login, assistant, cv_commands, documents, email,
+        account_sync, agency_mailing, ai, app_login, assistant, crewing, cv_commands, documents, email,
         jobs, mail_intent, messaging, packages, profile, review, vault, work_history,
     };
 
@@ -246,6 +246,7 @@ pub fn run() {
             app_login::app_login,
             app_login::app_logout,
             app_login::app_login_status,
+            crewing::crewing_flow_overview,
             // In-app account deletion (App Store 5.1.1(v))
             account_delete::delete_account,
             // CV

@@ -358,6 +358,21 @@ body.mobile-mode .desktop-stack-label { display:none; }
 .modules-bar.role-shell .mod-tab:not(.mod-tab-role), .modules-bar.role-shell .profile-completion-chip, .modules-bar.role-shell .salary-index-chip { display:none !important; }
 .role-stub { max-width:520px; margin:72px auto; padding:0 24px; text-align:center; color:var(--text2); line-height:1.5; }
 .role-stub h2 { color:var(--text); margin:0 0 10px; font-size:20px; }
+.crew-flow { max-width:860px; margin:0 auto; padding:24px; }
+.crew-flow h2 { margin:0 0 14px; font-size:20px; color:var(--text); }
+.crew-flow-card { border:1px solid var(--border); border-radius:10px; background:var(--bg2); padding:14px 16px; margin-bottom:16px; }
+.crew-flow-label { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--text2); margin-bottom:6px; }
+.crew-flow-address { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.crew-flow-address code { font-size:13px; word-break:break-all; color:var(--text); user-select:all; }
+.crew-flow-note { color:var(--text2); font-size:13px; line-height:1.45; margin-top:6px; }
+.crew-flow-error { color:var(--red,#e74c3c); }
+.crew-flow-row { display:flex; gap:12px; align-items:center; padding:10px 0; border-top:1px solid var(--border); }
+.crew-flow-row:first-of-type { border-top:none; }
+.crew-flow-who { flex:1; min-width:0; }
+.crew-flow-name { font-weight:600; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.crew-flow-meta { color:var(--text2); font-size:12px; margin-top:2px; }
+.crew-flow-fit { font-weight:700; font-size:15px; color:var(--text); text-align:right; white-space:nowrap; }
+.crew-flow-fit small { display:block; font-weight:400; font-size:11px; color:var(--text2); max-width:220px; overflow:hidden; text-overflow:ellipsis; }
 .modules-bar .mb-spacer { flex:1; }
 .profile-completion-chip { display:flex; align-items:center; gap:7px; height:26px; padding:0 10px; border-radius:5px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:12px; font-weight:600; cursor:pointer; margin-right:6px; white-space:nowrap; }
 .profile-completion-chip:hover { border-color:var(--accent); background:var(--accent-bg); }
@@ -11406,13 +11421,14 @@ function accountFirstRegister(){ openRegisterPage(); }
 // crewing / broker — «фрахтование»). The role lives in the account cache as account_type.
 // The seafarer role keeps its full shell untouched; the other roles get the tabs below.
 // `view` = a module that already exists in this code base and does not depend on a seafarer
-// profile; a module without `view` is not carried over yet and says so honestly.
+// profile; `live` = a role module rendered here from the role's server; a module with neither
+// is not carried over yet and says so honestly.
 var ROLE_MODULES={
     // Owner 25.11.2026 (after the first sign-in): for now crewing is three modules — Crew Flow,
     // Compliance Profile, Seafarers DB — and Vessel DB stays. Documents is a viewer of a
     // seafarer's documents opened from inside those modules, not a tab; Port DB is not built yet.
     crewing:[
-        {k:'crewflow',ru:'Crew Flow',en:'Crew Flow',from:'Skipi Crewing'},
+        {k:'crewflow',live:'crewflow',ru:'Crew Flow',en:'Crew Flow'},
         {k:'compliance',ru:'Профиль соответствия',en:'Compliance Profile',from:'Skipi Crewing'},
         {k:'seafarers',ru:'База моряков',en:'Seafarers DB',from:'Skipi Crewing'},
         {k:'vessels',view:'vessels',ru:'База судов',en:'Vessel DB'}
@@ -11441,6 +11457,123 @@ function roleStubHtml(m){
         :(ru?'Модуль появится в одном из следующих обновлений Skipi.':'This module arrives in one of the next Skipi updates.');
     return '<div class="role-stub" data-qa="role-stub-'+m.k+'"><h2>'+esc(roleModuleLabel(m))+'</h2><div>'+esc(text)+'</div></div>';
 }
+// ---- Crew Flow (crewing role): the forwarding address and the queue of candidates, read from
+// the Crewing server through the one Skipi sign-in (command crewing_flow_overview). Read-only
+// in this slice: the candidate card comes next.
+var crewFlow={loading:false,data:null,error:null};
+function crewFlowErrorText(err){
+    var ru=getUiLang()==='ru';
+    var code=String((err&&err.code)||'other');
+    var map={
+        network:[ 'Нет связи с сервером Skipi. Проверьте интернет и повторите.','No connection to the Skipi server. Check the internet and retry.' ],
+        login_required:[ 'Вход устарел. Выйдите из аккаунта и войдите снова.','The sign-in has expired. Sign out and sign in again.' ],
+        no_workspace:[ 'Для этого аккаунта ещё не открыто рабочее место крюинга.','No crewing workspace is open for this account yet.' ],
+        not_crewing:[ 'Crew Flow доступен аккаунту с ролью «крюинг».','Crew Flow is available to an account with the crewing role.' ],
+        trial_expired:[ 'Доступ к рабочему месту закончился.','Access to the workspace has ended.' ],
+        rate_limited:[ 'Слишком много запросов. Повторите через минуту.','Too many requests. Retry in a minute.' ],
+        not_available:[ 'Сервер Skipi пока не принимает этот вход. Повторите позже.','The Skipi server does not accept this sign-in yet. Retry later.' ]
+    };
+    var pair=map[code]||[ 'Не удалось загрузить Crew Flow.','Could not load Crew Flow.' ];
+    return ru?pair[0]:pair[1];
+}
+// Share of met requirements against one matching profile, or null when the server did not
+// give a decided, applicable, fresh count (same rule as the Skipi Crewing app).
+function crewFlowShare(row){
+    if(!row||row.stale)return null;
+    if(row.applicability==='unknown'||row.applicability==='not_applicable')return null;
+    var met=Number(row.met),missing=Number(row.missing),unconfirmed=Number(row.unconfirmed),total=Number(row.total);
+    if(!(total>0)||met+missing+unconfirmed!==total)return null;
+    return Math.floor(100*met/total);
+}
+function crewFlowBestFit(item,profiles){
+    var rows=(item&&item.summary&&item.summary.profile_ranks)||[];
+    var best=null;
+    rows.forEach(function(row){
+        var pct=crewFlowShare(row);
+        if(pct===null)return;
+        if(!best||pct>best.pct)best={pct:pct,profile_id:row.profile_id};
+    });
+    if(!best)return null;
+    var p=(profiles||[]).filter(function(x){ return x&&x.id===best.profile_id; })[0];
+    best.name=p?String(p.name||''):'';
+    return best;
+}
+function crewFlowCandidateName(item){
+    var s=(item&&item.summary)||{}, h=(item&&item.response_headline)||{};
+    var name=String(s.candidate_name||'').trim()||[h.first_name,h.surname].filter(Boolean).join(' ').trim();
+    return name||(getUiLang()==='ru'?'Имя не распознано':'Name not recognised');
+}
+function crewFlowWhen(iso){
+    var d=new Date(iso);
+    if(isNaN(d.getTime()))return '';
+    try{ return d.toLocaleString(getUiLang()==='ru'?'ru-RU':'en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}); }
+    catch(e){ return d.toISOString().slice(0,16).replace('T',' '); }
+}
+function crewFlowHtml(){
+    var ru=getUiLang()==='ru';
+    var h='<div class="crew-flow" data-qa="crew-flow"><h2>Crew Flow</h2>';
+    if(crewFlow.error){
+        h+='<div class="crew-flow-card"><div class="crew-flow-error" data-qa="crew-flow-error">'+esc(crewFlowErrorText(crewFlow.error))+'</div>'
+          +'<div class="crew-flow-note">'+esc(String((crewFlow.error&&crewFlow.error.detail)||''))+'</div>'
+          +'<div style="margin-top:10px;"><button class="btn btn-accent btn-sm" type="button" onclick="crewFlowLoad()">'+esc(ru?'Повторить':'Retry')+'</button></div></div></div>';
+        return h;
+    }
+    if(!crewFlow.data){
+        return h+'<div class="crew-flow-card"><div class="crew-flow-note" data-qa="crew-flow-loading">'+esc(ru?'Загружаю…':'Loading…')+'</div></div></div>';
+    }
+    var d=crewFlow.data;
+    h+='<div class="crew-flow-card"><div class="crew-flow-label">'+esc(ru?'Адрес для пересылки откликов':'Forwarding address for applications')+'</div>';
+    if(d.address){
+        h+='<div class="crew-flow-address"><code data-qa="crew-flow-address">'+esc(d.address)+'</code>'
+          +'<button class="btn btn-outline btn-sm" type="button" onclick="crewFlowCopyAddress()">'+esc(ru?'Скопировать':'Copy')+'</button></div>'
+          +'<div class="crew-flow-note">'+esc(ru?'Перешлите на этот адрес письмо кандидата с резюме — он появится в списке ниже.':'Forward a candidate\'s e-mail with the CV to this address — the candidate appears in the list below.')+'</div>';
+    } else {
+        h+='<div class="crew-flow-note">'+esc(ru?'У рабочего места пока нет активного адреса.':'The workspace has no active address yet.')+'</div>';
+    }
+    h+='</div>';
+    var items=d.items||[];
+    var total=(typeof d.total==='number')?d.total:items.length;
+    h+='<div class="crew-flow-card"><div class="crew-flow-label">'+esc((ru?'Кандидаты':'Candidates')+' · '+total)
+      +' <a href="#" onclick="crewFlowLoad();return false;" style="margin-left:8px;text-transform:none;letter-spacing:0;">'+esc(ru?'обновить':'refresh')+'</a></div>';
+    if(!items.length){
+        h+='<div class="crew-flow-note" data-qa="crew-flow-empty">'+esc(ru?'Пока никого. Перешлите первый отклик на адрес выше.':'Nobody yet. Forward the first application to the address above.')+'</div>';
+    }
+    items.forEach(function(item){
+        var head=(item&&item.response_headline)||{};
+        var fit=crewFlowBestFit(item,d.profiles);
+        var meta=[head.rank,crewFlowWhen(item.created_at)].filter(Boolean).join(' · ');
+        h+='<div class="crew-flow-row" data-qa="crew-flow-row"><div class="crew-flow-who"><div class="crew-flow-name">'+esc(crewFlowCandidateName(item))+'</div>'
+          +'<div class="crew-flow-meta">'+esc(meta)+'</div></div>'
+          +'<div class="crew-flow-fit">'+(fit?(fit.pct+'%<small>'+esc(fit.name)+'</small>'):('<small>'+esc(ru?'оценки пока нет':'not scored yet')+'</small>'))+'</div></div>';
+    });
+    if(total>items.length){
+        h+='<div class="crew-flow-note">'+esc(ru?('Показаны последние '+items.length+' из '+total+'.'):('Showing the latest '+items.length+' of '+total+'.'))+'</div>';
+    }
+    return h+'</div></div>';
+}
+function crewFlowRender(){
+    if(roleCurrentKey!=='crewflow'||!roleModules())return;
+    if(shouldUseMobileShell()){ if(mobileView==='rolestub')mobileMainHtml(crewFlowHtml()); return; }
+    var host=document.getElementById('scr-content');
+    if(host)host.innerHTML=crewFlowHtml();
+}
+async function crewFlowLoad(){
+    if(crewFlow.loading)return;
+    crewFlow.loading=true;crewFlow.error=null;
+    crewFlowRender();
+    try{ crewFlow.data=await invoke('crewing_flow_overview'); }
+    catch(e){ crewFlow.error=(e&&typeof e==='object')?e:{code:'other',detail:String(e||'')}; logError('crewing_flow_overview',e); }
+    crewFlow.loading=false;
+    crewFlowRender();
+}
+async function crewFlowCopyAddress(){
+    var ru=getUiLang()==='ru';
+    try{ await writeClipboardText(String((crewFlow.data&&crewFlow.data.address)||'')); showToast(ru?'Адрес скопирован':'Address copied','success'); }
+    catch(e){ showToast(ru?'Не удалось скопировать':'Could not copy','error'); }
+}
+// What a role module without an existing view shows: its live screen, or the honest stub.
+function roleModuleHtml(m){ return m.live==='crewflow'?crewFlowHtml():roleStubHtml(m); }
+var roleCurrentKey='';
 // Desktop: swap the seafarer tabs for the role's tabs (or back, when a seafarer cache opens).
 function roleShellApply(){
     var bar=document.getElementById('modules-bar');
@@ -11463,9 +11596,11 @@ function roleShellApply(){
 function roleShowModule(k){
     var m=roleModule(k);
     if(!m)return;
+    roleCurrentKey=k;
     if(shouldUseMobileShell()){
         if(m.view){ mobileShow(m.view); }
         else { roleStubKey=k; mobileShow('rolestub'); }
+        if(m.live==='crewflow')crewFlowLoad();
         return;
     }
     if(m.view){ showView(m.view); }
@@ -11473,10 +11608,11 @@ function roleShowModule(k){
         document.querySelectorAll('.modules-bar .mod-tab').forEach(function(el){ el.classList.remove('active'); });
         var lp=document.getElementById('left-panel'); if(lp)lp.style.display='none';
         var host=document.getElementById('scr-content');
-        if(host){ host.innerHTML=roleStubHtml(m); show('scr-content'); }
+        if(host){ host.innerHTML=roleModuleHtml(m); show('scr-content'); }
     }
     var tab=document.getElementById('mt-role-'+k);
     if(tab)tab.classList.add('active');
+    if(m.live==='crewflow')crewFlowLoad();
 }
 // First screen of a role cache: the first module of the role.
 function roleOpenDefault(){
@@ -11497,7 +11633,7 @@ function renderMobileRoleMenu(){
 function renderMobileRoleStub(){
     var m=roleModule(roleStubKey);
     if(!m){ mobileView='home'; return renderMobileRoleMenu(); }
-    mobileMainHtml(roleStubHtml(m));
+    mobileMainHtml(roleModuleHtml(m));
 }
 // The account cache of a crewing / broker account: created empty, without the seafarer
 // questionnaire and without the seafarer profile restore. One cache per e-mail and role.
@@ -11530,6 +11666,7 @@ async function loadVault(info){
     hide('scr-welcome');hide('scr-setup');show('scr-content');show('left-panel');hide('tabs');show('statusbar');
     var mb=document.getElementById('modules-bar');if(mb)mb.style.display='flex';
     currentAccountType=info.account_type||'';
+    crewFlow={loading:false,data:null,error:null};roleCurrentKey='';
     roleShellApply();
     mobileIsDemo=String((info&&info.is_demo)||'')==='1';
     mobileProfileEmpty=!(info&&(info.rank||info.position));
