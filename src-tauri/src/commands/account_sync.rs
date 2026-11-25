@@ -2255,6 +2255,7 @@ pub mod vault_sync {
                 email: "synthetic@example.invalid".into(),
                 login_at: "synthetic".into(),
                 account_id: Some("synthetic-account".into()),
+                role: "seafarer",
             };
             let context = restore_context(&pending, 0);
             (
@@ -2581,6 +2582,7 @@ pub mod vault_sync {
             *state.login_pending.lock().unwrap() = Some(super::super::super::app_login::PendingLogin {
                 token: "synthetic-parked-secret".into(), email: "synthetic@example.invalid".into(),
                 login_at: "synthetic".into(), account_id: Some("synthetic-account".into()),
+                role: "seafarer",
             });
             let no_vault = consent_status(&state).unwrap();
             assert_eq!(no_vault["profile_open"], false);
