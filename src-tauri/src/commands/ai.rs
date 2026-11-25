@@ -708,7 +708,7 @@ fn classify_result(content_text: &str) -> Result<AiClassifyResult, String> {
 /// comes as bytes (phone picker) or as a path (desktop file dialog).
 #[tauri::command]
 pub async fn ai_classify_file(
-    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
     file_name: String,
     data_base64: Option<String>,
     source_path: Option<String>,
@@ -751,23 +751,23 @@ pub async fn ai_classify_file(
     if data_base64.trim().is_empty() {
         return Err("No file to recognize".to_string());
     }
-    let server_key: Option<String> = if api_key.trim().is_empty() {
-        let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
-        let conn = conn_lock.as_ref().ok_or("No vault open")?;
-        let http = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(20))
-            .build()
-            .map_err(|e| e.to_string())?;
-        Some(crate::commands::assistant::ensure_key(conn, &http)?)
-    } else {
-        None
-    };
     let prompt = classify_prompt();
+    // Every blocking HTTP client lives inside spawn_blocking: built or dropped on
+    // the async runtime it panics («Cannot drop a runtime…», seen on Android).
     tauri::async_runtime::spawn_blocking(move || -> Result<AiClassifyResult, String> {
+        use tauri::Manager;
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(120))
             .build()
             .map_err(|e| e.to_string())?;
+        let server_key: Option<String> = if api_key.trim().is_empty() {
+            let state = app.state::<AppState>();
+            let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+            let conn = conn_lock.as_ref().ok_or("No vault open")?;
+            Some(crate::commands::assistant::ensure_key(conn, &client)?)
+        } else {
+            None
+        };
         let text = if let Some(skey) = server_key.as_ref() {
             server_ocr_request(&client, skey, media_type, &data_base64, &prompt)?
         } else {
