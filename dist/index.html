@@ -361,6 +361,8 @@ body.mobile-mode .desktop-stack-label { display:none; }
 /* ===== CREWING PILOT MODULES CSS START — the pilot's stylesheet (skipi-crewing 4b82cd8), scoped to .crew-shell; only rules its carried-over screens use ===== */
 .crew-shell { --panel:#1a1f26; --panel2:#232932; --accent2:#004564; --ok:#22c55e; --warn:#f59e0b; --err:#ef4444; height:100%; min-height:0; display:flex; flex-direction:column; color:var(--text); }
 [data-theme="light"] .crew-shell { --panel:#ffffff; --panel2:#eef0f4; --accent2:#013a52; }
+/* this app styles a bare .badge; the pilot does not — undo it inside the shell so the pilot's own badge rules decide */
+.crew-shell .badge { display:inline; padding:0; border-radius:0; font-size:inherit; font-weight:inherit; }
 .crew-shell * { box-sizing: border-box; }
 .crew-shell .app { display: flex; flex: 1; min-height: 0; }
 .crew-shell .left-panel { width: 280px; flex-shrink: 0; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
@@ -376,6 +378,8 @@ body.mobile-mode .desktop-stack-label { display:none; }
 .crew-shell .tree-item { padding: 6px 12px 6px 28px; font-size: 13px; cursor: pointer; color: var(--text); display: flex; align-items: center; gap: 6px; border-left: 3px solid transparent; }
 .crew-shell .tree-item:hover { background: var(--panel2); }
 .crew-shell .tree-item.active { background: var(--panel2); border-left-color: var(--accent); }
+.crew-shell .tree-item .ti-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crew-shell .tree-item .ti-meta { font-size: 11px; color: var(--text2); margin-top: 2px; }
 .crew-shell .tree-item .st { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .crew-shell .tree-item.ti-stack { display: block; }
 .crew-shell .tree-item.ti-stack > div { min-width: 0; }
@@ -11607,7 +11611,7 @@ var ROLE_MODULES={
     // seafarer's documents opened from inside those modules, not a tab; Port DB is not built yet.
     crewing:[
         {k:'crewflow',live:'crewflow',ru:'Crew Flow',en:'Crew Flow'},
-        {k:'compliance',ru:'Профиль соответствия',en:'Compliance Profile',from:'Skipi Crewing'},
+        {k:'compliance',live:'compliance',ru:'Профиль соответствия',en:'Compliance Profile',from:'Skipi Crewing'},
         {k:'seafarers',ru:'База моряков',en:'Seafarers DB',from:'Skipi Crewing'},
         {k:'vessels',view:'vessels',ru:'База судов',en:'Vessel DB'}
     ],
@@ -11636,24 +11640,37 @@ function roleStubHtml(m){
     return '<div class="role-stub" data-qa="role-stub-'+m.k+'"><h2>'+esc(roleModuleLabel(m))+'</h2><div>'+esc(text)+'</div></div>';
 }
 // ===== CREWING PILOT MODULES START =====================================================
-// Crew Flow of the crewing role is the pilot's module, carried over from the Skipi Crewing
+// Crew Flow and Compliance Profile of the crewing role are the pilot's modules, carried over from the Skipi Crewing
 // client (skipi-crewing dist/index.html at 4b82cd8) — owner 25.11.2026: the modules must be
 // the pilot's, not a rewrite (tasks/018). The pilot's code below is verbatim except for names
 // that would meet this page's own: state → crewState, tr → crewTr, showView → crewShowView,
+// TAXONOMY → CREW_TAXONOMY, loadTaxonomy/apiBaseCandidates → crew…,
 // the demo fixtures (off here) and the two container ids. What is NOT the pilot's is the
 // connection: it comes from the one Skipi sign-in (command crewing_connection).
 var crewDemoMode = false;
-var CREW_TAXONOMY = null, CREW_TAXONOMY_FALLBACK = null;
 var CREW_FLOW_READ_STATE_KEY = 'skipi_crewing_crew_flow_read_state_v2';
-var CREW_UI_STRINGS = {"en":{"nav.intake_pilot":"Intake pilot","left_panel.resize_hint":"Drag to resize the panel; double-click to reset","crew_flow.mobile_subtitle":"Candidates from your inbound identifier","crew_flow.empty_demo":"No crew flow signals in this demonstration profile.","crew_flow.record_generic":"Record","crew_flow.share_caption":"{met} of {total} checks met, by the stored evaluation","crew_flow.fit_complete":"All stored checks met","crew_flow.fit_partial":"Needs a look","crew_flow.fit_stale":"Stored comparison is out of date","crew_flow.fit_total_zero":"The evaluation holds no checks","crew_flow.fit_total_unknown":"Evaluation not fully recognised","crew_flow.fit_not_covered":"Evaluation not fully recognised","crew_flow.fit_counts_invalid":"Evaluation not fully recognised","crew_flow.fit_rank_unknown":"The rank was not read — check by hand","crew_flow.fit_rank_not_applicable":"The rank does not apply — nothing was compared","crew_flow.fit_no_profile_fit":"Fits none of the profiles","crew_flow.fit_unevaluated_fit":"Fits {n} — not evaluated","crew_flow.fit_absent":"Not compared against this profile","crew_flow.fit_not_loaded":"Comparison not loaded yet","crew_flow.fit_no_profile":"No profile chosen yet","crew_flow.fit_breakdown":"How this is counted","crew_flow.row_more":"Details","crew_flow.share_note":"On the phone the draft is copied to the clipboard: paste it into your mail app or a messenger.","crew_flow.refresh_list":"Refresh the queue","crew_flow.updated_at":"Queue updated","crew_flow.updated_never":"The queue has not been loaded yet","crew_flow.refresh_failed":"Could not refresh; the rows below are the ones already loaded","crew_flow.refreshing":"Refreshing...","crew_flow.card_identity_unknown":"Name not in the recorded facts","crew_flow.card_fit_title":"Match against profiles","crew_flow.card_fit_none":"No stored comparison for this candidate yet.","crew_flow.no_matches_yet":"No matches at the time of the response","crew_flow.card_details":"Source, identifiers and provenance","crew_flow.card_actions":"What you can do next","crew_flow.local_decision":"Ignore and keep-for-later are stored on this device: on your other clients the candidate stays in the queue.","crew_flow.match_no_profiles":"There are no compliance profiles yet — create a profile, then compare.","crew_flow.matched_done":"Compared against the active compliance profiles the rank applies to.","crew_flow.subtitle":"Candidates that arrived through your inbound identifier. Nothing is decided for you.","crew_flow.refresh":"Refresh queue","crew_flow.open_pilot":"Upload a test document","crew_flow.loading":"Loading the candidate queue...","crew_flow.failed":"The candidate queue could not be loaded","crew_flow.empty_title":"No candidates yet","crew_flow.empty_unconnected":"Sign in to your Skipi account, and candidates will appear here.","crew_flow.empty_live":"Candidates appear here once documents reach your inbound identifier.","crew_flow.address_label":"Inbound address","crew_flow.address_absent":"No inbound address has been issued yet. Open the intake screen to issue one.","crew_flow.address_lost":"The inbound address exists and accepts mail, but its value is not stored here and cannot be shown. Reissue it to get an address you can see — the current one stops working the moment you do.","crew_flow.address_unavailable":"The inbound address could not be retrieved. This is not «no address»: the request failed, so try again.","crew_flow.address_copy":"Copy","crew_flow.address_copied":"Copied","crew_flow.pick_title":"Pick a candidate","crew_flow.pick_note":"Open a row on the left to see the recorded facts, the comparisons and the operator actions.","crew_flow.facts":"facts","crew_flow.ranks":"comparisons","crew_flow.match_profile_label":"Compare against","crew_flow.match_absent":"no stored comparison against this profile","crew_flow.match_partial":"outcomes not fully recognised","crew_flow.name_absent":"name not given","crew_flow.match_stale":"stored comparison is stale","crew_flow.match_not_loaded":"comparison not loaded yet — open the candidate","crew_flow.match_no_profile":"no profile chosen yet","crew_flow.actions":"Operator actions","crew_flow.save":"Save to Seafarers DB","crew_flow.save_again":"Already in database","crew_flow.save_again_confirm":"Update the saved record? New documents will be added, nothing is duplicated.","crew_flow.save_confirm":"Save this candidate to the seafarer database? A saved seafarer cannot be deleted afterwards — neither here nor in the seafarer database.","crew_flow.saved":"Candidate saved to the Seafarers DB.","crew_flow.save_failed":"Save failed","crew_flow.person_unknown":"Seafarer identity not established — the record may be duplicated.","crew_flow.save_no_name":"No seafarer name — cannot save. Record the name on the card first.","crew_flow.save_card_not_loaded":"The card has not loaded — cannot save yet. Open the candidate again.","crew_flow.save_web_note":"Saving will come to the web version later; use the app on your computer or phone.","crew_flow.email":"Write email","crew_flow.share":"Share the offer","crew_flow.request_docs":"Request documents","crew_flow.email_missing":"No address received: record the email fact on the card first.","crew_flow.email_not_usable":"A contact came with the response, but no letter is prepared to it — see Contacts on the card.","crew_flow.email_unknown":"The delivered contact could not be loaded — reopen the card to try again.","crew_flow.match":"Match against a profile","crew_flow.ignore":"Ignore","crew_flow.later":"Keep for later","crew_flow.later_done":"Candidate kept for later.","crew_flow.state_added":"added to the database","crew_flow.state_saved_to_db":"saved to Seafarers DB","crew_flow.state_ignored":"ignored","crew_flow.state_kept_for_later":"kept for later","crew_flow.state_draft_opened":"draft opened","crew_flow.state_draft_copied":"draft copied","crew_flow.state_requested_documents":"documents requested","crew_flow.state_matched":"compared against profiles","crew_flow.docs_placed":"Files from the response placed in the seafarer folder: {n}","crew_flow.docs_none":"No files from the response for the seafarer folder","crew_flow.doc_bin_skipped":"Attachment {n} ({name}): format not recognised — not placed in the folder","crew_flow.docs_too_many":"Too many files for one save: {n}, the limit is 10 — nothing was saved","crew_flow.docs_too_large":"The files total {size}, above the 64 MiB limit for one save — nothing was saved","crew_flow.doc_download_failed":"Attachment {n} could not be downloaded — nothing was saved","common.new":"+ New","common.search":"Search...","common.settings":"Settings","common.vault":"Vault","common.switch_vault":"Switch vault","entry.login":"Sign in","common.cancel":"Cancel","common.ok":"OK"},"ru":{"nav.intake_pilot":"Приём кандидатов","left_panel.resize_hint":"Потяните, чтобы изменить ширину панели; двойной щелчок — вернуть","crew_flow.mobile_subtitle":"Кандидаты с вашего входящего идентификатора","crew_flow.empty_demo":"В демонстрационном профиле сигналов Crew Flow нет.","crew_flow.record_generic":"Запись","crew_flow.share_caption":"выполнено {met} из {total} по сохранённой оценке","crew_flow.fit_complete":"Все проверки выполнены","crew_flow.fit_partial":"Нужна проверка","crew_flow.fit_stale":"Сохранённая оценка устарела","crew_flow.fit_total_zero":"В оценке нет проверок","crew_flow.fit_total_unknown":"Оценка распознана не полностью","crew_flow.fit_not_covered":"Оценка распознана не полностью","crew_flow.fit_counts_invalid":"Оценка распознана не полностью","crew_flow.fit_rank_unknown":"Должность не прочитана — нужна ручная проверка","crew_flow.fit_rank_not_applicable":"Должность не подходит — сравнения не было","crew_flow.fit_no_profile_fit":"Не подошёл ни под один профиль","crew_flow.fit_unevaluated_fit":"Подходит под {n} — не оценён","crew_flow.fit_absent":"С этим профилем не сравнивали","crew_flow.fit_not_loaded":"Оценка ещё не загружена","crew_flow.fit_no_profile":"Профиль пока не выбран","crew_flow.fit_breakdown":"Как это посчитано","crew_flow.row_more":"Подробнее","crew_flow.share_note":"На телефоне черновик копируется в буфер: вставьте его в почту или мессенджер.","crew_flow.refresh_list":"Обновить очередь","crew_flow.updated_at":"Очередь обновлена","crew_flow.updated_never":"Очередь ещё не загружалась","crew_flow.refresh_failed":"Обновить не удалось; ниже — строки, загруженные ранее","crew_flow.refreshing":"Обновляю...","crew_flow.card_identity_unknown":"Имени в записанных сведениях нет","crew_flow.card_fit_title":"Соответствие профилям","crew_flow.card_fit_none":"Сохранённых сравнений по этому кандидату пока нет.","crew_flow.no_matches_yet":"На момент отклика соответствий нет","crew_flow.card_details":"Источник, идентификаторы и происхождение","crew_flow.card_actions":"Что можно сделать дальше","crew_flow.local_decision":"«Игнорировать» и «Отложить» хранятся на этом устройстве: на других ваших клиентах кандидат останется в очереди.","crew_flow.match_no_profiles":"Профилей соответствия нет — создайте профиль и повторите сопоставление.","crew_flow.matched_done":"Сопоставлено с активными профилями соответствия, подходящими по должности.","crew_flow.subtitle":"Кандидаты, пришедшие на ваш входящий идентификатор. Решение остаётся за вами.","crew_flow.refresh":"Обновить очередь","crew_flow.open_pilot":"Загрузить тестовый документ","crew_flow.loading":"Загружаю очередь кандидатов...","crew_flow.failed":"Очередь кандидатов не загружена","crew_flow.empty_title":"Кандидатов пока нет","crew_flow.empty_unconnected":"Войдите в аккаунт Skipi, и кандидаты появятся здесь.","crew_flow.empty_live":"Кандидаты появятся, когда на ваш входящий идентификатор придут документы.","crew_flow.address_label":"Входящий адрес","crew_flow.address_absent":"Входящий адрес ещё не выдан. Откройте экран приёма, чтобы его выдать.","crew_flow.address_lost":"Входящий адрес существует и принимает письма, но его значение здесь не хранится и показать его нельзя. Перевыпустите, чтобы получить видимый адрес: прежний перестанет работать тут же.","crew_flow.address_unavailable":"Входящий адрес получить не удалось. Это не «адреса нет»: запрос не прошёл, попробуйте снова.","crew_flow.address_copy":"Копировать","crew_flow.address_copied":"Скопировано","crew_flow.pick_title":"Выберите кандидата","crew_flow.pick_note":"Откройте строку слева, чтобы увидеть записанные сведения, оценки и действия оператора.","crew_flow.facts":"сведения","crew_flow.ranks":"оценки","crew_flow.match_profile_label":"Сравнивать с профилем","crew_flow.match_absent":"оценки против этого профиля нет","crew_flow.match_partial":"исходы распознаны не полностью","crew_flow.name_absent":"имя не указано","crew_flow.match_stale":"сохранённая оценка устарела","crew_flow.match_not_loaded":"оценка ещё не загружена — откройте кандидата","crew_flow.match_no_profile":"профиль пока не выбран","crew_flow.actions":"Действия оператора","crew_flow.save":"В базу моряков","crew_flow.save_again":"Уже в базе","crew_flow.save_again_confirm":"Обновить запись в базе моряков? Новые документы добавятся, дублей не будет.","crew_flow.save_confirm":"Сохранить кандидата в базу моряков? Удалить сохранённого моряка потом нельзя — ни здесь, ни в базе моряков.","crew_flow.saved":"Кандидат сохранён в базе моряков.","crew_flow.save_failed":"Не удалось сохранить","crew_flow.person_unknown":"Личность моряка не установлена — запись может задвоиться.","crew_flow.save_no_name":"Нет имени моряка — сохранить нельзя. Сначала запишите имя в карточке.","crew_flow.save_card_not_loaded":"Карточка не загружена — сохранить пока нельзя. Откройте кандидата заново.","crew_flow.save_web_note":"В веб-версии сохранение появится позже; используйте приложение на компьютере или телефоне.","crew_flow.email":"Написать email","crew_flow.share":"Поделиться предложением","crew_flow.request_docs":"Запросить документы","crew_flow.email_missing":"Адрес не получен: запишите факт email в карточке.","crew_flow.email_not_usable":"Контакт пришёл с откликом, но письмо по нему не готовится — см. «Контакты» в карточке.","crew_flow.email_unknown":"Не удалось получить доставленный контакт — откройте карточку заново, чтобы повторить.","crew_flow.match":"Сопоставить с профилем","crew_flow.ignore":"Игнорировать","crew_flow.later":"Отложить","crew_flow.later_done":"Кандидат отложен.","crew_flow.state_added":"добавлен в базу","crew_flow.state_saved_to_db":"в базе моряков","crew_flow.state_ignored":"игнорирован","crew_flow.state_kept_for_later":"отложен","crew_flow.state_draft_opened":"черновик открыт","crew_flow.state_draft_copied":"черновик скопирован","crew_flow.state_requested_documents":"документы запрошены","crew_flow.state_matched":"сопоставлен с профилями","crew_flow.docs_placed":"Файлов из отклика положено в папку моряка: {n}","crew_flow.docs_none":"Файлов из отклика для папки моряка нет","crew_flow.doc_bin_skipped":"Вложение {n} ({name}): формат не распознан — в папку не положено","crew_flow.docs_too_many":"Слишком много файлов для одного сохранения: {n}, предел 10 — ничего не сохранено","crew_flow.docs_too_large":"Файлы вместе занимают {size}, больше предела 64 МиБ на одно сохранение — ничего не сохранено","crew_flow.doc_download_failed":"Вложение {n} не удалось скачать — ничего не сохранено","common.new":"+ Новая","common.search":"Поиск...","common.settings":"Настройки","common.vault":"Профиль","common.switch_vault":"Сменить профиль","entry.login":"Войти","common.cancel":"Отмена","common.ok":"Подтвердить"}};
+var CREW_UI_STRINGS = {"en":{"nav.intake_pilot":"Intake pilot","left_panel.resize_hint":"Drag to resize the panel; double-click to reset","left.vacancies":"My vacancies","left.mailings":"Mailings","left.compliance":"Compliance Profile","left.team":"Team","left.seafarers":"Seafarers DB","left.documents":"Documents","profile.vessel_type":"Vessel type","profile.vessel_type_any":"— any —","profile.publish":"Publish","profile.unpublish":"Unpublish","profile.published":"published","profile.unpublished":"not published","profile.publish_hint":"Publishing freezes the requirements as they are now and gives them a version. Unpublishing changes nothing else: the profile keeps its data and keeps being compared with candidates.","profile.publish_needs_rank":"Set a rank before publishing.","profile.publish_needs_vessel_type":"Set a vessel type before publishing.","profile.publish_not_connected":"Sign in to your Skipi account first: publishing goes to the server.","profile.published_ok":"Profile published","profile.unpublished_ok":"Profile taken off publication","profile.publish_failed":"Publication failed","profile.snapshot_version":"published version","crew_flow.mobile_subtitle":"Candidates from your inbound identifier","crew_flow.empty_demo":"No crew flow signals in this demonstration profile.","compliance.usage_prefix":"used in comparisons:","crew_flow.record_generic":"Record","crew_flow.share_caption":"{met} of {total} checks met, by the stored evaluation","crew_flow.fit_complete":"All stored checks met","crew_flow.fit_partial":"Needs a look","crew_flow.fit_stale":"Stored comparison is out of date","crew_flow.fit_total_zero":"The evaluation holds no checks","crew_flow.fit_total_unknown":"Evaluation not fully recognised","crew_flow.fit_not_covered":"Evaluation not fully recognised","crew_flow.fit_counts_invalid":"Evaluation not fully recognised","crew_flow.fit_rank_unknown":"The rank was not read — check by hand","crew_flow.fit_rank_not_applicable":"The rank does not apply — nothing was compared","crew_flow.fit_no_profile_fit":"Fits none of the profiles","crew_flow.fit_unevaluated_fit":"Fits {n} — not evaluated","crew_flow.fit_absent":"Not compared against this profile","crew_flow.fit_not_loaded":"Comparison not loaded yet","crew_flow.fit_no_profile":"No profile chosen yet","crew_flow.fit_breakdown":"How this is counted","crew_flow.row_more":"Details","crew_flow.share_note":"On the phone the draft is copied to the clipboard: paste it into your mail app or a messenger.","crew_flow.refresh_list":"Refresh the queue","crew_flow.updated_at":"Queue updated","crew_flow.updated_never":"The queue has not been loaded yet","crew_flow.refresh_failed":"Could not refresh; the rows below are the ones already loaded","crew_flow.refreshing":"Refreshing...","crew_flow.card_identity_unknown":"Name not in the recorded facts","crew_flow.card_fit_title":"Match against profiles","crew_flow.card_fit_none":"No stored comparison for this candidate yet.","crew_flow.no_matches_yet":"No matches at the time of the response","crew_flow.card_details":"Source, identifiers and provenance","crew_flow.card_actions":"What you can do next","crew_flow.local_decision":"Ignore and keep-for-later are stored on this device: on your other clients the candidate stays in the queue.","crew_flow.match_no_profiles":"There are no compliance profiles yet — create a profile, then compare.","crew_flow.matched_done":"Compared against the active compliance profiles the rank applies to.","crew_flow.subtitle":"Candidates that arrived through your inbound identifier. Nothing is decided for you.","crew_flow.refresh":"Refresh queue","crew_flow.open_pilot":"Upload a test document","crew_flow.loading":"Loading the candidate queue...","crew_flow.failed":"The candidate queue could not be loaded","crew_flow.empty_title":"No candidates yet","crew_flow.empty_unconnected":"Sign in to your Skipi account, and candidates will appear here.","crew_flow.empty_live":"Candidates appear here once documents reach your inbound identifier.","crew_flow.address_label":"Inbound address","crew_flow.address_absent":"No inbound address has been issued yet. Open the intake screen to issue one.","crew_flow.address_lost":"The inbound address exists and accepts mail, but its value is not stored here and cannot be shown. Reissue it to get an address you can see — the current one stops working the moment you do.","crew_flow.address_unavailable":"The inbound address could not be retrieved. This is not «no address»: the request failed, so try again.","crew_flow.address_copy":"Copy","crew_flow.address_copied":"Copied","crew_flow.pick_title":"Pick a candidate","crew_flow.pick_note":"Open a row on the left to see the recorded facts, the comparisons and the operator actions.","crew_flow.facts":"facts","crew_flow.ranks":"comparisons","crew_flow.match_profile_label":"Compare against","crew_flow.match_absent":"no stored comparison against this profile","crew_flow.match_partial":"outcomes not fully recognised","crew_flow.name_absent":"name not given","crew_flow.match_stale":"stored comparison is stale","crew_flow.match_not_loaded":"comparison not loaded yet — open the candidate","crew_flow.match_no_profile":"no profile chosen yet","crew_flow.actions":"Operator actions","crew_flow.save":"Save to Seafarers DB","crew_flow.save_again":"Already in database","crew_flow.save_again_confirm":"Update the saved record? New documents will be added, nothing is duplicated.","crew_flow.save_confirm":"Save this candidate to the seafarer database? A saved seafarer cannot be deleted afterwards — neither here nor in the seafarer database.","crew_flow.saved":"Candidate saved to the Seafarers DB.","crew_flow.save_failed":"Save failed","crew_flow.person_unknown":"Seafarer identity not established — the record may be duplicated.","crew_flow.save_no_name":"No seafarer name — cannot save. Record the name on the card first.","crew_flow.save_card_not_loaded":"The card has not loaded — cannot save yet. Open the candidate again.","crew_flow.save_web_note":"Saving will come to the web version later; use the app on your computer or phone.","crew_flow.email":"Write email","crew_flow.share":"Share the offer","crew_flow.request_docs":"Request documents","crew_flow.email_missing":"No address received: record the email fact on the card first.","crew_flow.email_not_usable":"A contact came with the response, but no letter is prepared to it — see Contacts on the card.","crew_flow.email_unknown":"The delivered contact could not be loaded — reopen the card to try again.","crew_flow.match":"Match against a profile","crew_flow.ignore":"Ignore","crew_flow.later":"Keep for later","crew_flow.later_done":"Candidate kept for later.","crew_flow.state_added":"added to the database","crew_flow.state_saved_to_db":"saved to Seafarers DB","crew_flow.state_ignored":"ignored","crew_flow.state_kept_for_later":"kept for later","crew_flow.state_draft_opened":"draft opened","crew_flow.state_draft_copied":"draft copied","crew_flow.state_requested_documents":"documents requested","crew_flow.state_matched":"compared against profiles","crew_flow.docs_placed":"Files from the response placed in the seafarer folder: {n}","crew_flow.docs_none":"No files from the response for the seafarer folder","crew_flow.doc_bin_skipped":"Attachment {n} ({name}): format not recognised — not placed in the folder","crew_flow.docs_too_many":"Too many files for one save: {n}, the limit is 10 — nothing was saved","crew_flow.docs_too_large":"The files total {size}, above the 64 MiB limit for one save — nothing was saved","crew_flow.doc_download_failed":"Attachment {n} could not be downloaded — nothing was saved","common.new":"+ New","common.search":"Search...","common.settings":"Settings","common.vault":"Vault","common.switch_vault":"Switch vault","entry.login":"Sign in","common.cancel":"Cancel","common.ok":"OK","confirm.team_remove":"Remove this team member?","confirm.profile_archive":"Archive this profile?","confirm.profile_archive_note":"It will not be available for new vacancies. Existing vacancy snapshots stay valid.","confirm.mailbox_disconnect":"Disconnect this mailbox and purge cached messages?","confirm.mailing_close":"Close this mailing request?","confirm.mailing_close_note":"It will stop appearing in seafarer mailing lists.","confirm.mailing_delete":"Delete this mailing request permanently?","confirm.document_delete":"Delete this document?","confirm.document_delete_note":"The file will be removed from the vault.","confirm.vacancy_close":"Close this vacancy?","confirm.vacancy_close_note":"It will stop appearing on the public board. Existing applications and chats stay accessible.","confirm.vacancy_delete":"Hard-delete this vacancy?","confirm.vacancy_delete_note":"This removes the posting AND all applications + chat messages tied to it. Cannot be undone.","confirm.vacancy_delete_hint":"Use Close instead if you just want to stop accepting candidates.","confirm.vault_folder":"Skipi Crewing will use this vault folder after restart:","confirm.vault_folder_note":"The clear folder name makes it easier to find in your file manager.","confirm.remove":"Remove","confirm.archive":"Archive","confirm.disconnect":"Disconnect","confirm.delete":"Delete","confirm.delete_forever":"Delete forever","confirm.close":"Close","confirm.close_request":"Close request","confirm.close_vacancy":"Close vacancy","confirm.use_folder":"Use this folder"},"ru":{"nav.intake_pilot":"Приём кандидатов","left_panel.resize_hint":"Потяните, чтобы изменить ширину панели; двойной щелчок — вернуть","left.vacancies":"Мои вакансии","left.mailings":"Рассылки","left.compliance":"Профиль соответствия","left.team":"Команда","left.seafarers":"База моряков","left.documents":"Документы","profile.vessel_type":"Тип судна","profile.vessel_type_any":"— любой —","profile.publish":"Опубликовать","profile.unpublish":"Снять с публикации","profile.published":"опубликован","profile.unpublished":"не опубликован","profile.publish_hint":"Публикация замораживает требования в том виде, в каком они сейчас, и даёт им версию. Снятие с публикации больше ничего не меняет: профиль остаётся со своими данными и продолжает сравниваться с кандидатами.","profile.publish_needs_rank":"Перед публикацией укажите должность.","profile.publish_needs_vessel_type":"Перед публикацией укажите тип судна.","profile.publish_not_connected":"Сначала войдите в аккаунт Skipi: публикация идёт на сервер.","profile.published_ok":"Профиль опубликован","profile.unpublished_ok":"Профиль снят с публикации","profile.publish_failed":"Опубликовать не удалось","profile.snapshot_version":"опубликованная версия","crew_flow.mobile_subtitle":"Кандидаты с вашего входящего идентификатора","crew_flow.empty_demo":"В демонстрационном профиле сигналов Crew Flow нет.","compliance.usage_prefix":"использован в сравнениях:","crew_flow.record_generic":"Запись","crew_flow.share_caption":"выполнено {met} из {total} по сохранённой оценке","crew_flow.fit_complete":"Все проверки выполнены","crew_flow.fit_partial":"Нужна проверка","crew_flow.fit_stale":"Сохранённая оценка устарела","crew_flow.fit_total_zero":"В оценке нет проверок","crew_flow.fit_total_unknown":"Оценка распознана не полностью","crew_flow.fit_not_covered":"Оценка распознана не полностью","crew_flow.fit_counts_invalid":"Оценка распознана не полностью","crew_flow.fit_rank_unknown":"Должность не прочитана — нужна ручная проверка","crew_flow.fit_rank_not_applicable":"Должность не подходит — сравнения не было","crew_flow.fit_no_profile_fit":"Не подошёл ни под один профиль","crew_flow.fit_unevaluated_fit":"Подходит под {n} — не оценён","crew_flow.fit_absent":"С этим профилем не сравнивали","crew_flow.fit_not_loaded":"Оценка ещё не загружена","crew_flow.fit_no_profile":"Профиль пока не выбран","crew_flow.fit_breakdown":"Как это посчитано","crew_flow.row_more":"Подробнее","crew_flow.share_note":"На телефоне черновик копируется в буфер: вставьте его в почту или мессенджер.","crew_flow.refresh_list":"Обновить очередь","crew_flow.updated_at":"Очередь обновлена","crew_flow.updated_never":"Очередь ещё не загружалась","crew_flow.refresh_failed":"Обновить не удалось; ниже — строки, загруженные ранее","crew_flow.refreshing":"Обновляю...","crew_flow.card_identity_unknown":"Имени в записанных сведениях нет","crew_flow.card_fit_title":"Соответствие профилям","crew_flow.card_fit_none":"Сохранённых сравнений по этому кандидату пока нет.","crew_flow.no_matches_yet":"На момент отклика соответствий нет","crew_flow.card_details":"Источник, идентификаторы и происхождение","crew_flow.card_actions":"Что можно сделать дальше","crew_flow.local_decision":"«Игнорировать» и «Отложить» хранятся на этом устройстве: на других ваших клиентах кандидат останется в очереди.","crew_flow.match_no_profiles":"Профилей соответствия нет — создайте профиль и повторите сопоставление.","crew_flow.matched_done":"Сопоставлено с активными профилями соответствия, подходящими по должности.","crew_flow.subtitle":"Кандидаты, пришедшие на ваш входящий идентификатор. Решение остаётся за вами.","crew_flow.refresh":"Обновить очередь","crew_flow.open_pilot":"Загрузить тестовый документ","crew_flow.loading":"Загружаю очередь кандидатов...","crew_flow.failed":"Очередь кандидатов не загружена","crew_flow.empty_title":"Кандидатов пока нет","crew_flow.empty_unconnected":"Войдите в аккаунт Skipi, и кандидаты появятся здесь.","crew_flow.empty_live":"Кандидаты появятся, когда на ваш входящий идентификатор придут документы.","crew_flow.address_label":"Входящий адрес","crew_flow.address_absent":"Входящий адрес ещё не выдан. Откройте экран приёма, чтобы его выдать.","crew_flow.address_lost":"Входящий адрес существует и принимает письма, но его значение здесь не хранится и показать его нельзя. Перевыпустите, чтобы получить видимый адрес: прежний перестанет работать тут же.","crew_flow.address_unavailable":"Входящий адрес получить не удалось. Это не «адреса нет»: запрос не прошёл, попробуйте снова.","crew_flow.address_copy":"Копировать","crew_flow.address_copied":"Скопировано","crew_flow.pick_title":"Выберите кандидата","crew_flow.pick_note":"Откройте строку слева, чтобы увидеть записанные сведения, оценки и действия оператора.","crew_flow.facts":"сведения","crew_flow.ranks":"оценки","crew_flow.match_profile_label":"Сравнивать с профилем","crew_flow.match_absent":"оценки против этого профиля нет","crew_flow.match_partial":"исходы распознаны не полностью","crew_flow.name_absent":"имя не указано","crew_flow.match_stale":"сохранённая оценка устарела","crew_flow.match_not_loaded":"оценка ещё не загружена — откройте кандидата","crew_flow.match_no_profile":"профиль пока не выбран","crew_flow.actions":"Действия оператора","crew_flow.save":"В базу моряков","crew_flow.save_again":"Уже в базе","crew_flow.save_again_confirm":"Обновить запись в базе моряков? Новые документы добавятся, дублей не будет.","crew_flow.save_confirm":"Сохранить кандидата в базу моряков? Удалить сохранённого моряка потом нельзя — ни здесь, ни в базе моряков.","crew_flow.saved":"Кандидат сохранён в базе моряков.","crew_flow.save_failed":"Не удалось сохранить","crew_flow.person_unknown":"Личность моряка не установлена — запись может задвоиться.","crew_flow.save_no_name":"Нет имени моряка — сохранить нельзя. Сначала запишите имя в карточке.","crew_flow.save_card_not_loaded":"Карточка не загружена — сохранить пока нельзя. Откройте кандидата заново.","crew_flow.save_web_note":"В веб-версии сохранение появится позже; используйте приложение на компьютере или телефоне.","crew_flow.email":"Написать email","crew_flow.share":"Поделиться предложением","crew_flow.request_docs":"Запросить документы","crew_flow.email_missing":"Адрес не получен: запишите факт email в карточке.","crew_flow.email_not_usable":"Контакт пришёл с откликом, но письмо по нему не готовится — см. «Контакты» в карточке.","crew_flow.email_unknown":"Не удалось получить доставленный контакт — откройте карточку заново, чтобы повторить.","crew_flow.match":"Сопоставить с профилем","crew_flow.ignore":"Игнорировать","crew_flow.later":"Отложить","crew_flow.later_done":"Кандидат отложен.","crew_flow.state_added":"добавлен в базу","crew_flow.state_saved_to_db":"в базе моряков","crew_flow.state_ignored":"игнорирован","crew_flow.state_kept_for_later":"отложен","crew_flow.state_draft_opened":"черновик открыт","crew_flow.state_draft_copied":"черновик скопирован","crew_flow.state_requested_documents":"документы запрошены","crew_flow.state_matched":"сопоставлен с профилями","crew_flow.docs_placed":"Файлов из отклика положено в папку моряка: {n}","crew_flow.docs_none":"Файлов из отклика для папки моряка нет","crew_flow.doc_bin_skipped":"Вложение {n} ({name}): формат не распознан — в папку не положено","crew_flow.docs_too_many":"Слишком много файлов для одного сохранения: {n}, предел 10 — ничего не сохранено","crew_flow.docs_too_large":"Файлы вместе занимают {size}, больше предела 64 МиБ на одно сохранение — ничего не сохранено","crew_flow.doc_download_failed":"Вложение {n} не удалось скачать — ничего не сохранено","common.new":"+ Новая","common.search":"Поиск...","common.settings":"Настройки","common.vault":"Профиль","common.switch_vault":"Сменить профиль","entry.login":"Войти","common.cancel":"Отмена","common.ok":"Подтвердить","confirm.team_remove":"Удалить этого участника команды?","confirm.profile_archive":"Архивировать этот профиль?","confirm.profile_archive_note":"Он перестанет быть доступен для новых вакансий. Уже сделанные снимки по вакансиям останутся в силе.","confirm.mailbox_disconnect":"Отключить этот почтовый ящик и удалить кэшированные письма?","confirm.mailing_close":"Закрыть этот запрос на рассылку?","confirm.mailing_close_note":"Он перестанет появляться в рассылках морякам.","confirm.mailing_delete":"Удалить этот запрос на рассылку навсегда?","confirm.document_delete":"Удалить этот документ?","confirm.document_delete_note":"Файл будет удалён из хранилища.","confirm.vacancy_close":"Закрыть эту вакансию?","confirm.vacancy_close_note":"Она перестанет показываться на публичной доске. Уже поданные заявки и чаты останутся доступны.","confirm.vacancy_delete":"Удалить эту вакансию безвозвратно?","confirm.vacancy_delete_note":"Будут удалены и сама вакансия, и все связанные с ней заявки и сообщения чата. Отменить это нельзя.","confirm.vacancy_delete_hint":"Если нужно просто перестать принимать кандидатов, используйте «Закрыть».","confirm.vault_folder":"После перезапуска Skipi Crewing будет использовать эту папку хранилища:","confirm.vault_folder_note":"Понятное имя папки облегчает её поиск в файловом менеджере.","confirm.remove":"Удалить","confirm.archive":"Архивировать","confirm.disconnect":"Отключить","confirm.delete":"Удалить","confirm.delete_forever":"Удалить навсегда","confirm.close":"Закрыть","confirm.close_request":"Закрыть запрос","confirm.close_vacancy":"Закрыть вакансию","confirm.use_folder":"Использовать эту папку"}};
 function crewTr(key) {
   var lang = getUiLang() === 'ru' ? 'ru' : 'en';
   return CREW_UI_STRINGS[lang][key] || CREW_UI_STRINGS.en[key] || key;
 }
 // Where the pilot's code leaves Crew Flow for another view of the crewing role.
+var crewPendingView = '';
 function crewShowView(v) {
   if (v === 'crew_flow') { roleShowModule('crewflow'); return; }
-  if (v === 'compliance') { roleShowModule('compliance'); return; }
+  if (v === 'compliance' || v === 'new_profile' || v === 'edit_profile') {
+    // The pilot's own branches of showView for the three profile views.
+    if (roleCurrentKey !== 'compliance' || !document.getElementById('crew-main')) { crewPendingView = v; roleShowModule('compliance'); return; }
+    if (pilotIsHostView(crewState.view)) pilotLeave();
+    crewState.view = v;
+    var clp = document.getElementById('crew-left-panel'); if (clp) clp.style.display = '';
+    renderComplianceProfilesTree();
+    if (v === 'new_profile') renderComplianceProfileForm(null);
+    else if (v === 'edit_profile') renderComplianceProfileForm(crewState.selectedComplianceProfile);
+    else if (crewState.selectedComplianceProfile) renderComplianceProfileDetail();
+    else renderComplianceProfilesEmptyMain();
+    return;
+  }
   if (v === 'intake_pilot') {
     crewState.view = 'intake_pilot';
     var lp = document.getElementById('crew-left-panel'); if (lp) lp.style.display = 'none';
@@ -11806,6 +11823,554 @@ function saveCrewFlowReadState() {
   try {
     localStorage.setItem(CREW_FLOW_READ_STATE_KEY, JSON.stringify(crewState.crewFlowReadState || {}));
   } catch(e) {}
+}
+var CREW_TAXONOMY = null;
+var TAXONOMY_CACHE_KEY = 'skipi-taxonomy';
+var TAXONOMY_CACHE_TTL_MS = 60 * 60 * 1000;
+var CREW_TAXONOMY_FALLBACK = {
+  positions: [
+    {id:'master',          label:'Master'},
+    {id:'chief_officer',   label:'Chief Officer'},
+    {id:'second_officer',  label:'Second Officer'},
+    {id:'third_officer',   label:'Third Officer'},
+    {id:'chief_engineer',  label:'Chief Engineer'},
+    {id:'second_engineer', label:'Second Engineer'},
+    {id:'third_engineer',  label:'Third Engineer'},
+    {id:'fourth_engineer', label:'Fourth Engineer'},
+    {id:'eto',             label:'Electro-Technical Officer (ETO)'},
+    {id:'bosun',           label:'Bosun'},
+    {id:'ab',              label:'Able Seaman (AB)'},
+    {id:'os',              label:'Ordinary Seaman (OS)'},
+    {id:'motorman',        label:'Motorman'},
+    {id:'wiper',           label:'Wiper'},
+    {id:'fitter',          label:'Fitter'},
+    {id:'cook',            label:'Cook'},
+    {id:'messman',         label:'Messman / Steward'},
+    {id:'cadet_deck',      label:'Deck Cadet'},
+    {id:'cadet_engine',    label:'Engine Cadet'},
+  ],
+  vessel_types: [
+    {id:'bulk_carrier',    label:'Bulk Carrier'},
+    {id:'general_cargo',   label:'General Cargo / Heavy Lift'},
+    {id:'container',       label:'Container'},
+    {id:'tanker_crude',    label:'Tanker (Crude)'},
+    {id:'tanker_product',  label:'Tanker (Product)'},
+    {id:'tanker_chemical', label:'Tanker (Chemical)'},
+    {id:'lng_carrier',     label:'LNG Carrier'},
+    {id:'lpg_carrier',     label:'LPG Carrier'},
+    {id:'ro_ro',           label:'RoRo'},
+    {id:'reefer',          label:'Reefer'},
+    {id:'offshore',        label:'Offshore'},
+    {id:'cruise',          label:'Cruise'},
+    {id:'ferry',           label:'Ferry'},
+    {id:'tug',             label:'Tug'},
+    {id:'yacht',           label:'Yacht'},
+    {id:'other',           label:'Other'},
+  ],
+  languages: [
+    {id:'en', label:'English', native_label:'English'},
+    {id:'tl', label:'Tagalog', native_label:'Tagalog'},
+    {id:'hi', label:'Hindi', native_label:'हिन्दी'},
+    {id:'id', label:'Indonesian', native_label:'Bahasa Indonesia'},
+  ],
+};
+function taxonomyLabels(kind) {
+  var t = CREW_TAXONOMY || CREW_TAXONOMY_FALLBACK;
+  return (t[kind]||[]).map(function(x){return x.label;});
+}
+function taxonomyItems(kind) {
+  var t = CREW_TAXONOMY || CREW_TAXONOMY_FALLBACK;
+  return t[kind] || [];
+}
+function readTaxonomyCache() {
+  try {
+    var raw = localStorage.getItem(TAXONOMY_CACHE_KEY);
+    if (!raw) return null;
+    var parsed = JSON.parse(raw);
+    if (parsed && parsed.payload) return parsed;
+    return { fetched_at: 0, version: (parsed && parsed.version) || 0, payload: parsed };
+  } catch(e) {
+    return null;
+  }
+}
+function writeTaxonomyCache(data) {
+  try {
+    localStorage.setItem(TAXONOMY_CACHE_KEY, JSON.stringify({
+      fetched_at: Date.now(),
+      version: (data && data.version) || 0,
+      payload: data,
+    }));
+  } catch(e){}
+}
+function crewApiBaseCandidates() {
+  var configured = (crewState.settings && crewState.settings.server_url ? crewState.settings.server_url : '').replace(/\/$/,'').trim();
+  if (!configured || configured === 'https://api.skipi.app' || configured === 'https://api-ru.skipi.app') {
+    return ['https://api-ru.skipi.app', 'https://api.skipi.app'];
+  }
+  return [configured];
+}
+async function crewLoadTaxonomy() {
+  // Cache-first from localStorage so the form opens instantly even if
+  // the server is slow. The full /api/catalogs payload is cached for
+  // future cert-matrix work, but not used by current document flows.
+  var cached = readTaxonomyCache();
+  if (cached && cached.payload) CREW_TAXONOMY = cached.payload;
+  if (cached && cached.fetched_at && Date.now() - cached.fetched_at < TAXONOMY_CACHE_TTL_MS) return;
+
+  var bases = crewApiBaseCandidates();
+  var paths = ['/api/catalogs', '/api/taxonomy'];
+  for (var b = 0; b < bases.length; b++) {
+    for (var i = 0; i < paths.length; i++) {
+      try {
+        var resp = await fetch(bases[b] + paths[i]);
+        if (resp.ok) {
+          var data = await resp.json();
+          if (data && data.positions && data.vessel_types) {
+            CREW_TAXONOMY = data;
+            writeTaxonomyCache(data);
+            return;
+          }
+        }
+      } catch(e){}
+    }
+  }
+}
+function val(id){ var el=document.getElementById(id); return el ? (el.value||'').trim() : ''; }
+// ------------- compliance profiles -------------
+function certCatalog() {
+  var t = CREW_TAXONOMY || CREW_TAXONOMY_FALLBACK || {};
+  return Array.isArray(t.certs) ? t.certs : [];
+}
+
+function certsByCategory() {
+  var by = {};
+  certCatalog().forEach(function(c){
+    var cat = c.category || 'Other';
+    if (!by[cat]) by[cat] = [];
+    by[cat].push(c);
+  });
+  return by;
+}
+
+function profileMandatoryCount(p) {
+  return ((p && p.mandatory_certs) || []).length;
+}
+
+function profileExtrasCount(p) {
+  return ((p && p.extra_requirements) || []).length;
+}
+
+function profileUsageCount(profileId) {
+  if (!profileId) return 0;
+  return (crewState.vacancies || []).filter(function(v){
+    var snap = v.compliance_profile_snapshot || {};
+    return v.compliance_profile_id === profileId || snap.id === profileId;
+  }).length;
+}
+
+function activeComplianceProfiles() {
+  return (crewState.complianceProfiles || []).filter(function(p){ return p.status === 'active'; });
+}
+
+async function refreshComplianceProfiles(includeArchived) {
+  crewState.complianceProfiles = await invoke('fetch_compliance_profiles', { includeArchived: !!includeArchived });
+  crewState.complianceProfilesLoaded = true;
+  if (crewState.selectedComplianceProfile) {
+    var same = crewState.complianceProfiles.find(function(p){ return p.id === crewState.selectedComplianceProfile.id; });
+    if (same) crewState.selectedComplianceProfile = same;
+  }
+}
+
+async function renderComplianceProfilesTree(opts) {
+  opts = opts || {};
+  var force = opts.force === true;
+  var lp = document.getElementById('crew-left-panel');
+  lp.innerHTML =
+    '<div class="panel-header"><span class="title">'+crewTr('left.compliance')+'</span>'
+    + '<span class="actions"><button onclick="crewShowView(\'new_profile\')" style="padding:4px 10px;font-size:11px;">'+crewTr('common.new')+'</button></span>'
+    + '</div>'
+    + '<div class="panel-search"><label style="display:flex;align-items:center;gap:7px;margin:0;color:var(--text);font-size:12px;">'
+    + '<input type="checkbox" id="cp-include-archived" '+(crewState.includeArchivedProfiles?'checked':'')+' onchange="crewState.includeArchivedProfiles=this.checked;crewState.complianceProfilesLoaded=false;renderComplianceProfilesTree({force:true});renderComplianceProfilesEmptyMain();"> '
+    + 'Показывать архив</label></div>'
+    + '<div class="panel-tree" id="crew-panel-tree">'
+    + (crewState.complianceProfilesLoaded ? '' : '<div class="tree-empty">Loading...</div>')
+    + '</div>';
+
+  if (crewState.complianceProfilesLoaded) renderComplianceProfilesTreeBody();
+  if (!force && crewState.complianceProfilesLoaded) return;
+
+  try {
+    await refreshComplianceProfiles(crewState.includeArchivedProfiles);
+  } catch(e) {
+    document.getElementById('crew-panel-tree').innerHTML =
+      '<div class="tree-empty" style="color:var(--err);">Load failed: '+escapeHtml(''+e)+'</div>';
+    return;
+  }
+  renderComplianceProfilesTreeBody();
+}
+
+function renderComplianceProfilesTreeBody() {
+  var tree = document.getElementById('crew-panel-tree');
+  if (!tree) return;
+  var profiles = crewState.complianceProfiles || [];
+  if (!profiles.length) {
+    tree.innerHTML = '<div class="tree-empty">Профилей пока нет.<br><br><button onclick="crewShowView(\'new_profile\')">'+crewTr('common.new')+'</button></div>';
+    return;
+  }
+  var html = '';
+  profiles.forEach(function(p){
+    var isActive = crewState.selectedComplianceProfile && crewState.selectedComplianceProfile.id === p.id;
+    var archived = p.status === 'archived';
+    html += '<div class="tree-item'+(isActive?' active':'')+'" onclick="openComplianceProfileById(\''+escapeAttr(escapeJsString(p.id))+'\')">';
+    html += '<span style="font-size:12px;color:var(--text2);">'+(archived?'□':'▣')+'</span>';
+    html += '<div class="ti-title"><div>'+escapeHtml(p.name||'Untitled')+'</div>';
+    html += '<div class="ti-meta">'+(p.rank ? escapeHtml(p.rank)+' · ' : '')+profileMandatoryCount(p)+' conv reqs · '+profileExtrasCount(p)+' extras · used in '+profileUsageCount(p)+'</div>';
+    if (archived) html += '<div class="ti-meta" style="color:var(--warn);">archived</div>';
+    html += '</div></div>';
+  });
+  tree.innerHTML = html;
+}
+
+function openComplianceProfileById(id) {
+  var p = (crewState.complianceProfiles || []).find(function(x){ return x.id === id; });
+  if (!p) return;
+  crewState.selectedComplianceProfile = p;
+  crewShowView('compliance');
+}
+
+function renderComplianceProfilesEmptyMain() {
+  var m = document.getElementById('crew-main');
+  m.innerHTML = '<h1>Профиль соответствия</h1>'
+    + '<div class="sub">Переиспользуемые шаблоны требований к кандидату. Кандидаты из Crew Flow сравниваются с этими профилями; оценка хранится в карточке кандидата.</div>'
+    + '<div class="card">'
+    + '<h3 style="margin-top:0;">Как это используется</h3>'
+    + '<div style="line-height:1.55;color:var(--text2);">'
+    + 'Создайте профиль один раз: обязательные сертификаты как hard gate и дополнительные требования с весом. '
+    + 'После этого откройте кандидата в Crew Flow и нажмите «Сопоставить с профилем» — сравнение сохранится в его карточке. Без профилей Crew Flow работает, но сравнивать будет не с чем.'
+    + '</div><br><button onclick="crewShowView(\'new_profile\')">+ Новый профиль</button></div>';
+}
+
+function renderMandatoryCertList(ids) {
+  ids = ids || [];
+  if (!ids.length) return '<div style="color:var(--text2);font-style:italic;">No mandatory certificates selected.</div>';
+  return '<ul style="margin:8px 0 0 18px;padding:0;">'
+    + ids.map(function(id){ return '<li>'+escapeHtml(certLabelById(id))+' <code style="color:var(--text2);">'+escapeHtml(id)+'</code></li>'; }).join('')
+    + '</ul>';
+}
+
+function renderExtrasList(extras) {
+  extras = extras || [];
+  if (!extras.length) return '<div style="color:var(--text2);font-style:italic;">No extra requirements.</div>';
+  return '<div style="display:grid;gap:8px;margin-top:8px;">'
+    + extras.map(function(x){
+        return '<div style="padding:8px 10px;background:var(--panel2);border:1px solid var(--border);border-radius:6px;">'
+          + '<div style="display:flex;justify-content:space-between;gap:8px;"><strong>'+escapeHtml(x.label||x.id||'Requirement')+'</strong><span class="tag">'+escapeHtml(x.category||'other')+' · weight '+escapeHtml(String(x.weight||1))+'</span></div>'
+          + (x.description?'<div style="color:var(--text2);font-size:12px;margin-top:4px;">'+escapeHtml(x.description)+'</div>':'')
+          + '<div style="color:var(--text2);font-size:11px;margin-top:4px;"><code>'+escapeHtml(x.id||'')+'</code></div>'
+          + '</div>';
+      }).join('')
+    + '</div>';
+}
+
+function renderComplianceProfileDetail() {
+  var m = document.getElementById('crew-main');
+  var p = crewState.selectedComplianceProfile;
+  if (!p) { renderComplianceProfilesEmptyMain(); return; }
+  var archived = p.status === 'archived';
+  var statusBadge = archived
+    ? '<span class="tag" style="background:rgba(245,158,11,0.16);color:var(--warn);">archived</span>'
+    : '<span class="tag ok">active</span>';
+  // The publication badge is SEPARATE from the status badge, and that is the
+  // product saying out loud what the server says in its schema: "active" is
+  // whether this agency still compares candidates against the profile,
+  // "published" is whether the outside world may see it. One badge for both
+  // would be the same mistake as one column for both.
+  statusBadge += ' ' + (profileIsPublished(p)
+    ? '<span class="tag ok" data-qa="profile-publication-state">'+escapeHtml(crewTr('profile.published'))+'</span>'
+    : '<span class="tag" data-qa="profile-publication-state">'+escapeHtml(crewTr('profile.unpublished'))+'</span>');
+  m.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">'
+    + '<div><h1>'+escapeHtml(p.name||'Untitled')+' '+statusBadge+'</h1>'
+    + '<div class="sub"><code>'+escapeHtml(p.id)+'</code> · '+escapeHtml(crewTr('compliance.usage_prefix'))+' '+profileUsageCount(p.id)+'</div></div>'
+    + '<div style="display:flex;gap:8px;">'
+    + '<button class="ghost" onclick="crewShowView(\'edit_profile\')">Edit</button>'
+    + (archived ? '' : profilePublishButtonHtml(p))
+    + (archived
+        ? '<button onclick="restoreComplianceProfile(\''+escapeAttr(escapeJsString(p.id))+'\')">Restore</button>'
+        : '<button class="ghost" onclick="archiveComplianceProfile(\''+escapeAttr(escapeJsString(p.id))+'\')">Archive</button>')
+    + '</div></div>'
+    + '<div class="card">'
+    + '<div class="row"><div><label>Rank</label><div style="font-size:18px;font-weight:700;">'+escapeHtml(p.rank||'Any')+'</div></div>'
+    + '<div><label>'+escapeHtml(crewTr('profile.vessel_type'))+'</label><div style="font-size:18px;font-weight:700;" data-qa="profile-vessel-type">'+escapeHtml(p.vessel_type||crewTr('profile.vessel_type_any'))+'</div></div></div>'
+    + '<div class="row"><div><label>Mandatory certificates</label><div style="font-size:18px;font-weight:700;">'+profileMandatoryCount(p)+'</div></div>'
+    + '<div><label>'+escapeHtml(crewTr('profile.snapshot_version'))+'</label><div style="font-size:18px;font-weight:700;" data-qa="profile-published-version">'+escapeHtml(profilePublishedVersion(p))+'</div></div></div>'
+    + '<div class="row"><div><label>Extra requirements</label><div style="font-size:18px;font-weight:700;">'+profileExtrasCount(p)+'</div></div>'
+    + '<div><label>Scope</label><div style="font-size:18px;font-weight:700;">Demo rank filter</div></div></div>'
+    + (p.description?'<div class="row full"><div><label>Description</label><div style="white-space:pre-wrap;">'+escapeHtml(p.description)+'</div></div></div>':'')
+    + '<details open><summary style="cursor:pointer;font-weight:700;">Mandatory</summary>'+renderMandatoryCertList(p.mandatory_certs||[])+'</details>'
+    + '<details open style="margin-top:14px;"><summary style="cursor:pointer;font-weight:700;">Extras</summary>'+renderExtrasList(p.extra_requirements||[])+'</details>'
+    + '<div style="margin-top:16px;color:var(--text2);font-size:12px;">Match-% per application will appear here after the seafarer client starts reporting local scores.</div>'
+    + '<div style="margin-top:8px;color:var(--text2);font-size:12px;" data-qa="profile-publish-hint">'+escapeHtml(crewTr('profile.publish_hint'))+'</div>'
+    + '</div>'
+    // No.632: WHO was chosen for this profile, under the requirements that
+    // decide it. Its own host element, so a list refresh repaints the list and
+    // not the requirements the operator is reading.
+    + '<div id="profile-shortlist-host">'+profileShortlistHostHtml()+'</div>';
+  profileShortlistEnsure(p.id);
+}
+
+// ------------------------- P2/S1: one button, two operations -------------------------
+//
+// Publication lives on the pilot matching-profile surface, because that is the
+// surface that owns the version and the frozen snapshot. The legacy template
+// routes this screen otherwise uses know nothing about either.
+
+function profileIsPublished(p) {
+  return !!p && String(p.publication_state || 'unpublished') === 'published';
+}
+
+function profilePublishedVersion(p) {
+  var snapshot = p && p.published_snapshot;
+  if (!snapshot || snapshot.version == null) return '—';
+  return String(snapshot.version);
+}
+
+function profilePublishButtonHtml(p) {
+  var published = profileIsPublished(p);
+  var label = published ? crewTr('profile.unpublish') : crewTr('profile.publish');
+  return '<button data-qa="profile-publish-button"'+(published ? ' class="ghost"' : '')
+    + ' onclick="publishComplianceProfile(\''+escapeAttr(escapeJsString(p.id))+'\','+(published ? 'false' : 'true')+')">'
+    + escapeHtml(label)+'</button>';
+}
+
+// The two refusal WORDS the server can answer with, mapped to what the
+// operator should do about them. Read before the generic error text, exactly
+// as the candidate card reads its domain codes first.
+var PROFILE_PUBLISH_REFUSALS = {
+  'publication needs a rank on the profile': 'profile.publish_needs_rank',
+  'publication needs a vessel type on the profile': 'profile.publish_needs_vessel_type',
+};
+
+async function publishComplianceProfile(profileId, publish) {
+  var context = pilotContextSnapshot();
+  if (!pilotContextReady(context)) { showToast(crewTr('profile.publish_not_connected'), 'error'); return; }
+  try {
+    var saved = await invoke('crewing_intake_matching_profile_publication',
+      Object.assign(pilotExpected(context), { profileId: profileId, published: !!publish }));
+    // The publication route answers on the MATCHING surface, which carries
+    // fields the legacy list does not. Merge rather than replace, so the card
+    // keeps the description and the extras it already had.
+    var current = crewState.selectedComplianceProfile || {};
+    if (saved && saved.id === profileId) {
+      crewState.selectedComplianceProfile = Object.assign({}, current, {
+        rank: saved.rank == null ? current.rank : saved.rank,
+        vessel_type: saved.vessel_type == null ? current.vessel_type : saved.vessel_type,
+        publication_state: saved.publication_state,
+        published_snapshot: saved.published_snapshot,
+      });
+    }
+    crewState.complianceProfilesLoaded = false;
+    await renderComplianceProfilesTree({force:true});
+    crewShowView('compliance');
+    showToast(crewTr(publish ? 'profile.published_ok' : 'profile.unpublished_ok'), 'success');
+  } catch(error) {
+    var err = (error && typeof error === 'object') ? error : {};
+    var key = PROFILE_PUBLISH_REFUSALS[err.detail];
+    showToast(key ? crewTr(key) : (crewTr('profile.publish_failed')+': '+(err.detail || err.kind || error)), 'error');
+  }
+}
+
+function certCheckboxesHtml(selected, readonly) {
+  selected = selected || [];
+  var selectedMap = {};
+  selected.forEach(function(id){ selectedMap[id] = true; });
+  var byCat = certsByCategory();
+  var cats = Object.keys(byCat).sort();
+  if (!cats.length) {
+    return '<div style="color:var(--warn);">Certificate catalog is not loaded. Check connection and reopen this screen.</div>';
+  }
+  return '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;">'
+    + cats.map(function(cat){
+        return '<details open style="background:var(--panel2);border:1px solid var(--border);border-radius:6px;padding:8px;">'
+          + '<summary style="cursor:pointer;font-weight:700;font-size:12px;color:var(--text2);">'+escapeHtml(cat)+' · '+byCat[cat].length+'</summary>'
+          + byCat[cat].map(function(c){
+              return '<label style="display:flex;align-items:flex-start;gap:7px;margin-top:7px;color:var(--text);font-size:12px;line-height:1.35;">'
+                + '<input type="checkbox" data-cp-cert="1" value="'+escapeAttr(c.id)+'" '+(selectedMap[c.id]?'checked':'')+' '+(readonly?'disabled':'')+'>'
+                + '<span>'+escapeHtml(c.label||c.id)+'<br><code style="color:var(--text2);">'+escapeHtml(c.id)+'</code></span>'
+                + '</label>';
+            }).join('')
+          + '</details>';
+      }).join('')
+    + '</div>';
+}
+
+function slugifyRequirement(value) {
+  return String(value||'').toLowerCase().trim()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 80);
+}
+
+function renderProfileExtras(extras, readonly) {
+  extras = extras || [];
+  var host = document.getElementById('cp-extras');
+  if (!host) return;
+  if (!extras.length) extras = [];
+  host.innerHTML = extras.map(function(x, i){
+    return '<div class="card" data-extra-row="'+i+'" style="background:var(--panel2);padding:12px;margin-bottom:8px;">'
+      + '<div class="row"><div><label>Label</label><input type="text" class="x-label" value="'+escapeAttr(x.label||'')+'" '+(readonly?'disabled':'')+' oninput="profileExtraAutoslug(this)"></div>'
+      + '<div><label>ID</label><input type="text" class="x-id" value="'+escapeAttr(x.id||'')+'" '+(readonly?'disabled':'')+' placeholder="snake_case"></div></div>'
+      + '<div class="row"><div><label>Category</label><select class="x-cat" '+(readonly?'disabled':'')+'>'
+      + ['visa','training','endorsement','test','equipment','other'].map(function(c){ return '<option value="'+c+'" '+((x.category||'other')===c?'selected':'')+'>'+c+'</option>'; }).join('')
+      + '</select></div>'
+      + '<div><label>Weight</label><input type="number" class="x-weight" min="1" max="10" value="'+escapeAttr(String(x.weight||1))+'" '+(readonly?'disabled':'')+'></div></div>'
+      + '<div class="row full"><div><label>Description</label><textarea class="x-desc" '+(readonly?'disabled':'')+'>'+escapeHtml(x.description||'')+'</textarea></div></div>'
+      + (readonly?'':'<div style="display:flex;justify-content:flex-end;"><button class="ghost" onclick="profileRemoveExtra('+i+')" style="padding:5px 10px;font-size:12px;">Remove</button></div>')
+      + '</div>';
+  }).join('') || '<div style="color:var(--text2);font-size:12px;">No extra requirements yet.</div>';
+}
+
+function currentProfileExtrasFromDom() {
+  return Array.prototype.slice.call(document.querySelectorAll('#cp-extras [data-extra-row]')).map(function(row){
+    return {
+      id: (row.querySelector('.x-id') && row.querySelector('.x-id').value || '').trim(),
+      label: (row.querySelector('.x-label') && row.querySelector('.x-label').value || '').trim(),
+      weight: Math.max(1, Math.min(10, parseInt(row.querySelector('.x-weight').value || '1', 10) || 1)),
+      category: (row.querySelector('.x-cat') && row.querySelector('.x-cat').value || 'other').trim(),
+      description: (row.querySelector('.x-desc') && row.querySelector('.x-desc').value || '').trim(),
+    };
+  }).filter(function(x){ return x.label || x.id; }).map(function(x){
+    if (!x.id) x.id = slugifyRequirement(x.label);
+    if (!x.description) x.description = null;
+    return x;
+  });
+}
+
+function profileExtraAutoslug(input) {
+  var row = input.closest('[data-extra-row]');
+  if (!row) return;
+  var id = row.querySelector('.x-id');
+  if (id && !id.value.trim()) id.value = slugifyRequirement(input.value);
+}
+
+function profileAddExtra() {
+  var extras = currentProfileExtrasFromDom();
+  extras.push({id:'', label:'', weight:1, category:'other', description:''});
+  renderProfileExtras(extras, false);
+}
+
+function profileRemoveExtra(idx) {
+  var extras = currentProfileExtrasFromDom();
+  extras.splice(idx, 1);
+  renderProfileExtras(extras, false);
+}
+
+// P2/S1. The vessel type is picked from the fleet taxonomy, NOT typed by hand:
+// the server matches a profile's vessel type against a candidate's, and two
+// spellings of the same ship are a silent no-match. A value a profile already
+// carries that the table cannot place is kept as its own option rather than
+// dropped — renaming somebody's data behind their back is worse than an odd
+// entry in a list. The longest label here is 26 characters against a
+// VARCHAR(64) column, so what this control can produce always fits.
+function profileVesselTypeSelectHtml(current, readonly) {
+  var value = String(current == null ? '' : current).trim();
+  var labels = taxonomyLabels('vessel_types') || [];
+  if (value && labels.indexOf(value) === -1) labels = [value].concat(labels);
+  return '<select id="cp-vessel-type" '+(readonly?'disabled':'')+'>'
+    + '<option value="">'+escapeHtml(crewTr('profile.vessel_type_any'))+'</option>'
+    + labels.map(function(label){
+        return '<option value="'+escapeAttr(label)+'" '+(label === value ? 'selected' : '')+'>'+escapeHtml(label)+'</option>';
+      }).join('')
+    + '</select>';
+}
+
+function renderComplianceProfileForm(profile) {
+  var m = document.getElementById('crew-main');
+  var editing = !!profile;
+  var readonly = !!(profile && profile.status === 'archived');
+  var title = editing ? 'Редактировать профиль соответствия' : 'Новый профиль соответствия';
+  m.innerHTML = '<h1>'+title+'</h1>'
+    + '<div class="sub">Выберите обязательные документы и дополнительные требования. Уже сохранённые сравнения кандидатов сами не пересчитываются — нажмите «Сопоставить с профилем» в карточке кандидата.</div>'
+    + '<div class="card">'
+    + '<div class="row full"><div><label>Name*</label><input type="text" id="cp-name" maxlength="200" value="'+escapeAttr(profile&&profile.name||'')+'" '+(readonly?'disabled':'')+' placeholder="Greek BC-180k Master"></div></div>'
+    + '<div class="row full"><div><label>Rank</label><input type="text" id="cp-rank" maxlength="64" value="'+escapeAttr(profile&&profile.rank||'')+'" '+(readonly?'disabled':'')+' placeholder="Captain"></div></div>'
+    + '<div class="row full"><div><label>'+escapeHtml(crewTr('profile.vessel_type'))+'</label>'
+    + profileVesselTypeSelectHtml(profile&&profile.vessel_type||'', readonly)+'</div></div>'
+    + '<div class="row full"><div><label>Description</label><textarea id="cp-desc" maxlength="2000" '+(readonly?'disabled':'')+' placeholder="Internal comment">'+escapeHtml(profile&&profile.description||'')+'</textarea></div></div>'
+    + '<h3 style="margin:16px 0 8px;">Mandatory certs</h3>'
+    + '<div style="color:var(--text2);font-size:12px;margin-bottom:8px;">Missing any mandatory item will later make the seafarer match fail locally.</div>'
+    + certCheckboxesHtml((profile&&profile.mandatory_certs)||[], readonly)
+    + '<h3 style="margin:18px 0 8px;">Extra requirements</h3>'
+    + '<div id="cp-extras"></div>'
+    + (readonly?'':'<button class="ghost" onclick="profileAddExtra()" style="margin:4px 0 16px;">+ Add requirement</button>')
+    + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">'
+    + '<button class="ghost" onclick="crewShowView(\'compliance\')">Cancel</button>'
+    + (readonly
+        ? '<button onclick="restoreComplianceProfile(\''+escapeAttr(escapeJsString(profile.id))+'\')">Restore</button>'
+        : '<button onclick="saveComplianceProfile('+(editing?'\''+escapeAttr(escapeJsString(profile.id))+'\'':'null')+')">Save</button>')
+    + '</div></div>';
+  renderProfileExtras((profile&&profile.extra_requirements)||[], readonly);
+}
+
+async function saveComplianceProfile(profileId) {
+  var name = val('cp-name');
+  if (!name) { showToast('Profile name is required.', 'error'); return; }
+  var mandatory = Array.prototype.slice.call(document.querySelectorAll('input[data-cp-cert]:checked')).map(function(cb){ return cb.value; });
+  var extras = currentProfileExtrasFromDom();
+  for (var i=0; i<extras.length; i++) {
+    if (!extras[i].id || !extras[i].label) {
+      showToast('Every extra requirement needs label and id.', 'error');
+      return;
+    }
+  }
+  var draft = {
+    name: name,
+    rank: val('cp-rank') || null,
+    vessel_type: val('cp-vessel-type') || null,
+    description: val('cp-desc') || '',
+    mandatory_certs: mandatory,
+    extra_requirements: extras,
+  };
+  try {
+    var saved = profileId
+      ? await invoke('update_compliance_profile', { profileId: profileId, draft: draft })
+      : await invoke('create_compliance_profile', { draft: draft });
+    crewState.selectedComplianceProfile = saved;
+    crewState.complianceProfilesLoaded = false;
+    await renderComplianceProfilesTree({force:true});
+    crewShowView('compliance');
+    showToast('Compliance profile saved', 'success');
+  } catch(e) {
+    showToast('Save failed: '+e, 'error');
+  }
+}
+
+async function archiveComplianceProfile(profileId) {
+  var ok = await inAppConfirm(crewTr('confirm.profile_archive')+'\n\n'+crewTr('confirm.profile_archive_note'), {confirmLabel:crewTr('confirm.archive')});
+  if (!ok) return;
+  try {
+    var saved = await invoke('archive_compliance_profile', { profileId: profileId });
+    crewState.selectedComplianceProfile = saved;
+    crewState.complianceProfilesLoaded = false;
+    crewState.includeArchivedProfiles = true;
+    await renderComplianceProfilesTree({force:true});
+    crewShowView('compliance');
+    showToast('Profile archived', 'success');
+  } catch(e) {
+    showToast('Archive failed: '+e, 'error');
+  }
+}
+
+async function restoreComplianceProfile(profileId) {
+  try {
+    var saved = await invoke('update_compliance_profile', { profileId: profileId, draft: { status: 'active' } });
+    crewState.selectedComplianceProfile = saved;
+    crewState.complianceProfilesLoaded = false;
+    await renderComplianceProfilesTree({force:true});
+    crewShowView('compliance');
+    showToast('Profile restored', 'success');
+  } catch(e) {
+    showToast('Restore failed: '+e, 'error');
+  }
 }
 // CREW FLOW MODULE START
 function crewFlowSignalFixtures() {
@@ -17417,21 +17982,20 @@ function crewShellNote(text,detail,retry){
     var ru=getUiLang()==='ru';
     main.innerHTML='<div class="empty-state" data-qa="crew-shell-note"><div>'+escapeHtml(text)+'</div>'
       +(detail?'<div class="sub" style="margin-top:6px;">'+escapeHtml(detail)+'</div>':'')
-      +(retry?'<div style="margin-top:12px;"><button type="button" onclick="crewFlowMount()">'+escapeHtml(ru?'Повторить':'Retry')+'</button></div>':'')+'</div>';
+      +(retry?'<div style="margin-top:12px;"><button type="button" onclick="crewModuleMount()">'+escapeHtml(ru?'Повторить':'Retry')+'</button></div>':'')+'</div>';
 }
 var crewConnecting=false;
-// Mount Crew Flow: name the workspace through the one Skipi sign-in, then hand the two
-// panels to the pilot's own renderers.
-async function crewFlowMount(){
+// Name the workspace through the one Skipi sign-in (once per sign-in) and draw the two panels.
+// Returns true when the pilot's renderers may take over.
+async function crewShellReady(key){
     var host=document.getElementById('scr-content');
-    if(!host)return;
+    if(!host)return false;
     if(!host.querySelector('.crew-shell'))host.innerHTML=crewShellHtml();
     if(host.parentElement)host.parentElement.classList.add('crew-host');
     initLeftPanelResizer();
-    crewState.view='crew_flow';
     var lp=document.getElementById('crew-left-panel'); if(lp)lp.style.display='';
     if(!crewState.settings){
-        if(crewConnecting)return;
+        if(crewConnecting)return false;
         crewConnecting=true;
         crewShellNote(getUiLang()==='ru'?'Подключаюсь к рабочему месту…':'Connecting to the workspace…');
         try{
@@ -17440,24 +18004,42 @@ async function crewFlowMount(){
         }catch(e){
             crewConnecting=false;
             logError('crewing_connection',e);
-            if(roleCurrentKey==='crewflow')crewShellNote(crewFlowErrorText(e),String((e&&e.detail)||''),true);
-            return;
+            if(roleCurrentKey===key)crewShellNote(crewFlowErrorText(e),String((e&&e.detail)||''),true);
+            return false;
         }
         crewConnecting=false;
+        try{ await crewLoadTaxonomy(); }catch(_){}
     }
-    if(roleCurrentKey!=='crewflow'||crewState.view!=='crew_flow')return;
+    return roleCurrentKey===key;
+}
+// Mount Crew Flow: hand the two panels to the pilot's own renderers.
+async function crewFlowMount(){
+    crewState.view='crew_flow';
+    if(!(await crewShellReady('crewflow'))||crewState.view!=='crew_flow')return;
     renderCrewFlowView();
+}
+// Mount Compliance Profile the same way (list on the left, profile or form on the right).
+async function crewComplianceMount(){
+    if(pilotIsHostView(crewState.view))pilotLeave();
+    var v=crewPendingView||'compliance'; crewPendingView='';
+    crewState.view=v;
+    if(!(await crewShellReady('compliance'))||crewState.view!==v)return;
+    crewShowView(v);
+}
+function crewModuleMount(){
+    if(roleCurrentKey==='compliance')return crewComplianceMount();
+    return crewFlowMount();
 }
 // Leaving Crew Flow (another tab, sign-out, another account): loads in flight are dropped.
 function crewFlowLeave(forget){
     if(pilotIsHostView(crewState.view))pilotLeave();
     crewState.view='';
     var ed=document.querySelector('.editor.crew-host'); if(ed)ed.classList.remove('crew-host');
-    if(forget){ crewState.settings=null; crewState.selectedCrewFlowSignal=null; }
+    if(forget){ crewState.settings=null; crewState.selectedCrewFlowSignal=null; crewState.complianceProfiles=[]; crewState.complianceProfilesLoaded=false; crewState.selectedComplianceProfile=null; }
 }
 // ===== CREWING PILOT MODULES END =======================================================
 // What a role module without an existing view shows: its live screen, or the honest stub.
-function roleModuleHtml(m){ return (m.live==='crewflow'&&!shouldUseMobileShell())?crewShellHtml():roleStubHtml(m); }
+function roleModuleHtml(m){ return (m.live&&!shouldUseMobileShell())?crewShellHtml():roleStubHtml(m); }
 var roleCurrentKey='';
 // Desktop: swap the seafarer tabs for the role's tabs (or back, when a seafarer cache opens).
 function roleShellApply(){
@@ -17482,7 +18064,7 @@ function roleShowModule(k){
     var m=roleModule(k);
     if(!m)return;
     roleCurrentKey=k;
-    if(m.live!=='crewflow')crewFlowLeave(false);
+    if(!m.live)crewFlowLeave(false);
     if(shouldUseMobileShell()){
         if(m.view){ mobileShow(m.view); }
         else { roleStubKey=k; mobileShow('rolestub'); }
@@ -17497,7 +18079,7 @@ function roleShowModule(k){
     }
     var tab=document.getElementById('mt-role-'+k);
     if(tab)tab.classList.add('active');
-    if(m.live==='crewflow')crewFlowMount();
+    if(m.live)crewModuleMount();
 }
 // First screen of a role cache: the first module of the role.
 function roleOpenDefault(){

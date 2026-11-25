@@ -275,6 +275,10 @@ pub fn run() {
             commands::crewing_intake::crewing_intake_open_saved,
             commands::crewing_intake::crewing_customer_letter_prepare,
             commands::crewing_contact::open_mailto,
+            commands::crewing_compliance::fetch_compliance_profiles,
+            commands::crewing_compliance::create_compliance_profile,
+            commands::crewing_compliance::update_compliance_profile,
+            commands::crewing_compliance::archive_compliance_profile,
             // In-app account deletion (App Store 5.1.1(v))
             account_delete::delete_account,
             // CV

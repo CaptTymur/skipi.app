@@ -4,6 +4,7 @@ pub mod ai;
 pub mod app_login;
 pub mod assistant;
 pub mod crewing;
+pub mod crewing_compliance;
 pub mod crewing_contact;
 pub mod crewing_intake;
 pub mod cv_commands;

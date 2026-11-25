@@ -57,6 +57,22 @@ for (const role of ['crewing', 'broker']) {
   assert.equal(share({ met: 7, missing: 2, unconfirmed: 1, total: 10, stale: true }).pct, null);
   assert.equal(share({ met: 7, missing: 2, unconfirmed: 0, total: 10 }).pct, null);
   assert.equal(share({ met: 0, missing: 0, unconfirmed: 0, total: 0 }).pct, null);
+  // Compliance Profile is the pilot's module too (second in the owner's order): the list of the
+  // workspace's profiles on the left, a profile or its form on the right.
+  const compliance = Array.from(ctx.ROLE_MODULES.crewing).find((x) => x.k === 'compliance');
+  assert.equal(compliance.live, 'compliance');
+  for (const fn of ['renderComplianceProfilesTree', 'renderComplianceProfileDetail', 'renderComplianceProfileForm', 'saveComplianceProfile', 'publishComplianceProfile', 'crewComplianceMount']) {
+    assert.ok(new RegExp('\\nfunction ' + fn + '\\(|\\nasync function ' + fn + '\\(').test(html), `${fn} is present`);
+  }
+  const comp = fs.readFileSync(new URL('../src-tauri/src/commands/crewing_compliance.rs', import.meta.url), 'utf8');
+  for (const c of ['fetch_compliance_profiles', 'create_compliance_profile', 'update_compliance_profile', 'archive_compliance_profile']) {
+    assert.ok(new RegExp('commands::crewing_compliance::' + c + ',').test(lib), `${c} is registered`);
+    assert.ok(new RegExp('pub async fn ' + c + '\\(').test(comp), `${c} keeps the HTTP call off the UI thread`);
+  }
+  assert.ok(/crewing::live_connection\(state\)/.test(comp), 'profiles are read through the one Skipi sign-in');
+  // The pilot drew its list into #panel-tree — an id this page already owns in its own left panel.
+  assert.ok(!/getElementById\('panel-tree'\)/.test(html.slice(html.indexOf('CREWING PILOT MODULES START'), html.indexOf('CREWING PILOT MODULES END'))), 'the carried-over code never draws into this page\'s own panel');
+  assert.ok(!/invoke\('fetch_my_vacancies'/.test(html), 'the vacancies module is not asked for');
   // Modules not carried over yet answer in words; no command without a Rust side is called.
   assert.ok(!/invoke\('save_seafarer_from_bundle'/.test(html) && !/invoke\('rank_compliance_candidate'/.test(html), 'no call into a module that is not here yet');
 }
