@@ -201,7 +201,7 @@ console.log('backend context rejection blocks sync and web never requests native
     // requiredDocumentSummary() asks the security-coverage predicate (№902-b) since it was added; load it with
     // its table so this counter fixture runs the real code instead of crashing on a missing name.
     vm.runInContext((html.match(/var SECURITY_COVERAGE\s*=[^;]*;/)||[''])[0],counter);
-    for(const name of ['securityCoveringIds','securityCoveringDoc','docNotApplicable','securityCoveredByAttached','isActiveTemplateId','isActiveRequiredDoc','mobileDocHasAttachedFile','requiredDocumentSummary','mobileCompletenessPercent','mobileStats','docMatchesTreeFilter','docFilterCount']){
+    for(const name of ['securityCoveringIds','securityCoveringDoc','securityCoveredByAttached','isActiveTemplateId','isActiveRequiredDoc','mobileDocHasAttachedFile','requiredDocumentSummary','mobileCompletenessPercent','mobileStats','docMatchesTreeFilter','docFilterCount']){
         const start=html.indexOf('function '+name+'(');if(start<0)continue;
         const end=html.indexOf('\nfunction ',start+1);vm.runInContext(html.slice(start,end).split('\nvar ')[0],counter);
     }
@@ -238,7 +238,7 @@ for(const language of ['en','ru'])for(const scenario of ['empty-duplicates','abs
     const mobile={allDocs:rows,activeTemplateIds:['passport'],activeTemplateIdSet:{passport:true},activeTemplateIdsLoaded:scenario!=='unknown',mobileDocsFilter:'missing',mobileDocsSearch:'',isOptionalCategory:()=>false,classify:()=> 'none',docStatusRank:()=>0,mobileSetupText:(en,ru)=>language==='ru'?ru:en,mobileEsc:String,jsString:String,mobileDocRow:d=>'<span data-doc="'+d.id+'"></span>'};
     vm.createContext(mobile);
     vm.runInContext((html.match(/var SECURITY_COVERAGE\s*=[^;]*;/)||[''])[0],mobile);
-    for(const name of ['securityCoveringIds','securityCoveringDoc','docNotApplicable','securityCoveredByAttached','isActiveTemplateId','isActiveRequiredDoc','isCoveredRequiredDoc','mobileDocHasAttachedFile','requiredDocumentSummary','mobileFilteredDocs','mobileFilterChip','mobileDocsBodyHtml']){
+    for(const name of ['securityCoveringIds','securityCoveringDoc','securityCoveredByAttached','isActiveTemplateId','isActiveRequiredDoc','isCoveredRequiredDoc','mobileDocHasAttachedFile','requiredDocumentSummary','mobileFilteredDocs','mobileFilterChip','mobileDocsBodyHtml']){
         const start=html.indexOf('function '+name+'(');assert.ok(start>=0,name);
         const end=html.indexOf('\nfunction ',start+1);vm.runInContext(html.slice(start,end).split('\nvar ')[0],mobile);
     }

@@ -6347,6 +6347,36 @@ for (const lang of ['en','ru']) {
     await app.sandbox.mobileReloadDocs();
     ok(toasts.some(s=>s.includes(lang==='ru'?'Не удалось обновить документы:':'Could not reload documents:')),'280 Docs error '+lang);
   }catch(e){ok(false,'280 Docs '+e.message);}
+  // tasks/016 (срез A): «Не применимо ко мне» — слот структуры без файла (и
+  // обязательный) закрывается с причиной и возвращается обратно.
+  try {
+    const app=await bootA5II(lang);
+    const ru=lang==='ru';
+    const slot={id:'na-slot',template_id:'sso',category:'Safety',title:'SSO',file_name:null,has_expiry:false,field_statuses:'{"doc_number":"ai"}'};
+    app.sandbox.allDocs=[slot];app.sandbox.selectedDocId='na-slot';
+    vm.runInContext("activeTemplateIds=['sso'];activeTemplateIdSet={sso:true};activeTemplateIdsLoaded=true;mobileView='doc';",app.sandbox);
+    ok(app.sandbox.requiredDocumentSummary().missing===1,'016A empty required slot is missing '+lang);
+    ok(app.sandbox.mobileStatusPill(slot).includes(ru?'Недостающий':'Missing'),'016A pill missing '+lang);
+    app.sandbox.renderMobileDoc();
+    ok(app.doc.getElementById('mobile-main').innerHTML.includes('data-qa="doc-na-open"'),'016A required slot offers Not applicable '+lang);
+    app.sandbox.docNaEdit('na-slot');
+    ok(app.doc.getElementById('mobile-main').innerHTML.includes('data-qa="doc-na-form"'),'016A reason form '+lang);
+    const sent=[];
+    app.sandbox.invoke=async(cmd,args)=>{sent.push([cmd,args]);return cmd==='get_documents'?app.sandbox.allDocs:{};};
+    await app.sandbox.docNaSave('na-slot','  not a security officer  ');
+    const saved=sent.find(c=>c[0]==='update_field_statuses');
+    const stored=saved?JSON.parse(saved[1].statuses):{};
+    ok(saved&&stored.not_applicable&&stored.not_applicable.reason==='not a security officer'&&stored.doc_number==='ai','016A saved via update_field_statuses, other statuses kept '+lang);
+    ok(app.sandbox.requiredDocumentSummary().missing===0,'016A marked slot is not missing '+lang);
+    ok(app.sandbox.mobileStatusPill(slot).includes(ru?'Не применимо':'Not applicable'),'016A pill '+lang);
+    const card=app.doc.getElementById('mobile-main').innerHTML;
+    ok(card.includes('data-qa="doc-na-state"')&&card.includes('not a security officer')&&card.includes('data-qa="doc-na-clear"'),'016A card shows reason and undo '+lang);
+    await app.sandbox.docNaSave('na-slot',null);
+    ok(JSON.stringify(JSON.parse(slot.field_statuses))==='{"doc_number":"ai"}'&&app.sandbox.requiredDocumentSummary().missing===1,'016A undo restores the slot '+lang);
+    const filed={id:'f',template_id:'sso',file_name:'sso.pdf',field_statuses:'{"not_applicable":{"reason":"x"}}'};
+    ok(app.sandbox.docNotApplicable(filed)===null&&app.sandbox.docNaBlockHtml(filed)==='','016A a slot with a file ignores the mark '+lang);
+    ok(app.sandbox.docNaBlockHtml({id:'c',template_id:null,file_name:null,field_statuses:'{}'})==='','016A custom document is not offered the mark '+lang);
+  }catch(e){ok(false,'016A not applicable '+e.message);}
   try {
     const app=await bootA5Experience({lang,work:A5_WORK});
     const labels=lang==='ru'?['Опыт','Добавить стаж','Записи','С IMO','Оценено','Оценить','База судов']:['Experience','Add sea service','Records','With IMO','Assessed','Assess','Vessel DB'];

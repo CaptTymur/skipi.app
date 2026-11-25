@@ -4286,7 +4286,11 @@ function securityCoveredByAttached(cid,docs){
     if(securityCoveringDoc(cid,docs))return true;
     // A slot the seafarer declared not applicable is closed the same way: it
     // leaves the required/missing counts (mirrors Rust template_not_applicable).
-    return (docs||[]).some(function(x){return !!(x&&x.template_id===cid&&docNotApplicable(x));});
+    // Self-contained on purpose (same rule as docNotApplicable above).
+    return (docs||[]).some(function(x){
+        if(!(x&&x.template_id===cid)||String(x.file_name||'').trim())return false;
+        try{var na=(JSON.parse(x.field_statuses||'{}')||{}).not_applicable;return !!(na&&typeof na==='object');}catch(e){return false;}
+    });
 }
 // The one RU/EN hint for a covered slot (badge + regulatory-basis text). The
 // covering certificate is named by a UI string keyed on the covering template
