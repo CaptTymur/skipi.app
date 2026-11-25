@@ -58,6 +58,23 @@ pub fn get_optional_categories() -> Vec<String> {
         .collect()
 }
 
+/// The whole standard document catalogue (tasks/016): the seafarer picks a type
+/// from it when recognition did not, and the app names a recognised type by it.
+#[tauri::command]
+pub fn get_document_catalog() -> Vec<serde_json::Value> {
+    profiles::all_seafarer_doc_templates()
+        .iter()
+        .map(|t| {
+            serde_json::json!({
+                "id": t.id,
+                "title": t.title,
+                "category": t.category,
+                "has_expiry": t.has_expiry,
+            })
+        })
+        .collect()
+}
+
 #[tauri::command]
 pub fn get_required_docs(
     level_id: String,

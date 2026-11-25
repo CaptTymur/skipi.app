@@ -6377,6 +6377,72 @@ for (const lang of ['en','ru']) {
     ok(app.sandbox.docNotApplicable(filed)===null&&app.sandbox.docNaBlockHtml(filed)==='','016A a slot with a file ignores the mark '+lang);
     ok(app.sandbox.docNaBlockHtml({id:'c',template_id:null,file_name:null,field_statuses:'{}'})==='','016A custom document is not offered the mark '+lang);
   }catch(e){ok(false,'016A not applicable '+e.message);}
+  // tasks/016 (срез B): одна зелёная «+» — файл распознаётся, моряк подтверждает,
+  // документ встаёт в слот; ничего не сохраняется до «Подтверждаю».
+  try {
+    const ru=lang==='ru';
+    const CATALOG=[{id:'passport',title:'Passport (Travel)',category:'Passport',has_expiry:true},{id:'sso',title:'Ship Security Officer',category:'Safety',has_expiry:false}];
+    const start=async(result,docs)=>{
+      const app=await bootA5II(lang);
+      let modal='';app.doc.body.insertAdjacentHTML=(_p,h)=>{modal=String(h);};
+      const values={};app.sandbox.docIntakeValue=id=>String(values[id]||'');
+      const sent=[];
+      app.sandbox.allDocs=docs;
+      app.sandbox.invoke=async(cmd,args)=>{sent.push([cmd,args]);
+        if(cmd==='add_custom_doc')return {id:'new-row',title:args.title,category:args.category,field_statuses:'{}'};
+        if(cmd==='get_documents')return app.sandbox.allDocs;return {};};
+      app.sandbox.renderMobileShell=()=>{};app.sandbox.renderTree=()=>{};app.sandbox.updateStatus=()=>{};
+      const toasts=[];app.sandbox.showToast=(m,k)=>toasts.push([m,k]);
+      vm.runInContext('docIntakeCatalog='+JSON.stringify(CATALOG)+';docIntake={fileName:"scan.jpg",dataBase64:"QUJD",status:"confirm",result:'+JSON.stringify(result)+',error:""};',app.sandbox);
+      app.sandbox.docIntakeRender();
+      return {app,values,sent,toasts,modal:()=>modal};
+    };
+    const names=s=>s.map(c=>c[0]);
+    const writes=s=>s.filter(x=>['add_custom_doc','attach_file_bytes','update_doc_field','update_field_statuses','attach_file'].includes(x[0]));
+    // 1. recognised → preselected type, statement names it, lands in the EMPTY slot of that type
+    const slot={id:'slot-passport',template_id:'passport',title:'Passport (Travel)',category:'Passport',file_name:null,field_statuses:'{"not_applicable":{"reason":"x"}}'};
+    let c=await start({template_id:'passport',doc_number:'AB123',issued_by:'UA',valid_from:'2021-01-02',valid_to:'2031-01-02',title_suggestion:'Passport'},[slot]);
+    ok(c.modal().includes('class="modal-overlay open"')&&c.modal().includes('<option value="passport" selected>')&&c.modal().includes('value="AB123"'),'016B recognised type and fields are shown for confirmation '+lang);
+    ok(c.modal().includes(ru?'Skipi распознал документ.':'Skipi recognised it.'),'016B recognised note '+lang);
+    ok(writes(c.sent).length===0,'016B nothing is saved before Confirm '+lang);
+    Object.assign(c.values,{'doc-intake-type':'passport','doc-intake-doc_number':'AB123','doc-intake-valid_from':'2021-01-02','doc-intake-valid_to':'2031-01-02'});
+    const st=c.app.sandbox.docIntakeStatementHtml();
+    ok(st.includes(ru?'Подтверждаю: это ':'I confirm: this is ')&&st.includes('Passport (Travel)')&&st.includes('AB123')&&st.includes('2031-01-02'),'016B confirmation statement names type, number and dates '+lang);
+    await c.app.sandbox.docIntakeConfirm();
+    const attach=c.sent.find(x=>x[0]==='attach_file_bytes');
+    ok(attach&&attach[1].docId==='slot-passport'&&attach[1].dataBase64==='QUJD'&&!names(c.sent).includes('add_custom_doc'),'016B the file goes into the empty slot, no new row '+lang);
+    const fields=c.sent.filter(x=>x[0]==='update_doc_field').map(x=>x[1].field+'='+x[1].value).join(',');
+    ok(fields==='doc_number=AB123,valid_from=2021-01-02,valid_to=2031-01-02','016B only confirmed non-empty fields are written ('+fields+') '+lang);
+    const fs=JSON.parse(c.sent.find(x=>x[0]==='update_field_statuses')[1].statuses);
+    ok(fs.doc_number==='verified'&&fs.valid_to==='verified'&&!('not_applicable' in fs),'016B confirmed fields are verified and the N/A mark is dropped '+lang);
+    // 2. not recognised → the seafarer must choose; Confirm without a type saves nothing
+    c=await start({},[]);
+    ok(c.modal().includes(ru?'Skipi не смог определить, что это за документ.':'Skipi could not tell what this document is.')&&!/<option value="[a-z_]+" selected>/.test(c.modal()),'016B unknown document asks the seafarer '+lang);
+    await c.app.sandbox.docIntakeConfirm();
+    ok(writes(c.sent).length===0&&c.toasts.some(x=>x[1]==='warn'),'016B no type → nothing saved '+lang);
+    Object.assign(c.values,{'doc-intake-type':'__other__','doc-intake-title':'Company induction'});
+    await c.app.sandbox.docIntakeConfirm();
+    const add=c.sent.find(x=>x[0]==='add_custom_doc');
+    ok(add&&add[1].title==='Company induction'&&add[1].category==='Custom'&&c.sent.find(x=>x[0]==='attach_file_bytes')[1].docId==='new-row','016B own-name document is created and gets the file '+lang);
+    // 3. the type is not in the seafarer's structure → the slot appears under its catalogue name
+    c=await start({template_id:'sso'},[]);
+    Object.assign(c.values,{'doc-intake-type':'sso'});
+    await c.app.sandbox.docIntakeConfirm();
+    ok(c.sent.find(x=>x[0]==='add_custom_doc')[1].title==='Ship Security Officer','016B missing slot is created from the catalogue '+lang);
+    // 4. a filed document of that type exists → it is never overwritten
+    const filed={id:'old',template_id:'passport',title:'Passport (Travel)',category:'Passport',file_name:'old.pdf',field_statuses:'{}'};
+    c=await start({template_id:'passport',doc_number:'ZZ9'},[filed]);
+    Object.assign(c.values,{'doc-intake-type':'passport','doc-intake-doc_number':'ZZ9'});
+    ok(c.app.sandbox.docIntakeStatementHtml().includes(ru?'существующий не изменится':'the existing one stays as it is'),'016B says an existing filed document stays '+lang);
+    await c.app.sandbox.docIntakeConfirm();
+    ok(c.sent.find(x=>x[0]==='add_custom_doc')[1].title==='Passport (Travel) — ZZ9'&&c.sent.find(x=>x[0]==='attach_file_bytes')[1].docId==='new-row','016B second document of a type goes beside, not over '+lang);
+    // 5. the mobile Add screen leads with the one green plus
+    const app=await bootA5II(lang);
+    vm.runInContext("mobileAddMode='choose';",app.sandbox);app.sandbox.allDocs=[];
+    app.sandbox.renderMobileAdd();
+    const addHtml=app.doc.getElementById('mobile-main').innerHTML;
+    ok(addHtml.includes('data-qa="doc-intake-plus"')&&(addHtml.match(/mobile-primary-action/g)||[]).length===1,'016B mobile Add shows one primary green plus '+lang);
+  }catch(e){ok(false,'016B green plus '+e.message);}
   try {
     const app=await bootA5Experience({lang,work:A5_WORK});
     const labels=lang==='ru'?['Опыт','Добавить стаж','Записи','С IMO','Оценено','Оценить','База судов']:['Experience','Add sea service','Records','With IMO','Assessed','Assess','Vessel DB'];
