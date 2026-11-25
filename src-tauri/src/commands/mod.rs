@@ -15,6 +15,7 @@ pub mod mail_intent;
 pub mod messaging;
 pub mod motion;
 pub mod packages;
+pub mod plugin_reviews;
 pub mod profile;
 pub mod review;
 pub mod vault;

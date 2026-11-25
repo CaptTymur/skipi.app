@@ -561,6 +561,7 @@
         + '<span class="apps-icon-tile-icon">'+(p.icon||'▢')+'</span>'
         + '<span class="apps-icon-tile-name">'+esc(p.name)+'</span>'
         + (pluginMetaLine(p)?'<span class="apps-icon-tile-meta">'+esc(pluginMetaLine(p))+'</span>':'')
+        + pluginRatingChipHtml(p.id)
         + (remoteUpdateAvailable(p.id)
             ? '<span class="apps-badge live" data-qa="plugin-update-available-'+escAttr(p.id)+'">Update available</span>'
             : pluginReadyChip())
@@ -573,6 +574,7 @@
         + '<span class="apps-icon-tile-icon">'+esc(p.icon||'▢')+'</span>'
         + '<span class="apps-icon-tile-name">'+esc(p.name)+'</span>'
         + (pluginMetaLine(p)?'<span class="apps-icon-tile-meta">'+esc(pluginMetaLine(p))+'</span>':'')
+        + pluginRatingChipHtml(p.id)
         + '<span class="apps-badge live">'+esc(ru?'Установить':'Install')+'</span>'
         + '</button></div>';
     }
@@ -651,6 +653,7 @@
     }
     // tabs + (on "Find a plugin") the search field + the results box; shared by desktop and mobile
     function pluginLauncherBodyHtml(){
+      reviewsLoadRatings();
       var ru = getUiLang() === 'ru', find = pluginLauncherTabValue() === 'find';
       var h = pluginLauncherTabsHtml();
       if(find) h += '<div class="apps-search"><label class="apps-search-label" for="apps-search-field">'+esc(ru?'Поиск по каталогу':'Search the catalog')+'</label>'
@@ -769,6 +772,160 @@
       pluginHostState.openId = null; pluginHostState.selectedId = null;
       showApps();
     }
+    // ---- ratings and reviews (v1.3) ----
+    // The home injects deps.reviews = { ratings(), list(slug), save(slug, stars, text, version),
+    // remove(slug), report(slug, reviewId, reason) } — each returns a Promise. Without it nothing
+    // of this is shown. The module never sees an account token: the home talks to the server.
+    var reviewsApi = (deps.reviews && typeof deps.reviews === 'object') ? deps.reviews : null;
+    var reviewState = { ratings:{}, ratingsAt:0, ratingsBusy:false, bySlug:{} };
+    var REVIEW_RATINGS_TTL_MS = 5 * 60 * 1000;
+    var REVIEW_TEXT_MAX = 2000;
+    function reviewText(en, ru){ return getUiLang() === 'ru' ? ru : en; }
+    function reviewSlot(id){
+      if(!reviewState.bySlug[id]) reviewState.bySlug[id] = { data:null, busy:false, error:'', stars:0, text:'', touched:false, saving:false, reported:{} };
+      return reviewState.bySlug[id];
+    }
+    function reviewRating(id){
+      var slot = reviewState.bySlug[id];
+      var r = (slot && slot.data && slot.data.rating) || reviewState.ratings[id];
+      return (r && r.count > 0 && typeof r.average === 'number') ? r : null;
+    }
+    function reviewStarsText(n){
+      n = Math.max(0, Math.min(5, Math.round(n)));
+      return '★★★★★'.slice(0, n) + '☆☆☆☆☆'.slice(0, 5 - n);
+    }
+    function reviewAverageLabel(r){ return (Math.round(r.average * 10) / 10).toFixed(1); }
+    // the small "★ 4.5" on a tile
+    function pluginRatingChipHtml(id){
+      var r = reviewsApi ? reviewRating(id) : null;
+      if(!r) return '';
+      return '<span class="apps-rating" data-qa="plugin-rating-'+escAttr(id)+'" title="'+escAttr(reviewText(r.count+' rating(s)', 'Оценок: '+r.count))+'">★ '+esc(reviewAverageLabel(r))+'</span>';
+    }
+    function reviewsLoadRatings(){
+      if(!reviewsApi || typeof reviewsApi.ratings !== 'function' || reviewState.ratingsBusy) return;
+      if(reviewState.ratingsAt && Date.now() - reviewState.ratingsAt < REVIEW_RATINGS_TTL_MS) return;
+      reviewState.ratingsBusy = true;
+      Promise.resolve().then(function(){ return reviewsApi.ratings(); }).then(function(res){
+        var before = JSON.stringify(reviewState.ratings);
+        reviewState.ratings = (res && res.ratings && typeof res.ratings === 'object') ? res.ratings : {};
+        reviewState.ratingsAt = Date.now(); reviewState.ratingsBusy = false;
+        // not while a plugin's page is open: a re-render would take the text field out from under the user
+        if(JSON.stringify(reviewState.ratings) !== before && !pluginHostState.selectedId && !pluginHostState.openId) pluginRerender();
+      }, function(){ reviewState.ratingsAt = Date.now(); reviewState.ratingsBusy = false; });
+    }
+    function reviewsLoad(id, force){
+      if(!reviewsApi || typeof reviewsApi.list !== 'function') return;
+      var slot = reviewSlot(id);
+      if(slot.busy || (slot.data && !force) || (slot.error && !force)) return;
+      slot.busy = true; slot.error = '';
+      Promise.resolve().then(function(){ return reviewsApi.list(id); }).then(function(res){
+        slot.busy = false; slot.data = res || { reviews:[] };
+        if(slot.data.rating && slot.data.rating.count > 0) reviewState.ratings[id] = slot.data.rating; else delete reviewState.ratings[id];
+        if(!slot.touched){
+          var mine = slot.data.mine;
+          slot.stars = mine ? mine.stars : 0;
+          slot.text = mine ? String(mine.text || '') : '';
+        }
+        pluginRerender();
+      }, function(e){
+        slot.busy = false; slot.error = String((e && e.message) || e || 'failed');
+        pluginRerender();
+      });
+    }
+    function pluginReviewStars(id, n){ var slot = reviewSlot(id); slot.stars = Math.max(1, Math.min(5, n|0)); slot.touched = true; pluginRerender(); }
+    function pluginReviewDraft(id, text){ var slot = reviewSlot(id); slot.text = String(text == null ? '' : text).slice(0, REVIEW_TEXT_MAX); slot.touched = true; }
+    function reviewFail(e){
+      var code = String((e && e.message) || e || '');
+      if(code === 'sign_in') return reviewText('Sign in to your Skipi account to rate plugins.', 'Войдите в аккаунт Skipi, чтобы оценивать плагины.');
+      if(code === 'offline') return reviewText('No connection. Try again later.', 'Нет связи. Попробуйте позже.');
+      return reviewText('Could not save. Try again later.', 'Не получилось сохранить. Попробуйте позже.');
+    }
+    function pluginReviewSave(id){
+      var slot = reviewSlot(id), p = pluginById(id);
+      if(!reviewsApi || slot.saving) return;
+      if(!(slot.stars >= 1 && slot.stars <= 5)){ showToast(reviewText('Choose 1 to 5 stars first.', 'Сначала выберите оценку — от 1 до 5 звёзд.')); return; }
+      slot.saving = true; pluginRerender();
+      Promise.resolve().then(function(){ return reviewsApi.save(id, slot.stars, slot.text, p ? pluginVersionValue(p) : ''); }).then(function(){
+        slot.saving = false; slot.touched = false; slot.data = null;
+        showToast(reviewText('Thank you! Your rating is published.', 'Спасибо! Ваша оценка опубликована.'));
+        reviewsLoad(id, true); pluginRerender();
+      }, function(e){ slot.saving = false; showToast(reviewFail(e)); pluginRerender(); });
+    }
+    function pluginReviewRemove(id){
+      var slot = reviewSlot(id);
+      if(!reviewsApi || slot.saving) return;
+      slot.saving = true; pluginRerender();
+      Promise.resolve().then(function(){ return reviewsApi.remove(id); }).then(function(){
+        slot.saving = false; slot.touched = false; slot.stars = 0; slot.text = ''; slot.data = null;
+        showToast(reviewText('Your review is removed.', 'Ваш отзыв удалён.'));
+        reviewsLoad(id, true); pluginRerender();
+      }, function(e){ slot.saving = false; showToast(reviewFail(e)); pluginRerender(); });
+    }
+    function pluginReviewReport(id, reviewId){
+      var slot = reviewSlot(id);
+      if(!reviewsApi || slot.reported[reviewId]) return;
+      Promise.resolve().then(function(){ return reviewsApi.report(id, reviewId, ''); }).then(function(){
+        slot.reported[reviewId] = true;
+        showToast(reviewText('Reported. Thank you — we will look at it.', 'Жалоба отправлена. Спасибо — мы посмотрим.'));
+        pluginRerender();
+      }, function(e){ showToast(reviewFail(e)); });
+    }
+    function reviewDate(iso){ return String(iso || '').slice(0, 10); }
+    function pluginReviewsHtml(p){
+      if(!reviewsApi || !p || p.comingSoon) return '';
+      var id = p.id, slot = reviewSlot(id), data = slot.data, r = reviewRating(id);
+      if(!data && !slot.busy && !slot.error) reviewsLoad(id);
+      var installed = pluginStatus(id) !== 'available';
+      var h = '<div class="apps-reviews" data-qa="plugin-reviews-'+escAttr(id)+'">';
+      h += '<div class="apps-reviews-head"><span>'+esc(reviewText('Ratings and reviews', 'Оценки и отзывы'))+'</span>'
+        + (r ? '<span class="apps-reviews-avg" data-qa="plugin-reviews-average">★ '+esc(reviewAverageLabel(r))+' <small>('+esc(String(r.count))+')</small></span>'
+             : '<span class="apps-reviews-avg none">'+esc(reviewText('No ratings yet', 'Оценок пока нет'))+'</span>')
+        + '</div>';
+      // the user's own rating
+      if(!installed){
+        h += '<div class="apps-reviews-note">'+esc(reviewText('Install the plugin to rate it.', 'Установите плагин, чтобы оценить его.'))+'</div>';
+      } else if(data && data.signed_in === false){
+        h += '<div class="apps-reviews-note">'+esc(reviewText('Sign in to your Skipi account to rate this plugin.', 'Войдите в аккаунт Skipi, чтобы оценить этот плагин.'))+'</div>';
+      } else if(data){
+        var mine = data.mine, stars = '';
+        for(var n = 1; n <= 5; n++){
+          stars += '<button type="button" class="apps-star'+(n <= slot.stars ? ' on' : '')+'" data-qa="plugin-review-star-'+n+'" aria-label="'+n+'" onclick="pluginReviewStars(\''+jsString(id)+'\','+n+')">'+(n <= slot.stars ? '★' : '☆')+'</button>';
+        }
+        h += '<div class="apps-review-form" data-qa="plugin-review-form">'
+          + '<div class="apps-review-form-title">'+esc(mine ? reviewText('Your rating', 'Ваша оценка') : reviewText('Rate this plugin', 'Оцените плагин'))+'</div>'
+          + '<div class="apps-stars">'+stars+'</div>'
+          + '<textarea class="apps-review-text" data-qa="plugin-review-text" maxlength="'+REVIEW_TEXT_MAX+'" rows="3" placeholder="'+escAttr(reviewText('A few words for other seafarers (optional)', 'Пара слов для других моряков (необязательно)'))+'" oninput="pluginReviewDraft(\''+jsString(id)+'\', this.value)">'+esc(slot.text)+'</textarea>'
+          + (mine && mine.hidden ? '<div class="apps-reviews-note">'+esc(reviewText('The text of your review was hidden by Skipi. The rating still counts; you can rewrite the text.', 'Текст вашего отзыва скрыт Skipi. Оценка учитывается; текст можно переписать.'))+'</div>' : '')
+          + '<div class="apps-review-actions">'
+          + '<button type="button" class="btn btn-accent" data-qa="plugin-review-save"'+(slot.saving ? ' disabled' : '')+' onclick="pluginReviewSave(\''+jsString(id)+'\')">'+esc(mine ? reviewText('Update', 'Обновить') : reviewText('Publish', 'Опубликовать'))+'</button>'
+          + (mine ? ' <button type="button" class="btn btn-outline" data-qa="plugin-review-remove"'+(slot.saving ? ' disabled' : '')+' onclick="pluginReviewRemove(\''+jsString(id)+'\')">'+esc(reviewText('Remove my review', 'Удалить мой отзыв'))+'</button>' : '')
+          + '</div></div>';
+      }
+      // everyone's texts
+      if(slot.busy && !data){
+        h += '<div class="apps-reviews-note">'+esc(reviewText('Loading reviews…', 'Загружаем отзывы…'))+'</div>';
+      } else if(slot.error && !data){
+        h += '<div class="apps-reviews-note">'+esc(reviewText('Reviews are unavailable right now.', 'Отзывы сейчас недоступны.'))+'</div>';
+      } else if(data){
+        var list = Array.isArray(data.reviews) ? data.reviews : [];
+        if(!list.length) h += '<div class="apps-reviews-note">'+esc(reviewText('No written reviews yet.', 'Письменных отзывов пока нет.'))+'</div>';
+        for(var i = 0; i < list.length; i++){
+          var v = list[i] || {};
+          h += '<div class="apps-review" data-qa="plugin-review-item">'
+            + '<div class="apps-review-meta"><span class="apps-review-stars">'+esc(reviewStarsText(v.stars))+'</span>'
+            + '<span class="apps-review-date">'+esc(reviewDate(v.updated_at))+(v.mine ? ' · '+esc(reviewText('your review', 'ваш отзыв')) : '')+'</span></div>'
+            + '<div class="apps-review-body">'+esc(String(v.text || ''))+'</div>'
+            + (v.mine ? '' : (slot.reported[v.id]
+                ? '<div class="apps-review-reported">'+esc(reviewText('Reported', 'Жалоба отправлена'))+'</div>'
+                : (data.signed_in === false ? '' : '<button type="button" class="apps-review-report" data-qa="plugin-review-report" onclick="pluginReviewReport(\''+jsString(id)+'\','+(Number(v.id)||0)+')">'+esc(reviewText('Report', 'Пожаловаться'))+'</button>')))
+            + '</div>';
+        }
+        if(data.more) h += '<div class="apps-reviews-note">'+esc(reviewText('The newest 50 reviews are shown.', 'Показаны 50 последних отзывов.'))+'</div>';
+      }
+      h += '</div>';
+      return h;
+    }
+
     function pluginDetailHtml(p){
       if(!p) return pluginListHtml();
       var st = pluginStatus(p.id);
@@ -793,7 +950,9 @@
         h += remoteUpdateActionHtml(p.id);
         h += ' <button class="btn btn-outline" onclick="pluginUninstall(\''+jsString(p.id)+'\')">Remove</button>';
       }
-      h += '</div></div>';
+      h += '</div>';
+      h += pluginReviewsHtml(p);
+      h += '</div>';
       return h;
     }
     function pluginScreenHtml(p){
@@ -932,6 +1091,7 @@
         h += '<button class="btn btn-outline" style="width:100%;margin-top:8px;" onclick="pluginUninstall(\''+jsString(p.id)+'\')">Remove</button>';
       }
       h += '</div>';
+      h += pluginReviewsHtml(p);
       mobileMainHtml(h);
     }
 
@@ -976,6 +1136,12 @@
       pluginBackToLauncher:pluginBackToLauncher,
       pluginSelect:pluginSelect,
       pluginPreview:pluginPreview,
+      pluginReviewStars:pluginReviewStars,
+      pluginReviewDraft:pluginReviewDraft,
+      pluginReviewSave:pluginReviewSave,
+      pluginReviewRemove:pluginReviewRemove,
+      pluginReviewReport:pluginReviewReport,
+      pluginReviewsHtml:pluginReviewsHtml,
       remoteAvailableList:remoteAvailableList,
       remoteCatalogDriven:remoteCatalogDriven,
       pluginRerender:pluginRerender,

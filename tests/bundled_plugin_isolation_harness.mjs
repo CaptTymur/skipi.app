@@ -149,6 +149,18 @@ ok(/revoked/.test(REMOTE_LOADER) && /revocation/.test(REMOTE_LOADER), 'remote lo
 ok(/downgrade blocked/.test(REMOTE_LOADER) && /semverGt/.test(REMOTE_LOADER), 'remote loader blocks catalog rollback below installed/bundled baseline');
 ok(sha256Text(BRIDGE) === HOST_RUNTIME_BRIDGE_SHA256, 'plugin-host-bridge.js matches @skipi/host-runtime artifact sha256');
 // After the @skipi/plugin-host-ui adoption these entry points live in the module, not inline HTML.
+// Ratings and reviews of plugins (owner 25.11.2026): the Apps module shows them, the home injects
+// the API, and the account token stays on the native side.
+{
+  const reviewsDep = (HTML.match(/reviews: \{[\s\S]*?\n  \},\n  attachGlobals: true/) || [''])[0];
+  ok(/function pluginReviewsHtml\(/.test(HOST_UI_MODULE) && /function pluginRatingChipHtml\(/.test(HOST_UI_MODULE), '@skipi/plugin-host-ui carries the ratings-and-reviews block (1.3)');
+  ok(['plugin_ratings', 'plugin_reviews_list', 'plugin_review_save', 'plugin_review_delete', 'plugin_review_report'].every((c) => reviewsDep.includes("invoke('" + c + "'")),
+    'the home wires deps.reviews to the five native commands');
+  ok(reviewsDep.length > 0 && !/token|Authorization|Bearer|fetch\(/i.test(reviewsDep.replace(/\/\/[^\n]*/g, '')), 'the page passes no account token and makes no request of its own for reviews');
+  ok(/\.apps-reviews \{/.test(HTML) && /\.apps-star\.on \{/.test(HTML) && /\.apps-rating \{/.test(HTML), 'the review styles are present in the home');
+  const RS = fs.readFileSync(path.join(DIST, '..', 'src-tauri', 'src', 'commands', 'plugin_reviews.rs'), 'utf8');
+  ok(/stored_user_token/.test(RS) && /assistant_api_base\(\)/.test(RS) && /fn valid_slug/.test(RS), 'the native commands take the token from the app session, talk to the account server and validate the slug');
+}
 ok(/function showApps\(/.test(HOST_UI_MODULE) && /function renderMobileApps\(/.test(HOST_UI_MODULE) && /function pluginMountInto\(/.test(HOST_UI_MODULE), 'desktop + mobile Apps entry points still exist (in @skipi/plugin-host-ui)');
 
 // ------------------------------------------------------------------ mount
