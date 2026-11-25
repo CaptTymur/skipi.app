@@ -1499,6 +1499,10 @@ body.mobile-mode .trust-contribution-title{font-size:20px;}
 body.mobile-mode .trust-contribution-grid{grid-template-columns:1fr;}
 body.mobile-mode .trust-contribution-card{border-radius:10px;padding:14px;}
 body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
+.doc-intake-plus,.btn.doc-intake-plus{background:#1f9d55;border-color:#1f9d55;color:#fff;font-weight:700;}
+.doc-intake-plus:hover{filter:brightness(1.06);}
+.mobile-primary-action.doc-intake-plus .mobile-action-sub{color:rgba(255,255,255,.9);}
+.mobile-primary-action.doc-intake-plus .mobile-action-icon{font-size:28px;font-weight:700;}
 </style>
 </head>
 <body>
@@ -4547,6 +4551,215 @@ function showDocRequirement(ev){
     h+='<div style="margin-top:16px;text-align:right;"><button class="btn btn-accent btn-sm" onclick="closeDocRequirement()">OK</button></div>';
     h+='</div></div>';
     document.body.insertAdjacentHTML('beforeend',h);
+}
+
+// ── tasks/016 (срез B): one green «+» for the whole structure ──────────────
+// File → recognition (type from the standard catalogue + fields) → the seafarer
+// CONFIRMS what it is → the document takes its slot (the slot appears if the
+// profile did not have it). Not recognised → the seafarer names the type.
+// One overlay for the desktop and the phone; nothing is saved before «Confirm».
+var docIntake=null;
+var docIntakeCatalog=null;
+var DOC_INTAKE_OTHER='__other__';
+function docIntakeT(en,ru){return getUiLang()==='ru'?ru:en;}
+// The desktop header gets the one green «+» next to (before) the legacy
+// «Add custom certificate» control, which becomes the secondary way.
+function docIntakeMountButton(){
+    var plus=document.getElementById('btn-add-document');
+    if(plus)return plus;
+    var legacy=document.getElementById('btn-add-custom');
+    if(!legacy||!legacy.parentNode)return null;
+    legacy.insertAdjacentHTML('beforebegin','<button id="btn-add-document" class="btn btn-sm doc-intake-plus" data-qa="doc-intake-plus" title="'+docIntakeT('Add a document: it is recognised and takes its place','Добавить документ: он распознаётся и встаёт на своё место')+'" onclick="docIntakePick()">+ '+docIntakeT('Add document','Добавить документ')+'</button> ');
+    legacy.style.display='none';
+    return document.getElementById('btn-add-document');
+}
+async function docIntakePick(){
+    // Desktop: the app's own file dialog (a path, like attachF); the phone and
+    // the web shell use the file input below.
+    if(!isMobileMode()&&!window.__SKIPI_WEBDESKTOP__&&typeof open==='function'){
+        var path=null;
+        try{path=await open({multiple:false,title:docIntakeT('Select document','Выберите документ'),filters:[{name:'Documents',extensions:['pdf','jpg','jpeg','png','webp']}]});}catch(e){path=null;}
+        if(path)docIntakeBegin({fileName:String(path).split(/[\\/]/).pop()||'document',sourcePath:String(path)});
+        return;
+    }
+    var input=document.getElementById('doc-intake-input');
+    if(!input){
+        input=document.createElement('input');
+        input.type='file';input.id='doc-intake-input';input.style.display='none';
+        input.setAttribute('accept','image/*,application/pdf,.pdf,.jpg,.jpeg,.png');
+        input.onchange=function(){docIntakePicked(input.files);};
+        document.body.appendChild(input);
+    }
+    input.value='';
+    input.click();
+}
+function docIntakeReadBase64(file){
+    return new Promise(function(resolve,reject){
+        var r=new FileReader();
+        r.onload=function(){var v=String(r.result||'');resolve(v.indexOf(',')>=0?v.slice(v.indexOf(',')+1):v);};
+        r.onerror=function(){reject(r.error||new Error('read failed'));};
+        r.readAsDataURL(file);
+    });
+}
+async function docIntakePicked(files){
+    var file=files&&files[0];
+    if(!file)return;
+    if(file.size>25*1024*1024){showToast(docIntakeT('File is too large (25 MB max).','Файл слишком большой (до 25 МБ).'),'error');return;}
+    var dataBase64='';
+    try{dataBase64=await docIntakeReadBase64(file);}
+    catch(e){showToast(docIntakeT('Could not read the file: ','Не удалось прочитать файл: ')+e,'error');return;}
+    await docIntakeBegin({fileName:file.name||'document.jpg',dataBase64:dataBase64});
+}
+// source = {fileName, dataBase64} (picker bytes) or {fileName, sourcePath} (desktop dialog)
+async function docIntakeBegin(source){
+    docIntake={fileName:source.fileName,dataBase64:source.dataBase64||'',sourcePath:source.sourcePath||'',status:'working',result:null,error:''};
+    docIntakeRender();
+    try{
+        if(!docIntakeCatalog){try{docIntakeCatalog=await invoke('get_document_catalog');}catch(e0){docIntakeCatalog=[];}}
+        var key='';
+        try{key=await invoke('get_effective_api_key')||'';}catch(e1){key='';}
+        var current=docIntake;
+        try{
+            var result=await invoke('ai_classify_file',{fileName:current.fileName,dataBase64:current.dataBase64||null,sourcePath:current.sourcePath||null,apiKey:key||''});
+            if(docIntake!==current)return;
+            current.result=result||{};
+        }catch(e){
+            if(docIntake!==current)return;
+            // Recognition failed: the seafarer names the document and fills it in.
+            current.result={};current.error=String(e||'');
+            try{logError('docIntakeClassify',e);}catch(_e){}
+        }
+        current.status='confirm';
+        docIntakeRender();
+    }catch(e){
+        docIntake=null;docIntakeRender();
+        showToast(docIntakeT('Could not start recognition: ','Не удалось начать распознавание: ')+e,'error');
+    }
+}
+function docIntakeCancel(){docIntake=null;docIntakeRender();}
+function docIntakeTemplate(id){
+    return (docIntakeCatalog||[]).find(function(t){return t.id===id;})||null;
+}
+// The row a confirmed catalogue document lands in: an empty slot of that type,
+// else none (a new row is created; an existing document is never overwritten).
+function docIntakeEmptySlot(templateId){
+    return (allDocs||[]).find(function(d){return d&&d.template_id===templateId&&!String(d.file_name||'').trim();})||null;
+}
+function docIntakeHasFiledSlot(templateId){
+    return (allDocs||[]).some(function(d){return d&&d.template_id===templateId&&String(d.file_name||'').trim();});
+}
+function docIntakeValue(id){var el=document.getElementById(id);return el?String(el.value||'').trim():'';}
+function docIntakeStatementHtml(){
+    var type=docIntakeValue('doc-intake-type'),tpl=docIntakeTemplate(type);
+    var name=tpl?tpl.title:docIntakeValue('doc-intake-title');
+    var no=docIntakeValue('doc-intake-doc_number'),from=docIntakeValue('doc-intake-valid_from'),to=docIntakeValue('doc-intake-valid_to');
+    if(!name)return '<span style="color:var(--text2);">'+docIntakeT('Choose what this document is.','Укажите, что это за документ.')+'</span>';
+    var t=docIntakeT('I confirm: this is ','Подтверждаю: это ')+'<b>'+esc(name)+'</b>';
+    if(no)t+=docIntakeT(', number ',', номер ')+'<b>'+esc(no)+'</b>';
+    if(from)t+=docIntakeT(', issued ',', выдан ')+'<b>'+esc(from)+'</b>';
+    if(to)t+=docIntakeT(', valid until ',', действует до ')+'<b>'+esc(to)+'</b>';
+    t+='.';
+    if(tpl&&!docIntakeEmptySlot(tpl.id)&&docIntakeHasFiledSlot(tpl.id))t+='<div style="margin-top:6px;color:var(--text2);">'+docIntakeT('You already have this document with a file. This one is added next to it; the existing one stays as it is.','Такой документ с файлом у вас уже есть. Этот добавится рядом, существующий не изменится.')+'</div>';
+    return t;
+}
+function docIntakeRefresh(){
+    var other=document.getElementById('doc-intake-title-row'),st=document.getElementById('doc-intake-statement');
+    if(other)other.style.display=docIntakeValue('doc-intake-type')===DOC_INTAKE_OTHER?'':'none';
+    if(st)st.innerHTML=docIntakeStatementHtml();
+}
+function docIntakeRender(){
+    var old=document.getElementById('doc-intake-overlay');
+    if(old)old.remove();
+    if(!docIntake)return;
+    // The generic modal layer (.modal-overlay / .modal-panel): safe-area insets
+    // and stacking are already solved there.
+    var h='<div id="doc-intake-overlay" data-qa="doc-intake-overlay" class="modal-overlay open"><div class="modal-panel" style="max-width:520px;color:var(--text);">';
+    if(docIntake.status==='working'){
+        h+='<div data-qa="doc-intake-working" style="font-size:16px;font-weight:700;margin-bottom:6px;">'+docIntakeT('Recognising the document…','Распознаём документ…')+'</div>'
+          +'<div style="font-size:13px;color:var(--text2);margin-bottom:14px;">'+esc(docIntake.fileName)+'</div>'
+          +'<button class="btn btn-outline btn-sm" onclick="docIntakeCancel()">'+docIntakeT('Cancel','Отмена')+'</button>';
+    }else{
+        var r=docIntake.result||{},known=docIntakeTemplate(r.template_id);
+        var input='width:100%;box-sizing:border-box;font:inherit;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);';
+        var label='display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text2);font-weight:700;margin:10px 0 4px;';
+        h+='<div style="font-size:16px;font-weight:700;margin-bottom:4px;">'+docIntakeT('Check the document','Проверьте документ')+'</div>';
+        h+='<div data-qa="doc-intake-note" style="font-size:13px;color:var(--text2);margin-bottom:6px;">'+(known
+            ?docIntakeT('Skipi recognised it. Correct anything that is wrong, then confirm.','Skipi распознал документ. Исправьте, если что-то не так, и подтвердите.')
+            :docIntakeT('Skipi could not tell what this document is. Choose it yourself, then confirm.','Skipi не смог определить, что это за документ. Укажите сами и подтвердите.'))+'</div>';
+        if(docIntake.error)h+='<div data-qa="doc-intake-error" style="font-size:12px;color:var(--red);margin-bottom:6px;">'+docIntakeT('Recognition did not work: ','Распознавание не сработало: ')+esc(String(docIntake.error).slice(0,200))+'</div>';
+        h+='<label style="'+label+'">'+docIntakeT('Document','Документ')+'</label><select id="doc-intake-type" data-qa="doc-intake-type" style="'+input+'" onchange="docIntakeRefresh()">';
+        h+='<option value=""'+(known?'':' selected')+'>'+docIntakeT('— choose —','— выберите —')+'</option>';
+        (docIntakeCatalog||[]).slice().sort(function(a,b){return String(a.title).localeCompare(String(b.title));}).forEach(function(t){
+            h+='<option value="'+esc(t.id)+'"'+(known&&known.id===t.id?' selected':'')+'>'+esc(t.title)+'</option>';
+        });
+        h+='<option value="'+DOC_INTAKE_OTHER+'">'+docIntakeT('Other document (my own name)','Другой документ (своё название)')+'</option></select>';
+        h+='<div id="doc-intake-title-row" style="display:none;"><label style="'+label+'">'+docIntakeT('Name','Название')+'</label><input id="doc-intake-title" data-qa="doc-intake-title" style="'+input+'" maxlength="160" value="'+esc(r.title_suggestion||'')+'" oninput="docIntakeRefresh()"></div>';
+        [['doc_number',docIntakeT('Document No.','Номер документа'),'text'],['issued_by',docIntakeT('Issued by','Кем выдан'),'text'],['valid_from',docIntakeT('Issue date','Дата выдачи'),'date'],['valid_to',docIntakeT('Expiry date','Действует до'),'date']].forEach(function(f){
+            h+='<label style="'+label+'">'+f[1]+'</label><input id="doc-intake-'+f[0]+'" data-qa="doc-intake-'+f[0]+'" type="'+f[2]+'" style="'+input+'" value="'+esc(r[f[0]]||'')+'" oninput="docIntakeRefresh()">';
+        });
+        h+='<div id="doc-intake-statement" data-qa="doc-intake-statement" style="margin-top:14px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg);font-size:13px;line-height:1.45;"></div>';
+        h+='<div style="display:flex;gap:8px;margin-top:14px;"><button class="btn btn-sm doc-intake-plus" data-qa="doc-intake-confirm" onclick="docIntakeConfirm()">'+docIntakeT('Confirm','Подтверждаю')+'</button><button class="btn btn-outline btn-sm" onclick="docIntakeCancel()">'+docIntakeT('Cancel','Отмена')+'</button></div>';
+    }
+    h+='</div></div>';
+    document.body.insertAdjacentHTML('beforeend',h);
+    if(docIntake.status==='confirm')docIntakeRefresh();
+}
+// One write of the confirmed document. With account sync on, every document
+// write must name the revision it edits, and background sync can move that
+// revision between our own consecutive writes. This is the seafarer's fresh
+// confirmation, not a stale form, so each write reads the current revision and
+// a «changed since you opened it» refusal is retried on the newest one.
+async function docIntakeWrite(command,args,docId){
+    for(var attempt=0;;attempt++){
+        var call=Object.assign({},args);
+        try{
+            var docs=await invoke('get_documents');
+            var row=(docs||[]).find(function(x){return x&&x.id===docId;});
+            if(row&&row.sync_revision!=null)call.expectedRevision=row.sync_revision;
+        }catch(e0){}
+        try{return await invoke(command,call);}
+        catch(e){if(attempt>=3||String(e).indexOf('changed since you opened')<0)throw e;}
+    }
+}
+var docIntakeBusy=false;
+async function docIntakeConfirm(){
+    if(!docIntake||docIntake.status!=='confirm'||docIntakeBusy)return;
+    var type=docIntakeValue('doc-intake-type'),tpl=docIntakeTemplate(type),title=tpl?tpl.title:docIntakeValue('doc-intake-title');
+    if(!type||(type===DOC_INTAKE_OTHER&&!title)){showToast(docIntakeT('Choose what this document is.','Укажите, что это за документ.'),'warn');return;}
+    var values={doc_number:docIntakeValue('doc-intake-doc_number'),issued_by:docIntakeValue('doc-intake-issued_by'),valid_from:docIntakeValue('doc-intake-valid_from'),valid_to:docIntakeValue('doc-intake-valid_to')};
+    var intake=docIntake;
+    docIntakeBusy=true;
+    try{
+        var target=tpl?docIntakeEmptySlot(tpl.id):null;
+        if(!target){
+            // No empty slot of this type: the row is created. A catalogue title makes
+            // add_custom_doc create the catalogue row when the profile has none; when a
+            // filed one exists the new document gets its own name and stays beside it.
+            var newTitle=title;
+            if(tpl&&docIntakeHasFiledSlot(tpl.id))newTitle=title+' — '+(values.doc_number||new Date().toISOString().slice(0,10));
+            target=await invoke('add_custom_doc',{title:newTitle,category:tpl?tpl.category:'Custom',hasExpiry:tpl?!!tpl.has_expiry:!!values.valid_to,isPermanent:false});
+        }
+        if(intake.sourcePath)await docIntakeWrite('attach_file',{docId:target.id,sourcePath:intake.sourcePath},target.id);
+        else await docIntakeWrite('attach_file_bytes',{docId:target.id,fileName:intake.fileName,dataBase64:intake.dataBase64},target.id);
+        var statuses={};try{statuses=JSON.parse(target.field_statuses||'{}')||{};}catch(e0){statuses={};}
+        delete statuses.not_applicable;
+        for(var f in values){
+            if(!values[f])continue;
+            await docIntakeWrite('update_doc_field',{id:target.id,field:f,value:values[f]},target.id);
+            statuses[f]='verified';
+        }
+        await docIntakeWrite('update_field_statuses',{id:target.id,statuses:JSON.stringify(statuses)},target.id);
+        docIntake=null;docIntakeRender();
+        allDocs=await invoke('get_documents');
+        selectedDocId=target.id;
+        try{renderTree();updateStatus();}catch(e1){}
+        if(isMobileMode()){mobileView='doc';mobileOcrState=null;renderMobileShell();}
+        else{var d=allDocs.find(function(x){return x.id===target.id;});if(d)renderDoc(d);}
+        showToast(docIntakeT('Document added: ','Документ добавлен: ')+title,'success');
+    }catch(e){
+        showToast(docIntakeT('Could not add the document: ','Не удалось добавить документ: ')+e,'error');
+        try{logError('docIntakeConfirm',e);}catch(_e){}
+    }finally{docIntakeBusy=false;}
 }
 
 // tasks/016: «Not applicable to me» — offered on any structure slot without a
@@ -8065,7 +8278,9 @@ function mobileDocsBodyHtml(){
     return h;
 }
 function renderMobileDocs(){
-    var h='<input class="mobile-search" type="search" placeholder="'+mobileSetupText('Search documents','Поиск документов')+'" value="'+mobileEsc(mobileDocsSearch)+'" oninput="mobileSetDocsSearch(this.value)">';
+    // tasks/016: the one green «+» of the whole structure lives on the list itself.
+    var h='<button class="mobile-primary-action doc-intake-plus" data-qa="doc-intake-plus" type="button" onclick="mobileShow(\'add\')"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileSetupText('Add document','Добавить документ')+'</span><span class="mobile-action-sub">'+mobileSetupText('Photo or file — no need to look for the right slot.','Фото или файл — искать нужный слот не нужно.')+'</span></span></button>';
+    h+='<input class="mobile-search" type="search" placeholder="'+mobileSetupText('Search documents','Поиск документов')+'" value="'+mobileEsc(mobileDocsSearch)+'" oninput="mobileSetDocsSearch(this.value)">';
     h+='<div id="mobile-docs-body">'+mobileDocsBodyHtml()+'</div>';
     mobileMainHtml(h);
     setTimeout(function(){hydrateDocumentThumbnails(document.getElementById('mobile-main'));},0);
@@ -8076,7 +8291,7 @@ function mobileBeginAdd(mode){
         mobileStartPdfBuilder(null);
         return;
     }
-    if(mode==='photo'||mode==='file'){
+    if(mode==='photo'||mode==='file'||mode==='gallery'){
         mobileAddMode=mode;
         mobilePendingAttachDocId=null;
         mobilePendingPickedFile=null;
@@ -8087,6 +8302,10 @@ function mobileBeginAdd(mode){
         if(mode==='photo'){
             input.setAttribute('accept','image/*');
             input.setAttribute('capture','environment');
+        }else if(mode==='gallery'){
+            // Images only and no capture: the phone opens its photo gallery.
+            input.setAttribute('accept','image/*');
+            input.removeAttribute('capture');
         }else{
             input.setAttribute('accept','image/*,application/pdf,.pdf,.jpg,.jpeg,.png');
             input.removeAttribute('capture');
@@ -8165,10 +8384,11 @@ function renderMobileAdd(){
         var pages=mobilePdfBuilder&&mobilePdfBuilder.pages?mobilePdfBuilder.pages.length:0;
         return renderMobileAttachSlotPicker('Choose certificate for PDF scan',pages+' page'+(pages===1?'':'s')+' ready.');
     }
-    var h='<div class="mobile-card"><div class="mobile-card-title">Add document</div><div class="mobile-card-sub">Choose how you want to add the file first. Skipi Seafarer will ask where to attach it next.</div></div>';
-    h+='<button class="mobile-primary-action" type="button" onclick="mobileBeginAdd(\'pdf\')"><span class="mobile-action-icon">&#128196;</span><span class="mobile-action-copy"><span class="mobile-action-title">Scan certificate to PDF</span><span class="mobile-action-sub">Take several pages and create one PDF document.</span></span></button>';
-    h+='<button class="mobile-primary-action" type="button" onclick="mobileBeginAdd(\'photo\')"><span class="mobile-action-icon">&#9635;</span><span class="mobile-action-copy"><span class="mobile-action-title">Take one photo</span><span class="mobile-action-sub">Use the camera for a single-page certificate or ID.</span></span></button>';
-    h+='<button class="mobile-primary-action" type="button" onclick="mobileBeginAdd(\'file\')"><span class="mobile-action-icon">&#8682;</span><span class="mobile-action-copy"><span class="mobile-action-title">Choose existing file</span><span class="mobile-action-sub">Attach a PDF or image already saved on the phone.</span></span></button>';
+    var h='<div class="mobile-card"><div class="mobile-card-title">'+mobileSetupText('Add document','Добавить документ')+'</div><div class="mobile-card-sub">'+mobileSetupText('Add a photo or a file. Skipi recognises the document, you confirm it, and it takes its place in your documents.','Добавьте фото или файл. Skipi распознает документ, вы подтвердите — и он встанет на своё место.')+'</div></div>';
+    h+='<button class="mobile-primary-action doc-intake-plus" data-qa="doc-intake-photo" type="button" onclick="mobileBeginAdd(\'photo\')"><span class="mobile-action-icon">&#9635;</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileSetupText('Take a photo','Сфотографировать')+'</span><span class="mobile-action-sub">'+mobileSetupText('Use the camera for the document.','Снять документ камерой.')+'</span></span></button>';
+    h+='<button class="mobile-primary-action doc-intake-plus" data-qa="doc-intake-gallery" type="button" onclick="mobileBeginAdd(\'gallery\')"><span class="mobile-action-icon">&#9638;</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileSetupText('Add from gallery','Добавить из галереи')+'</span><span class="mobile-action-sub">'+mobileSetupText('A photo already in your image gallery.','Снимок, который уже есть в галерее изображений.')+'</span></span></button>';
+    h+='<button class="mobile-primary-action doc-intake-plus" data-qa="doc-intake-file" type="button" onclick="mobileBeginAdd(\'file\')"><span class="mobile-action-icon">&#8682;</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileSetupText('Choose a file','Выбрать файл')+'</span><span class="mobile-action-sub">'+mobileSetupText('A PDF or another file on the phone.','PDF или другой файл в телефоне.')+'</span></span></button>';
+    h+='<button class="btn btn-outline" style="width:100%;margin-top:4px;" onclick="mobileBeginAdd(\'pdf\')">'+mobileSetupText('Scan several pages into one PDF','Сканировать несколько страниц в один PDF')+'</button>';
     h+='<button class="btn btn-outline" style="width:100%;margin-top:4px;" onclick="showAddCustomDoc()">Add custom certificate</button>';
     var missing=mobileFilteredDocs('missing').slice(0,3);
     if(missing.length){
@@ -8898,10 +9118,10 @@ async function mobileHandleFilePicked(files){
     mobilePendingAttachDocId=null;
     if(!file)return;
     if(!docId&&mobilePendingFileMode==='pending_single'){
-        mobilePendingPickedFile=file;
-        mobileAddMode='attach_single';
-        mobileView='add';
-        renderMobileShell();
+        // tasks/016: no slot hunting — the file is recognised and the seafarer confirms.
+        mobilePendingPickedFile=null;
+        mobileAddMode='choose';
+        docIntakePicked([file]);
         return;
     }
     if(!docId)return;
@@ -11581,7 +11801,9 @@ function showView(v, opts){
         tabsEl.innerHTML='';
     }
     var addBtn=document.getElementById('btn-add-custom');
-    if(addBtn)addBtn.style.display=(v==='files')?'inline':'none';
+    if(addBtn)addBtn.style.display='none';
+    var plusBtn=docIntakeMountButton();
+    if(plusBtn)plusBtn.style.display=(v==='files')?'inline':'none';
     pkgMode=v==='packages';pkgSelected=[];
     renderTree();
     if(v==='files'){
@@ -12485,6 +12707,7 @@ function docTreeKindBadge(d){
 }
 
 function renderTree(){
+    try{docIntakeMountButton();}catch(e){}
     var cats={};
     allDocs.forEach(function(d){
         var hay=((d.title||'')+' '+(d.category||'')).toLowerCase();
@@ -12906,7 +13129,7 @@ async function showDashboard(){
     var requiredMissing=requiredSummary.loaded?requiredSummary.missing:null;
     var c={expired:0,critical:0,warning:0,warning_soft:0,valid:0,none:0};
     uploadedDocs.forEach(function(d){c[classify(d)]++;});
-    var h='<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap;"><h2 style="font-size:18px;margin:0;">Dashboard</h2><button class="btn btn-accent btn-sm" onclick="showAddCustomDoc()">+ Add custom certificate</button></div>';
+    var h='<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap;"><h2 style="font-size:18px;margin:0;">Dashboard</h2><span><button class="btn btn-sm doc-intake-plus" data-qa="doc-intake-plus" onclick="docIntakePick()">+ '+docIntakeT('Add document','Добавить документ')+'</button> <button class="btn btn-outline btn-sm" onclick="showAddCustomDoc()">+ Add custom certificate</button></span></div>';
 
     // Profile completeness header (if seafarer profile is set)
     var profile=null;

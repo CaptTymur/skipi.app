@@ -181,6 +181,7 @@ pub fn run() {
             assistant::assistant_chat,
             // AI recognition
             ai::ai_preview_recognize,
+            ai::ai_classify_file,
             ai::ai_recognize,
             ai::save_api_key,
             ai::get_api_key,
@@ -212,6 +213,7 @@ pub fn run() {
             profile::get_active_template_ids,
             profile::get_conditional_template_ids,
             profile::get_required_docs,
+            profile::get_document_catalog,
             profile::create_profile_vault,
             profile::get_profile_status,
             profile::get_seafarer_frameworks,
