@@ -16,12 +16,14 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.ParcelFileDescriptor
+import android.speech.tts.TextToSpeech
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowManager
 import androidx.core.content.FileProvider
 import java.io.File
 import java.io.FileOutputStream
+import java.util.Locale
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -198,6 +200,65 @@ class MainActivity : TauriActivity() {
         else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
       } catch (e: Exception) {}
     }
+  }
+
+  // ---- Speech output for plugins (host-runtime 1.3, grant `speech`) ----
+  // The Android WebView has no speech synthesis, so the system text-to-speech engine speaks.
+  // The engine starts asynchronously: a phrase asked before it is ready is spoken once it is.
+  private var tts: TextToSpeech? = null
+  private var ttsReady = false
+  private var ttsPending: (() -> Unit)? = null
+
+  /** Returns "OK" when the phrase was handed to the engine (or queued for it), else "ERROR:<reason>". */
+  fun speakSkipi(text: String, lang: String, rate: Float, pitch: Float): String {
+    return try {
+      val say = {
+        val engine = tts
+        if (engine != null) {
+          try {
+            if (lang.isNotBlank()) {
+              val locale = Locale.forLanguageTag(lang)
+              if (engine.isLanguageAvailable(locale) >= TextToSpeech.LANG_AVAILABLE) engine.language = locale
+            }
+            engine.setSpeechRate(rate.coerceIn(0.5f, 2f))
+            engine.setPitch(pitch.coerceIn(0.5f, 2f))
+            engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "skipi-plugin")
+          } catch (e: Exception) {}
+        }
+      }
+      if (tts != null && ttsReady) {
+        say()
+      } else {
+        ttsPending = say
+        if (tts == null) {
+          tts = TextToSpeech(applicationContext) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+              ttsReady = true
+              ttsPending?.invoke()
+            } else {
+              try { tts?.shutdown() } catch (e: Exception) {}
+              tts = null
+            }
+            ttsPending = null
+          }
+        }
+      }
+      "OK"
+    } catch (e: Exception) {
+      "ERROR:" + (e.localizedMessage ?: e.toString())
+    }
+  }
+
+  fun stopSkipiSpeech() {
+    ttsPending = null
+    try { tts?.stop() } catch (e: Exception) {}
+  }
+
+  override fun onDestroy() {
+    try { tts?.shutdown() } catch (e: Exception) {}
+    tts = null
+    ttsReady = false
+    super.onDestroy()
   }
 
   // Sensors run only while the app is in front: a plugin left open must not keep them on

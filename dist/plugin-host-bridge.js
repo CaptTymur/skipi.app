@@ -15,6 +15,10 @@
      - v1.2: host-mediated motion sensors
        (hostApi.motion, grant 'motion') and keep-awake (hostApi.screen, grant
        'keep_awake'); the frame still has no sensor or wake-lock access of its own;
+     - v1.3: host-mediated device capabilities, each behind its own grant — camera frames
+       ('camera'), microphone audio ('microphone'), position ('location'), speech output
+       ('speech') and vibration ('vibrate'). The host captures / speaks / vibrates; the frame
+       still gets no media, geolocation or device API of its own;
      - the plugin runtime contract is unchanged: it still calls
        window.SkipiPlugins[slug].mount(container, hostApi) — container is the
        frame's own body, hostApi is a bridge proxy.
@@ -31,7 +35,7 @@
 (function () {
   'use strict';
   var TOKEN = window.__SKIPI_TOKEN__ || '';   // per-mount capability token (set by host)
-  var slug = null, theme = 'dark', nonce = '', themeSubs = [], pending = {}, seq = 0, motionSubs = [];
+  var slug = null, theme = 'dark', nonce = '', themeSubs = [], pending = {}, seq = 0, motionSubs = [], streamSubs = { camera: [], microphone: [], location: [] };
   function send(m) { try { parent.postMessage(Object.assign({ ch: 'skipi-plugin', v: 1, token: TOKEN }, m), '*'); } catch (e) {} }
 
   function selfCheck() {
@@ -56,6 +60,15 @@
 
   function proxy(perms, hostId) {
     var has = function (p) { return perms.indexOf(p) >= 0; };
+    // a host-pushed stream: the grant has the stream's own name
+    var stream = function (name, onName) {
+      var api = {
+        start: function (o) { if (!has(name)) return notGranted(name); return rpc(name + '.start', { opts: o || {} }); },
+        stop: function () { if (has(name)) send({ type: name + '.stop' }); }
+      };
+      api[onName] = function (cb) { streamSubs[name].push(cb); return function () { streamSubs[name] = streamSubs[name].filter(function (f) { return f !== cb; }); }; };
+      return api;
+    };
     return {
       // Non-secret host identity (so the plugin can resolve its role). No PII.
       host: { id: hostId || null },
@@ -98,6 +111,17 @@
       screen: {
         keepAwake: function (on) { if (!has('keep_awake')) return notGranted('keep_awake'); return rpc('screen.keepAwake', { on: !!on }); }
       },
+      // v1.3: the host captures and pushes; start/stop are requests, on* registers a listener for the pushes.
+      camera: stream('camera', 'onFrame'),
+      microphone: stream('microphone', 'onChunk'),
+      location: stream('location', 'onPosition'),
+      speech: {
+        speak: function (o) { if (!has('speech')) return notGranted('speech'); o = (typeof o === 'string') ? { text: o } : (o || {}); return rpc('speech.speak', { text: o.text, lang: o.lang, rate: o.rate, pitch: o.pitch }); },
+        stop: function () { if (has('speech')) send({ type: 'speech.stop' }); }
+      },
+      haptics: {
+        vibrate: function (p) { if (!has('vibrate')) return notGranted('vibrate'); return rpc('haptics.vibrate', { pattern: p }); }
+      },
       audio: { playLoop: function () {}, stop: function () {} },
       permissions: { listGranted: function () { return perms.slice(); } }
     };
@@ -130,6 +154,9 @@
       send({ type: 'resize', height: document.body.scrollHeight });
     } else if (m.type === 'storage.result') {
       var cb = pending[m.id]; if (cb) { delete pending[m.id]; cb(m.value); }
+    } else if (m.type === 'stream.data') {
+      var subs = streamSubs[m.stream];
+      if (subs) { var d = m.data || {}; d.seq = m.seq; subs.forEach(function (cb) { try { cb(d); } catch (e) {} }); }
     } else if (m.type === 'motion.batch') {
       var b = { seq: m.seq, samples: m.samples };
       motionSubs.forEach(function (cb) { try { cb(b); } catch (e) {} });
@@ -340,6 +367,90 @@
       var slug = active.slug, on = !!m.on; active.awake = on;
       rpcRun(m, function () { return screenApi.keepAwake(slug, on); });
     }
+    // ---- host-mediated device capabilities (v1.3) ----
+    // Streams: the home captures and calls push(data); the runtime cleans every item, numbers it
+    // and delivers it only to the mount that started the stream. The grant is the stream's name.
+    function num(v, lo, hi, dflt) { v = Number(v); return isFinite(v) ? Math.max(lo, Math.min(hi, v)) : dflt; }
+    function finiteOrNull(v) { return (typeof v === 'number' && isFinite(v)) ? v : null; }
+    function b64(v, max) { return (typeof v === 'string' && v.length <= max && /^[A-Za-z0-9+/]*={0,2}$/.test(v)) ? v : null; }
+    var STREAMS = {
+      camera: {
+        opts: function (o) { return { facing: o.facing === 'user' ? 'user' : 'environment', width: Math.round(num(o.width, 64, 1280, 320)), fps: num(o.fps, 0.2, 15, 2), quality: num(o.quality, 0.1, 0.95, 0.6) }; },
+        clean: function (d) {
+          var data = b64(d && d.base64, 2800000);
+          if (!data || !data.length) return null;
+          return { t: finiteOrNull(d.t), width: Math.round(num(d.width, 0, 8192, 0)), height: Math.round(num(d.height, 0, 8192, 0)), mime: 'image/jpeg', base64: data };
+        }
+      },
+      microphone: {
+        opts: function (o) { return { chunkMs: Math.round(num(o.chunkMs, 50, 1000, 250)) }; },
+        clean: function (d) {
+          var pcm = b64(d && d.pcm, 700000);
+          if (pcm === null) return null;
+          return { t: finiteOrNull(d.t), sampleRate: Math.round(num(d.sampleRate, 0, 192000, 0)), level: num(d.level, 0, 1, 0), pcm: pcm };
+        }
+      },
+      location: {
+        opts: function (o) { return { highAccuracy: !!o.highAccuracy }; },
+        clean: function (d) {
+          if (!d || typeof d.lat !== 'number' || typeof d.lon !== 'number' || !isFinite(d.lat) || !isFinite(d.lon) || Math.abs(d.lat) > 90 || Math.abs(d.lon) > 180) return null;
+          return { t: finiteOrNull(d.t), lat: d.lat, lon: d.lon, accuracy: finiteOrNull(d.accuracy), altitude: finiteOrNull(d.altitude), speed: finiteOrNull(d.speed), heading: finiteOrNull(d.heading) };
+        }
+      }
+    };
+    function hostCap(name) { return (cfg.host && cfg.host[name]) || null; }   // opt-in per home: absent → refused
+    function handleStreamStart(m, name) {
+      var def = STREAMS[name], api = hostCap(name);
+      if (!granted(name)) return deny(m, name + '.start', 'permission not granted: ' + name);
+      if (!api || typeof api.start !== 'function') return deny(m, name + '.start', name + ' is not available in this host');
+      var tok = active.token, slug = active.slug, sseq = 0;
+      var push = function (data) {
+        if (!active || active.token !== tok) return false;
+        var clean = def.clean(data);
+        if (clean) toFrame({ type: 'stream.data', stream: name, seq: ++sseq, data: clean });
+        return true;
+      };
+      var opts = def.opts((m.opts && typeof m.opts === 'object') ? m.opts : {});
+      active.streams = active.streams || {}; active.streams[name] = true;
+      rpcRun(m, function () { return api.start(slug, opts, push); });
+    }
+    function stopStream(a, name) {
+      var api = hostCap(name);
+      if (a && a.streams && a.streams[name] && api && typeof api.stop === 'function') { try { api.stop(a.slug); } catch (e) {} }
+      if (a && a.streams) a.streams[name] = false;
+    }
+    function handleStreamStop(m, name) {
+      if (!granted(name)) { audit.push('DENY ' + name + '.stop'); return; }
+      stopStream(active, name);
+    }
+    function handleSpeak(m) {
+      var api = hostCap('speech');
+      if (!granted('speech')) return deny(m, 'speech.speak', 'permission not granted: speech');
+      if (!api || typeof api.speak !== 'function') return deny(m, 'speech.speak', 'speech is not available in this host');
+      var text = (typeof m.text === 'string') ? m.text.slice(0, 500) : '';
+      if (!text.replace(/\s+/g, '')) return deny(m, 'speech.speak', 'nothing to say');
+      var lang = (typeof m.lang === 'string' && /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(m.lang)) ? m.lang : '';
+      var slug = active.slug, req = { text: text, lang: lang, rate: num(m.rate, 0.5, 2, 1), pitch: num(m.pitch, 0.5, 2, 1) };
+      active.spoke = true;
+      rpcRun(m, function () { return api.speak(slug, req); });
+    }
+    function stopSpeech(a) {
+      var api = hostCap('speech');
+      if (a && a.spoke && api && typeof api.stop === 'function') { try { api.stop(a.slug); } catch (e) {} }
+      if (a) a.spoke = false;
+    }
+    function handleVibrate(m) {
+      var api = hostCap('haptics');
+      if (!granted('vibrate')) return deny(m, 'haptics.vibrate', 'permission not granted: vibrate');
+      if (!api || typeof api.vibrate !== 'function') return deny(m, 'haptics.vibrate', 'vibration is not available in this host');
+      var raw = Array.isArray(m.pattern) ? m.pattern : [m.pattern], pattern = [];
+      for (var i = 0; i < raw.length && pattern.length < 16; i++) pattern.push(Math.round(num(raw[i], 0, 2000, 0)));
+      if (!pattern.length || !pattern.some(function (x) { return x > 0; })) pattern = [200];
+      var slug = active.slug;
+      rpcRun(m, function () { return api.vibrate(slug, pattern); });
+    }
+    function releaseDevice(a) { stopStream(a, 'camera'); stopStream(a, 'microphone'); stopStream(a, 'location'); stopSpeech(a); }
+
     function releaseAwake(a) {
       if (a && a.awake && screenApi && typeof screenApi.keepAwake === 'function') { try { screenApi.keepAwake(a.slug, false); } catch (e) {} }
       if (a) a.awake = false;
@@ -390,6 +501,17 @@
           if (!granted('motion')) { audit.push('DENY motion.stop'); break; }
           stopMotion(active); break;
         case 'screen.keepAwake': handleKeepAwake(m); break;
+        case 'camera.start': handleStreamStart(m, 'camera'); break;
+        case 'camera.stop': handleStreamStop(m, 'camera'); break;
+        case 'microphone.start': handleStreamStart(m, 'microphone'); break;
+        case 'microphone.stop': handleStreamStop(m, 'microphone'); break;
+        case 'location.start': handleStreamStart(m, 'location'); break;
+        case 'location.stop': handleStreamStop(m, 'location'); break;
+        case 'speech.speak': handleSpeak(m); break;
+        case 'speech.stop':
+          if (!granted('speech')) { audit.push('DENY speech.stop'); break; }
+          stopSpeech(active); break;
+        case 'haptics.vibrate': handleVibrate(m); break;
         case 'nav.setTitle': nav.setTitle(m.title); break;
         case 'nav.close':
           var closeApi = active && active.api;
@@ -441,6 +563,8 @@
         if (!active) return;
         // v1.2: the runtime itself releases sensors and keep-awake, whatever the plugin did
         stopMotion(active); releaseAwake(active);
+        // v1.3: … and the camera, the microphone, the position watch and any speech
+        releaseDevice(active);
         toFrame({ type: 'unmount' });
         if (active.iframe.parentNode) active.iframe.parentNode.removeChild(active.iframe);
         active = null;

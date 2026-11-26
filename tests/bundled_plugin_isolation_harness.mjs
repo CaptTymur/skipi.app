@@ -40,7 +40,7 @@ const HOST_UI_MODULE = fs.readFileSync(path.join(DIST, 'plugin-host-ui.js'), 'ut
 const SETTINGS_MODULE = fs.readFileSync(path.join(DIST, 'skipi-settings.js'), 'utf8');
 const ACCOUNT_DELETE_RS = fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'commands', 'account_delete.rs'), 'utf8');
 const LIB_RS = fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'lib.rs'), 'utf8');
-const HOST_RUNTIME_BRIDGE_SHA256 = 'b8263301d1bbf853fb660e8a37ef5e22a594cd39e715153aee980ac68d9f3d7e';
+const HOST_RUNTIME_BRIDGE_SHA256 = 'e1c8f1a8c93b903355c62b7430a71d89ceb48925f6a7adc023c09788dedc056a';
 
 // Since 24.11.2026 Seafarer ships NO bundled plugins (owner: every plugin comes from the catalog).
 // The isolation drills below still need real plugin bytes, so the BNWAS artifact lives on as a fixture.
@@ -2418,14 +2418,19 @@ const countOf = (re) => (MANIFEST.match(re) || []).length;
   section('manifest contract (MAN1) — the permission set is a snapshot, not a door (RISKS №212b)');
   const perms = (MANIFEST.match(/<uses-permission[^>]*android:name="([^"]+)"/g) || [])
     .map((s) => /android:name="([^"]+)"/.exec(s)[1]).sort();
-  ok(JSON.stringify(perms) === JSON.stringify(['android.permission.CAMERA', 'android.permission.INTERNET']),
-    'exactly INTERNET + CAMERA are requested — any added permission fails here (got ' + JSON.stringify(perms) + ')');
+  // Owner 25.11.2026: the host capabilities for plugins are widened in one release — microphone,
+  // location and vibration join the camera. The set stays an exact snapshot: anything else fails.
+  ok(JSON.stringify(perms) === JSON.stringify(['android.permission.ACCESS_COARSE_LOCATION', 'android.permission.ACCESS_FINE_LOCATION',
+    'android.permission.CAMERA', 'android.permission.INTERNET', 'android.permission.MODIFY_AUDIO_SETTINGS', 'android.permission.RECORD_AUDIO', 'android.permission.VIBRATE']),
+    'exactly INTERNET + CAMERA + the plugin capabilities (microphone, location, vibration) are requested — any other permission fails here (got ' + JSON.stringify(perms) + ')');
   const feats = (MANIFEST.match(/<uses-feature[^>]*android:name="([^"]+)"/g) || [])
     .map((s) => /android:name="([^"]+)"/.exec(s)[1]).sort();
-  ok(JSON.stringify(feats) === JSON.stringify(['android.hardware.camera', 'android.software.leanback']),
-    'the uses-feature set is unchanged too (got ' + JSON.stringify(feats) + ')');
-  ok(!/android\.permission\.(RECORD_AUDIO|ACCESS_FINE_LOCATION|ACCESS_COARSE_LOCATION|READ_CONTACTS|BLUETOOTH|NEARBY_WIFI_DEVICES|READ_EXTERNAL_STORAGE|POST_NOTIFICATIONS)/.test(MANIFEST),
-    'no mic / location / contacts / bluetooth / storage / notification permission slipped in under the IME route');
+  ok(JSON.stringify(feats) === JSON.stringify(['android.hardware.camera', 'android.hardware.location', 'android.hardware.location.gps', 'android.hardware.microphone', 'android.software.leanback']),
+    'the uses-feature set is exactly camera, location, gps, microphone, leanback (got ' + JSON.stringify(feats) + ')');
+  ok((MANIFEST.match(/<uses-feature[^>]*>/g) || []).every((f) => /android:required="false"/.test(f)),
+    'no hardware feature is required: a device without a camera, a microphone or GPS can still install the app');
+  ok(!/android\.permission\.(ACCESS_BACKGROUND_LOCATION|FOREGROUND_SERVICE|READ_CONTACTS|BLUETOOTH|NEARBY_WIFI_DEVICES|READ_EXTERNAL_STORAGE|POST_NOTIFICATIONS)/.test(MANIFEST),
+    'no background location / foreground service / contacts / bluetooth / storage / notification permission slipped in');
 }
 
 {
