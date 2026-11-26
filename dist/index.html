@@ -5044,6 +5044,8 @@ function mobileSetBottomNav(showNav){
     if(topHome){
         topHome.classList.toggle('active',mobileView==='home');
         topHome.setAttribute('aria-current',mobileView==='home'?'page':'false');
+        // Owner 25.11: on the home screen itself the Home button is not shown (same rule as ‹ below).
+        topHome.style.display=mobileView==='home'?'none':'';
     }
     // Header ‹ (owner 06.09): visible only while there IS a previous screen —
     // at the root it is not shown at all (a dead control is worse than none).
@@ -8823,7 +8825,7 @@ function renderMobileDoc(){
     var d=allDocs.find(function(x){return x.id===selectedDocId;});
     if(!d){mobileView='docs';return renderMobileDocs();}
     oneAccountCapture('document',d,true);
-    mobileSetBottomNav(true);
+    mobileSetBottomNav(!isNativeMobile());
     var h='<button class="btn btn-outline btn-sm" onclick="mobileShow(\'docs\')" style="margin-bottom:10px;">Back</button>';
     h+='<div class="mobile-card"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title">'+mobileEsc(d.title)+'</div><div class="mobile-card-sub">'+mobileEsc(d.category)+'</div></div>'+mobileStatusPill(d)+'</div>';
     h+='<div class="mobile-actions" style="margin-top:12px;">';
@@ -8921,7 +8923,7 @@ function renderMobilePdfBuilder(){
     var d=b&&b.docId?allDocs.find(function(x){return x.id===b.docId;}):null;
     if(!b){mobileView='add';return renderMobileAdd();}
     var busy=!!b.busy;
-    mobileSetBottomNav(true);
+    mobileSetBottomNav(!isNativeMobile());
     var h='<button class="btn btn-outline btn-sm" '+(busy?'disabled':'')+' onclick="mobileCancelPdfBuilder()" style="margin-bottom:10px;">Back</button>';
     h+='<div class="mobile-card"><div class="mobile-row"><div style="min-width:0;"><div class="mobile-card-title">'+mobileEsc(d?d.title:'New PDF scan')+'</div><div class="mobile-card-sub">'+mobileEsc(d?d.category:'Choose the certificate slot after scanning.')+'</div></div><span class="mobile-pill">'+b.pages.length+' pages</span></div>';
     h+='<div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-accent" '+(busy?'disabled':'')+' onclick="mobilePdfTakePage()">Take next page</button><button class="btn btn-outline" '+(busy?'disabled':'')+' onclick="mobilePdfAddFromGallery()">Add from gallery</button></div></div>';
@@ -10803,6 +10805,7 @@ function _lgTxt(){
         title:'Вход в Skipi', sub:'Введите email и пароль вашего аккаунта Skipi.',
         email:'Email', pass:'Пароль', submit:'Войти', signing:'Вход…',
         noacct:'Нет аккаунта?', register:'Регистрация', forgot:'Забыли пароль?',
+        showpw:'Показать пароль', hidepw:'Скрыть пароль',
         fill:'Введите email и пароль.',
         net:'Нет связи с сервером Skipi. Проверьте интернет и повторите.',
         creds:'Неверный email или пароль.',
@@ -10812,6 +10815,7 @@ function _lgTxt(){
         title:'Sign in to Skipi', sub:'Use your Skipi account email and password.',
         email:'Email', pass:'Password', submit:'Sign in', signing:'Signing in…',
         noacct:'No account?', register:'Register', forgot:'Forgot password?',
+        showpw:'Show password', hidepw:'Hide password',
         fill:'Enter your email and password.',
         net:'Cannot reach the Skipi server. Check your internet connection and try again.',
         creds:'Wrong email or password.',
@@ -10841,6 +10845,27 @@ function _lgApplyI18n(){
         reg.parentNode.appendChild(row);
     }
     if(fg)fg.textContent=t.forgot;
+    // «Show password» (owner 17.11): lets the user check what was typed. Created here for the same
+    // reason as «Forgot password?». A successful sign-in puts the field back to dots.
+    var pw=document.getElementById('lg-password');
+    var sp=document.getElementById('lg-showpw');
+    if(!sp&&pw&&pw.parentNode){
+        var prow=document.createElement('div');
+        prow.style.cssText='margin-top:6px;font-size:12px;';
+        sp=document.createElement('a');
+        sp.setAttribute('id','lg-showpw');
+        sp.setAttribute('href','#');
+        sp.style.cssText='color:var(--accent);text-decoration:none;';
+        sp.onclick=function(ev){
+            if(ev&&ev.preventDefault)ev.preventDefault();
+            var el=document.getElementById('lg-password');
+            if(el){el.type=el.type==='password'?'text':'password';_lgApplyI18n();}
+            return false;
+        };
+        prow.appendChild(sp);
+        pw.parentNode.appendChild(prow);
+    }
+    if(sp)sp.textContent=(pw&&pw.type==='text')?t.hidepw:t.showpw;
 }
 // msg — human text in the UI language; detail — optional technical line shown
 // small UNDER the message (never instead of it). Both go to the error log.
@@ -10897,7 +10922,7 @@ async function doAppLogin(){
     try{
         await invoke('app_login',{email:em,password:pw});
         // Success: clear the password field, hide the gate, resume the shell.
-        var pwEl=document.getElementById('lg-password');if(pwEl)pwEl.value='';
+        var pwEl=document.getElementById('lg-password');if(pwEl){pwEl.value='';pwEl.type='password';}
         hideLoginGate();
         var resume=_loginGatePending;_loginGatePending=null;
         var next=_loginGateNext;_loginGateNext=null;
