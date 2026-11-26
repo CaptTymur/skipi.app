@@ -22,6 +22,10 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Skipi Seafarer uses the camera to photograph maritime documents and instruments so the app can recognize text in them (OCR).</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Skipi Seafarer uses your location only when you open a plugin that needs it, such as a navigation tool, and only while that plugin is open.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Skipi Seafarer uses the microphone only when you open a plugin that listens to sound, and only while that plugin is open.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>Skipi Seafarer reads the motion sensors when you open a plugin that measures heel and roll, such as the Clinometer.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
