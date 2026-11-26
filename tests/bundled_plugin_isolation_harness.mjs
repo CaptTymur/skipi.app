@@ -40,7 +40,7 @@ const HOST_UI_MODULE = fs.readFileSync(path.join(DIST, 'plugin-host-ui.js'), 'ut
 const SETTINGS_MODULE = fs.readFileSync(path.join(DIST, 'skipi-settings.js'), 'utf8');
 const ACCOUNT_DELETE_RS = fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'commands', 'account_delete.rs'), 'utf8');
 const LIB_RS = fs.readFileSync(path.join(__dirname, '..', 'src-tauri', 'src', 'lib.rs'), 'utf8');
-const HOST_RUNTIME_BRIDGE_SHA256 = 'b8263301d1bbf853fb660e8a37ef5e22a594cd39e715153aee980ac68d9f3d7e';
+const HOST_RUNTIME_BRIDGE_SHA256 = 'e1c8f1a8c93b903355c62b7430a71d89ceb48925f6a7adc023c09788dedc056a';
 
 // Since 24.11.2026 Seafarer ships NO bundled plugins (owner: every plugin comes from the catalog).
 // The isolation drills below still need real plugin bytes, so the BNWAS artifact lives on as a fixture.
@@ -149,6 +149,18 @@ ok(/revoked/.test(REMOTE_LOADER) && /revocation/.test(REMOTE_LOADER), 'remote lo
 ok(/downgrade blocked/.test(REMOTE_LOADER) && /semverGt/.test(REMOTE_LOADER), 'remote loader blocks catalog rollback below installed/bundled baseline');
 ok(sha256Text(BRIDGE) === HOST_RUNTIME_BRIDGE_SHA256, 'plugin-host-bridge.js matches @skipi/host-runtime artifact sha256');
 // After the @skipi/plugin-host-ui adoption these entry points live in the module, not inline HTML.
+// Ratings and reviews of plugins (owner 25.11.2026): the Apps module shows them, the home injects
+// the API, and the account token stays on the native side.
+{
+  const reviewsDep = (HTML.match(/reviews: \{[\s\S]*?\n  \},\n  attachGlobals: true/) || [''])[0];
+  ok(/function pluginReviewsHtml\(/.test(HOST_UI_MODULE) && /function pluginRatingChipHtml\(/.test(HOST_UI_MODULE), '@skipi/plugin-host-ui carries the ratings-and-reviews block (1.3)');
+  ok(['plugin_ratings', 'plugin_reviews_list', 'plugin_review_save', 'plugin_review_delete', 'plugin_review_report'].every((c) => reviewsDep.includes("invoke('" + c + "'")),
+    'the home wires deps.reviews to the five native commands');
+  ok(reviewsDep.length > 0 && !/token|Authorization|Bearer|fetch\(/i.test(reviewsDep.replace(/\/\/[^\n]*/g, '')), 'the page passes no account token and makes no request of its own for reviews');
+  ok(/\.apps-reviews \{/.test(HTML) && /\.apps-star\.on \{/.test(HTML) && /\.apps-rating \{/.test(HTML), 'the review styles are present in the home');
+  const RS = fs.readFileSync(path.join(DIST, '..', 'src-tauri', 'src', 'commands', 'plugin_reviews.rs'), 'utf8');
+  ok(/stored_user_token/.test(RS) && /assistant_api_base\(\)/.test(RS) && /fn valid_slug/.test(RS), 'the native commands take the token from the app session, talk to the account server and validate the slug');
+}
 ok(/function showApps\(/.test(HOST_UI_MODULE) && /function renderMobileApps\(/.test(HOST_UI_MODULE) && /function pluginMountInto\(/.test(HOST_UI_MODULE), 'desktop + mobile Apps entry points still exist (in @skipi/plugin-host-ui)');
 
 // ------------------------------------------------------------------ mount
@@ -2216,6 +2228,10 @@ const appsTileTag = (h, id) => {
       // Owner 24.11.2026: those who have the plugin must SEE that an update is available — the hint alone is invisible.
       ok(/<span class="fam-app-label">X<\/span><span class="fam-app-sublabel fam-app-update" data-qa="plugin-update-available-x">Update<\/span>/.test(upd), 'a tile with an update carries a visible «Update» line under its name');
       ok(!/fam-app-update/.test(emoji), 'a tile without an update has no such line');
+      // host-ui 1.3 (owner 25.11.2026): the average rating of a plugin is shown on its tile.
+      const rated = t(tile('⏱️', '<span class="apps-rating" data-qa="plugin-rating-x" title="Оценок: 3">★ 4.0</span>'));
+      ok(/<span class="fam-app-label">X<\/span><span class="fam-app-sublabel fam-app-rating" data-qa="plugin-rating-x">★ 4\.0<\/span>/.test(rated) && !/apps-rating/.test(rated), 'a rated plugin carries «★ 4.0» under its name on the phone tile');
+      ok(!/fam-app-rating/.test(emoji), 'a plugin nobody rated has no rating line');
       ok(t('<div>nothing to do</div>') === '<div>nothing to do</div>', 'markup without launcher tiles comes back byte-identical');
       // host-ui 1.1: a catalog plugin that is not installed yet (the «Available» shelf)
       const avail = t('<div class="apps-icon-tile" data-qa="plugin-available-y"><button type="button" data-qa="plugin-preview-y" onclick="pluginPreview(\'y\')" title="Y &#183; v1"><span class="apps-icon-tile-icon">⚖</span><span class="apps-icon-tile-name">Y</span><span class="apps-icon-tile-meta">v1</span><span class="apps-badge live">Install</span></button></div>');
@@ -2402,14 +2418,19 @@ const countOf = (re) => (MANIFEST.match(re) || []).length;
   section('manifest contract (MAN1) — the permission set is a snapshot, not a door (RISKS №212b)');
   const perms = (MANIFEST.match(/<uses-permission[^>]*android:name="([^"]+)"/g) || [])
     .map((s) => /android:name="([^"]+)"/.exec(s)[1]).sort();
-  ok(JSON.stringify(perms) === JSON.stringify(['android.permission.CAMERA', 'android.permission.INTERNET']),
-    'exactly INTERNET + CAMERA are requested — any added permission fails here (got ' + JSON.stringify(perms) + ')');
+  // Owner 25.11.2026: the host capabilities for plugins are widened in one release — microphone,
+  // location and vibration join the camera. The set stays an exact snapshot: anything else fails.
+  ok(JSON.stringify(perms) === JSON.stringify(['android.permission.ACCESS_COARSE_LOCATION', 'android.permission.ACCESS_FINE_LOCATION',
+    'android.permission.CAMERA', 'android.permission.INTERNET', 'android.permission.MODIFY_AUDIO_SETTINGS', 'android.permission.RECORD_AUDIO', 'android.permission.VIBRATE']),
+    'exactly INTERNET + CAMERA + the plugin capabilities (microphone, location, vibration) are requested — any other permission fails here (got ' + JSON.stringify(perms) + ')');
   const feats = (MANIFEST.match(/<uses-feature[^>]*android:name="([^"]+)"/g) || [])
     .map((s) => /android:name="([^"]+)"/.exec(s)[1]).sort();
-  ok(JSON.stringify(feats) === JSON.stringify(['android.hardware.camera', 'android.software.leanback']),
-    'the uses-feature set is unchanged too (got ' + JSON.stringify(feats) + ')');
-  ok(!/android\.permission\.(RECORD_AUDIO|ACCESS_FINE_LOCATION|ACCESS_COARSE_LOCATION|READ_CONTACTS|BLUETOOTH|NEARBY_WIFI_DEVICES|READ_EXTERNAL_STORAGE|POST_NOTIFICATIONS)/.test(MANIFEST),
-    'no mic / location / contacts / bluetooth / storage / notification permission slipped in under the IME route');
+  ok(JSON.stringify(feats) === JSON.stringify(['android.hardware.camera', 'android.hardware.location', 'android.hardware.location.gps', 'android.hardware.microphone', 'android.software.leanback']),
+    'the uses-feature set is exactly camera, location, gps, microphone, leanback (got ' + JSON.stringify(feats) + ')');
+  ok((MANIFEST.match(/<uses-feature[^>]*>/g) || []).every((f) => /android:required="false"/.test(f)),
+    'no hardware feature is required: a device without a camera, a microphone or GPS can still install the app');
+  ok(!/android\.permission\.(ACCESS_BACKGROUND_LOCATION|FOREGROUND_SERVICE|READ_CONTACTS|BLUETOOTH|NEARBY_WIFI_DEVICES|READ_EXTERNAL_STORAGE|POST_NOTIFICATIONS)/.test(MANIFEST),
+    'no background location / foreground service / contacts / bluetooth / storage / notification permission slipped in');
 }
 
 {
