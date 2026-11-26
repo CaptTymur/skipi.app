@@ -269,6 +269,232 @@
     }
   };
 
+  // ---- device capabilities for plugins (runtime 1.3) ----
+  // camera / microphone / location are captured HERE, in the host document, and pushed to the
+  // runtime; the plugin frame gets no media or geolocation API. Speech and vibration use the
+  // WebView where it can, the native command where it cannot (commands/plugin_device.rs).
+  function uiLang() { try { return (typeof window.getUiLang === 'function' && window.getUiLang()) || 'en'; } catch (e) { return 'en'; } }
+  function pluginTitle(slug) {
+    var rec = remoteRecord(slug), n = rec && (rec.name || rec.title);
+    if (n && typeof n === 'object') n = n[uiLang()] || n.en || n.ru;
+    return String(n || slug);
+  }
+  // The user is asked once per plugin and capability, before the system's own permission prompt.
+  var CONSENT_TEXT = {
+    en: { camera: 'use the camera', microphone: 'listen to the microphone', location: 'see your location', q: 'The plugin \u201c{p}\u201d asks to {w}.', note: 'Only while the plugin is open. You can remove the plugin at any time.', yes: 'Allow', no: 'Don\u2019t allow' },
+    ru: { camera: '\u0438\u0441\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u044c \u043a\u0430\u043c\u0435\u0440\u0443', microphone: '\u0441\u043b\u0443\u0448\u0430\u0442\u044c \u043c\u0438\u043a\u0440\u043e\u0444\u043e\u043d', location: '\u0432\u0438\u0434\u0435\u0442\u044c \u0432\u0430\u0448\u0435 \u043c\u0435\u0441\u0442\u043e\u043f\u043e\u043b\u043e\u0436\u0435\u043d\u0438\u0435', q: '\u041f\u043b\u0430\u0433\u0438\u043d \u00ab{p}\u00bb \u043f\u0440\u043e\u0441\u0438\u0442 \u0440\u0430\u0437\u0440\u0435\u0448\u0435\u043d\u0438\u044f {w}.', note: '\u0422\u043e\u043b\u044c\u043a\u043e \u043f\u043e\u043a\u0430 \u043f\u043b\u0430\u0433\u0438\u043d \u043e\u0442\u043a\u0440\u044b\u0442. \u041f\u043b\u0430\u0433\u0438\u043d \u043c\u043e\u0436\u043d\u043e \u0443\u0434\u0430\u043b\u0438\u0442\u044c \u0432 \u043b\u044e\u0431\u043e\u0439 \u043c\u043e\u043c\u0435\u043d\u0442.', yes: '\u0420\u0430\u0437\u0440\u0435\u0448\u0438\u0442\u044c', no: '\u041d\u0435 \u0440\u0430\u0437\u0440\u0435\u0448\u0430\u0442\u044c' }
+  };
+  function consentKey(slug, cap) { return 'skpd_consent.' + slug + '.' + cap; }
+  function askConsent(slug, cap) {
+    try { if (localStorage.getItem(consentKey(slug, cap)) === '1') return Promise.resolve(true); } catch (e) {}
+    if (typeof window.SkipiPluginConsent === 'function') {          // a home/test override
+      return Promise.resolve(window.SkipiPluginConsent(slug, cap)).then(function (yes) {
+        if (yes) { try { localStorage.setItem(consentKey(slug, cap), '1'); } catch (e) {} }
+        return !!yes;
+      });
+    }
+    return new Promise(function (resolve) {
+      var T = CONSENT_TEXT[uiLang()] || CONSENT_TEXT.en;
+      var veil = document.createElement('div');
+      veil.setAttribute('data-plugin-consent', cap);
+      veil.setAttribute('style', 'position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:20px');
+      var box = document.createElement('div');
+      box.setAttribute('style', 'background:#fff;color:#111;border-radius:16px;max-width:420px;width:100%;padding:20px;font:16px/1.4 system-ui,sans-serif;box-shadow:0 10px 40px rgba(0,0,0,.3)');
+      var q = document.createElement('div');
+      q.setAttribute('style', 'font-weight:700;margin-bottom:8px');
+      q.textContent = T.q.replace('{p}', pluginTitle(slug)).replace('{w}', T[cap] || cap);
+      var note = document.createElement('div');
+      note.setAttribute('style', 'font-size:14px;opacity:.7;margin-bottom:16px');
+      note.textContent = T.note;
+      var row = document.createElement('div');
+      row.setAttribute('style', 'display:flex;gap:10px;justify-content:flex-end');
+      function button(text, primary, yes) {
+        var b = document.createElement('button');
+        b.type = 'button'; b.textContent = text;
+        b.setAttribute('data-plugin-consent-answer', yes ? 'yes' : 'no');
+        b.setAttribute('style', 'border:0;border-radius:10px;padding:10px 16px;font:inherit;font-weight:600;' + (primary ? 'background:#00455f;color:#fff' : 'background:#e6ebee;color:#111'));
+        b.addEventListener('click', function () {
+          if (veil.parentNode) veil.parentNode.removeChild(veil);
+          if (yes) { try { localStorage.setItem(consentKey(slug, cap), '1'); } catch (e) {} }
+          resolve(yes);
+        });
+        return b;
+      }
+      row.appendChild(button(T.no, false, false)); row.appendChild(button(T.yes, true, true));
+      box.appendChild(q); box.appendChild(note); box.appendChild(row); veil.appendChild(box);
+      (document.body || document.documentElement).appendChild(veil);
+    });
+  }
+  function mediaDevices() { try { return (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function') ? navigator.mediaDevices : null; } catch (e) { return null; } }
+  function refusal(e) {
+    var n = (e && e.name) || '';
+    if (n === 'NotAllowedError' || n === 'SecurityError' || (e && e.code === 1)) return 'denied';
+    if (n === 'NotFoundError' || n === 'OverconstrainedError') return 'no-device';
+    return 'unavailable';
+  }
+  function stopTracks(stream) { try { stream.getTracks().forEach(function (t) { try { t.stop(); } catch (e) {} }); } catch (e) {} }
+  function bytesToBase64(u8) {
+    var out = '', CH = 0x8000;
+    for (var i = 0; i < u8.length; i += CH) out += String.fromCharCode.apply(null, u8.subarray(i, i + CH));
+    return btoa(out);
+  }
+
+  // camera: a hidden <video> on the host document, drawn to a canvas `fps` times a second
+  var cam = null;
+  function camHalt() {
+    var c = cam; cam = null;
+    if (!c) return;
+    if (c.timer) clearInterval(c.timer);
+    if (c.stream) stopTracks(c.stream);
+    if (c.video && c.video.parentNode) c.video.parentNode.removeChild(c.video);
+  }
+  var hostCamera = {
+    start: function (slug, o, push) {
+      camHalt();
+      var md = mediaDevices();
+      if (!md) return Promise.resolve({ ok: false, reason: 'unavailable' });
+      return askConsent(slug, 'camera').then(function (yes) {
+        if (!yes) return { ok: false, reason: 'denied' };
+        return md.getUserMedia({ video: { facingMode: o.facing, width: { ideal: o.width } }, audio: false }).then(function (stream) {
+          var video = document.createElement('video');
+          video.setAttribute('playsinline', ''); video.muted = true; video.autoplay = true;
+          video.setAttribute('style', 'position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0;pointer-events:none');
+          video.srcObject = stream;
+          (document.body || document.documentElement).appendChild(video);
+          var canvas = document.createElement('canvas');
+          var me = cam = { stream: stream, video: video, timer: null };
+          try { var pl = video.play(); if (pl && pl.catch) pl.catch(function () {}); } catch (e) {}
+          me.timer = setInterval(function () {
+            if (cam !== me) return;
+            if (document.hidden) return;                       // nothing is captured in the background
+            var vw = video.videoWidth, vh = video.videoHeight;
+            if (!vw || !vh) return;
+            var w = Math.min(o.width, vw), h = Math.round(vh * w / vw);
+            if (canvas.width !== w) canvas.width = w;
+            if (canvas.height !== h) canvas.height = h;
+            var base64 = '';
+            try {
+              canvas.getContext('2d').drawImage(video, 0, 0, w, h);
+              base64 = String(canvas.toDataURL('image/jpeg', o.quality)).split(',')[1] || '';
+            } catch (e) { return; }
+            if (push({ t: (window.performance && performance.now) ? performance.now() : Date.now(), width: w, height: h, base64: base64 }) === false) camHalt();
+          }, Math.max(66, Math.round(1000 / o.fps)));
+          return { ok: true, facing: o.facing, width: o.width, fps: o.fps };
+        }, function (e) { return { ok: false, reason: refusal(e) }; });
+      });
+    },
+    stop: function () { camHalt(); }
+  };
+
+  // microphone: mono 16-bit chunks with their RMS level
+  var mic = null;
+  function micHalt() {
+    var m = mic; mic = null;
+    if (!m) return;
+    try { m.node.onaudioprocess = null; m.node.disconnect(); m.source.disconnect(); } catch (e) {}
+    try { m.ctx.close(); } catch (e) {}
+    stopTracks(m.stream);
+  }
+  var hostMicrophone = {
+    start: function (slug, o, push) {
+      micHalt();
+      var md = mediaDevices(), AC = window.AudioContext || window.webkitAudioContext;
+      if (!md || !AC) return Promise.resolve({ ok: false, reason: 'unavailable' });
+      return askConsent(slug, 'microphone').then(function (yes) {
+        if (!yes) return { ok: false, reason: 'denied' };
+        return md.getUserMedia({ audio: true, video: false }).then(function (stream) {
+          var ctx = new AC(), source = ctx.createMediaStreamSource(stream), node = ctx.createScriptProcessor(4096, 1, 1);
+          var me = mic = { stream: stream, ctx: ctx, source: source, node: node };
+          var need = Math.max(1, Math.round(ctx.sampleRate * o.chunkMs / 1000)), buf = new Int16Array(need), fill = 0, sumSq = 0;
+          node.onaudioprocess = function (ev) {
+            if (mic !== me) return;
+            var x = ev.inputBuffer.getChannelData(0);
+            for (var i = 0; i < x.length; i++) {
+              var v = Math.max(-1, Math.min(1, x[i]));
+              buf[fill++] = v < 0 ? v * 0x8000 : v * 0x7fff; sumSq += v * v;
+              if (fill === need) {
+                var keep = !document.hidden && push({ t: ctx.currentTime * 1000, sampleRate: ctx.sampleRate, level: Math.sqrt(sumSq / need), pcm: bytesToBase64(new Uint8Array(buf.buffer.slice(0))) });
+                fill = 0; sumSq = 0;
+                if (keep === false && !document.hidden) { micHalt(); return; }
+              }
+            }
+          };
+          source.connect(node); node.connect(ctx.destination);      // the node outputs silence
+          try { if (ctx.state === 'suspended') ctx.resume(); } catch (e) {}
+          return { ok: true, sampleRate: ctx.sampleRate, chunkMs: o.chunkMs };
+        }, function (e) { return { ok: false, reason: refusal(e) }; });
+      });
+    },
+    stop: function () { micHalt(); }
+  };
+
+  // location: the WebView's geolocation watch
+  var geoWatch = null;
+  function geoHalt() { if (geoWatch !== null) { try { navigator.geolocation.clearWatch(geoWatch); } catch (e) {} geoWatch = null; } }
+  var hostLocation = {
+    start: function (slug, o, push) {
+      geoHalt();
+      var geo = null; try { geo = navigator.geolocation; } catch (e) {}
+      if (!geo || typeof geo.watchPosition !== 'function') return Promise.resolve({ ok: false, reason: 'unavailable' });
+      return askConsent(slug, 'location').then(function (yes) {
+        if (!yes) return { ok: false, reason: 'denied' };
+        return new Promise(function (resolve) {
+          var answered = false, id = null;
+          function answer(v) { if (!answered) { answered = true; resolve(v); } }
+          id = geoWatch = geo.watchPosition(function (p) {
+            var c = p.coords || {};
+            answer({ ok: true });
+            if (push({ t: p.timestamp, lat: c.latitude, lon: c.longitude, accuracy: c.accuracy, altitude: c.altitude, speed: c.speed, heading: c.heading }) === false && geoWatch === id) geoHalt();
+          }, function (e) {
+            if (!answered && geoWatch === id) geoHalt();
+            answer({ ok: false, reason: refusal(e) });
+          }, { enableHighAccuracy: !!o.highAccuracy, maximumAge: 0, timeout: 30000 });
+          // the watch is on; the first fix may take a while outdoors — do not hold the plugin
+          setTimeout(function () { answer({ ok: true, pending: true }); }, 1500);
+        });
+      });
+    },
+    stop: function () { geoHalt(); }
+  };
+
+  // speech: the native engine on Android (its WebView cannot speak), the WebView elsewhere
+  function webSpeech() { try { return (window.speechSynthesis && typeof window.SpeechSynthesisUtterance === 'function') ? window.speechSynthesis : null; } catch (e) { return null; } }
+  var hostSpeech = {
+    speak: function (slug, r) {
+      return nativeInvoke('plugin_speak', { text: r.text, lang: r.lang || null, rate: r.rate, pitch: r.pitch }).then(function (done) { return !!done; }, function () { return false; }).then(function (done) {
+        if (done) return { ok: true, engine: 'native' };
+        var synth = webSpeech();
+        if (!synth) return { ok: false, reason: 'unavailable' };
+        try {
+          var u = new window.SpeechSynthesisUtterance(r.text);
+          if (r.lang) u.lang = r.lang;
+          u.rate = r.rate; u.pitch = r.pitch;
+          synth.cancel(); synth.speak(u);
+          return { ok: true, engine: 'web' };
+        } catch (e) { return { ok: false, reason: 'unavailable' }; }
+      });
+    },
+    stop: function () {
+      nativeInvoke('plugin_speech_stop').then(function () {}, function () {});
+      var synth = webSpeech(); if (synth) { try { synth.cancel(); } catch (e) {} }
+    }
+  };
+  // vibration: the WebView on Android, the system vibration on iOS (one pulse per step)
+  var hostHaptics = {
+    vibrate: function (slug, pattern) {
+      try { if (typeof navigator.vibrate === 'function' && navigator.vibrate(pattern)) return Promise.resolve({ ok: true, engine: 'web' }); } catch (e) {}
+      return nativeInvoke('plugin_vibrate', { pattern: pattern }).then(function (done) {
+        if (!done) return { ok: false, reason: 'unavailable' };
+        var at = 0;
+        for (var i = 0; i < pattern.length; i++) {
+          if (i > 0 && i % 2 === 0 && pattern[i] > 0) setTimeout(function () { nativeInvoke('plugin_vibrate', { pattern: [1] }).then(function () {}, function () {}); }, at);
+          at += pattern[i];
+        }
+        return { ok: true, engine: 'native' };
+      }, function () { return { ok: false, reason: 'unavailable' }; });
+    }
+  };
+
   var runtime = window.SkipiPluginRuntime.create({
     enabled: true, loader: runtimeLoader,
     host: {
@@ -278,6 +504,11 @@
       net: {},
       motion: hostMotion,
       screen: hostScreen,
+      camera: hostCamera,
+      microphone: hostMicrophone,
+      location: hostLocation,
+      speech: hostSpeech,
+      haptics: hostHaptics,
       theme: { get: getTheme },
       storage: hostStore,
       navigation: { setTitle: function () {}, closePlugin: function () {} },

@@ -86,7 +86,7 @@ fn parse_start(answer: &str) -> Result<(u32, bool), String> {
 // ---------------------------------------------------------------- Android --
 
 #[cfg(target_os = "android")]
-mod android {
+pub(crate) mod android {
     use jni::objects::{JObject, JString, JValue};
     use jni::JNIEnv;
     use std::sync::mpsc;

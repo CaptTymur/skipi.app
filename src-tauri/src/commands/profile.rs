@@ -1799,7 +1799,8 @@ mod tests {
             .iter()
             .map(frameworks::record_from_profile_template)
             .collect();
-        assert!(docs.iter().any(|d| d.valid_to.is_some()));
+        // Slots written by builds up to 0.4.202 carry an expiry the app made up (дело № 212).
+        docs.iter_mut().for_each(|d| d.valid_to = Some("2036-01-01".to_string()));
 
         let (_, missing, pct) = required_profile_status_from_docs(&templates, &docs);
         assert_eq!(missing.len(), templates.len());
