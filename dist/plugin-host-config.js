@@ -36,7 +36,10 @@ window.SKIPI_REMOTE_CONFIG = {
   policy: {
     // Motion sensors and keep-awake (owner 25.11.2026, the Clinometer): served by the host
     // (hostApi.motion / hostApi.screen, runtime 1.2) — the sandbox itself gets no sensor access.
-    maxPermissions: ['local_storage', 'audio_alert', 'network', 'motion', 'keep_awake'],
+    // Camera, microphone, location, speech, vibration (owner 25.11.2026: the set is widened ahead of
+    // the plugins, so a new plugin needs no new app build). All host-mediated (runtime 1.3); the
+    // user is asked before a plugin first uses the camera, the microphone or the location.
+    maxPermissions: ['local_storage', 'audio_alert', 'network', 'motion', 'keep_awake', 'camera', 'microphone', 'location', 'speech', 'vibrate'],
     requireCapabilities: { documents: 'none', account: 'none', analytics: 'none', server_upload: false },
     networkOrigins: ['https://api.skipi.app']
   },

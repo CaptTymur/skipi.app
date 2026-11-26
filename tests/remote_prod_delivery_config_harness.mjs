@@ -275,6 +275,10 @@ async function testNetworkPolicy(cfg) {
   ok(r.ok === false && r.stage === 'policy', 'NET: a permission outside maxPermissions (file_save) is still rejected');
   r = await verdict(['local_storage', 'motion', 'keep_awake'], Object.assign({}, BASE, { network: 'none' }));
   ok(r.ok === true, 'MOTION: a plugin asking for motion + keep_awake (the Clinometer) installs');
+  r = await verdict(['local_storage', 'camera', 'microphone', 'location', 'speech', 'vibrate', 'keep_awake'], Object.assign({}, BASE, { network: 'none' }));
+  ok(r.ok === true, 'DEVICE: a plugin asking for camera, microphone, location, speech and vibrate installs');
+  r = await verdict(['local_storage', 'bluetooth'], Object.assign({}, BASE, { network: 'none' }));
+  ok(r.ok === false && r.stage === 'policy', 'DEVICE: a capability the host does not have (bluetooth) is still rejected');
   r = await verdict(['local_storage'], Object.assign({}, BASE, { network: 'none', documents: 'read' }));
   ok(r.ok === false && r.stage === 'policy', 'NET: documents access is still rejected');
 }
@@ -409,6 +413,169 @@ async function testMotionAdapterAndPhoneOnlyPlugins() {
     const b2 = boot(LINUX, null);
     const res2 = await b2.host.motion.start('marine-clinometer', { rateHz: 50 }, () => true);
     ok(res2.ok === false && b2.timers.size === 0, 'MOTION: without the native bridge start is refused, nothing throws');
+  }
+}
+
+// Owner 25.11.2026: the set of host capabilities is widened ahead of the plugins (the next BNWAS is to
+// use the camera to see whether a person is present). Camera, microphone and location are captured
+// in the host document and pushed to the runtime; the user is asked once per plugin and capability.
+async function testDeviceCapabilityAdapters() {
+  const bootCode = fs.readFileSync(BOOT_FILE, 'utf8');
+  function boot(env) {
+    env = env || {};
+    let runtimeCfg = null; const timers = new Map(); let nextTimer = 0;
+    const store = new Map(); const log = { gum: [], stopped: 0, consent: [], native: [], vibrate: [], spoken: [], cleared: [] };
+    const track = () => ({ stop: () => { log.stopped++; } });
+    const element = (tag) => ({
+      tag, style: {}, parentNode: null, children: [], videoWidth: 640, videoHeight: 480, width: 0, height: 0, muted: false,
+      setAttribute() {}, addEventListener() {}, appendChild(c) { c.parentNode = this; this.children.push(c); }, removeChild(c) { c.parentNode = null; },
+      play: () => Promise.resolve(),
+      getContext: () => ({ drawImage() {} }),
+      toDataURL: (mime, q) => 'data:' + mime + ';base64,' + Buffer.from('jpeg q=' + q).toString('base64'),
+    });
+    const body = element('body');
+    const navigator = { userAgent: env.userAgent || 'Mozilla/5.0 (Linux; Android 14; Pixel 6)' };
+    if (env.media !== false) navigator.mediaDevices = { getUserMedia: (c) => { log.gum.push(c); return env.gumError ? Promise.reject(env.gumError) : Promise.resolve({ getTracks: () => [track()] }); } };
+    if (env.geo !== false) navigator.geolocation = { watchPosition: (okCb, errCb, o) => { log.watch = { okCb, errCb, o }; return 7; }, clearWatch: (id) => { log.cleared.push(id); } };
+    if (env.vibrate) navigator.vibrate = (p) => { log.vibrate.push(p); return true; };
+    const audioNodes = [];
+    const ctx = {
+      console: { info() {}, warn() {} }, setTimeout, clearTimeout, btoa: (s) => Buffer.from(s, 'binary').toString('base64'),
+      Uint8Array, Int16Array, Math, String, Promise,
+      setInterval: (fn) => { timers.set(++nextTimer, fn); return nextTimer; },
+      clearInterval: (id) => { timers.delete(id); },
+      navigator,
+      performance: { now: () => 1234 },
+      localStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) },
+      document: { hidden: false, body, documentElement: body, createElement: element, getElementById: () => ({ innerHTML: '' }) },
+      window: {
+        FEATURE_REMOTE_PLUGIN_DELIVERY: true,
+        SKIPI_REMOTE_CONFIG: { catalogUrl: 'https://unit.test/catalog.json', remoteSlugs: '*', host: { id: 'seafarer', version: '0.4.203' }, policy: {}, pinnedPublicKeys: {}, pinnedPublicKey: {} },
+        SkipiPluginLoader: { create: () => ({ getCatalog: () => Promise.resolve({ source: 'network', catalog: { plugins: [] } }), install: () => Promise.resolve({ ok: false }) }) },
+        SkipiPluginRuntime: { create: (c) => { runtimeCfg = c; return { open: () => Promise.resolve({ ok: true }), close() {} }; } },
+        SkipiPluginHost: { mount: () => Promise.resolve({ ok: true }), unmount() {} },
+        SkipiPluginConsent: (slug, cap) => { log.consent.push(slug + ':' + cap); return env.consent !== false; },
+        getUiLang: () => 'ru', performance: { now: () => 1234 },
+        __TAURI__: { core: { invoke: (cmd, args) => { log.native.push({ cmd, args }); return Promise.resolve(env.native ? env.native(cmd, args) : false); } } },
+        AudioContext: function () {
+          this.sampleRate = 8000; this.currentTime = 2; this.state = 'running'; this.destination = {};
+          this.createMediaStreamSource = () => ({ connect() {}, disconnect() {} });
+          this.createScriptProcessor = () => { const n = { connect() {}, disconnect() {}, onaudioprocess: null }; audioNodes.push(n); return n; };
+          this.close = () => { log.audioClosed = true; };
+        },
+      },
+    };
+    if (env.webSpeech) {
+      ctx.window.speechSynthesis = { cancel() {}, speak: (u) => { log.spoken.push(u); } };
+      ctx.window.SpeechSynthesisUtterance = function (text) { this.text = text; };
+    }
+    ctx.window.window = ctx.window; ctx.window.localStorage = ctx.localStorage;
+    store.set('skipi_plugins_unbundled_v1', JSON.stringify({ pending: [] }));
+    vm.createContext(ctx);
+    vm.runInContext(bootCode, ctx, { filename: BOOT_FILE });
+    return { host: runtimeCfg.host, log, timers, store, doc: ctx.document, audioNodes, tick: () => [...timers.values()].forEach((fn) => fn()) };
+  }
+  const CAM = { facing: 'user', width: 320, fps: 2, quality: 0.6 };
+
+  // ---- the home opts in ----
+  {
+    const b = boot();
+    ok(['camera', 'microphone', 'location'].every((n) => b.host[n] && typeof b.host[n].start === 'function' && typeof b.host[n].stop === 'function') && typeof b.host.speech.speak === 'function' && typeof b.host.haptics.vibrate === 'function',
+      'DEVICE: the home opts into host.camera / microphone / location / speech / haptics (runtime 1.3)');
+  }
+  // ---- consent ----
+  {
+    const b = boot({ consent: false });
+    const r1 = await b.host.camera.start('bnwas-time-anchor', CAM, () => true);
+    const r2 = await b.host.microphone.start('bnwas-time-anchor', { chunkMs: 250 }, () => true);
+    const r3 = await b.host.location.start('bnwas-time-anchor', { highAccuracy: false }, () => true);
+    ok([r1, r2, r3].every((r) => r.ok === false && r.reason === 'denied') && b.log.gum.length === 0 && !b.log.watch, 'DEVICE: when the user says no, the camera, the microphone and the location are never touched');
+    ok(b.log.consent.join() === 'bnwas-time-anchor:camera,bnwas-time-anchor:microphone,bnwas-time-anchor:location', 'DEVICE: the user is asked per plugin and per capability');
+    const y = boot();
+    await y.host.camera.start('bnwas-time-anchor', CAM, () => true);
+    await y.host.camera.start('bnwas-time-anchor', CAM, () => true);
+    await y.host.camera.start('another-plugin', CAM, () => true);
+    ok(y.log.consent.join() === 'bnwas-time-anchor:camera,another-plugin:camera' && y.store.get('skpd_consent.bnwas-time-anchor.camera') === '1', 'DEVICE: a yes is remembered for that plugin and capability only; another plugin is asked again');
+  }
+  // ---- camera ----
+  {
+    const b = boot();
+    const frames = []; let alive = true;
+    const r = await b.host.camera.start('bnwas-time-anchor', CAM, (f) => { frames.push(f); return alive; });
+    const c = b.log.gum[0] || {};
+    ok(r.ok === true && c.audio === false && c.video && c.video.facingMode === 'user' && c.video.width.ideal === 320, 'CAMERA: getUserMedia is asked for video only, with the facing and width the runtime passed');
+    b.tick();
+    ok(frames.length === 1 && frames[0].width === 320 && frames[0].height === 240 && Buffer.from(frames[0].base64, 'base64').toString() === 'jpeg q=0.6' && frames[0].t === 1234, 'CAMERA: each tick pushes one JPEG frame scaled to the asked width');
+    b.doc.hidden = true; b.tick();
+    ok(frames.length === 1, 'CAMERA: nothing is captured while the app is in the background');
+    b.doc.hidden = false; alive = false; b.tick();
+    ok(frames.length === 2 && b.timers.size === 0 && b.log.stopped === 1, 'CAMERA: once the plugin is gone (push → false) the timer stops and the camera is released');
+    await b.host.camera.start('bnwas-time-anchor', CAM, () => true);
+    b.host.camera.stop('bnwas-time-anchor');
+    ok(b.timers.size === 0 && b.log.stopped === 2, 'CAMERA: stop() releases the camera');
+    const denied = boot({ gumError: { name: 'NotAllowedError' } });
+    const rd = await denied.host.camera.start('bnwas-time-anchor', CAM, () => true);
+    const none = boot({ media: false });
+    const rn = await none.host.camera.start('bnwas-time-anchor', CAM, () => true);
+    ok(rd.ok === false && rd.reason === 'denied' && rn.ok === false && rn.reason === 'unavailable' && none.log.consent.length === 0, 'CAMERA: a system refusal answers denied; a host without a camera answers unavailable without bothering the user');
+  }
+  // ---- microphone ----
+  {
+    const b = boot();
+    const chunks = [];
+    const r = await b.host.microphone.start('bnwas-time-anchor', { chunkMs: 250 }, (c) => { chunks.push(c); return true; });
+    const c = b.log.gum[0] || {};
+    ok(r.ok === true && r.sampleRate === 8000 && c.audio === true && c.video === false, 'MIC: getUserMedia is asked for audio only');
+    const half = new Float32Array(2000).fill(0.5);                    // 8000 Hz × 250 ms = 2000 samples
+    b.audioNodes[0].onaudioprocess({ inputBuffer: { getChannelData: () => half } });
+    const pcm = chunks[0] ? new Int16Array(new Uint8Array(Buffer.from(chunks[0].pcm, 'base64')).buffer) : [];
+    ok(chunks.length === 1 && chunks[0].sampleRate === 8000 && Math.abs(chunks[0].level - 0.5) < 1e-6 && pcm.length === 2000 && pcm[0] === 16383, 'MIC: a chunk carries 16-bit mono samples and their RMS level');
+    b.host.microphone.stop('bnwas-time-anchor');
+    ok(b.log.stopped === 1 && b.log.audioClosed === true, 'MIC: stop() releases the microphone');
+  }
+  // ---- location ----
+  {
+    const b = boot();
+    const fixes = [];
+    const pr = b.host.location.start('nav', { highAccuracy: true }, (p) => { fixes.push(p); return true; });
+    await new Promise((r) => setTimeout(r, 0));
+    b.log.watch.okCb({ timestamp: 99, coords: { latitude: 59.93, longitude: 30.31, accuracy: 8, altitude: null, speed: 3.2, heading: 271 } });
+    const r = await pr;
+    ok(r.ok === true && b.log.watch.o.enableHighAccuracy === true && JSON.stringify(fixes[0]) === JSON.stringify({ t: 99, lat: 59.93, lon: 30.31, accuracy: 8, altitude: null, speed: 3.2, heading: 271 }), 'LOCATION: a fix is pushed as {t, lat, lon, accuracy, altitude, speed, heading}');
+    b.host.location.stop('nav');
+    ok(b.log.cleared.join() === '7', 'LOCATION: stop() clears the watch');
+    const d = boot();
+    const pd = d.host.location.start('nav', { highAccuracy: false }, () => true);
+    await new Promise((r) => setTimeout(r, 0));
+    d.log.watch.errCb({ code: 1 });
+    ok((await pd).reason === 'denied' && d.log.cleared.join() === '7', 'LOCATION: a system refusal answers denied and leaves no watch behind');
+  }
+  // ---- speech ----
+  {
+    const REQ = { text: 'Новый максимум, левый борт восемнадцать', lang: 'ru-RU', rate: 1, pitch: 1 };
+    const android = boot({ native: (cmd) => cmd === 'plugin_speak' });
+    const r1 = await android.host.speech.speak('marine-clinometer', REQ);
+    ok(r1.ok === true && r1.engine === 'native' && android.log.native[0].cmd === 'plugin_speak' && android.log.native[0].args.text === REQ.text && android.log.native[0].args.lang === 'ru-RU', 'SPEECH: on Android the phrase goes to the native engine');
+    const ios = boot({ webSpeech: true });
+    const r2 = await ios.host.speech.speak('marine-clinometer', REQ);
+    ok(r2.ok === true && r2.engine === 'web' && ios.log.spoken.length === 1 && ios.log.spoken[0].text === REQ.text && ios.log.spoken[0].lang === 'ru-RU', 'SPEECH: where there is no native engine the WebView speaks');
+    const none = boot();
+    const r3 = await none.host.speech.speak('marine-clinometer', REQ);
+    ok(r3.ok === false && r3.reason === 'unavailable', 'SPEECH: with neither, the plugin is told it is unavailable');
+    android.host.speech.stop('marine-clinometer');
+    ok(android.log.native.some((c) => c.cmd === 'plugin_speech_stop'), 'SPEECH: stop() reaches the native engine');
+  }
+  // ---- vibration ----
+  {
+    const android = boot({ vibrate: true });
+    const r1 = await android.host.haptics.vibrate('bnwas-time-anchor', [200, 100, 200]);
+    ok(r1.ok === true && r1.engine === 'web' && JSON.stringify(android.log.vibrate[0]) === '[200,100,200]' && android.log.native.length === 0, 'VIBRATE: on Android the WebView vibrates with the pattern');
+    const ios = boot({ native: (cmd) => cmd === 'plugin_vibrate' });
+    const r2 = await ios.host.haptics.vibrate('bnwas-time-anchor', [200]);
+    ok(r2.ok === true && r2.engine === 'native' && ios.log.native[0].cmd === 'plugin_vibrate', 'VIBRATE: without navigator.vibrate the native vibration is used');
+    const desk = boot();
+    const r3 = await desk.host.haptics.vibrate('bnwas-time-anchor', [200]);
+    ok(r3.ok === false && r3.reason === 'unavailable', 'VIBRATE: a device that cannot vibrate answers unavailable');
   }
 }
 
@@ -571,13 +738,14 @@ async function testUnbundleMigration() {
 
   ok(cfg.catalogUrl === CATALOG_URL, 'catalogUrl is production api.skipi.app path');
   ok(cfg.remoteSlugs === '*', "remoteSlugs is '*': the signed catalog decides which plugins exist (owner 24.11.2026)");
-  ok(JSON.stringify(cfg.policy.maxPermissions) === JSON.stringify(['local_storage', 'audio_alert', 'network', 'motion', 'keep_awake']), 'policy grants at most local_storage, audio_alert, network, motion, keep_awake');
+  ok(JSON.stringify(cfg.policy.maxPermissions) === JSON.stringify(['local_storage', 'audio_alert', 'network', 'motion', 'keep_awake', 'camera', 'microphone', 'location', 'speech', 'vibrate']), 'policy grants at most local_storage, audio_alert, network, motion, keep_awake, camera, microphone, location, speech, vibrate');
   ok(JSON.stringify(cfg.policy.networkOrigins) === JSON.stringify(['https://api.skipi.app']), 'plugin network is bounded to https://api.skipi.app');
   ok(cfg.policy.requireCapabilities.documents === 'none' && cfg.policy.requireCapabilities.account === 'none' && cfg.policy.requireCapabilities.analytics === 'none' && cfg.policy.requireCapabilities.server_upload === false,
     'documents / account / analytics / server_upload stay forbidden');
   await testNetworkPolicy(cfg);
   await testRuntimeGrantsComeFromSignedEntry();
   await testMotionAdapterAndPhoneOnlyPlugins();
+  await testDeviceCapabilityAdapters();
   await testReopenAfterContainerWasDestroyed();
   await testLaunchIsLocal();
   await testUnbundleMigration();
