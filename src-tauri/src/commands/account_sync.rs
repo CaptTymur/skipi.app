@@ -1440,6 +1440,20 @@ pub mod vault_sync {
         })?;
         Ok(true)
     }
+    /// A template slot nobody has filled yet. Builds up to 0.4.202 wrote «today + typical term» into
+    /// `valid_to` of every new slot and the template's note into `notes`, so neither is the user's data
+    /// (дело № 212). A date the user entered or confirmed is marked in `field_statuses`.
+    fn untouched_slot(data: &Value) -> bool {
+        let Some(id) = data["template_id"].as_str() else {
+            return false;
+        };
+        let template = crate::profiles::doc_template_by_title_or_id(id);
+        let blank = |k: &str| data[k].is_null() || data[k] == "";
+        ["valid_from", "issued_by", "doc_number"].iter().all(|k| blank(k))
+            && (blank("valid_to") || template.as_ref().is_some_and(|t| t.typical_years.is_some()))
+            && (blank("notes") || template.as_ref().is_some_and(|t| data["notes"] == t.notes))
+            && matches!(data["field_statuses"].as_str(), None | Some("") | Some("{}"))
+    }
     fn map_empty_framework_rows(
         conn: &Connection,
         account: &str,
@@ -1452,12 +1466,7 @@ pub mod vault_sync {
                 continue;
             };
             if doc.file_name.is_some()
-                || doc.doc_number.is_some()
-                || doc.valid_from.is_some()
-                || doc.valid_to.is_some()
-                || doc.issued_by.is_some()
-                || doc.notes.as_deref().is_some_and(|v| !v.is_empty())
-                || !matches!(doc.field_statuses.as_deref(), None | Some("") | Some("{}"))
+                || !untouched_slot(&json!({"template_id": doc.template_id, "valid_from": doc.valid_from, "valid_to": doc.valid_to, "issued_by": doc.issued_by, "doc_number": doc.doc_number, "notes": doc.notes, "field_statuses": doc.field_statuses}))
                 || known.contains_key(&key("document", &doc.id))
             {
                 continue;
@@ -1696,10 +1705,7 @@ pub mod vault_sync {
                         } else if local["deleted"] == true
                             || text(&local, "kind") == "document"
                                 && local["blob"].is_null()
-                                && local["data"]["template_id"].is_string()
-                                && ["valid_from", "valid_to", "issued_by", "doc_number", "notes"]
-                                    .iter()
-                                    .all(|k| local["data"][*k].is_null() || local["data"][*k] == "")
+                                && untouched_slot(&local["data"])
                             || text(&local, "kind") == "profile" && empty_profile(&local)
                         {
                             apply_remote(state, &pin, &client, r, &local_hash)?;
@@ -2705,6 +2711,39 @@ pub mod vault_sync {
             assert_eq!(ids, vec!["dup-a".to_string()], "joined the first duplicate instead of uploading a third copy");
             drop(conn);
             fs::remove_dir_all(root).unwrap();
+        }
+        // Дело № 212: every new slot used to get «today + typical term» as its expiry and the
+        // template's note, so it never counted as empty and each device uploaded its own copy.
+        #[test]
+        fn slot_seeded_by_the_app_joins_the_account_slot() {
+            let (root, conn) = fixture();
+            let tpl = crate::profiles::doc_template_by_title_or_id("passport").unwrap();
+            let mut slot = crate::frameworks::record_from_profile_template(&tpl);
+            slot.valid_to = Some("2036-11-20".into()); // what builds up to 0.4.202 wrote
+            db::insert_doc(&conn, &slot).unwrap();
+            let mut other = wire_doc("other-device", None);
+            for (k, v) in [("template_id", json!("passport")), ("title", json!(tpl.title)), ("category", json!(tpl.category)), ("notes", json!(tpl.notes)), ("valid_to", json!("2036-11-24")), ("field_statuses", Value::Null)] {
+                other["data"][k] = v;
+            }
+            let remote = BTreeMap::from([(key("document", "other-device"), other)]);
+            map_empty_framework_rows(&conn, "public-A", &remote).unwrap();
+            let ids: Vec<String> = db::get_all_docs(&conn).unwrap().into_iter().map(|d| d.id).collect();
+            assert_eq!(ids, vec!["other-device".to_string()], "joined the account's slot instead of uploading a second copy");
+            drop(conn);
+            fs::remove_dir_all(root).unwrap();
+        }
+        #[test]
+        fn only_a_slot_nobody_filled_counts_as_untouched() {
+            let seeded = json!({"template_id":"passport","valid_from":null,"valid_to":"2036-11-20","issued_by":null,"doc_number":null,"notes":"National travel passport","field_statuses":"{}"});
+            assert!(untouched_slot(&seeded), "the app's own expiry and template note are not the user's data");
+            let with = |k: &str, v: Value| { let mut d = seeded.clone(); d[k] = v; d };
+            assert!(!untouched_slot(&with("doc_number", json!("AB123"))));
+            assert!(!untouched_slot(&with("notes", json!("my own note"))));
+            assert!(!untouched_slot(&with("field_statuses", json!("{\"valid_to\":\"verified\"}"))), "a date the user confirmed");
+            assert!(!untouched_slot(&with("field_statuses", json!("{\"not_applicable\":{\"reason\":\"\"}}"))));
+            assert!(!untouched_slot(&with("template_id", Value::Null)), "a custom certificate is never a scaffold");
+            // Yellow fever has no typical term: a date there can only come from the user.
+            assert!(!untouched_slot(&json!({"template_id":"yellow_fever","valid_to":"2030-01-01"})));
         }
         #[test]
         fn legacy_sea_service_with_unknown_imo_and_empty_fields_round_trips() {

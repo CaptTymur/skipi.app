@@ -20,7 +20,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: CaptTymur/skipi-guard
-          ref: d6304022682dca9d04cd65c26423a78d695ef6e5
+          ref: 645b993aaed683ea11a72e72068af41a58ab3ac6
           path: .skipi-guard
 
       - name: Setup Node
