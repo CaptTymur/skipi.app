@@ -411,7 +411,7 @@ fn product_asset_stem() -> String {
                 .map(str::to_string)
         })
         .filter(|name| !name.trim().is_empty())
-        .unwrap_or_else(|| "Skipi Seafarer".to_string())
+        .unwrap_or_else(|| "Skipi".to_string())
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(".")
