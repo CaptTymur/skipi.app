@@ -6477,6 +6477,10 @@ for (const lang of ['en','ru']) {
       Object.assign(c.values,{'doc-intake-type':'passport','doc-intake-issued_by':'2110'});
       await c.app.sandbox.docIntakeConfirm();
       ok(learned(c).length===1&&learned(c)[0][1].correctValue===JSON.stringify({template_id:'passport',issued_by:'2110'}),'242 a corrected authority alone is remembered with its slot '+lang);
+      c=await start({template_id:'passport',issued_by:'Republic of Cyprus',title_suggestion:'Endorsement'},[]);
+      Object.assign(c.values,{'doc-intake-type':'sso','doc-intake-issued_by':'Republic of Cyprus'});
+      await c.app.sandbox.docIntakeConfirm();
+      ok(learned(c).length===1&&learned(c)[0][1].correctValue===JSON.stringify({template_id:'sso',issued_by:'Republic of Cyprus'}),'242 a corrected slot is remembered together with the authority that identifies the document '+lang);
       c=await start({},[]);
       Object.assign(c.values,{'doc-intake-type':'sso','doc-intake-issued_by':'Training Centre'});
       await c.app.sandbox.docIntakeConfirm();

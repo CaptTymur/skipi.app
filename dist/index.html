@@ -4758,7 +4758,7 @@ async function docIntakeConfirm(){
             if((readTitle||readIssuer||readType)&&((rightType&&rightType!==readType)||issuerFixed)){
                 var right={};
                 if(rightType)right.template_id=rightType;
-                if(issuerFixed)right.issued_by=values.issued_by;
+                if(values.issued_by)right.issued_by=values.issued_by;
                 await invoke('save_ai_correction',{docType:'doc_intake',fieldName:'pattern',aiValue:JSON.stringify({title:readTitle||null,issued_by:readIssuer||null,template_id:readType}),correctValue:JSON.stringify(right)});
             }
         }catch(e2){}
