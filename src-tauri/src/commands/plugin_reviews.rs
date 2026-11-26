@@ -15,8 +15,8 @@ use crate::commands::account_sync::assistant_api_base;
 use crate::commands::app_login::stored_user_token;
 use crate::AppState;
 
-const MAX_TEXT_CHARS: usize = 2000;
-const MAX_REASON_CHARS: usize = 500;
+pub(crate) const MAX_TEXT_CHARS: usize = 2000;
+pub(crate) const MAX_REASON_CHARS: usize = 500;
 
 /// A plugin slug as the catalog writes it; anything else never reaches a URL.
 fn valid_slug(slug: &str) -> bool {
@@ -37,7 +37,7 @@ fn slug_or_err(slug: &str) -> Result<&str, String> {
     }
 }
 
-fn cap(text: Option<String>, limit: usize) -> String {
+pub(crate) fn cap(text: Option<String>, limit: usize) -> String {
     text.unwrap_or_default().chars().take(limit).collect()
 }
 
@@ -65,7 +65,7 @@ fn http_client() -> Result<reqwest::blocking::Client, String> {
         .map_err(|_| "offline".to_string())
 }
 
-fn session_token(state: &State<'_, AppState>) -> Option<String> {
+pub(crate) fn session_token(state: &State<'_, AppState>) -> Option<String> {
     let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     match lock.as_ref() {
         Some(conn) => stored_user_token(conn),
@@ -78,7 +78,7 @@ fn session_token(state: &State<'_, AppState>) -> Option<String> {
     }
 }
 
-enum Call {
+pub(crate) enum Call {
     Get,
     Put(Value),
     Delete,
@@ -107,7 +107,7 @@ fn send(path: String, call: Call, token: Option<String>) -> Result<Value, String
     }
 }
 
-async fn run(path: String, call: Call, token: Option<String>) -> Result<Value, String> {
+pub(crate) async fn run(path: String, call: Call, token: Option<String>) -> Result<Value, String> {
     tauri::async_runtime::spawn_blocking(move || send(path, call, token))
         .await
         .map_err(|_| "failed".to_string())?

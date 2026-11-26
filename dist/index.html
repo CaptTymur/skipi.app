@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Скипи Моряк - United Seafarers</title>
 <link rel="stylesheet" href="vessel-db.css">
+<link rel="stylesheet" href="port-db.css">
 <link rel="stylesheet" href="intelligence.css">
 <!-- @skipi/settings v0.3.0 — unified Settings shell (vendored from skipi-settings 9caeff6) -->
 <link rel="stylesheet" href="skipi-settings.css">
@@ -94,8 +95,8 @@ var UI_LANG_OPTIONS=[
 var UI_STRINGS={
 	    en:{
 	        'app.name':'Skipi Seafarer',
-	        'nav.files':'Documents','nav.experience':'Experience','nav.dashboard':'Dashboard','nav.cv':'CV','nav.packages':'Packages','nav.dispatch':'Mailings','nav.jobs':'Jobs','nav.information':'Information','nav.vessels':'Vessel DB','nav.myvessel':'My Vessel',
-	        'title.files':'Documents','title.experience':'Sea Service','title.dashboard':'Dashboard','title.cv':'CV','title.packages':'Packages','title.dispatch':'Mailings','title.jobs':'Jobs','title.information':'Information','title.vessels':'Vessel DB','title.myvessel':'My Vessel','title.settings':'Settings',
+	        'nav.files':'Documents','nav.experience':'Experience','nav.dashboard':'Dashboard','nav.cv':'CV','nav.packages':'Packages','nav.dispatch':'Mailings','nav.jobs':'Jobs','nav.information':'Information','nav.vessels':'Vessel DB','nav.ports':'Port DB','nav.myvessel':'My Vessel',
+	        'title.files':'Documents','title.experience':'Sea Service','title.dashboard':'Dashboard','title.cv':'CV','title.packages':'Packages','title.dispatch':'Mailings','title.jobs':'Jobs','title.information':'Information','title.vessels':'Vessel DB','title.ports':'Port DB','title.myvessel':'My Vessel','title.settings':'Settings',
 	        'welcome.subtitle':'Skipi - United Seafarers','welcome.create':'Create profile','welcome.open':'Open existing profile','welcome.hint':'Create a new profile on this device, or open a profile you have saved locally.','welcome.demo_prefix':'Just exploring?','welcome.demo':'Load demo seafarer',
 	        'settings.general':'General','settings.general_desc':'Basic application settings.','settings.language':'Language','settings.language_desc':'Interface language.','settings.autovault':'Auto-open last vault','settings.autovault_desc':'Automatically open the last used vault on startup.',
 	        'settings.nav_title':'Settings','settings.vaults':'Vaults','settings.seafarer_profile':'Seafarer Profile','settings.email':'Email sending','settings.appearance':'Appearance','settings.about_group':'About','settings.about':'About Skipi Seafarer',
@@ -122,8 +123,8 @@ var UI_STRINGS={
 	    },
 	    ru:{
 	        'app.name':'Скипи Моряк',
-	        'nav.files':'Документы','nav.experience':'Опыт работы','nav.dashboard':'Панель','nav.cv':'CV','nav.packages':'Пакеты','nav.dispatch':'Рассылки','nav.jobs':'Вакансии','nav.information':'Информация','nav.vessels':'База судов','nav.myvessel':'Моё судно',
-	        'title.files':'Документы','title.experience':'Морской опыт','title.dashboard':'Панель','title.cv':'CV','title.packages':'Пакеты','title.dispatch':'Рассылки','title.jobs':'Вакансии','title.information':'Информация','title.vessels':'База судов','title.myvessel':'Моё судно','title.settings':'Настройки',
+	        'nav.files':'Документы','nav.experience':'Опыт работы','nav.dashboard':'Панель','nav.cv':'CV','nav.packages':'Пакеты','nav.dispatch':'Рассылки','nav.jobs':'Вакансии','nav.information':'Информация','nav.vessels':'База судов','nav.ports':'База портов','nav.myvessel':'Моё судно',
+	        'title.files':'Документы','title.experience':'Морской опыт','title.dashboard':'Панель','title.cv':'CV','title.packages':'Пакеты','title.dispatch':'Рассылки','title.jobs':'Вакансии','title.information':'Информация','title.vessels':'База судов','title.ports':'База портов','title.myvessel':'Моё судно','title.settings':'Настройки',
 	        'welcome.subtitle':'Skipi - United Seafarers','welcome.create':'Создать профиль моряка','welcome.open':'Открыть существующий профиль','welcome.hint':'Создайте новый профиль на устройстве или откройте сохранённый локальный профиль.','welcome.demo_prefix':'Просто посмотреть?','welcome.demo':'Открыть демо-профиль',
 	        'settings.general':'Общие','settings.general_desc':'Основные настройки приложения.','settings.language':'Язык','settings.language_desc':'Язык интерфейса.','settings.autovault':'Открывать последний профиль','settings.autovault_desc':'Автоматически открывать последний использованный профиль при запуске.',
 	        'settings.nav_title':'Настройки','settings.vaults':'Профили','settings.seafarer_profile':'Профиль моряка','settings.email':'Отправка email','settings.appearance':'Внешний вид','settings.about_group':'О приложении','settings.about':'О Скипи Моряк',
@@ -199,7 +200,7 @@ function uiLanguageSelectHtml(){
 function applyI18nChrome(){
     document.documentElement.lang=getUiLang();
     var pairs=[
-        ['mt-files','nav.files'],['mt-exp','nav.experience'],['mt-cv','nav.cv'],['mt-pkg','nav.packages'],['mt-disp','nav.dispatch'],['mt-jobs','nav.jobs'],['mt-info','nav.information'],['mt-vessels','nav.vessels'],['mt-myvessel','nav.myvessel'],
+        ['mt-files','nav.files'],['mt-exp','nav.experience'],['mt-cv','nav.cv'],['mt-pkg','nav.packages'],['mt-disp','nav.dispatch'],['mt-jobs','nav.jobs'],['mt-info','nav.information'],['mt-vessels','nav.vessels'],['mt-ports','nav.ports'],['mt-myvessel','nav.myvessel'],
         ['welcome-subtitle','welcome.subtitle'],['btn-create-vault','welcome.create'],['btn-open-vault','welcome.open'],['welcome-folder-hint','welcome.hint'],['welcome-demo-prefix','welcome.demo_prefix'],['welcome-demo-link-text','welcome.demo']
     ];
     pairs.forEach(function(p){
@@ -1591,6 +1592,7 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
             <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-jobs" data-mview="jobs" onclick="mobileShow('jobs')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Vacancies matched to profile" title="Vacancies matched to profile" aria-label="Jobs"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M2.6 10.4h10.6v8.4H2.6z"/><path d="M5.8 10.4V9A1.4 1.4 0 017.2 7.6h1.6A1.4 1.4 0 0110.2 9v1.4"/><circle cx="17.4" cy="6.8" r="3.8"/><path d="M20.2 9.6l1.5 1.5"/></svg></span><span class="fam-app-label" id="mhn-jobs">Jobs</span></button>
             <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-information" data-mview="information" onclick="mobileShow('information')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Reference notes and guidance" title="Reference notes and guidance" aria-label="Information"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.8"/><path d="M12 11.2v5.6"/><circle cx="12" cy="7.7" r=".95" fill="currentColor" stroke="none"/></svg></span><span class="fam-app-label" id="mhn-information">Information</span></button>
             <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-vessels" data-mview="vessels" onclick="mobileShow('vessels')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Known vessel records" title="Known vessel records" aria-label="Vessel DB"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 20.4c.8.6 1.5 1.1 2.6 1.1 2.3 0 2.3-2 4.6-2s2.3 2 4.6 2c1.1 0 1.8-.5 2.6-1.1"/><path d="M19.1 19.4A10.4 10.4 0 0021 13.3L12 9.7l-9 3.6c0 2.4.8 4.5 2.3 6.1"/><path d="M18.4 12.5V7.2a1.8 1.8 0 00-1.8-1.8H7.4a1.8 1.8 0 00-1.8 1.8v5.3"/><path d="M12 5.4V2.7"/></svg></span><span class="fam-app-label" id="mhn-vessels">Vessel DB</span></button>
+            <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-ports" data-mview="ports" onclick="mobileShow('ports')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Find a port, read and leave reviews" title="Find a port, read and leave reviews" aria-label="Port DB"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21s-6.5-5.6-6.5-10.5a6.5 6.5 0 0113 0C18.5 15.4 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.3"/></svg></span><span class="fam-app-label" id="mhn-ports">Port DB</span></button>
             <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-myvessel" data-mview="myvessel" onclick="mobileShow('myvessel')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="On Board workspace" title="On Board workspace" aria-label="My Vessel"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="4.6" r="1.8"/><path d="M12 6.4V21"/><path d="M7 10h10"/><path d="M4.5 15a7.5 7.5 0 0015 0"/></svg></span><span class="fam-app-label" id="mhn-myvessel">My Vessel</span></button>
             <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-apps" data-mview="apps" onclick="mobileShow('apps')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Installed tools" title="Installed tools" aria-label="Apps"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg></span><span class="fam-app-label" id="mhn-apps">Apps</span></button>
             <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-aiconnect" data-mview="aiconnect" onclick="mobileShow('aiconnect')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Use Skipi inside Claude or ChatGPT" title="Use Skipi inside Claude or ChatGPT" aria-label="Claude / ChatGPT"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.2l1.9 5 5 1.9-5 1.9-1.9 5-1.9-5-5-1.9 5-1.9z"/><path d="M18.6 15.4l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/></svg></span><span class="fam-app-label" id="mhn-aiconnect">Claude / ChatGPT</span></button>
@@ -1616,6 +1618,7 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
     <div class="mod-tab" onclick="showView('jobs')" id="mt-jobs" title="Jobs — receive matching offers"><span>Jobs</span></div>
     <div class="mod-tab" onclick="showView('information')" id="mt-info" title="Information - market pulse"><span>Information</span></div>
     <div class="mod-tab" onclick="showView('vessels')" id="mt-vessels" title="Суда"><span>Суда</span></div>
+    <div class="mod-tab" onclick="showView('ports')" id="mt-ports" title="Port DB — find a port, read and leave reviews"><span>Port DB</span></div>
 
     <div class="mod-tab" onclick="showView('myvessel')" id="mt-myvessel" title="Моё судно — экипаж судна, на которое вы поднялись"><span>Моё судно</span></div>
 
@@ -1819,6 +1822,8 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
 <script src="skipi-settings.js"></script>
 <script src="skipi-assistant.js"></script>
 <script src="vessel-db.js"></script>
+<script src="skipi-ports.js"></script>
+<script src="port-db.js"></script>
 <script src="intelligence.js"></script>
 <script src="plugin-host-ui.js"></script>
 <script>
@@ -5107,7 +5112,7 @@ function mobileShouldShowHomeButton(){
     if(!shouldUseMobileShell())return false;
     if(mobileView==='home')return false;
     if(mobileView==='dispatch')return false;
-    return ['docs','doc','add','pdf','profile','experience','cv','jobs','information','vessels','apps','assistant'].indexOf(mobileView)>=0;
+    return ['docs','doc','add','pdf','profile','experience','cv','jobs','information','vessels','ports','apps','assistant'].indexOf(mobileView)>=0;
 }
 function mobileHomeButtonHtml(){
     var ru=getUiLang()==='ru';
@@ -7766,6 +7771,7 @@ function renderMobileShell(){
     if(mobileView==='jobs')return renderMobileJobs();
     if(mobileView==='information')return renderMobileInformation();
     if(mobileView==='vessels')return renderMobileVessels();
+    if(mobileView==='ports')return renderMobilePorts();
 
     if(mobileView==='myvessel')return renderMobileMyVessel();
 
@@ -7860,6 +7866,7 @@ var MOBILE_HOME_MODULE_L10N={
     jobs:['Работа','Вакансии по профилю'],
     information:['Информация','Справка и заметки'],
     vessels:['База судов','Известные суда'],
+    ports:['База портов','Найти порт, опрос и отзывы'],
     myvessel:['Моё судно','Рабочее пространство On Board'],
     apps:['Приложения','Установленные инструменты'],
     aiconnect:['Claude / ChatGPT','Skipi в вашем ИИ-ассистенте'],
@@ -11814,7 +11821,7 @@ function showView(v, opts){
     trustContributionSyncEntryPoints(isSeafarer);
     document.querySelectorAll('.ribbon-icon').forEach(function(el){el.classList.remove('active');});
     document.querySelectorAll('.modules-bar .mod-tab').forEach(function(el){el.classList.remove('active');});
-    var shortMap={files:'files',dashboard:'dash',cv:'cv',experience:'exp',vessels:'vessels',myvessel:'myvessel',contribution:'contribution',packages:'pkg',dispatch:'disp',jobs:'jobs',information:'info',apps:'apps',settings:'set'};
+    var shortMap={files:'files',dashboard:'dash',cv:'cv',experience:'exp',vessels:'vessels',ports:'ports',myvessel:'myvessel',contribution:'contribution',packages:'pkg',dispatch:'disp',jobs:'jobs',information:'info',apps:'apps',settings:'set'};
 
     var ri=document.getElementById('ri-'+shortMap[v]);
     if(ri)ri.classList.add('active');
@@ -11824,10 +11831,10 @@ function showView(v, opts){
     if(pcNav)pcNav.classList.toggle('active',v==='dashboard');
     document.getElementById('panel-title').textContent={
         files:tr('title.files'),dashboard:tr('title.dashboard'),cv:tr('title.cv'),experience:tr('title.experience'),
-        vessels:tr('title.vessels'),myvessel:tr('title.myvessel'),contribution:(getUiLang()==='ru'?'Мой вклад':'My contribution'),packages:tr('title.packages'),dispatch:tr('title.dispatch'),jobs:tr('title.jobs'),
+        vessels:tr('title.vessels'),ports:tr('title.ports'),myvessel:tr('title.myvessel'),contribution:(getUiLang()==='ru'?'Мой вклад':'My contribution'),packages:tr('title.packages'),dispatch:tr('title.dispatch'),jobs:tr('title.jobs'),
         information:tr('title.information'),settings:tr('title.settings')
     }[v]||v;
-    document.getElementById('left-panel').style.display=(v==='dashboard'||v==='cv'||v==='experience'||v==='vessels'||v==='myvessel'||v==='contribution'||v==='dispatch'||v==='jobs'||v==='information'||v==='apps')?'none':'';
+    document.getElementById('left-panel').style.display=(v==='dashboard'||v==='cv'||v==='experience'||v==='vessels'||v==='ports'||v==='myvessel'||v==='contribution'||v==='dispatch'||v==='jobs'||v==='information'||v==='apps')?'none':'';
 
     // The old second tabs row duplicated the selected document title.
     // Keep it disabled; the document name is already visible in the tree and editor.
@@ -11851,6 +11858,7 @@ function showView(v, opts){
     else if(v==='cv')showCv();
     else if(v==='experience')showWorkHistory();
     else if(v==='vessels')showVesselDatabase();
+    else if(v==='ports')showPortDb();
     else if(v==='myvessel')showMyVessel();
     else if(v==='contribution')showContribution();
     else if(v==='packages')showPackages();
@@ -12023,6 +12031,21 @@ function myVesselInnerHtml(){
     h+='</div>';
     h+='<div class="mv-card"><div class="mv-grid-title">'+esc(ru?'Рабочие модули судна':'Vessel workflows')+'</div>'+myVesselGridHtml(ru)+'</div>';
     return h;
+}
+// Port DB («База портов», owner 26.11.2026): the screen is dist/port-db.js over @skipi/ports
+// (dist/skipi-ports.js + data, pin dist/PORTS_VERSION). Shown to every account type. The page
+// never holds the account token — the native commands (commands/port_reviews.rs) do.
+function portDbDeps(){ return { invoke: invoke, lang: getUiLang, toast: showToast }; }
+function showPortDb(){
+    var content=document.getElementById('scr-content');
+    if(!content)return;
+    content.innerHTML='<div id="port-db-root"></div>';
+    show('scr-content');
+    SkipiPortDb.mount(document.getElementById('port-db-root'), portDbDeps());
+}
+function renderMobilePorts(){
+    mobileMainHtml('<div id="port-db-root" class="pdb-mobile"></div>');
+    SkipiPortDb.mount(document.getElementById('port-db-root'), portDbDeps());
 }
 function showMyVessel(){
     var content=document.getElementById('scr-content');
