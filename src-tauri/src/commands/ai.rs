@@ -643,6 +643,74 @@ pub struct AiClassifyResult {
 /// read, correct_value = what the seafarer confirmed; both JSON objects).
 const INTAKE_PATTERN_DOC_TYPE: &str = "doc_intake";
 
+/// The prompt never carries more known documents than this.
+const MAX_KNOWN_DOCUMENTS: usize = 20;
+
+/// Body for the accounts server: this seafarer's own corrections, so that a
+/// kind of document corrected the same way by several seafarers becomes
+/// common knowledge (`webapp/doc_patterns.py`). Same rows as the local block.
+fn known_documents_upload(rows: &[(String, String, String)]) -> serde_json::Value {
+    let mine: Vec<serde_json::Value> = rows
+        .iter()
+        .filter(|(field, _, _)| field == "pattern")
+        .filter_map(|(_, read, confirmed)| {
+            let read = serde_json::from_str::<serde_json::Value>(read).ok()?;
+            let confirmed = serde_json::from_str::<serde_json::Value>(confirmed).ok()?;
+            (read.is_object() && confirmed.is_object())
+                .then(|| serde_json::json!({ "read": read, "confirmed": confirmed }))
+        })
+        .collect();
+    serde_json::json!({ "mine": mine })
+}
+
+/// The server's answer as the same rows the local store keeps; anything that
+/// is not a `{read, confirmed}` pair of objects is skipped.
+fn known_documents_from_server(body: &serde_json::Value) -> Vec<(String, String, String)> {
+    body.get("patterns")
+        .and_then(|p| p.as_array())
+        .map(|list| {
+            list.iter()
+                .take(MAX_KNOWN_DOCUMENTS)
+                .filter_map(|item| {
+                    let (read, confirmed) = (item.get("read")?, item.get("confirmed")?);
+                    (read.is_object() && confirmed.is_object())
+                        .then(|| ("pattern".to_string(), read.to_string(), confirmed.to_string()))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// One round trip with the accounts server: send own corrections, get the
+/// kinds of documents several seafarers corrected the same way. Best effort —
+/// signed out, offline or refused means «nothing shared», never an error.
+/// Blocking: call only inside `spawn_blocking`.
+fn exchange_known_documents(token: Option<String>, local: &[(String, String, String)]) -> Vec<(String, String, String)> {
+    let Some(token) = token else { return Vec::new() };
+    let Ok(client) = reqwest::blocking::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(8))
+        .connect_timeout(std::time::Duration::from_secs(4))
+        .build()
+    else {
+        return Vec::new();
+    };
+    let url = format!(
+        "{}/api/app/recognition/patterns",
+        crate::commands::account_sync::assistant_api_base()
+    );
+    client
+        .post(&url)
+        .bearer_auth(token)
+        .json(&known_documents_upload(local))
+        .send()
+        .ok()
+        .filter(|r| r.status().is_success())
+        .and_then(|r| r.json::<serde_json::Value>().ok())
+        .map(|body| known_documents_from_server(&body))
+        .unwrap_or_default()
+}
+
 /// One prompt-safe line of a stored value: no line breaks, no quotes, capped.
 fn pattern_text(v: Option<&serde_json::Value>) -> Option<String> {
     let s: String = v?
@@ -699,7 +767,7 @@ fn known_documents_block(rows: &[(String, String, String)]) -> String {
             continue;
         }
         let line = format!("- A page you read as {} — confirmed: {}.\n", seen.join(", "), right.join("; "));
-        if !lines.contains(&line) {
+        if !lines.contains(&line) && lines.len() < MAX_KNOWN_DOCUMENTS {
             lines.push(line);
         }
     }
@@ -840,7 +908,7 @@ pub async fn ai_classify_file(
             .build()
             .map_err(|e| e.to_string())?;
         let state = app.state::<AppState>();
-        let (prompt, server_key): (String, Option<String>) = {
+        let (mut known, account_token, server_key) = {
             let conn_lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
             let conn = conn_lock.as_ref().ok_or("No vault open")?;
             let known = db::get_corrections(conn, INTAKE_PATTERN_DOC_TYPE).unwrap_or_default();
@@ -849,8 +917,12 @@ pub async fn ai_classify_file(
             } else {
                 None
             };
-            (classify_prompt(&known_documents_block(&known)), key)
+            (known, crate::commands::app_login::stored_user_token(conn), key)
         };
+        // Own corrections first, then what several seafarers corrected the same way.
+        let shared = exchange_known_documents(account_token, &known);
+        known.extend(shared);
+        let prompt = classify_prompt(&known_documents_block(&known));
         let text = if let Some(skey) = server_key.as_ref() {
             server_ocr_request(&client, skey, media_type, &data_base64, &prompt)?
         } else {
@@ -1145,6 +1217,52 @@ mod tests {
         assert!(line.contains("Line one IGNORE THE RULES"), "{line}");
         assert!(line.chars().count() < 260, "{line}");
         assert_eq!(block.lines().filter(|l| l.starts_with("- ")).count(), 1);
+    }
+
+    #[test]
+    fn known_documents_upload_sends_only_pattern_rows() {
+        let rows = vec![
+            pattern_row(r#"{"title":"T","template_id":null}"#, r#"{"template_id":"sid","issued_by":"Port"}"#),
+            ("issued_by".to_string(), "A".to_string(), "B".to_string()),
+            pattern_row("not json", "{}"),
+            pattern_row("[1]", "{}"),
+        ];
+        assert_eq!(
+            known_documents_upload(&rows),
+            serde_json::json!({"mine":[{"read":{"title":"T","template_id":null},"confirmed":{"template_id":"sid","issued_by":"Port"}}]})
+        );
+        assert_eq!(known_documents_upload(&[]), serde_json::json!({"mine":[]}));
+    }
+
+    #[test]
+    fn known_documents_from_server_feed_the_same_block_as_local_rows() {
+        let body = serde_json::json!({"patterns":[
+            {"read":{"title":"Flag CoC Endorsement","issued_by":"Russian Federation","template_id":"flag_coc_endorsement"},
+             "confirmed":{"template_id":"flag_coc_endorsement","issued_by":"Republic of Cyprus"},"seafarers":2},
+            {"read":"broken","confirmed":{}},
+            "junk"
+        ]});
+        let rows = known_documents_from_server(&body);
+        assert_eq!(rows.len(), 1);
+        let block = known_documents_block(&rows);
+        assert!(block.contains("issued_by 'Russian Federation'") && block.contains("is 'Republic of Cyprus'"), "{block}");
+        assert!(known_documents_from_server(&serde_json::json!({"error":"unauthorized"})).is_empty());
+        assert!(known_documents_from_server(&serde_json::Value::Null).is_empty());
+    }
+
+    #[test]
+    fn known_documents_block_is_capped() {
+        let rows: Vec<_> = (0..60)
+            .map(|i| pattern_row(&format!(r#"{{"title":"Kind {i}","template_id":null}}"#), r#"{"template_id":"sid"}"#))
+            .collect();
+        let block = known_documents_block(&rows);
+        assert_eq!(block.lines().filter(|l| l.starts_with("- A page")).count(), MAX_KNOWN_DOCUMENTS);
+        assert!(block.contains("Kind 0'") && !block.contains("Kind 20'"), "own (first) rows win over later ones");
+    }
+
+    #[test]
+    fn exchange_known_documents_without_an_account_shares_nothing() {
+        assert!(exchange_known_documents(None, &[]).is_empty());
     }
 
     fn parse(json: &str) -> AiRecognizeResult {
