@@ -6479,6 +6479,34 @@ for (const lang of ['en','ru']) {
       await c.app.sandbox.docIntakeConfirm();
       ok(c.toasts.some(x=>x[1]==='error'&&String(x[0]).includes('disk full')),'016B other failures are reported, not retried forever '+lang);
     }
+    // 4c. дело № 242: что моряк поправил на экране подтверждения (слот, орган выдачи),
+    // запоминается как вид документа — без номера и дат; без правок ничего не пишется.
+    {
+      const learned=x=>x.sent.filter(y=>y[0]==='save_ai_correction');
+      c=await start({template_id:'passport',doc_number:'CY-1',issued_by:'Russian Federation',valid_to:'2029-03-14',title_suggestion:'Endorsement attesting the recognition of a certificate'},[]);
+      Object.assign(c.values,{'doc-intake-type':'sso','doc-intake-doc_number':'CY-1','doc-intake-issued_by':'Republic of Cyprus','doc-intake-valid_to':'2029-03-14'});
+      await c.app.sandbox.docIntakeConfirm();
+      const kept=learned(c)[0];
+      ok(learned(c).length===1&&kept[1].docType==='doc_intake'&&kept[1].fieldName==='pattern','242 a corrected confirmation is remembered once '+lang);
+      ok(kept&&kept[1].aiValue===JSON.stringify({title:'Endorsement attesting the recognition of a certificate',issued_by:'Russian Federation',template_id:'passport'})&&kept[1].correctValue===JSON.stringify({template_id:'sso',issued_by:'Republic of Cyprus'}),'242 it keeps the kind of document, not its number or dates ('+(kept&&kept[1].aiValue+' → '+kept[1].correctValue)+') '+lang);
+      ok(!c.toasts.some(x=>x[1]==='error'),'242 remembering does not disturb the confirmation '+lang);
+      c=await start({template_id:'passport',doc_number:'AB123',issued_by:'UA',title_suggestion:'Passport'},[]);
+      Object.assign(c.values,{'doc-intake-type':'passport','doc-intake-doc_number':'AB999','doc-intake-issued_by':'UA'});
+      await c.app.sandbox.docIntakeConfirm();
+      ok(learned(c).length===0,'242 an unchanged type and authority teach nothing (a number edit is not a pattern) '+lang);
+      c=await start({template_id:'passport',issued_by:'UA',title_suggestion:'Passport'},[]);
+      Object.assign(c.values,{'doc-intake-type':'passport','doc-intake-issued_by':'2110'});
+      await c.app.sandbox.docIntakeConfirm();
+      ok(learned(c).length===1&&learned(c)[0][1].correctValue===JSON.stringify({template_id:'passport',issued_by:'2110'}),'242 a corrected authority alone is remembered with its slot '+lang);
+      c=await start({template_id:'passport',issued_by:'Republic of Cyprus',title_suggestion:'Endorsement'},[]);
+      Object.assign(c.values,{'doc-intake-type':'sso','doc-intake-issued_by':'Republic of Cyprus'});
+      await c.app.sandbox.docIntakeConfirm();
+      ok(learned(c).length===1&&learned(c)[0][1].correctValue===JSON.stringify({template_id:'sso',issued_by:'Republic of Cyprus'}),'242 a corrected slot is remembered together with the authority that identifies the document '+lang);
+      c=await start({},[]);
+      Object.assign(c.values,{'doc-intake-type':'sso','doc-intake-issued_by':'Training Centre'});
+      await c.app.sandbox.docIntakeConfirm();
+      ok(learned(c).length===0,'242 a page Skipi could not read at all is not turned into a pattern '+lang);
+    }
     // 5. the mobile Add screen leads with the one green plus
     const app=await bootA5II(lang);
     vm.runInContext("mobileAddMode='choose';",app.sandbox);app.sandbox.allDocs=[];

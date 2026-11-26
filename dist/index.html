@@ -4772,6 +4772,19 @@ async function docIntakeConfirm(){
             statuses[f]='verified';
         }
         await docIntakeWrite('update_field_statuses',{id:target.id,statuses:JSON.stringify(statuses)},target.id);
+        // Дело № 242: what the seafarer corrected here (the slot, the issuing
+        // authority) is remembered as a KIND of document — no number, no dates —
+        // and the next recognition is told about it (ai.rs, KNOWN DOCUMENTS).
+        try{
+            var read=intake.result||{},readIssuer=String(read.issued_by||'').trim(),readType=read.template_id||null,readTitle=String(read.title_suggestion||'').trim();
+            var rightType=tpl?tpl.id:null,issuerFixed=!!values.issued_by&&values.issued_by!==readIssuer;
+            if((readTitle||readIssuer||readType)&&((rightType&&rightType!==readType)||issuerFixed)){
+                var right={};
+                if(rightType)right.template_id=rightType;
+                if(values.issued_by)right.issued_by=values.issued_by;
+                await invoke('save_ai_correction',{docType:'doc_intake',fieldName:'pattern',aiValue:JSON.stringify({title:readTitle||null,issued_by:readIssuer||null,template_id:readType}),correctValue:JSON.stringify(right)});
+            }
+        }catch(e2){}
         docIntake=null;docIntakeRender();
         allDocs=await invoke('get_documents');
         selectedDocId=target.id;
