@@ -45,11 +45,6 @@ fn make_record(t: &DocTemplate) -> DocRecord {
 
 /// Convert a profiles::DocTemplate into a DocRecord with regulatory basis populated.
 pub fn record_from_profile_template(t: &profiles::DocTemplate) -> DocRecord {
-    let valid_to = t.typical_years.map(|y| {
-        let now = chrono::Utc::now();
-        let future = now + chrono::Duration::days(365 * y as i64);
-        future.format("%Y-%m-%d").to_string()
-    });
     DocRecord {
         id: Uuid::new_v4().to_string(),
         category: t.category.to_string(),
@@ -58,7 +53,8 @@ pub fn record_from_profile_template(t: &profiles::DocTemplate) -> DocRecord {
         has_expiry: t.has_expiry,
         is_permanent: profiles::default_is_permanent_doc(t.id),
         valid_from: None,
-        valid_to,
+        // The expiry date is the seafarer's to enter (дело № 212).
+        valid_to: None,
         issued_by: None,
         doc_number: None,
         notes: if t.notes.is_empty() {
@@ -90,6 +86,14 @@ mod tests {
         assert!(record.is_permanent);
         assert!(!record.has_expiry);
         assert!(record.valid_to.is_none());
+    }
+
+    // Дело № 212: an empty slot showed «Valid, N days» and went to crewing with a date nobody entered.
+    #[test]
+    fn new_slot_has_no_expiry_date_until_the_seafarer_enters_one() {
+        let template = profiles::doc_template_by_title_or_id("passport").unwrap();
+        assert!(template.typical_years.is_some());
+        assert!(record_from_profile_template(&template).valid_to.is_none());
     }
 }
 
