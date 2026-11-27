@@ -172,6 +172,29 @@ const ISSUED_BY_SYNONYM_KEYS: [&str; 3] = ["issuing_authority", "authority", "is
 /// the value starts with `DDDD-DD-DDT`; every other string is left untouched
 /// (doc numbers, issuers and titles used to be cut to 10 chars whenever they
 /// contained a 'T', e.g. "COC-TEST-7788" → "COC-TEST-7").
+/// Latin twin of a Cyrillic letter that is printed identically (А/A, В/B, …).
+fn latin_twin(c: char) -> Option<char> {
+    Some(match c {
+        'А' => 'A', 'В' => 'B', 'Е' => 'E', 'К' => 'K', 'М' => 'M', 'Н' => 'H',
+        'О' => 'O', 'Р' => 'P', 'С' => 'C', 'Т' => 'T', 'Х' => 'X', 'І' => 'I',
+        'а' => 'a', 'е' => 'e', 'о' => 'o', 'р' => 'p', 'с' => 'c', 'х' => 'x', 'і' => 'i',
+        _ => return None,
+    })
+}
+
+/// Case 249: the model sometimes answers a Latin document number with Cyrillic
+/// look-alike letters («АВ 771204» for «AB 771204»), which breaks search, matching
+/// and the CV. When EVERY Cyrillic letter in the number has a Latin twin, the number
+/// is written in Latin; a number with any other Cyrillic letter (Ф, Д, …) is a real
+/// Cyrillic series and stays as printed.
+fn doc_number_to_latin_twins(s: &str) -> Option<String> {
+    let is_cyrillic = |c: char| ('\u{0400}'..='\u{04FF}').contains(&c);
+    if !s.chars().any(is_cyrillic) || s.chars().any(|c| is_cyrillic(c) && latin_twin(c).is_none()) {
+        return None;
+    }
+    Some(s.chars().map(|c| latin_twin(c).unwrap_or(c)).collect())
+}
+
 fn normalize_ai_json(v: &mut serde_json::Value) {
     let Some(obj) = v.as_object_mut() else {
         return;
@@ -184,6 +207,11 @@ fn normalize_ai_json(v: &mut serde_json::Value) {
                 .collect::<Vec<_>>()
                 .join(", ");
             *val = serde_json::Value::String(joined);
+        }
+        if key == "doc_number" {
+            if let Some(latin) = val.as_str().and_then(doc_number_to_latin_twins) {
+                *val = serde_json::Value::String(latin);
+            }
         }
         if key == "valid_from" || key == "valid_to" {
             if let Some(s) = val.as_str() {
@@ -371,7 +399,7 @@ async fn ai_recognize_fields(
     ollama_endpoint: Option<String>,
     doc_title: Option<String>,
 ) -> Result<AiRecognizeResult, String> {
-    let (file_path, ext, prompt): (PathBuf, String, String) = {
+    let (file_path, ext, prompt, known, account_token): (PathBuf, String, String, Vec<(String, String, String)>, Option<String>) = {
         let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
         let vault_path = vault_lock.as_ref().ok_or("No vault open")?;
 
@@ -421,6 +449,10 @@ async fn ai_recognize_fields(
             file_path,
             ext,
             format!("{}{}{}", template_text, base_prompt, corrections_text),
+            // Дело № 247: the card's Recognize knows the same corrected kinds of
+            // documents as the green «+» (own rows here, shared ones below).
+            db::get_corrections(conn, INTAKE_PATTERN_DOC_TYPE).unwrap_or_default(),
+            crate::commands::app_login::stored_user_token(conn),
         )
     };
 
@@ -467,6 +499,15 @@ async fn ai_recognize_fields(
                 .timeout(std::time::Duration::from_secs(120))
                 .build()
                 .map_err(|e| e.to_string())?;
+            // Cloud only: the local model keeps its short prompt and nothing leaves the device.
+            let prompt = if use_local {
+                prompt
+            } else {
+                let mut known = known;
+                let shared = exchange_known_documents(account_token, &known);
+                known.extend(shared);
+                slot_prompt(&prompt, &known_documents_block(&known))
+            };
 
             let result = if use_local {
                 // Ollama API (local)
@@ -782,6 +823,20 @@ fn known_documents_block(rows: &[(String, String, String)]) -> String {
          template_id and read issued_by the confirmed way. Numbers and dates \
          always come from this page.\n{}==== END KNOWN DOCUMENTS ====",
         lines.concat()
+    )
+}
+
+/// The prompt of a recognition INTO a known slot (the card's Recognize, the
+/// phone's «Recognize fields») plus the same KNOWN DOCUMENTS block the «+»
+/// intake uses. The slot is already chosen, so only issued_by is taken from it.
+fn slot_prompt(prompt: &str, known: &str) -> String {
+    if known.is_empty() {
+        return prompt.to_string();
+    }
+    format!(
+        "{}{}\nThe document type is already chosen here: return no template_id, \
+         use the block above only to read issued_by the confirmed way.",
+        prompt, known
     )
 }
 
@@ -1261,6 +1316,24 @@ mod tests {
     }
 
     #[test]
+    fn slot_prompt_carries_the_known_documents_of_the_intake() {
+        // Дело № 247: a correction made on the «+» confirmation screen is told to
+        // the card's Recognize too.
+        let rows = vec![(
+            "pattern".to_string(),
+            r#"{"title":"Certificate of Proficiency","issued_by":"Ukraine","template_id":null}"#.to_string(),
+            r#"{"template_id":"coc_master","issued_by":"Maritime Administration of Ukraine"}"#.to_string(),
+        )];
+        let prompt = slot_prompt(BASE_PROMPT, &known_documents_block(&rows));
+        assert!(prompt.starts_with(BASE_PROMPT));
+        assert!(prompt.contains("==== KNOWN DOCUMENTS ===="));
+        assert!(prompt.contains("the issuing authority of this kind of document is 'Maritime Administration of Ukraine'"));
+        assert!(prompt.contains("return no template_id"));
+        // Nothing corrected yet: the prompt is exactly what it was.
+        assert_eq!(slot_prompt(BASE_PROMPT, &known_documents_block(&[])), BASE_PROMPT);
+    }
+
+    #[test]
     fn exchange_known_documents_without_an_account_shares_nothing() {
         assert!(exchange_known_documents(None, &[]).is_empty());
     }
@@ -1321,6 +1394,19 @@ mod tests {
             assert_eq!(r.valid_from.as_deref(), Some(v), "valid_from {v:?}");
             assert_eq!(r.valid_to.as_deref(), Some(v), "valid_to {v:?}");
         }
+    }
+
+    #[test]
+    fn doc_number_cyrillic_lookalikes_become_latin() {
+        // Case 249: the page prints Latin «AB 771204», the model answers with Cyrillic А and В.
+        let r = parse("{\"doc_number\": \"\u{0410}\u{0412} 771204\", \"issued_by\": null, \"valid_from\": null, \"valid_to\": null, \"title_suggestion\": null}");
+        assert_eq!(r.doc_number.as_deref(), Some("AB 771204"));
+        // A series with a letter that has no Latin twin is really Cyrillic — left as printed.
+        let r = parse(r#"{"doc_number": "МФ 0123456", "issued_by": null, "valid_from": null, "valid_to": null, "title_suggestion": null}"#);
+        assert_eq!(r.doc_number.as_deref(), Some("МФ 0123456"));
+        // Other fields are never touched.
+        let r = parse(r#"{"doc_number": null, "issued_by": "МОРЕХОД", "valid_from": null, "valid_to": null, "title_suggestion": null}"#);
+        assert_eq!(r.issued_by.as_deref(), Some("МОРЕХОД"));
     }
 
     #[test]
