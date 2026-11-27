@@ -3568,6 +3568,8 @@ const SHIPPED_EXPECTED = [
   'vessel-db.css', 'vessel-db.js',
   // Port DB (owner 26.11.2026): the screen, its styles, and the vendored @skipi/ports with its pin.
   'PORTS_VERSION', 'port-db.css', 'port-db.js', 'skipi-ports.data.js', 'skipi-ports.js',
+  // My Vessel (owner 27.11.2026, case 265): the vendored @skipi/vessel — screen, styles and pin.
+  'VESSEL_VERSION', 'skipi-vessel.css', 'skipi-vessel.js',
 ];
 const DIST_ALL = [];
 (function walk(dir) {

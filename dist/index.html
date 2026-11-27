@@ -6,6 +6,7 @@
 <title>Skipi - United Seafarers</title>
 <link rel="stylesheet" href="vessel-db.css">
 <link rel="stylesheet" href="port-db.css">
+<link rel="stylesheet" href="skipi-vessel.css">
 <link rel="stylesheet" href="intelligence.css">
 <!-- @skipi/settings v0.3.0 — unified Settings shell (vendored from skipi-settings 9caeff6) -->
 <link rel="stylesheet" href="skipi-settings.css">
@@ -1868,6 +1869,7 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
 <script src="vessel-db.js"></script>
 <script src="skipi-ports.js"></script>
 <script src="port-db.js"></script>
+<script src="skipi-vessel.js"></script>
 <script src="intelligence.js"></script>
 <script src="plugin-host-ui.js"></script>
 <script>
@@ -7899,7 +7901,7 @@ function renderMobileShell(){
     if(mobileView==='vessels')return renderMobileVessels();
     if(mobileView==='ports')return renderMobilePorts();
 
-    if(mobileView==='myvessel')return renderMobileMyVessel();
+    if(mobileView==='myvessel')return renderMobileVesselSpace();
 
     if(mobileView==='apps')return renderMobileApps();
     if(mobileView==='aiconnect')return renderMobileAiConnect();
@@ -12151,7 +12153,7 @@ function showView(v, opts){
     else if(v==='experience')showWorkHistory();
     else if(v==='vessels')showVesselDatabase();
     else if(v==='ports')showPortDb();
-    else if(v==='myvessel')showMyVessel();
+    else if(v==='myvessel')showVesselSpace();
     else if(v==='contribution')showContribution();
     else if(v==='packages')showPackages();
     else if(v==='dispatch')showDispatch();
@@ -12338,6 +12340,39 @@ function showPortDb(){
 function renderMobilePorts(){
     mobileMainHtml('<div id="port-db-root" class="pdb-mobile"></div>');
     SkipiPortDb.mount(document.getElementById('port-db-root'), portDbDeps());
+}
+// «Моё судно» (owner 27.11.2026, case 265): check in on a vessel by its IMO number; the vessel
+// is the shared space of those checked in — crew aboard and a notice board. The screen is the
+// module @skipi/vessel (dist/skipi-vessel.js + css, pin dist/VESSEL_VERSION). The page never
+// holds the account token — the native commands (commands/vessel_space.rs) do.
+// The tab and the tile open THIS screen; the earlier «join by a code from the ship's computer»
+// screen (showMyVessel and the myVessel* functions around it) is no longer routed to.
+function vesselSpaceDeps(){
+    return { lang: getUiLang, toast: showToast, api: {
+        me: function(){ return invoke('vessel_space_me'); },
+        lookup: function(imo){ return invoke('vessel_space_lookup', { imo: imo }); },
+        checkIn: function(imo, name){ return invoke('vessel_space_checkin', { imo: imo, name: name }); },
+        leave: function(){ return invoke('vessel_space_leave'); },
+        notices: function(offset){ return invoke('vessel_notices_list', { offset: offset }); },
+        post: function(text){ return invoke('vessel_notice_post', { text: text }); },
+        remove: function(id){ return invoke('vessel_notice_delete', { noticeId: id }); },
+        report: function(id){ return invoke('vessel_notice_report', { noticeId: id, reason: '' }); }
+    } };
+}
+function vesselSpaceMount(){
+    var el=document.getElementById('vessel-space-root');
+    if(el&&window.SkipiVessel)window.SkipiVessel.mount(el, vesselSpaceDeps());
+}
+function showVesselSpace(){
+    var content=document.getElementById('scr-content');
+    if(!content)return;
+    content.innerHTML='<div id="vessel-space-root"></div>';
+    show('scr-content');
+    vesselSpaceMount();
+}
+function renderMobileVesselSpace(){
+    mobileMainHtml('<div id="vessel-space-root" class="svm-mobile"></div>');
+    vesselSpaceMount();
 }
 function showMyVessel(){
     var content=document.getElementById('scr-content');

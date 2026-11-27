@@ -1,0 +1,33 @@
+/* @skipi/vessel — «Моё судно». Uses the home's theme variables (--text, --text2, --bg, --border, --accent, --hover, --red). */
+.svm-wrap{max-width:640px;margin:0 auto;padding:24px 18px 40px;display:flex;flex-direction:column;gap:14px;box-sizing:border-box;width:100%;color:var(--text);}
+.svm-mobile .svm-wrap{max-width:none;padding:12px 12px 28px;}
+.svm-card{border:1px solid var(--border);border-radius:12px;padding:16px;background:var(--bg);display:flex;flex-direction:column;gap:10px;min-width:0;}
+.svm-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
+.svm-title{font-size:22px;font-weight:700;line-height:1.25;overflow-wrap:anywhere;}
+.svm-sub{font-size:14px;color:var(--text2);line-height:1.45;}
+.svm-label{font-size:13px;font-weight:600;}
+.svm-input{font:inherit;font-size:15px;color:var(--text);background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:11px 12px;box-sizing:border-box;min-width:0;width:100%;}
+.svm-input:focus{outline:2px solid var(--accent);outline-offset:-1px;}
+.svm-text{resize:vertical;}
+.svm-actions{display:flex;gap:8px;flex-wrap:wrap;}
+.svm-btn{font:inherit;font-size:14px;padding:10px 16px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);cursor:pointer;min-height:42px;}
+.svm-btn.svm-primary{background:var(--accent);border-color:var(--accent);color:#fff;}
+.svm-btn:disabled,.svm-link:disabled{opacity:.5;cursor:default;}
+.svm-hint{font-size:12px;color:var(--text2);line-height:1.4;}
+.svm-note{font-size:13px;color:var(--text2);padding:6px 2px;}
+.svm-err{font-size:13px;color:var(--red);}
+.svm-vessel{border:1px solid var(--border);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;min-width:0;}
+.svm-vessel-name{font-size:17px;font-weight:700;overflow-wrap:anywhere;}
+.svm-vessel-meta{font-size:13px;color:var(--text2);font-variant-numeric:tabular-nums;}
+.svm-pill{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#fff;background:var(--accent);border-radius:999px;padding:4px 10px;white-space:nowrap;}
+.svm-block-title{font-size:15px;font-weight:700;}
+.svm-person{display:flex;flex-direction:column;gap:2px;padding-top:10px;border-top:1px solid var(--border);min-width:0;}
+.svm-person-main{display:flex;align-items:center;gap:8px;min-width:0;}
+.svm-person-name{font-size:15px;font-weight:600;overflow-wrap:anywhere;}
+.svm-you{font-size:11px;color:var(--text2);border:1px solid var(--border);border-radius:999px;padding:1px 8px;white-space:nowrap;}
+.svm-person-sub{font-size:12px;color:var(--text2);overflow-wrap:anywhere;}
+.svm-notice{display:flex;flex-direction:column;gap:4px;padding-top:10px;border-top:1px solid var(--border);min-width:0;}
+.svm-notice-head{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--text2);}
+.svm-notice-by{font-weight:600;color:var(--text);overflow-wrap:anywhere;}
+.svm-notice-text{font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere;}
+.svm-link{align-self:flex-start;font:inherit;font-size:12px;color:var(--text2);background:none;border:0;padding:6px 0;cursor:pointer;text-decoration:underline;}

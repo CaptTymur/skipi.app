@@ -112,7 +112,7 @@ pub(crate) fn base64_encode(data: &[u8]) -> String {
 pub fn run() {
     use commands::{
         account_sync, agency_mailing, ai, app_login, assistant, cv_commands, documents, email,
-        jobs, mail_intent, messaging, motion, packages, plugin_device, plugin_reviews, port_reviews, profile, review, vault,
+        jobs, mail_intent, messaging, motion, packages, plugin_device, plugin_reviews, port_reviews, profile, review, vault, vessel_space,
         work_history,
     };
 
@@ -171,6 +171,14 @@ pub fn run() {
             port_reviews::port_review_delete,
             port_reviews::port_review_report,
             port_reviews::port_survey_save,
+            vessel_space::vessel_space_me,
+            vessel_space::vessel_space_lookup,
+            vessel_space::vessel_space_checkin,
+            vessel_space::vessel_space_leave,
+            vessel_space::vessel_notices_list,
+            vessel_space::vessel_notice_post,
+            vessel_space::vessel_notice_delete,
+            vessel_space::vessel_notice_report,
             vault::install_deb_update,
             vault::set_window_title,
             vault::create_vault,

@@ -21,4 +21,5 @@ pub mod port_reviews;
 pub mod profile;
 pub mod review;
 pub mod vault;
+pub mod vessel_space;
 pub mod work_history;
