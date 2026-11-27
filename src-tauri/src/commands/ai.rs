@@ -172,6 +172,29 @@ const ISSUED_BY_SYNONYM_KEYS: [&str; 3] = ["issuing_authority", "authority", "is
 /// the value starts with `DDDD-DD-DDT`; every other string is left untouched
 /// (doc numbers, issuers and titles used to be cut to 10 chars whenever they
 /// contained a 'T', e.g. "COC-TEST-7788" → "COC-TEST-7").
+/// Latin twin of a Cyrillic letter that is printed identically (А/A, В/B, …).
+fn latin_twin(c: char) -> Option<char> {
+    Some(match c {
+        'А' => 'A', 'В' => 'B', 'Е' => 'E', 'К' => 'K', 'М' => 'M', 'Н' => 'H',
+        'О' => 'O', 'Р' => 'P', 'С' => 'C', 'Т' => 'T', 'Х' => 'X', 'І' => 'I',
+        'а' => 'a', 'е' => 'e', 'о' => 'o', 'р' => 'p', 'с' => 'c', 'х' => 'x', 'і' => 'i',
+        _ => return None,
+    })
+}
+
+/// Case 249: the model sometimes answers a Latin document number with Cyrillic
+/// look-alike letters («АВ 771204» for «AB 771204»), which breaks search, matching
+/// and the CV. When EVERY Cyrillic letter in the number has a Latin twin, the number
+/// is written in Latin; a number with any other Cyrillic letter (Ф, Д, …) is a real
+/// Cyrillic series and stays as printed.
+fn doc_number_to_latin_twins(s: &str) -> Option<String> {
+    let is_cyrillic = |c: char| ('\u{0400}'..='\u{04FF}').contains(&c);
+    if !s.chars().any(is_cyrillic) || s.chars().any(|c| is_cyrillic(c) && latin_twin(c).is_none()) {
+        return None;
+    }
+    Some(s.chars().map(|c| latin_twin(c).unwrap_or(c)).collect())
+}
+
 fn normalize_ai_json(v: &mut serde_json::Value) {
     let Some(obj) = v.as_object_mut() else {
         return;
@@ -184,6 +207,11 @@ fn normalize_ai_json(v: &mut serde_json::Value) {
                 .collect::<Vec<_>>()
                 .join(", ");
             *val = serde_json::Value::String(joined);
+        }
+        if key == "doc_number" {
+            if let Some(latin) = val.as_str().and_then(doc_number_to_latin_twins) {
+                *val = serde_json::Value::String(latin);
+            }
         }
         if key == "valid_from" || key == "valid_to" {
             if let Some(s) = val.as_str() {
@@ -1366,6 +1394,19 @@ mod tests {
             assert_eq!(r.valid_from.as_deref(), Some(v), "valid_from {v:?}");
             assert_eq!(r.valid_to.as_deref(), Some(v), "valid_to {v:?}");
         }
+    }
+
+    #[test]
+    fn doc_number_cyrillic_lookalikes_become_latin() {
+        // Case 249: the page prints Latin «AB 771204», the model answers with Cyrillic А and В.
+        let r = parse("{\"doc_number\": \"\u{0410}\u{0412} 771204\", \"issued_by\": null, \"valid_from\": null, \"valid_to\": null, \"title_suggestion\": null}");
+        assert_eq!(r.doc_number.as_deref(), Some("AB 771204"));
+        // A series with a letter that has no Latin twin is really Cyrillic — left as printed.
+        let r = parse(r#"{"doc_number": "МФ 0123456", "issued_by": null, "valid_from": null, "valid_to": null, "title_suggestion": null}"#);
+        assert_eq!(r.doc_number.as_deref(), Some("МФ 0123456"));
+        // Other fields are never touched.
+        let r = parse(r#"{"doc_number": null, "issued_by": "МОРЕХОД", "valid_from": null, "valid_to": null, "title_suggestion": null}"#);
+        assert_eq!(r.issued_by.as_deref(), Some("МОРЕХОД"));
     }
 
     #[test]
