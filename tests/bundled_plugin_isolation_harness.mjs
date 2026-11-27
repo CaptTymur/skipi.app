@@ -161,6 +161,13 @@ ok(sha256Text(BRIDGE) === HOST_RUNTIME_BRIDGE_SHA256, 'plugin-host-bridge.js mat
   const RS = fs.readFileSync(path.join(DIST, '..', 'src-tauri', 'src', 'commands', 'plugin_reviews.rs'), 'utf8');
   ok(/stored_user_token/.test(RS) && /assistant_api_base\(\)/.test(RS) && /fn valid_slug/.test(RS), 'the native commands take the token from the app session, talk to the account server and validate the slug');
 }
+// Case 223: the «Check the document» screen (after the green «+») must not end up under the
+// «Complete your Seafarer Profile» window — its buttons could not be pressed until the profile window was closed.
+{
+  const profileZ = Number((/<div id="forced-profile-overlay" style="[^"]*z-index:(\d+)/.exec(HTML) || [])[1]);
+  const intakeZ = Number((/<div id="doc-intake-overlay" data-qa="doc-intake-overlay" class="modal-overlay open" style="z-index:(\d+);?">/.exec(HTML) || [])[1]);
+  ok(profileZ > 0 && intakeZ > profileZ, 'case 223: the document check screen is above the profile window (' + intakeZ + ' > ' + profileZ + ')');
+}
 ok(/function showApps\(/.test(HOST_UI_MODULE) && /function renderMobileApps\(/.test(HOST_UI_MODULE) && /function pluginMountInto\(/.test(HOST_UI_MODULE), 'desktop + mobile Apps entry points still exist (in @skipi/plugin-host-ui)');
 
 // ------------------------------------------------------------------ mount

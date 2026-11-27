@@ -4695,8 +4695,9 @@ function docIntakeRender(){
     if(old)old.remove();
     if(!docIntake)return;
     // The generic modal layer (.modal-overlay / .modal-panel): safe-area insets
-    // and stacking are already solved there.
-    var h='<div id="doc-intake-overlay" data-qa="doc-intake-overlay" class="modal-overlay open"><div class="modal-panel" style="max-width:520px;color:var(--text);">';
+    // are already solved there. It sits above the profile window (#forced-profile-overlay, 9998),
+    // which may open while a document is being checked (case 223).
+    var h='<div id="doc-intake-overlay" data-qa="doc-intake-overlay" class="modal-overlay open" style="z-index:9999;"><div class="modal-panel" style="max-width:520px;color:var(--text);">';
     if(docIntake.status==='working'){
         h+='<div data-qa="doc-intake-working" style="font-size:16px;font-weight:700;margin-bottom:6px;">'+docIntakeT('Recognising the document…','Распознаём документ…')+'</div>'
           +'<div style="font-size:13px;color:var(--text2);margin-bottom:14px;">'+esc(docIntake.fileName)+'</div>'
