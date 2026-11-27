@@ -360,16 +360,56 @@
       if(__remoteCatalogFetchedAt && (Date.now() - __remoteCatalogFetchedAt) < REMOTE_CATALOG_REFRESH_MS) return;
       remoteRefreshCatalog(onRefreshed);
     }
+    // A catalog entry may need a newer app (compat.minHostVersion). The loader refuses such an install;
+    // the UI says it in words and does not offer Install (owner's screenshot 26.11.2026).
+    function hostAppVersion(){
+      var v = deps.hostVersion;
+      if(typeof v === 'function'){ try{ v = v(); }catch(e){ v = ''; } }
+      if(!v){ try{ v = window.APP_VERSION; }catch(e){ v = ''; } }
+      return String(v || '');
+    }
+    function versionLess(a, b){
+      var x = String(a).split('.'), y = String(b).split('.');
+      for(var i = 0; i < 3; i++){
+        var m = parseInt(x[i], 10) || 0, n = parseInt(y[i], 10) || 0;
+        if(m !== n) return m < n;
+      }
+      return false;
+    }
+    function pluginNeedsAppVersion(id){
+      var e = remoteCatalogEntry(id), min = e && e.compat && e.compat.minHostVersion, have = hostAppVersion();
+      return (min && have && versionLess(have, min)) ? String(min) : '';
+    }
+    function pluginNeedsAppText(min){
+      if(getUiLang() === 'ru') return min ? 'Обновите Skipi до версии '+min+', чтобы установить этот плагин.' : 'Обновите Skipi, чтобы установить этот плагин.';
+      return min ? 'Update Skipi to version '+min+' to install this plugin.' : 'Update Skipi to install this plugin.';
+    }
+    function pluginNeedsAppHtml(min){
+      return '<span class="apps-needs-app" data-qa="plugin-needs-app" style="font-size:12px;opacity:.75;">'+esc(pluginNeedsAppText(min))+'</span>';
+    }
+    function pluginInstallFailText(p, res){
+      if(res && res.stage === 'compat'){
+        var m = /minHostVersion\s+([0-9][0-9A-Za-z.\-]*)/.exec(String(res.reason || ''));
+        if(m || /minHostVersion/.test(String(res.reason || ''))) return pluginNeedsAppText(m ? m[1] : '');
+      }
+      return 'Could not install '+p.name+': '+((res && res.reason) || 'verification failed');
+    }
     function pluginInstall(id){
       var p = pluginById(id) || remoteEntryFor(id); if(!p || p.comingSoon) return;
       if(p.remote){
         if(typeof window.SkipiRemoteInstall !== 'function'){ showToast('Remote install is unavailable.','error'); return; }
-        showToast('Installing '+p.name+'…','info');
+        var needs = pluginNeedsAppVersion(id);
+        if(needs){ showToast(pluginNeedsAppText(needs),'error'); return; }
+        // A home's showToast may return a function that dismisses the toast: «Installing…» must not
+        // stay next to the result.
+        var installing = showToast('Installing '+p.name+'…','info');
+        var installingDone = function(){ if(typeof installing === 'function'){ try{ installing(); }catch(e){} } };
         window.SkipiRemoteInstall(id).then(function(res){
+          installingDone();
           if(res && res.ok){ remoteCatalogInvalidate(); pluginHostState.tab = 'installed'; showToast(p.name+' installed for offline use.','success'); }
-          else showToast('Could not install '+p.name+': '+((res && res.reason) || 'verification failed'),'error');
+          else showToast(pluginInstallFailText(p, res),'error');
           pluginRerender();
-        }, function(e){ showToast('Could not install '+p.name+': '+((e && e.message) || e),'error'); pluginRerender(); });
+        }, function(e){ installingDone(); showToast('Could not install '+p.name+': '+((e && e.message) || e),'error'); pluginRerender(); });
         return;
       }
       pluginSetState(id,{ installed:true, enabled:true, installed_at:pluginNowIso() });
@@ -575,7 +615,7 @@
         + '<span class="apps-icon-tile-name">'+esc(p.name)+'</span>'
         + (pluginMetaLine(p)?'<span class="apps-icon-tile-meta">'+esc(pluginMetaLine(p))+'</span>':'')
         + pluginRatingChipHtml(p.id)
-        + '<span class="apps-badge live">'+esc(ru?'Установить':'Install')+'</span>'
+        + (pluginNeedsAppVersion(p.id) ? pluginNeedsAppHtml(pluginNeedsAppVersion(p.id)) : '<span class="apps-badge live">'+esc(ru?'Установить':'Install')+'</span>')
         + '</button></div>';
     }
     function pluginLauncherMatch(p, q){
@@ -740,7 +780,8 @@
       else if(st === 'disabled') actions = '<button class="btn btn-accent btn-sm" type="button" data-qa="remote-plugin-enable-'+escAttr(slug)+'" onclick="pluginEnable(\''+jsString(slug)+'\')">Enable</button>'
         + remoteUpdateActionHtml(slug)
         + ' <button class="btn btn-outline btn-sm" type="button" data-qa="remote-plugin-uninstall-'+escAttr(slug)+'" onclick="pluginUninstall(\''+jsString(slug)+'\')">Remove</button>';
-      else actions = '<button class="btn btn-accent btn-sm" type="button" data-qa="remote-plugin-install-'+escAttr(slug)+'" onclick="pluginInstall(\''+jsString(slug)+'\')">Install</button>';
+      else actions = pluginNeedsAppVersion(slug) ? pluginNeedsAppHtml(pluginNeedsAppVersion(slug))
+        : '<button class="btn btn-accent btn-sm" type="button" data-qa="remote-plugin-install-'+escAttr(slug)+'" onclick="pluginInstall(\''+jsString(slug)+'\')">Install</button>';
       return '<div class="apps-tile" data-qa="remote-plugin-tile-'+escAttr(slug)+'">'
         + '<span class="apps-tile-icon">'+esc(e.icon)+'</span>'
         + '<span class="apps-tile-body"><span class="apps-tile-name">'+esc(e.name)+'</span>'
@@ -946,7 +987,7 @@
       h += pluginPermsHtml(p);
       h += '<div class="apps-actions">';
       if(p.comingSoon){ h += '<button class="btn btn-outline" disabled>Coming soon</button>'; }
-      else if(st === 'available'){ h += '<button class="btn btn-accent" onclick="pluginInstall(\''+jsString(p.id)+'\')">Install</button>'; }
+      else if(st === 'available'){ h += pluginNeedsAppVersion(p.id) ? pluginNeedsAppHtml(pluginNeedsAppVersion(p.id)) : '<button class="btn btn-accent" onclick="pluginInstall(\''+jsString(p.id)+'\')">Install</button>'; }
       else if(st === 'installed'){
         h += '<button class="btn btn-accent" onclick="pluginOpen(\''+jsString(p.id)+'\')">Open</button>';
         h += remoteUpdateActionHtml(p.id);
@@ -1086,7 +1127,7 @@
       h += pluginPermsHtml(p);
       h += '<div class="apps-actions">';
       if(p.comingSoon){ h += '<button class="btn btn-outline" style="width:100%;" disabled>Coming soon</button>'; }
-      else if(st === 'available'){ h += '<button class="btn btn-accent" style="width:100%;" onclick="pluginInstall(\''+jsString(p.id)+'\')">Install</button>'; }
+      else if(st === 'available'){ h += pluginNeedsAppVersion(p.id) ? pluginNeedsAppHtml(pluginNeedsAppVersion(p.id)) : '<button class="btn btn-accent" style="width:100%;" onclick="pluginInstall(\''+jsString(p.id)+'\')">Install</button>'; }
       else if(st === 'installed'){
         if(remoteUpdateAvailable(p.id)) h += '<button class="btn btn-accent" style="width:100%;" data-qa="remote-plugin-update-'+escAttr(p.id)+'" onclick="pluginRemoteUpdate(\''+jsString(p.id)+'\')">'+esc(getUiLang()==='ru'?'Обновить':'Update')+'</button>';
         h += '<button class="btn btn-accent" style="width:100%;'+(remoteUpdateAvailable(p.id)?'margin-top:8px;':'')+'" onclick="pluginOpen(\''+jsString(p.id)+'\')">Open</button>';

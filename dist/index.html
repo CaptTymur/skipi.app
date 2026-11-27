@@ -2079,6 +2079,7 @@ function showToast(msg,type){
     var dismiss=function(){t.style.opacity='0';setTimeout(function(){t.remove();},200);};
     t.onclick=dismiss;
     setTimeout(dismiss,type==='error'?6000:3500);
+    return dismiss;
 }
 
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
