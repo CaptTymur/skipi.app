@@ -4120,8 +4120,8 @@ function statusTextOf(html) {
   return statusLineHtmlOf(html).replace(/<[^>]*>/g, '').trim();
 }
 
-const EN_EARLIER = 'It was delivered earlier: Skipi Seafarer cannot say which published version that response answered.';
-const RU_EARLIER = 'Он был доставлен ранее: Скипи Моряк не может назвать, какой опубликованной версии тот отклик отвечал.';
+const EN_EARLIER = 'It was delivered earlier: Skipi cannot say which published version that response answered.';
+const RU_EARLIER = 'Он был доставлен ранее: Skipi не может назвать, какой опубликованной версии тот отклик отвечал.';
 
 ok(enBlock.includes("'jobs.profiles.respond_already_version_unknown'"),
   'RV0 the one new dictionary key exists in EN');
