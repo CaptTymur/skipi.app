@@ -4634,8 +4634,10 @@ async function docIntakePicked(files){
     await docIntakeBegin({fileName:file.name||'document.jpg',dataBase64:dataBase64});
 }
 // source = {fileName, dataBase64} (picker bytes) or {fileName, sourcePath} (desktop dialog)
+// or {fileName, dataBase64, pages} — several scanned pages (дело № 228): page 1 is
+// recognised, on Confirm all pages become one PDF in the slot.
 async function docIntakeBegin(source){
-    docIntake={fileName:source.fileName,dataBase64:source.dataBase64||'',sourcePath:source.sourcePath||'',status:'working',result:null,error:''};
+    docIntake={fileName:source.fileName,dataBase64:source.dataBase64||'',sourcePath:source.sourcePath||'',pages:source.pages||null,status:'working',result:null,error:''};
     docIntakeRender();
     try{
         if(!docIntakeCatalog){try{docIntakeCatalog=await invoke('get_document_catalog');}catch(e0){docIntakeCatalog=[];}}
@@ -4727,6 +4729,81 @@ function docIntakeRender(){
     document.body.insertAdjacentHTML('beforeend',h);
     if(docIntake.status==='confirm')docIntakeRefresh();
 }
+// Дело № 247: a corrected «Issued by» on a recognition INTO a slot (the card)
+// is remembered as a kind of document, exactly like on the «+» confirmation.
+async function docRecognitionRemember(d,result,values){
+    try{
+        var readIssuer=String((result&&result.issued_by)||'').trim(),readTitle=String((result&&result.title_suggestion)||'').trim();
+        var issuer=String((values&&values.issued_by)||'').trim();
+        if(!d||!d.template_id||!issuer||issuer===readIssuer||!(readTitle||readIssuer))return;
+        await invoke('save_ai_correction',{docType:'doc_intake',fieldName:'pattern',aiValue:JSON.stringify({title:readTitle||null,issued_by:readIssuer||null,template_id:d.template_id}),correctValue:JSON.stringify({template_id:d.template_id,issued_by:issuer})});
+    }catch(e){}
+}
+// Дело № 228: recognition in the desktop card writes nothing by itself — the
+// seafarer sees what was read and confirms it (owner 25.11: «в любом случае
+// моряк должен подтвердить результат распознания»).
+var docRecognized=null,docRecognizedBusy=false;
+var DOC_RECOGNIZED_FIELDS=['doc_number','issued_by','valid_from','valid_to'];
+function docRecognizedRender(){
+    var old=document.getElementById('doc-recognized-overlay');
+    if(old)old.remove();
+    if(!docRecognized)return;
+    var d=(allDocs||[]).find(function(x){return x.id===docRecognized.docId;});
+    if(!d){docRecognized=null;return;}
+    var r=docRecognized.result||{};
+    var input='width:100%;box-sizing:border-box;font:inherit;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);';
+    var label='display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text2);font-weight:700;margin:10px 0 4px;';
+    var h='<div id="doc-recognized-overlay" data-qa="doc-recognized-overlay" class="modal-overlay open" style="z-index:9999;"><div class="modal-panel" style="max-width:520px;color:var(--text);">';
+    h+='<div style="font-size:16px;font-weight:700;margin-bottom:4px;">'+docIntakeT('Check the recognised fields','Проверьте распознанные поля')+'</div>';
+    h+='<div style="font-size:13px;color:var(--text2);margin-bottom:6px;">'+esc(d.title||'')+'</div>';
+    h+='<div style="font-size:12px;color:var(--text2);">'+docIntakeT('Nothing is saved until you confirm. Correct anything that was read wrong.','Ничего не сохраняется, пока вы не подтвердите. Исправьте то, что прочитано неверно.')+'</div>';
+    var names={doc_number:docIntakeT('Document No.','Номер документа'),issued_by:docIntakeT('Issued by','Кем выдан'),valid_from:docIntakeT('Issue date','Дата выдачи'),valid_to:docIntakeT('Expiry date','Действует до')};
+    DOC_RECOGNIZED_FIELDS.forEach(function(f){
+        var isDate=f==='valid_from'||f==='valid_to';
+        h+='<label style="'+label+'">'+names[f]+'</label><input id="doc-recognized-'+f+'" data-qa="doc-recognized-'+f+'" type="'+(isDate?'date':'text')+'" style="'+input+'" value="'+esc(r[f]||'')+'">';
+        if(!r[f]){
+            var cur=(f==='valid_to'&&d.is_permanent)?'Permanent':String(d[f]||'');
+            h+='<div style="font-size:11px;color:var(--text2);margin-top:3px;">'+docIntakeT('Not recognised.','Не распознано.')+(cur?' '+docIntakeT('The current value stays: ','Останется прежнее: ')+esc(cur):'')+'</div>';
+        }
+    });
+    h+='<div style="display:flex;gap:8px;margin-top:14px;"><button class="btn btn-sm doc-intake-plus" data-qa="doc-recognized-confirm" onclick="docRecognizedConfirm()">'+docIntakeT('Confirm','Подтверждаю')+'</button><button class="btn btn-outline btn-sm" onclick="docRecognizedCancel()">'+docIntakeT('Cancel','Отмена')+'</button></div>';
+    h+='</div></div>';
+    document.body.insertAdjacentHTML('beforeend',h);
+}
+function docRecognizedCancel(){docRecognized=null;docRecognizedRender();}
+async function docRecognizedConfirm(){
+    if(!docRecognized||docRecognizedBusy)return;
+    var rec=docRecognized,id=rec.docId,result=rec.result||{};
+    var d=(allDocs||[]).find(function(x){return x.id===id;});
+    if(!d){docRecognizedCancel();return;}
+    var values={};
+    DOC_RECOGNIZED_FIELDS.forEach(function(f){values[f]=docIntakeValue('doc-recognized-'+f);});
+    docRecognizedBusy=true;
+    try{
+        var statuses={};try{statuses=JSON.parse(d.field_statuses||'{}')||{};}catch(e0){statuses={};}
+        var saved=0;
+        for(var i=0;i<DOC_RECOGNIZED_FIELDS.length;i++){
+            var f=DOC_RECOGNIZED_FIELDS[i];
+            if(!values[f])continue;
+            await docIntakeWrite('update_doc_field',{id:id,field:f,value:values[f]},id);
+            statuses[f]='verified';saved++;
+            if(result[f]!=null&&String(result[f]||'')!==values[f]){
+                try{await invoke('save_ocr_label',{docId:id,docType:d.template_id||d.category||d.title||'Unknown',fieldName:f,aiValue:String(result[f]||''),correctValue:values[f]});}catch(e2){}
+            }
+        }
+        if(saved)await docIntakeWrite('update_field_statuses',{id:id,statuses:JSON.stringify(statuses)},id);
+        await docRecognitionRemember(d,result,values);
+        docRecognized=null;docRecognizedRender();
+        allDocs=await invoke('get_documents');
+        try{renderTree();updateStatus();}catch(e1){}
+        var after=allDocs.find(function(x){return x.id===id;});
+        if(after&&selectedDocId===id)await renderDoc(after);
+        showToast(docIntakeT('Fields saved: ','Сохранено полей: ')+saved,'success');
+    }catch(e){
+        showToast(docIntakeT('Could not save the recognised fields: ','Не удалось сохранить распознанные поля: ')+e,'error');
+        try{logError('docRecognizedConfirm',e);}catch(_e){}
+    }finally{docRecognizedBusy=false;}
+}
 // One write of the confirmed document. With account sync on, every document
 // write must name the revision it edits, and background sync can move that
 // revision between our own consecutive writes. This is the seafarer's fresh
@@ -4762,7 +4839,8 @@ async function docIntakeConfirm(){
             if(tpl&&docIntakeHasFiledSlot(tpl.id))newTitle=title+' — '+(values.doc_number||new Date().toISOString().slice(0,10));
             target=await invoke('add_custom_doc',{title:newTitle,category:tpl?tpl.category:'Custom',hasExpiry:tpl?!!tpl.has_expiry:!!values.valid_to,isPermanent:false});
         }
-        if(intake.sourcePath)await docIntakeWrite('attach_file',{docId:target.id,sourcePath:intake.sourcePath},target.id);
+        if(intake.pages&&intake.pages.length)await docIntakeWrite('attach_pdf_pages',{docId:target.id,fileName:(title||'Document')+'.pdf',pages:intake.pages.map(function(p){return {fileName:p.fileName,dataBase64:p.dataBase64};})},target.id);
+        else if(intake.sourcePath)await docIntakeWrite('attach_file',{docId:target.id,sourcePath:intake.sourcePath},target.id);
         else await docIntakeWrite('attach_file_bytes',{docId:target.id,fileName:intake.fileName,dataBase64:intake.dataBase64},target.id);
         var statuses={};try{statuses=JSON.parse(target.field_statuses||'{}')||{};}catch(e0){statuses={};}
         delete statuses.not_applicable;
@@ -8810,6 +8888,7 @@ async function mobileConfirmOcr(docId){
             }
         }
         await invoke('update_field_statuses',{id:docId,statuses:JSON.stringify(statuses)});
+        await docRecognitionRemember(d,result,values);
         mobileOcrState=null;
         await mobileReloadDocs();
         selectedDocId=docId;
@@ -9084,9 +9163,13 @@ async function mobileSavePdfBuilder(){
     if(b.busy)return;
     if(!b.pages.length){showToast('Add at least one page.','error');return;}
     if(!d){
-        mobileAddMode='attach_pdf';
-        mobileView='add';
+        // Дело № 228: a scan started from «+» has no slot yet — it goes the same way
+        // as a photo: recognition → the seafarer confirms → the slot.
+        mobilePdfBuilder=null;
+        mobileAddMode='choose';
+        mobileView='docs';
         renderMobileShell();
+        docIntakeBegin({fileName:b.pages[0].fileName||'scan.jpg',dataBase64:b.pages[0].dataBase64,pages:b.pages});
         return;
     }
     b.busy=true;
@@ -13162,7 +13245,7 @@ async function aiIsConfigured(){
 }
 
 var _aiRec=async function(id,local){
-    var st=document.getElementById('ai-st');var key='';
+    var st=document.getElementById('ai-st')||{style:{}};var key='';
     // Cloud recognition: use a user-pasted key if present, otherwise leave it
     // empty and the backend routes through the Skipi server proxy (no key needed).
     if(!local){try{key=await invoke('get_effective_api_key');}catch(e){}}
@@ -13179,14 +13262,11 @@ var _aiRec=async function(id,local){
     var model=localStorage.getItem('skipi-ollama-model')||'qwen2.5vl:32b';
     var endpoint=localStorage.getItem('skipi-ollama-endpoint')||'http://127.0.0.1:11434';
     try{
-        await invoke('ai_recognize',{docId:id,apiKey:key,useLocal:local,ollamaModel:model,ollamaEndpoint:endpoint,docTitle:docTitle});
-        st.textContent='Done!'+(hasTpl?' (template used)':'');st.style.color='var(--green)';
-        allDocs=await invoke('get_documents');
-        var afterDoc=allDocs.find(function(x){return x.id===id;});
-        if(afterDoc){
-            lastAiResult[id]={doc_number:afterDoc.doc_number||'',issued_by:afterDoc.issued_by||'',valid_from:afterDoc.valid_from||'',valid_to:afterDoc.valid_to||''};
-        }
-        renderTree();if(afterDoc)await renderDoc(afterDoc);
+        // Дело № 228: nothing is written here — the seafarer confirms the result first.
+        var result=await invoke('ai_preview_recognize',{docId:id,apiKey:key,useLocal:local,ollamaModel:model,ollamaEndpoint:endpoint,docTitle:docTitle});
+        if(st){st.textContent='Done!'+(hasTpl?' (template used)':'');st.style.color='var(--green)';}
+        docRecognized={docId:id,result:result||{}};
+        docRecognizedRender();
     }catch(e){st.textContent='Error: '+e;st.style.color='var(--red)';logError('ai_recognize',e);}
 };
 var aiRec=guardOp('ai_recognize',_aiRec);

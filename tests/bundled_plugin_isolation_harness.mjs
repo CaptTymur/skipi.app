@@ -6534,6 +6534,91 @@ for (const lang of ['en','ru']) {
     const listHtml=app.doc.getElementById('mobile-main').innerHTML;
     ok(listHtml.indexOf('data-qa="doc-intake-plus"')>=0&&listHtml.indexOf('data-qa="doc-intake-plus"')<listHtml.indexOf('mobile-search')&&listHtml.includes("mobileShow('add')"),'016B the mobile Documents list starts with the green plus '+lang);
   }catch(e){ok(false,'016B green plus '+e.message);}
+  // Дела № 228 / 247: «в любом случае моряк должен подтвердить результат распознания» —
+  // (1) распознавание в карточке на десктопе ничего не пишет до «Подтверждаю»;
+  // (2) скан нескольких страниц через «+» идёт тем же путём: распознавание → подтверждение → слот;
+  // (3) правка «Кем выдан» в карточке запоминается как вид документа, как у зелёной «+».
+  try {
+    const ru=lang==='ru';
+    const names=s=>s.map(c=>c[0]);
+    const boot=async(docs)=>{
+      const app=await bootA5II(lang);
+      let modal='';app.doc.body.insertAdjacentHTML=(_p,h)=>{modal=String(h);};
+      const values={};app.sandbox.docIntakeValue=id=>String(values[id]||'');
+      const sent=[];app.sandbox.allDocs=docs;
+      app.sandbox.renderMobileShell=()=>{};app.sandbox.renderTree=()=>{};app.sandbox.updateStatus=()=>{};app.sandbox.renderDoc=async()=>{};app.sandbox.renderMobileDoc=()=>{};
+      const toasts=[];app.sandbox.showToast=(m,k)=>toasts.push([m,k]);
+      return {app,values,sent,toasts,modal:()=>modal};
+    };
+    // (1) desktop card
+    {
+      const doc={id:'d1',template_id:'passport',title:'Passport (Travel)',category:'Passport',file_name:'p.pdf',doc_number:'OLD1',issued_by:'',valid_from:'',valid_to:'2030-01-01',field_statuses:'{}'};
+      const c=await boot([doc]);
+      c.app.doc.getElementById('ai-st');
+      c.app.sandbox.invoke=async(cmd,args)=>{c.sent.push([cmd,args]);
+        if(cmd==='ai_preview_recognize')return {doc_number:'AB123',issued_by:'Ukraine',valid_from:'2021-01-02',valid_to:null,title_suggestion:'Passport'};
+        if(cmd==='get_documents')return c.app.sandbox.allDocs;return {};};
+      await c.app.sandbox._aiRec('d1',false);
+      ok(names(c.sent).includes('ai_preview_recognize')&&!names(c.sent).includes('ai_recognize'),'228 the desktop card recognises without writing (ai_preview_recognize) '+lang);
+      ok(!names(c.sent).some(n=>['update_doc_field','update_field_statuses'].includes(n)),'228 nothing is saved before Confirm '+lang);
+      ok(c.modal().includes('data-qa="doc-recognized-overlay"')&&c.modal().includes('value="AB123"')&&c.modal().includes(ru?'Проверьте распознанные поля':'Check the recognised fields'),'228 the recognised fields are shown for confirmation '+lang);
+      ok(c.modal().includes(ru?'Не распознано. Останется прежнее: 2030-01-01':'Not recognised. The current value stays: 2030-01-01'),'228 a field that was not read keeps its current value, and says so '+lang);
+      Object.assign(c.values,{'doc-recognized-doc_number':'AB123','doc-recognized-issued_by':'State Migration Service of Ukraine','doc-recognized-valid_from':'2021-01-02','doc-recognized-valid_to':''});
+      c.sent.length=0;
+      await c.app.sandbox.docRecognizedConfirm();
+      const fields=c.sent.filter(x=>x[0]==='update_doc_field').map(x=>x[1].field+'='+x[1].value);
+      ok(JSON.stringify(fields)===JSON.stringify(['doc_number=AB123','issued_by=State Migration Service of Ukraine','valid_from=2021-01-02']),'228 Confirm saves what the seafarer confirmed, an empty field is left alone ('+fields.join(',')+') '+lang);
+      const st=c.sent.find(x=>x[0]==='update_field_statuses');
+      ok(st&&JSON.stringify(JSON.parse(st[1].statuses))===JSON.stringify({doc_number:'verified',issued_by:'verified',valid_from:'verified'}),'228 confirmed fields are verified, not «ai» '+lang);
+      const kept=c.sent.filter(x=>x[0]==='save_ai_correction');
+      ok(kept.length===1&&kept[0][1].docType==='doc_intake'&&kept[0][1].fieldName==='pattern'&&kept[0][1].aiValue===JSON.stringify({title:'Passport',issued_by:'Ukraine',template_id:'passport'})&&kept[0][1].correctValue===JSON.stringify({template_id:'passport',issued_by:'State Migration Service of Ukraine'}),'247 a corrected issuer in the card is remembered as a kind of document '+lang);
+      ok(!c.toasts.some(x=>x[1]==='error'),'228 no error on the way '+lang);
+      // cancel writes nothing
+      await c.app.sandbox._aiRec('d1',false);c.sent.length=0;
+      c.app.sandbox.docRecognizedCancel();await c.app.sandbox.docRecognizedConfirm();
+      ok(c.sent.length===0,'228 Cancel saves nothing '+lang);
+    }
+    // (3) the phone card: same memory
+    {
+      const doc={id:'m1',template_id:'sso',title:'Ship Security Officer',category:'Safety',file_name:'s.pdf',field_statuses:'{}'};
+      const c=await boot([doc]);
+      const inputs={'mobile-ocr-doc_number':'S-1','mobile-ocr-issued_by':'Republic of Cyprus','mobile-ocr-valid_from':'','mobile-ocr-valid_to':''};
+      const realGet=c.app.doc.getElementById.bind(c.app.doc);
+      c.app.doc.getElementById=id=>Object.prototype.hasOwnProperty.call(inputs,id)?{value:inputs[id]}:realGet(id);
+      c.app.sandbox.invoke=async(cmd,args)=>{c.sent.push([cmd,args]);return cmd==='get_documents'?c.app.sandbox.allDocs:{};};
+      vm.runInContext('mobileOcrState={docId:"m1",status:"result",result:{doc_number:"S-1",issued_by:"Russian Federation",title_suggestion:"Endorsement"}};',c.app.sandbox);
+      await c.app.sandbox.mobileConfirmOcr('m1');
+      const kept=c.sent.filter(x=>x[0]==='save_ai_correction'&&x[1].fieldName==='pattern');
+      ok(kept.length===1&&kept[0][1].correctValue===JSON.stringify({template_id:'sso',issued_by:'Republic of Cyprus'}),'247 the phone card remembers a corrected issuer the same way '+lang);
+      c.sent.length=0;inputs['mobile-ocr-issued_by']='Russian Federation';
+      vm.runInContext('mobileOcrState={docId:"m1",status:"result",result:{doc_number:"S-1",issued_by:"Russian Federation",title_suggestion:"Endorsement"}};',c.app.sandbox);
+      await c.app.sandbox.mobileConfirmOcr('m1');
+      ok(!c.sent.some(x=>x[0]==='save_ai_correction'&&x[1].fieldName==='pattern'),'247 nothing is remembered when the issuer was read right '+lang);
+    }
+    // (2) several pages scanned from «+» (no slot chosen)
+    {
+      const slot={id:'slot-passport',template_id:'passport',title:'Passport (Travel)',category:'Passport',file_name:null,field_statuses:'{}'};
+      const c=await boot([slot]);
+      c.app.sandbox.invoke=async(cmd,args)=>{c.sent.push([cmd,args]);
+        if(cmd==='get_document_catalog')return [{id:'passport',title:'Passport (Travel)',category:'Passport',has_expiry:true}];
+        if(cmd==='ai_classify_file')return {template_id:'passport',doc_number:'AB123'};
+        if(cmd==='get_documents')return c.app.sandbox.allDocs;return {};};
+      const pages=[{fileName:'p1.jpg',dataBase64:'QQ=='},{fileName:'p2.jpg',dataBase64:'Qg=='}];
+      vm.runInContext('docIntakeCatalog=null;mobilePdfBuilder={docId:null,pages:'+JSON.stringify(pages)+'};',c.app.sandbox);
+      await c.app.sandbox.mobileSavePdfBuilder();
+      await new Promise(r=>setTimeout(r,0));
+      const cls=c.sent.find(x=>x[0]==='ai_classify_file');
+      ok(cls&&cls[1].dataBase64==='QQ=='&&!names(c.sent).includes('attach_pdf_pages'),'228 a scan of several pages from «+» is recognised first (page 1), nothing is attached yet '+lang);
+      ok(c.modal().includes('data-qa="doc-intake-overlay"')&&c.modal().includes('value="AB123"'),'228 and goes to the same confirmation screen '+lang);
+      ok(vm.runInContext('mobileAddMode',c.app.sandbox)!=='attach_pdf','228 the seafarer is not sent to pick a slot from a list '+lang);
+      Object.assign(c.values,{'doc-intake-type':'passport','doc-intake-doc_number':'AB123'});
+      c.sent.length=0;
+      await c.app.sandbox.docIntakeConfirm();
+      const att=c.sent.find(x=>x[0]==='attach_pdf_pages');
+      ok(att&&att[1].docId==='slot-passport'&&att[1].pages.length===2&&/\.pdf$/.test(att[1].fileName)&&!names(c.sent).includes('attach_file_bytes'),'228 on Confirm all pages become one PDF in the slot of the confirmed type '+lang);
+      ok(!c.toasts.some(x=>x[1]==='error'),'228 scan: no error on the way '+lang);
+    }
+  }catch(e){ok(false,'228 confirmation everywhere '+e.message);}
   try {
     const app=await bootA5Experience({lang,work:A5_WORK});
     const labels=lang==='ru'?['Опыт','Добавить стаж','Записи','С IMO','Оценено','Оценить','База судов']:['Experience','Add sea service','Records','With IMO','Assessed','Assess','Vessel DB'];
