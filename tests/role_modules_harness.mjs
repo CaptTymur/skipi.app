@@ -20,7 +20,8 @@ assert.deepEqual(Array.from(Object.keys(ctx.ROLE_MODULES)), ['crewing', 'broker'
 // Owner 25.11.2026: crewing is Crew Flow, Compliance Profile, Seafarers DB for now; Vessel DB stays;
 // Documents is not a tab (a viewer opened from inside), Port DB is not built yet.
 assert.deepEqual(keys('crewing'), ['crewflow', 'compliance', 'seafarers', 'vessels']);
-assert.deepEqual(keys('broker'), ['vessels', 'ports', 'apps', 'bazar']);
+// tasks/031: the chartering workplace is the module @skipi/chartering (Bazar lives inside it).
+assert.deepEqual(keys('broker'), ['chartering', 'vessels', 'ports', 'apps']);
 for (const role of ['crewing', 'broker']) {
   for (const mod of ctx.ROLE_MODULES[role]) {
     assert.ok(mod.ru && mod.en, `${role}/${mod.k} has both labels`);
