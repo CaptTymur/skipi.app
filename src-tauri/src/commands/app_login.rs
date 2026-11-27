@@ -34,6 +34,24 @@ use crate::AppState;
 pub(crate) const USER_TOKEN_KEY: &str = "skipi_user_token";
 pub(crate) const USER_EMAIL_KEY: &str = "skipi_user_email";
 pub(crate) const USER_LOGIN_AT_KEY: &str = "skipi_user_login_at";
+/// vault_info key holding the account role the session was signed in with.
+pub(crate) const USER_ROLE_KEY: &str = "skipi_user_role";
+
+/// One app, modules by account role (owner 25.11.2026): the role the server
+/// returned at sign-in, normalised to the three known ones. Absent, empty or
+/// unknown → `seafarer` (legacy and brand-new seafarer accounts carry no role).
+pub(crate) fn account_role(role: Option<&str>) -> &'static str {
+    match role.map(str::trim) {
+        Some("crewing") => "crewing",
+        Some("broker") => "broker",
+        _ => "seafarer",
+    }
+}
+
+/// The role a local cache was created for (its `account_type`).
+fn vault_role(conn: &Connection) -> &'static str {
+    account_role(db::get_vault_info_value(conn, "account_type").as_deref())
+}
 
 /// Login accepted BEFORE any vault exists (№162b, App Review 2.1(a) reject №2,
 /// 2026-09-02 «we had no option to log in»). The durable store for the token
@@ -50,6 +68,7 @@ pub(crate) struct PendingLogin {
     pub email: String,
     pub login_at: String,
     pub account_id: Option<String>,
+    pub role: &'static str,
 }
 
 pub(crate) type PendingLoginSlot = Mutex<Option<PendingLogin>>;
@@ -100,9 +119,16 @@ impl From<String> for LoginError {
     }
 }
 
-/// Write the three login keys into the open vault.
-fn write_login(conn: &Connection, token: &str, email: &str, login_at: &str) -> Result<(), String> {
+/// Write the login keys into the open vault.
+fn write_login(
+    conn: &Connection,
+    token: &str,
+    email: &str,
+    login_at: &str,
+    role: &str,
+) -> Result<(), String> {
     db::set_vault_info(conn, USER_TOKEN_KEY, token).map_err(|e| e.to_string())?;
+    db::set_vault_info(conn, USER_ROLE_KEY, role).map_err(|e| e.to_string())?;
     db::set_vault_info(conn, USER_EMAIL_KEY, email).map_err(|e| e.to_string())?;
     db::set_vault_info(conn, USER_LOGIN_AT_KEY, login_at).map_err(|e| e.to_string())
 }
@@ -130,11 +156,20 @@ pub(crate) fn persist_pending_login(
         Some(p) => p,
         None => return Ok(false),
     };
+    if vault_role(conn) != pending.role {
+        return Err("This local profile belongs to an account with another role.".into());
+    }
     check_sync_account(conn, pending.account_id.as_deref())?;
     if stored_user_token(conn).is_some() {
         return Ok(false);
     }
-    write_login(conn, &pending.token, &pending.email, &pending.login_at)?;
+    write_login(
+        conn,
+        &pending.token,
+        &pending.email,
+        &pending.login_at,
+        pending.role,
+    )?;
     Ok(true)
 }
 
@@ -150,6 +185,7 @@ fn login_status_json(conn: Option<&Connection>, slot: &PendingLoginSlot) -> Resu
                 "logged_in": stored_user_token(conn).is_some(),
                 "email": db::get_vault_info_value(conn, USER_EMAIL_KEY).unwrap_or_default(),
                 "login_at": db::get_vault_info_value(conn, USER_LOGIN_AT_KEY).unwrap_or_default(),
+                "role": account_role(db::get_vault_info_value(conn, USER_ROLE_KEY).as_deref()),
                 "pending": false,
             }))
         }
@@ -159,6 +195,7 @@ fn login_status_json(conn: Option<&Connection>, slot: &PendingLoginSlot) -> Resu
                 "logged_in": parked.is_some(),
                 "email": parked.as_ref().map(|p| p.email.clone()).unwrap_or_default(),
                 "login_at": parked.as_ref().map(|p| p.login_at.clone()).unwrap_or_default(),
+                "role": parked.as_ref().map(|p| p.role).unwrap_or("seafarer"),
                 "pending": parked.is_some(),
             }))
         }
@@ -245,32 +282,6 @@ fn post_app_login(
     }
 }
 
-/// This is the FREE seafarer app. Per-app role check (DECISIONS 59/60 «one
-/// email = one role», roles mutually exclusive). Returns Err with a clear,
-/// policy-safe message when the account belongs to another app; Ok(()) when
-/// the account may use the seafarer app.
-///
-/// Manager's flagged default (owner may adjust): ALLOW `seafarer` OR unset/null
-/// role (legacy/new seafarers may not have a role yet); REJECT explicit
-/// `broker` / `crewing`. The rejection does NOT store a token — the login gate
-/// stays shown.
-fn seafarer_role_allowed(role: Option<&str>) -> Result<(), String> {
-    match role {
-        Some("broker") => Err("This account is registered as Broker. \
-             Please sign in with the Skipi Broker app.\n\
-             Этот аккаунт зарегистрирован как Broker. \
-             Войдите в приложение Skipi Broker."
-            .to_string()),
-        Some("crewing") => Err("This account is registered as Crewing. \
-             Please sign in with the Skipi Crewing app.\n\
-             Этот аккаунт зарегистрирован как Crewing. \
-             Войдите в приложение Skipi Crewing."
-            .to_string()),
-        // "seafarer", unset/null, or any unknown value → allowed on this app.
-        _ => Ok(()),
-    }
-}
-
 /// POST {base}/api/app/logout with Authorization: Bearer — best-effort
 /// server-side revoke. Failure is non-fatal (we still clear locally).
 fn post_app_logout(base: &str, client: &reqwest::blocking::Client, token: &str) {
@@ -326,11 +337,13 @@ pub async fn app_login(
         .await
         .map_err(|e| format!("app login task failed: {}", e))??
     };
-    // Per-app role gate (DECISIONS 59/60): reject foreign roles BEFORE storing
-    // the token, so a rejected broker/crewing account never unlocks the shell
-    // and no token is persisted (the login gate stays shown).
-    let stored: Result<bool, LoginError> = (|| {
-        seafarer_role_allowed(ok.role.as_deref()).map_err(LoginError::rejected)?;
+    // One app for every role (owner 25.11.2026): seafarer, crewing and broker
+    // accounts all sign in here; the role decides the module set. A session is
+    // only ever written into a local cache of the SAME role. Signing in over an
+    // open cache of another role parks the login instead (`profile_mismatch`):
+    // the frontend closes that cache and opens the one for this role.
+    let role = account_role(ok.role.as_deref());
+    let stored: Result<(bool, bool), LoginError> = (|| {
         let login_at = chrono::Utc::now().to_rfc3339();
         let lock = state.conn.lock().unwrap_or_else(|e| e.into_inner());
         if state.sync_epoch.load(std::sync::atomic::Ordering::SeqCst) != epoch {
@@ -339,12 +352,12 @@ pub async fn app_login(
             ));
         }
         match lock.as_ref() {
-            Some(conn) => {
+            Some(conn) if vault_role(conn) == role => {
                 check_sync_account(conn, ok.account_id.as_deref()).map_err(LoginError::rejected)?;
-                write_login(conn, &ok.token, &email, &login_at)?;
-                Ok(false)
+                write_login(conn, &ok.token, &email, &login_at, role)?;
+                Ok((false, false))
             }
-            None => {
+            other => {
                 *state
                     .login_pending
                     .lock()
@@ -353,13 +366,14 @@ pub async fn app_login(
                     email: email.clone(),
                     login_at,
                     account_id: ok.account_id.clone(),
+                    role,
                 });
-                Ok(true)
+                Ok((true, other.is_some()))
             }
         }
     })();
-    let pending = match stored {
-        Ok(pending) => pending,
+    let (pending, profile_mismatch) = match stored {
+        Ok(outcome) => outcome,
         Err(reason) => {
             let rejected_token = ok.token;
             let _ = tauri::async_runtime::spawn_blocking(move || {
@@ -371,7 +385,13 @@ pub async fn app_login(
             return Err(reason);
         }
     };
-    Ok(json!({"logged_in": true, "email": email, "pending": pending}))
+    Ok(json!({
+        "logged_in": true,
+        "email": email,
+        "pending": pending,
+        "role": role,
+        "profile_mismatch": profile_mismatch,
+    }))
 }
 
 /// Log out: best-effort server-side revoke of the token, then clear it
@@ -453,6 +473,7 @@ mod tests {
             email: "b@example.test".into(),
             login_at: "test".into(),
             account_id: Some("public-B".into()),
+            role: "seafarer",
         }));
         assert!(persist_pending_login(&conn, &slot).is_err());
         assert!(stored_user_token(&conn).is_none());
@@ -463,7 +484,54 @@ mod tests {
             email: "reviewer@example.com".to_string(),
             login_at: "2026-09-02T00:00:00+00:00".to_string(),
             account_id: None,
+            role: "seafarer",
         }
+    }
+
+    /// tasks/018: one app, modules by account role. Every role signs in; the
+    /// session lands only in a local cache created for the same role.
+    #[test]
+    fn every_account_role_signs_in_and_the_role_is_kept_with_the_session() {
+        assert_eq!(account_role(Some("crewing")), "crewing");
+        assert_eq!(account_role(Some("broker")), "broker");
+        assert_eq!(account_role(Some("seafarer")), "seafarer");
+        assert_eq!(account_role(Some("something-new")), "seafarer");
+        assert_eq!(account_role(None), "seafarer");
+
+        let slot = Mutex::new(Some(PendingLogin {
+            role: "crewing",
+            ..parked("tok-crewing")
+        }));
+        let st = login_status_json(None, &slot).unwrap();
+        assert_eq!(st["logged_in"], true);
+        assert_eq!(st["role"], "crewing");
+
+        let (path, conn) = temp_vault();
+        db::set_vault_info(&conn, "account_type", "crewing").unwrap();
+        let st = login_status_json(Some(&conn), &slot).unwrap();
+        assert_eq!(st["logged_in"], true);
+        assert_eq!(st["role"], "crewing");
+        assert_eq!(
+            db::get_vault_info_value(&conn, USER_ROLE_KEY).as_deref(),
+            Some("crewing")
+        );
+        drop(conn);
+        let _ = fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn a_parked_login_never_lands_in_a_cache_of_another_role() {
+        let (path, conn) = temp_vault();
+        db::set_vault_info(&conn, "account_type", "seafarer").unwrap();
+        let slot = Mutex::new(Some(PendingLogin {
+            role: "crewing",
+            ..parked("tok-crewing")
+        }));
+        assert!(persist_pending_login(&conn, &slot).is_err());
+        assert!(stored_user_token(&conn).is_none());
+        assert!(slot.lock().unwrap().is_none());
+        drop(conn);
+        let _ = fs::remove_dir_all(path);
     }
 
     #[test]
@@ -538,6 +606,7 @@ mod tests {
             "vault-tok",
             "owner@example.com",
             "2026-01-01T00:00:00+00:00",
+            "seafarer",
         )
         .unwrap();
         let slot: PendingLoginSlot = Mutex::new(Some(parked("stale")));
