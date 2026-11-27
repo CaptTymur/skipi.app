@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Skipi - United Seafarers</title>
 <link rel="stylesheet" href="vessel-db.css">
+<link rel="stylesheet" href="port-db.css">
 <link rel="stylesheet" href="intelligence.css">
 <!-- @skipi/settings v0.3.0 — unified Settings shell (vendored from skipi-settings 9caeff6) -->
 <link rel="stylesheet" href="skipi-settings.css">
@@ -94,8 +95,8 @@ var UI_LANG_OPTIONS=[
 var UI_STRINGS={
 	    en:{
 	        'app.name':'Skipi',
-	        'nav.files':'Documents','nav.experience':'Experience','nav.dashboard':'Dashboard','nav.cv':'CV','nav.packages':'Packages','nav.dispatch':'Mailings','nav.jobs':'Jobs','nav.information':'Information','nav.vessels':'Vessel DB','nav.myvessel':'My Vessel',
-	        'title.files':'Documents','title.experience':'Sea Service','title.dashboard':'Dashboard','title.cv':'CV','title.packages':'Packages','title.dispatch':'Mailings','title.jobs':'Jobs','title.information':'Information','title.vessels':'Vessel DB','title.myvessel':'My Vessel','title.settings':'Settings',
+	        'nav.files':'Documents','nav.experience':'Experience','nav.dashboard':'Dashboard','nav.cv':'CV','nav.packages':'Packages','nav.dispatch':'Mailings','nav.jobs':'Jobs','nav.information':'Information','nav.vessels':'Vessel DB','nav.ports':'Port DB','nav.myvessel':'My Vessel',
+	        'title.files':'Documents','title.experience':'Sea Service','title.dashboard':'Dashboard','title.cv':'CV','title.packages':'Packages','title.dispatch':'Mailings','title.jobs':'Jobs','title.information':'Information','title.vessels':'Vessel DB','title.ports':'Port DB','title.myvessel':'My Vessel','title.settings':'Settings',
 	        'welcome.subtitle':'Skipi - United Seafarers','welcome.create':'Create profile','welcome.open':'Open existing profile','welcome.hint':'Create a new profile on this device, or open a profile you have saved locally.','welcome.demo_prefix':'Just exploring?','welcome.demo':'Load demo seafarer',
 	        'settings.general':'General','settings.general_desc':'Basic application settings.','settings.language':'Language','settings.language_desc':'Interface language.','settings.autovault':'Auto-open last vault','settings.autovault_desc':'Automatically open the last used vault on startup.',
 	        'settings.nav_title':'Settings','settings.vaults':'Vaults','settings.seafarer_profile':'Seafarer Profile','settings.email':'Email sending','settings.appearance':'Appearance','settings.about_group':'About','settings.about':'About Skipi',
@@ -122,8 +123,8 @@ var UI_STRINGS={
 	    },
 	    ru:{
 	        'app.name':'Skipi',
-	        'nav.files':'Документы','nav.experience':'Опыт работы','nav.dashboard':'Панель','nav.cv':'CV','nav.packages':'Пакеты','nav.dispatch':'Рассылки','nav.jobs':'Вакансии','nav.information':'Информация','nav.vessels':'База судов','nav.myvessel':'Моё судно',
-	        'title.files':'Документы','title.experience':'Морской опыт','title.dashboard':'Панель','title.cv':'CV','title.packages':'Пакеты','title.dispatch':'Рассылки','title.jobs':'Вакансии','title.information':'Информация','title.vessels':'База судов','title.myvessel':'Моё судно','title.settings':'Настройки',
+	        'nav.files':'Документы','nav.experience':'Опыт работы','nav.dashboard':'Панель','nav.cv':'CV','nav.packages':'Пакеты','nav.dispatch':'Рассылки','nav.jobs':'Вакансии','nav.information':'Информация','nav.vessels':'База судов','nav.ports':'База портов','nav.myvessel':'Моё судно',
+	        'title.files':'Документы','title.experience':'Морской опыт','title.dashboard':'Панель','title.cv':'CV','title.packages':'Пакеты','title.dispatch':'Рассылки','title.jobs':'Вакансии','title.information':'Информация','title.vessels':'База судов','title.ports':'База портов','title.myvessel':'Моё судно','title.settings':'Настройки',
 	        'welcome.subtitle':'Skipi - United Seafarers','welcome.create':'Создать профиль моряка','welcome.open':'Открыть существующий профиль','welcome.hint':'Создайте новый профиль на устройстве или откройте сохранённый локальный профиль.','welcome.demo_prefix':'Просто посмотреть?','welcome.demo':'Открыть демо-профиль',
 	        'settings.general':'Общие','settings.general_desc':'Основные настройки приложения.','settings.language':'Язык','settings.language_desc':'Язык интерфейса.','settings.autovault':'Открывать последний профиль','settings.autovault_desc':'Автоматически открывать последний использованный профиль при запуске.',
 	        'settings.nav_title':'Настройки','settings.vaults':'Профили','settings.seafarer_profile':'Профиль моряка','settings.email':'Отправка email','settings.appearance':'Внешний вид','settings.about_group':'О приложении','settings.about':'О Skipi',
@@ -196,10 +197,28 @@ function uiLanguageSelectHtml(){
         + UI_LANG_OPTIONS.map(function(o){return '<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('')
         + '</select>';
 }
+// Case 262: the desktop / web module tabs are a left rail of icon tiles. The icons are the phone tiles' own
+// (#mobile-home-modules-tpl), copied into the tabs once; the bar's markup itself is not changed.
+var DESKTOP_RAIL_ICONS={'mt-files':'docs','mt-exp':'experience','mt-cv':'cv','mt-pkg':'packages','mt-disp':'dispatch','mt-jobs':'jobs','mt-info':'information','mt-vessels':'vessels','mt-ports':'ports','mt-myvessel':'myvessel','mt-apps':'apps','mt-assistant':'assistant'};
+function desktopRailIcons(){
+    var tpl=document.getElementById('mobile-home-modules-tpl'),src=tpl&&(tpl.content||tpl);
+    if(!src||typeof src.querySelector!=='function'||typeof document.createElement!=='function')return;
+    Object.keys(DESKTOP_RAIL_ICONS).forEach(function(id){
+        var tab=document.getElementById(id);
+        if(!tab||typeof tab.querySelector!=='function'||tab.querySelector('.mod-ico'))return;
+        var svg=src.querySelector('[data-mview="'+DESKTOP_RAIL_ICONS[id]+'"] svg');
+        if(!svg)return;
+        var ico=document.createElement('i');
+        ico.className='mod-ico';ico.setAttribute('aria-hidden','true');
+        ico.appendChild(svg.cloneNode(true));
+        tab.insertBefore(ico,tab.firstChild);
+    });
+}
 function applyI18nChrome(){
+    try{desktopRailIcons();}catch(e){}
     document.documentElement.lang=getUiLang();
     var pairs=[
-        ['mt-files','nav.files'],['mt-exp','nav.experience'],['mt-cv','nav.cv'],['mt-pkg','nav.packages'],['mt-disp','nav.dispatch'],['mt-jobs','nav.jobs'],['mt-info','nav.information'],['mt-vessels','nav.vessels'],['mt-myvessel','nav.myvessel'],
+        ['mt-files','nav.files'],['mt-exp','nav.experience'],['mt-cv','nav.cv'],['mt-pkg','nav.packages'],['mt-disp','nav.dispatch'],['mt-jobs','nav.jobs'],['mt-info','nav.information'],['mt-vessels','nav.vessels'],['mt-ports','nav.ports'],['mt-myvessel','nav.myvessel'],
         ['welcome-subtitle','welcome.subtitle'],['btn-create-vault','welcome.create'],['btn-open-vault','welcome.open'],['welcome-folder-hint','welcome.hint'],['welcome-demo-prefix','welcome.demo_prefix'],['welcome-demo-link-text','welcome.demo']
     ];
     pairs.forEach(function(p){
@@ -354,6 +373,28 @@ body.mobile-mode .desktop-stack-label { display:none; }
 .modules-bar .mod-tab.active { color:#fff; background:var(--accent); font-weight:600; box-shadow:0 1px 0 var(--accent); }
 .modules-bar .mod-tab .mi { font-size:14px; }
 .modules-bar .mb-spacer { flex:1; }
+/* case 262: left rail */
+/* Icons only, like the reference the owner gave; the tab's name is its tooltip (title). */
+@media (min-width:721px){
+body:not(.mobile-mode) .modules-bar { position:fixed; left:0; top:0; bottom:22px; width:58px; height:auto; flex-direction:column; align-items:center; padding:8px 4px; gap:6px; border-bottom:0; border-right:1px solid var(--border); overflow-y:auto; overflow-x:hidden; z-index:20; box-sizing:border-box; scrollbar-width:none; }
+body:not(.mobile-mode) .modules-bar::-webkit-scrollbar { display:none; }
+body:not(.mobile-mode) .modules-bar .mod-tab { height:auto; min-width:0; padding:0; gap:0; flex:0 0 auto; background:none; box-shadow:none; }
+body:not(.mobile-mode) .modules-bar .mod-tab > span { display:none; }
+body:not(.mobile-mode) .modules-bar .mod-tab .mod-ico { width:38px; height:38px; border-radius:12px; background:var(--accent-bg); color:var(--accent); display:flex; align-items:center; justify-content:center; flex:0 0 auto; }
+body:not(.mobile-mode) .modules-bar .mod-tab .mod-ico svg { width:21px; height:21px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+body:not(.mobile-mode) .modules-bar .mod-tab:hover .mod-ico { filter:brightness(.94); }
+body:not(.mobile-mode) .modules-bar .mod-tab.active .mod-ico { background:var(--accent); color:#fff; }
+body:not(.mobile-mode) .modules-bar .mb-spacer { flex:1 1 auto; min-height:6px; }
+body:not(.mobile-mode) .modules-bar .profile-completion-chip,
+body:not(.mobile-mode) .modules-bar .salary-index-chip,
+body:not(.mobile-mode) .modules-bar .mb-vault,
+body:not(.mobile-mode) .modules-bar .mb-gear { width:48px; max-width:none; margin:0; justify-content:center; box-sizing:border-box; flex:0 0 auto; font-size:9px; line-height:1.15; padding:4px 2px; white-space:normal; text-align:center; flex-wrap:wrap; gap:2px; height:auto; min-height:30px; overflow:visible; }
+body:not(.mobile-mode) .modules-bar .mb-gear { font-size:19px; height:32px; }
+body:not(.mobile-mode) .modules-bar .mb-vault-name,
+body:not(.mobile-mode) .modules-bar .mb-caret { display:none; }
+#modules-bar:not([style*="none"]) ~ .app { margin-left:58px; }
+}
+/* end case 262 */
 .profile-completion-chip { display:flex; align-items:center; gap:7px; height:26px; padding:0 10px; border-radius:5px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:12px; font-weight:600; cursor:pointer; margin-right:6px; white-space:nowrap; }
 .profile-completion-chip:hover { border-color:var(--accent); background:var(--accent-bg); }
 .profile-completion-chip.active { border-color:var(--accent); background:var(--accent-bg); }
@@ -1279,6 +1320,10 @@ body.mobile-mode .apps-launcher-grid { grid-template-columns:repeat(4,minmax(0,1
    Every rule below is therefore scoped under .fam-app-tile (0,2,0+).
    text-size-adjust stays as a belt-and-braces guard against WebView autosizing. */
 .fam-app-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px 6px; padding:2px 0 6px; -webkit-text-size-adjust:none; text-size-adjust:none; }
+.fam-app-rows { display:flex; flex-direction:column; gap:16px; padding:2px 0 6px; }
+.fam-app-rows .fam-app-row { padding:0; min-height:88px; }
+.fam-app-tile.fam-tile-armed .fam-app-icon-box { transform:scale(1.08); transition:transform .12s; }
+.fam-app-tile.fam-tile-dragging { position:relative; z-index:5; opacity:.9; touch-action:none; }
 .fam-app-tile { min-height:88px; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:7px; padding:4px 2px; background:none; border:0; color:var(--text); text-align:center; cursor:pointer; -webkit-tap-highlight-color:transparent; -webkit-text-size-adjust:none; text-size-adjust:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
 .fam-app-tile .fam-app-icon-box { width:56px; height:56px; border-radius:17px; background:rgba(255,255,255,.07); color:#bcd7e4; display:flex; align-items:center; justify-content:center; flex:0 0 auto; font-size:0; line-height:1; }
 .fam-app-tile .fam-app-icon-box svg { width:30px; height:30px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
@@ -1591,6 +1636,7 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
             <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-jobs" data-mview="jobs" onclick="mobileShow('jobs')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Vacancies matched to profile" title="Vacancies matched to profile" aria-label="Jobs"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M2.6 10.4h10.6v8.4H2.6z"/><path d="M5.8 10.4V9A1.4 1.4 0 017.2 7.6h1.6A1.4 1.4 0 0110.2 9v1.4"/><circle cx="17.4" cy="6.8" r="3.8"/><path d="M20.2 9.6l1.5 1.5"/></svg></span><span class="fam-app-label" id="mhn-jobs">Jobs</span></button>
             <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-information" data-mview="information" onclick="mobileShow('information')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Reference notes and guidance" title="Reference notes and guidance" aria-label="Information"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.8"/><path d="M12 11.2v5.6"/><circle cx="12" cy="7.7" r=".95" fill="currentColor" stroke="none"/></svg></span><span class="fam-app-label" id="mhn-information">Information</span></button>
             <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-vessels" data-mview="vessels" onclick="mobileShow('vessels')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Known vessel records" title="Known vessel records" aria-label="Vessel DB"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 20.4c.8.6 1.5 1.1 2.6 1.1 2.3 0 2.3-2 4.6-2s2.3 2 4.6 2c1.1 0 1.8-.5 2.6-1.1"/><path d="M19.1 19.4A10.4 10.4 0 0021 13.3L12 9.7l-9 3.6c0 2.4.8 4.5 2.3 6.1"/><path d="M18.4 12.5V7.2a1.8 1.8 0 00-1.8-1.8H7.4a1.8 1.8 0 00-1.8 1.8v5.3"/><path d="M12 5.4V2.7"/></svg></span><span class="fam-app-label" id="mhn-vessels">Vessel DB</span></button>
+            <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-ports" data-mview="ports" onclick="mobileShow('ports')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Find a port, read and leave reviews" title="Find a port, read and leave reviews" aria-label="Port DB"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21s-6.5-5.6-6.5-10.5a6.5 6.5 0 0113 0C18.5 15.4 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.3"/></svg></span><span class="fam-app-label" id="mhn-ports">Port DB</span></button>
             <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-myvessel" data-mview="myvessel" onclick="mobileShow('myvessel')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="On Board workspace" title="On Board workspace" aria-label="My Vessel"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="4.6" r="1.8"/><path d="M12 6.4V21"/><path d="M7 10h10"/><path d="M4.5 15a7.5 7.5 0 0015 0"/></svg></span><span class="fam-app-label" id="mhn-myvessel">My Vessel</span></button>
             <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-apps" data-mview="apps" onclick="mobileShow('apps')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Installed tools" title="Installed tools" aria-label="Apps"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg></span><span class="fam-app-label" id="mhn-apps">Apps</span></button>
             <button class="fam-app-tile mobile-nav-btn" type="button" id="mhb-aiconnect" data-mview="aiconnect" onclick="mobileShow('aiconnect')" onpointerdown="mobileHintPress(this)" onpointerup="mobileHintRelease()" onpointercancel="mobileHintRelease()" onpointerleave="mobileHintRelease()" data-hint="Use Skipi inside Claude or ChatGPT" title="Use Skipi inside Claude or ChatGPT" aria-label="Claude / ChatGPT"><span class="fam-app-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.2l1.9 5 5 1.9-5 1.9-1.9 5-1.9-5-5-1.9 5-1.9z"/><path d="M18.6 15.4l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/></svg></span><span class="fam-app-label" id="mhn-aiconnect">Claude / ChatGPT</span></button>
@@ -1616,6 +1662,7 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
     <div class="mod-tab" onclick="showView('jobs')" id="mt-jobs" title="Jobs — receive matching offers"><span>Jobs</span></div>
     <div class="mod-tab" onclick="showView('information')" id="mt-info" title="Information - market pulse"><span>Information</span></div>
     <div class="mod-tab" onclick="showView('vessels')" id="mt-vessels" title="Суда"><span>Суда</span></div>
+    <div class="mod-tab" onclick="showView('ports')" id="mt-ports" title="Port DB — find a port, read and leave reviews"><span>Port DB</span></div>
 
     <div class="mod-tab" onclick="showView('myvessel')" id="mt-myvessel" title="Моё судно — экипаж судна, на которое вы поднялись"><span>Моё судно</span></div>
 
@@ -1819,6 +1866,8 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
 <script src="skipi-settings.js"></script>
 <script src="skipi-assistant.js"></script>
 <script src="vessel-db.js"></script>
+<script src="skipi-ports.js"></script>
+<script src="port-db.js"></script>
 <script src="intelligence.js"></script>
 <script src="plugin-host-ui.js"></script>
 <script>
@@ -4635,8 +4684,10 @@ async function docIntakePicked(files){
     await docIntakeBegin({fileName:file.name||'document.jpg',dataBase64:dataBase64});
 }
 // source = {fileName, dataBase64} (picker bytes) or {fileName, sourcePath} (desktop dialog)
+// or {fileName, dataBase64, pages} — several scanned pages (дело № 228): page 1 is
+// recognised, on Confirm all pages become one PDF in the slot.
 async function docIntakeBegin(source){
-    docIntake={fileName:source.fileName,dataBase64:source.dataBase64||'',sourcePath:source.sourcePath||'',status:'working',result:null,error:''};
+    docIntake={fileName:source.fileName,dataBase64:source.dataBase64||'',sourcePath:source.sourcePath||'',pages:source.pages||null,status:'working',result:null,error:''};
     docIntakeRender();
     try{
         if(!docIntakeCatalog){try{docIntakeCatalog=await invoke('get_document_catalog');}catch(e0){docIntakeCatalog=[];}}
@@ -4696,8 +4747,9 @@ function docIntakeRender(){
     if(old)old.remove();
     if(!docIntake)return;
     // The generic modal layer (.modal-overlay / .modal-panel): safe-area insets
-    // and stacking are already solved there.
-    var h='<div id="doc-intake-overlay" data-qa="doc-intake-overlay" class="modal-overlay open"><div class="modal-panel" style="max-width:520px;color:var(--text);">';
+    // are already solved there. It sits above the profile window (#forced-profile-overlay, 9998),
+    // which may open while a document is being checked (case 223).
+    var h='<div id="doc-intake-overlay" data-qa="doc-intake-overlay" class="modal-overlay open" style="z-index:9999;"><div class="modal-panel" style="max-width:520px;color:var(--text);">';
     if(docIntake.status==='working'){
         h+='<div data-qa="doc-intake-working" style="font-size:16px;font-weight:700;margin-bottom:6px;">'+docIntakeT('Recognising the document…','Распознаём документ…')+'</div>'
           +'<div style="font-size:13px;color:var(--text2);margin-bottom:14px;">'+esc(docIntake.fileName)+'</div>'
@@ -4727,6 +4779,81 @@ function docIntakeRender(){
     h+='</div></div>';
     document.body.insertAdjacentHTML('beforeend',h);
     if(docIntake.status==='confirm')docIntakeRefresh();
+}
+// Дело № 247: a corrected «Issued by» on a recognition INTO a slot (the card)
+// is remembered as a kind of document, exactly like on the «+» confirmation.
+async function docRecognitionRemember(d,result,values){
+    try{
+        var readIssuer=String((result&&result.issued_by)||'').trim(),readTitle=String((result&&result.title_suggestion)||'').trim();
+        var issuer=String((values&&values.issued_by)||'').trim();
+        if(!d||!d.template_id||!issuer||issuer===readIssuer||!(readTitle||readIssuer))return;
+        await invoke('save_ai_correction',{docType:'doc_intake',fieldName:'pattern',aiValue:JSON.stringify({title:readTitle||null,issued_by:readIssuer||null,template_id:d.template_id}),correctValue:JSON.stringify({template_id:d.template_id,issued_by:issuer})});
+    }catch(e){}
+}
+// Дело № 228: recognition in the desktop card writes nothing by itself — the
+// seafarer sees what was read and confirms it (owner 25.11: «в любом случае
+// моряк должен подтвердить результат распознания»).
+var docRecognized=null,docRecognizedBusy=false;
+var DOC_RECOGNIZED_FIELDS=['doc_number','issued_by','valid_from','valid_to'];
+function docRecognizedRender(){
+    var old=document.getElementById('doc-recognized-overlay');
+    if(old)old.remove();
+    if(!docRecognized)return;
+    var d=(allDocs||[]).find(function(x){return x.id===docRecognized.docId;});
+    if(!d){docRecognized=null;return;}
+    var r=docRecognized.result||{};
+    var input='width:100%;box-sizing:border-box;font:inherit;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);';
+    var label='display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text2);font-weight:700;margin:10px 0 4px;';
+    var h='<div id="doc-recognized-overlay" data-qa="doc-recognized-overlay" class="modal-overlay open" style="z-index:9999;"><div class="modal-panel" style="max-width:520px;color:var(--text);">';
+    h+='<div style="font-size:16px;font-weight:700;margin-bottom:4px;">'+docIntakeT('Check the recognised fields','Проверьте распознанные поля')+'</div>';
+    h+='<div style="font-size:13px;color:var(--text2);margin-bottom:6px;">'+esc(d.title||'')+'</div>';
+    h+='<div style="font-size:12px;color:var(--text2);">'+docIntakeT('Nothing is saved until you confirm. Correct anything that was read wrong.','Ничего не сохраняется, пока вы не подтвердите. Исправьте то, что прочитано неверно.')+'</div>';
+    var names={doc_number:docIntakeT('Document No.','Номер документа'),issued_by:docIntakeT('Issued by','Кем выдан'),valid_from:docIntakeT('Issue date','Дата выдачи'),valid_to:docIntakeT('Expiry date','Действует до')};
+    DOC_RECOGNIZED_FIELDS.forEach(function(f){
+        var isDate=f==='valid_from'||f==='valid_to';
+        h+='<label style="'+label+'">'+names[f]+'</label><input id="doc-recognized-'+f+'" data-qa="doc-recognized-'+f+'" type="'+(isDate?'date':'text')+'" style="'+input+'" value="'+esc(r[f]||'')+'">';
+        if(!r[f]){
+            var cur=(f==='valid_to'&&d.is_permanent)?'Permanent':String(d[f]||'');
+            h+='<div style="font-size:11px;color:var(--text2);margin-top:3px;">'+docIntakeT('Not recognised.','Не распознано.')+(cur?' '+docIntakeT('The current value stays: ','Останется прежнее: ')+esc(cur):'')+'</div>';
+        }
+    });
+    h+='<div style="display:flex;gap:8px;margin-top:14px;"><button class="btn btn-sm doc-intake-plus" data-qa="doc-recognized-confirm" onclick="docRecognizedConfirm()">'+docIntakeT('Confirm','Подтверждаю')+'</button><button class="btn btn-outline btn-sm" onclick="docRecognizedCancel()">'+docIntakeT('Cancel','Отмена')+'</button></div>';
+    h+='</div></div>';
+    document.body.insertAdjacentHTML('beforeend',h);
+}
+function docRecognizedCancel(){docRecognized=null;docRecognizedRender();}
+async function docRecognizedConfirm(){
+    if(!docRecognized||docRecognizedBusy)return;
+    var rec=docRecognized,id=rec.docId,result=rec.result||{};
+    var d=(allDocs||[]).find(function(x){return x.id===id;});
+    if(!d){docRecognizedCancel();return;}
+    var values={};
+    DOC_RECOGNIZED_FIELDS.forEach(function(f){values[f]=docIntakeValue('doc-recognized-'+f);});
+    docRecognizedBusy=true;
+    try{
+        var statuses={};try{statuses=JSON.parse(d.field_statuses||'{}')||{};}catch(e0){statuses={};}
+        var saved=0;
+        for(var i=0;i<DOC_RECOGNIZED_FIELDS.length;i++){
+            var f=DOC_RECOGNIZED_FIELDS[i];
+            if(!values[f])continue;
+            await docIntakeWrite('update_doc_field',{id:id,field:f,value:values[f]},id);
+            statuses[f]='verified';saved++;
+            if(result[f]!=null&&String(result[f]||'')!==values[f]){
+                try{await invoke('save_ocr_label',{docId:id,docType:d.template_id||d.category||d.title||'Unknown',fieldName:f,aiValue:String(result[f]||''),correctValue:values[f]});}catch(e2){}
+            }
+        }
+        if(saved)await docIntakeWrite('update_field_statuses',{id:id,statuses:JSON.stringify(statuses)},id);
+        await docRecognitionRemember(d,result,values);
+        docRecognized=null;docRecognizedRender();
+        allDocs=await invoke('get_documents');
+        try{renderTree();updateStatus();}catch(e1){}
+        var after=allDocs.find(function(x){return x.id===id;});
+        if(after&&selectedDocId===id)await renderDoc(after);
+        showToast(docIntakeT('Fields saved: ','Сохранено полей: ')+saved,'success');
+    }catch(e){
+        showToast(docIntakeT('Could not save the recognised fields: ','Не удалось сохранить распознанные поля: ')+e,'error');
+        try{logError('docRecognizedConfirm',e);}catch(_e){}
+    }finally{docRecognizedBusy=false;}
 }
 // One write of the confirmed document. With account sync on, every document
 // write must name the revision it edits, and background sync can move that
@@ -4763,7 +4890,8 @@ async function docIntakeConfirm(){
             if(tpl&&docIntakeHasFiledSlot(tpl.id))newTitle=title+' — '+(values.doc_number||new Date().toISOString().slice(0,10));
             target=await invoke('add_custom_doc',{title:newTitle,category:tpl?tpl.category:'Custom',hasExpiry:tpl?!!tpl.has_expiry:!!values.valid_to,isPermanent:false});
         }
-        if(intake.sourcePath)await docIntakeWrite('attach_file',{docId:target.id,sourcePath:intake.sourcePath},target.id);
+        if(intake.pages&&intake.pages.length)await docIntakeWrite('attach_pdf_pages',{docId:target.id,fileName:(title||'Document')+'.pdf',pages:intake.pages.map(function(p){return {fileName:p.fileName,dataBase64:p.dataBase64};})},target.id);
+        else if(intake.sourcePath)await docIntakeWrite('attach_file',{docId:target.id,sourcePath:intake.sourcePath},target.id);
         else await docIntakeWrite('attach_file_bytes',{docId:target.id,fileName:intake.fileName,dataBase64:intake.dataBase64},target.id);
         var statuses={};try{statuses=JSON.parse(target.field_statuses||'{}')||{};}catch(e0){statuses={};}
         delete statuses.not_applicable;
@@ -5110,7 +5238,7 @@ function mobileShouldShowHomeButton(){
     if(!shouldUseMobileShell())return false;
     if(mobileView==='home')return false;
     if(mobileView==='dispatch')return false;
-    return ['docs','doc','add','pdf','profile','experience','cv','jobs','information','vessels','apps','assistant'].indexOf(mobileView)>=0;
+    return ['docs','doc','add','pdf','profile','experience','cv','jobs','information','vessels','ports','apps','assistant'].indexOf(mobileView)>=0;
 }
 function mobileHomeButtonHtml(){
     var ru=getUiLang()==='ru';
@@ -7769,6 +7897,7 @@ function renderMobileShell(){
     if(mobileView==='jobs')return renderMobileJobs();
     if(mobileView==='information')return renderMobileInformation();
     if(mobileView==='vessels')return renderMobileVessels();
+    if(mobileView==='ports')return renderMobilePorts();
 
     if(mobileView==='myvessel')return renderMobileMyVessel();
 
@@ -7833,6 +7962,7 @@ function renderMobileHome(){
     h+=(tpl&&tpl.innerHTML)?tpl.innerHTML:'';
     mobileMainHtml(h);
     mobileHomeLocalizeModules();
+    mobileHomeApplyLayout();
 }
 // Menu screen (DIRECTIVE 01.09, sketch 2): same header; the module grid verbatim from
 // #mobile-home-modules-tpl (Documents · Experience · CV first), plus the Profile tile, which
@@ -7853,6 +7983,143 @@ function renderMobileMenu(){
       +'</div>';
     mobileMainHtml(h);
     mobileHomeLocalizeModules();
+    mobileHomeApplyLayout();
+}
+// Rows of the home tiles (owner 27.11.2026: «возможность сгруппировать значки плиток. чтобы можно было
+// зацепить пальцем и двигать»). The order is rows of tile keys, kept on the device; a long press picks a
+// tile up, a drop on another tile puts it before/after that tile, a drop on a row's empty space adds it to
+// the row, a drop below the rows starts a new row.
+var MOBILE_HOME_LAYOUT_KEY='skipi-mobile-home-layout-v1';
+var MOBILE_HOME_DEFAULT_ROWS=[['docs','experience','cv','packages'],['jobs','dispatch','information'],['vessels','ports','myvessel'],['apps','profile','aiconnect','assistant']];
+function mobileHomeLayoutNormalize(rows){
+    var known=[].concat.apply([],MOBILE_HOME_DEFAULT_ROWS),seen={},out=[];
+    (Array.isArray(rows)?rows:[]).forEach(function(row){
+        var r=[];
+        (Array.isArray(row)?row:[]).forEach(function(k){if(known.indexOf(k)>=0&&!seen[k]){seen[k]=true;r.push(k);}});
+        if(r.length)out.push(r);
+    });
+    var missing=known.filter(function(k){return !seen[k];});
+    if(missing.length){if(out.length)out[out.length-1]=out[out.length-1].concat(missing);else out.push(missing);}
+    return out;
+}
+function mobileHomeLayoutLoad(){
+    try{var raw=localStorage.getItem(MOBILE_HOME_LAYOUT_KEY);if(raw)return mobileHomeLayoutNormalize(JSON.parse(raw));}catch(e){}
+    return MOBILE_HOME_DEFAULT_ROWS.map(function(r){return r.slice();});
+}
+function mobileHomeLayoutSave(rows){
+    try{localStorage.setItem(MOBILE_HOME_LAYOUT_KEY,JSON.stringify(rows));}catch(e){}
+}
+// beforeKey: the tile to stand before; null → the end of rows[rowIndex] (a new last row when rowIndex is past the end).
+function mobileHomeLayoutMove(rows,key,beforeKey,rowIndex){
+    var copy=rows.map(function(r){return r.slice();});
+    var has=copy.some(function(r){return r.indexOf(key)>=0;});
+    if(!has||key===beforeKey)return copy;
+    copy=copy.map(function(r){return r.filter(function(k){return k!==key;});});
+    var placed=false;
+    if(beforeKey){
+        copy.forEach(function(r){var at=r.indexOf(beforeKey);if(at>=0&&!placed){r.splice(at,0,key);placed=true;}});
+    }
+    if(!placed){
+        if(rowIndex>=0&&rowIndex<copy.length)copy[rowIndex].push(key);
+        else copy.push([key]);
+    }
+    return copy.filter(function(r){return r.length;});
+}
+function mobileHomeTileNode(key){
+    if(key==='profile')return document.querySelector?document.querySelector('[data-qa="menu-tile-profile"]'):null;
+    return mobileModuleIconBtn(key);
+}
+function mobileHomeApplyLayout(){
+    var rail=document.getElementById('mobile-module-rail');
+    if(!rail||typeof document.createElement!=='function'||typeof rail.appendChild!=='function'||!rail.classList)return;
+    var rows=mobileHomeLayoutLoad();
+    var extra=(rail.parentNode&&rail.parentNode.querySelector)?rail.parentNode.querySelector('.mobile-menu-extra'):null;
+    rail.classList.remove('fam-app-grid');
+    rail.classList.add('fam-app-rows');
+    rows.forEach(function(row,i){
+        var div=document.createElement('div');
+        div.className='fam-app-grid fam-app-row';
+        div.setAttribute('data-row',String(i));
+        row.forEach(function(k){var b=mobileHomeTileNode(k);if(b){b.setAttribute('data-tile',k);div.appendChild(b);}});
+        if(div.children.length)rail.appendChild(div);
+    });
+    if(extra&&!extra.children.length&&extra.parentNode)extra.parentNode.removeChild(extra);
+    mobileHomeDragBind();
+}
+var _mobileTileDrag=null,_mobileTileDragBound=false;
+function mobileHomeDragPoint(ev){
+    var t=(ev.touches&&ev.touches[0])||(ev.changedTouches&&ev.changedTouches[0])||ev;
+    return {x:t.clientX,y:t.clientY};
+}
+function mobileHomeDragStart(ev){
+    if(ev.type==='mousedown'&&ev.button!==0)return;
+    var tile=ev.target&&ev.target.closest?ev.target.closest('#mobile-module-rail [data-tile]'):null;
+    if(!tile)return;
+    var p=mobileHomeDragPoint(ev);
+    mobileHomeDragCancel();
+    _mobileTileDrag={node:tile,key:tile.getAttribute('data-tile'),x:p.x,y:p.y,armed:false,dragging:false,timer:null};
+    _mobileTileDrag.timer=setTimeout(function(){
+        if(!_mobileTileDrag)return;
+        _mobileTileDrag.armed=true;
+        try{tile.classList.add('fam-tile-armed');}catch(e){}
+    },MOBILE_HINT_DELAY_MS);
+}
+function mobileHomeDragMove(ev){
+    var d=_mobileTileDrag;if(!d)return;
+    var p=mobileHomeDragPoint(ev),dx=p.x-d.x,dy=p.y-d.y,far=Math.abs(dx)>8||Math.abs(dy)>8;
+    if(!d.armed){if(far)mobileHomeDragCancel();return;}  // moved before the long press: a scroll, not a drag
+    if(ev.cancelable)ev.preventDefault();
+    if(!d.dragging){
+        if(!far)return;
+        d.dragging=true;
+        try{mobileHintRelease();var hint=mobileHintNode();if(hint)hint.hidden=true;}catch(e){}
+        d.node.classList.add('fam-tile-dragging');
+    }
+    d.node.style.transform='translate('+dx+'px,'+dy+'px) scale(1.08)';
+}
+function mobileHomeDragEnd(ev){
+    var d=_mobileTileDrag;if(!d)return;
+    if(!d.dragging){mobileHomeDragCancel();return;}
+    var p=mobileHomeDragPoint(ev),node=d.node,key=d.key;
+    node.style.pointerEvents='none';
+    var el=document.elementFromPoint(p.x,p.y);
+    mobileHomeDragCancel();
+    _mobileHintSwallowClick=true;setTimeout(function(){_mobileHintSwallowClick=false;},350);
+    var rail=document.getElementById('mobile-module-rail');if(!rail)return;
+    var rows=mobileHomeLayoutLoad(),next=null;
+    var target=el&&el.closest?el.closest('#mobile-module-rail [data-tile]'):null;
+    var rowEl=el&&el.closest?el.closest('#mobile-module-rail .fam-app-row'):null;
+    if(target&&target!==node){
+        var rect=target.getBoundingClientRect(),tkey=target.getAttribute('data-tile');
+        var rowIndex=Number(target.parentNode.getAttribute('data-row'));
+        if(p.x<rect.left+rect.width/2)next=mobileHomeLayoutMove(rows,key,tkey,rowIndex);
+        else{
+            var row=(rows[rowIndex]||[]).filter(function(k){return k!==key;}),at=row.indexOf(tkey);
+            next=mobileHomeLayoutMove(rows,key,at>=0&&at<row.length-1?row[at+1]:null,rowIndex);
+        }
+    }else if(rowEl){
+        next=mobileHomeLayoutMove(rows,key,null,Number(rowEl.getAttribute('data-row')));
+    }else if(p.y>rail.getBoundingClientRect().bottom){
+        next=mobileHomeLayoutMove(rows,key,null,rows.length);
+    }
+    if(next){mobileHomeLayoutSave(next);renderMobileHome();}
+}
+function mobileHomeDragCancel(){
+    var d=_mobileTileDrag;_mobileTileDrag=null;
+    if(!d)return;
+    if(d.timer){try{clearTimeout(d.timer);}catch(e){}}
+    try{d.node.classList.remove('fam-tile-armed');d.node.classList.remove('fam-tile-dragging');d.node.style.transform='';d.node.style.pointerEvents='';}catch(e){}
+}
+function mobileHomeDragBind(){
+    if(_mobileTileDragBound||typeof document.addEventListener!=='function')return;
+    _mobileTileDragBound=true;
+    document.addEventListener('touchstart',mobileHomeDragStart,{passive:true});
+    document.addEventListener('touchmove',mobileHomeDragMove,{passive:false});
+    document.addEventListener('touchend',mobileHomeDragEnd);
+    document.addEventListener('touchcancel',mobileHomeDragCancel);
+    document.addEventListener('mousedown',mobileHomeDragStart);
+    document.addEventListener('mousemove',mobileHomeDragMove);
+    document.addEventListener('mouseup',mobileHomeDragEnd);
 }
 var MOBILE_HOME_MODULE_L10N={
     docs:['Документы','Сертификаты и личные файлы'],
@@ -7863,6 +8130,7 @@ var MOBILE_HOME_MODULE_L10N={
     jobs:['Работа','Вакансии по профилю'],
     information:['Информация','Справка и заметки'],
     vessels:['База судов','Известные суда'],
+    ports:['База портов','Найти порт, оценки и отзывы'],
     myvessel:['Моё судно','Рабочее пространство On Board'],
     apps:['Приложения','Установленные инструменты'],
     aiconnect:['Claude / ChatGPT','Skipi в вашем ИИ-ассистенте'],
@@ -8811,6 +9079,7 @@ async function mobileConfirmOcr(docId){
             }
         }
         await invoke('update_field_statuses',{id:docId,statuses:JSON.stringify(statuses)});
+        await docRecognitionRemember(d,result,values);
         mobileOcrState=null;
         await mobileReloadDocs();
         selectedDocId=docId;
@@ -9085,9 +9354,13 @@ async function mobileSavePdfBuilder(){
     if(b.busy)return;
     if(!b.pages.length){showToast('Add at least one page.','error');return;}
     if(!d){
-        mobileAddMode='attach_pdf';
-        mobileView='add';
+        // Дело № 228: a scan started from «+» has no slot yet — it goes the same way
+        // as a photo: recognition → the seafarer confirms → the slot.
+        mobilePdfBuilder=null;
+        mobileAddMode='choose';
+        mobileView='docs';
         renderMobileShell();
+        docIntakeBegin({fileName:b.pages[0].fileName||'scan.jpg',dataBase64:b.pages[0].dataBase64,pages:b.pages});
         return;
     }
     b.busy=true;
@@ -11840,7 +12113,7 @@ function showView(v, opts){
     trustContributionSyncEntryPoints(isSeafarer);
     document.querySelectorAll('.ribbon-icon').forEach(function(el){el.classList.remove('active');});
     document.querySelectorAll('.modules-bar .mod-tab').forEach(function(el){el.classList.remove('active');});
-    var shortMap={files:'files',dashboard:'dash',cv:'cv',experience:'exp',vessels:'vessels',myvessel:'myvessel',contribution:'contribution',packages:'pkg',dispatch:'disp',jobs:'jobs',information:'info',apps:'apps',settings:'set'};
+    var shortMap={files:'files',dashboard:'dash',cv:'cv',experience:'exp',vessels:'vessels',ports:'ports',myvessel:'myvessel',contribution:'contribution',packages:'pkg',dispatch:'disp',jobs:'jobs',information:'info',apps:'apps',settings:'set'};
 
     var ri=document.getElementById('ri-'+shortMap[v]);
     if(ri)ri.classList.add('active');
@@ -11850,10 +12123,10 @@ function showView(v, opts){
     if(pcNav)pcNav.classList.toggle('active',v==='dashboard');
     document.getElementById('panel-title').textContent={
         files:tr('title.files'),dashboard:tr('title.dashboard'),cv:tr('title.cv'),experience:tr('title.experience'),
-        vessels:tr('title.vessels'),myvessel:tr('title.myvessel'),contribution:(getUiLang()==='ru'?'Мой вклад':'My contribution'),packages:tr('title.packages'),dispatch:tr('title.dispatch'),jobs:tr('title.jobs'),
+        vessels:tr('title.vessels'),ports:tr('title.ports'),myvessel:tr('title.myvessel'),contribution:(getUiLang()==='ru'?'Мой вклад':'My contribution'),packages:tr('title.packages'),dispatch:tr('title.dispatch'),jobs:tr('title.jobs'),
         information:tr('title.information'),settings:tr('title.settings')
     }[v]||v;
-    document.getElementById('left-panel').style.display=(v==='dashboard'||v==='cv'||v==='experience'||v==='vessels'||v==='myvessel'||v==='contribution'||v==='dispatch'||v==='jobs'||v==='information'||v==='apps')?'none':'';
+    document.getElementById('left-panel').style.display=(v==='dashboard'||v==='cv'||v==='experience'||v==='vessels'||v==='ports'||v==='myvessel'||v==='contribution'||v==='dispatch'||v==='jobs'||v==='information'||v==='apps')?'none':'';
 
     // The old second tabs row duplicated the selected document title.
     // Keep it disabled; the document name is already visible in the tree and editor.
@@ -11877,6 +12150,7 @@ function showView(v, opts){
     else if(v==='cv')showCv();
     else if(v==='experience')showWorkHistory();
     else if(v==='vessels')showVesselDatabase();
+    else if(v==='ports')showPortDb();
     else if(v==='myvessel')showMyVessel();
     else if(v==='contribution')showContribution();
     else if(v==='packages')showPackages();
@@ -12049,6 +12323,21 @@ function myVesselInnerHtml(){
     h+='</div>';
     h+='<div class="mv-card"><div class="mv-grid-title">'+esc(ru?'Рабочие модули судна':'Vessel workflows')+'</div>'+myVesselGridHtml(ru)+'</div>';
     return h;
+}
+// Port DB («База портов», owner 26.11.2026): the screen is dist/port-db.js over @skipi/ports
+// (dist/skipi-ports.js + data, pin dist/PORTS_VERSION). Shown to every account type. The page
+// never holds the account token — the native commands (commands/port_reviews.rs) do.
+function portDbDeps(){ return { invoke: invoke, lang: getUiLang, toast: showToast }; }
+function showPortDb(){
+    var content=document.getElementById('scr-content');
+    if(!content)return;
+    content.innerHTML='<div id="port-db-root"></div>';
+    show('scr-content');
+    SkipiPortDb.mount(document.getElementById('port-db-root'), portDbDeps());
+}
+function renderMobilePorts(){
+    mobileMainHtml('<div id="port-db-root" class="pdb-mobile"></div>');
+    SkipiPortDb.mount(document.getElementById('port-db-root'), portDbDeps());
 }
 function showMyVessel(){
     var content=document.getElementById('scr-content');
@@ -13163,7 +13452,7 @@ async function aiIsConfigured(){
 }
 
 var _aiRec=async function(id,local){
-    var st=document.getElementById('ai-st');var key='';
+    var st=document.getElementById('ai-st')||{style:{}};var key='';
     // Cloud recognition: use a user-pasted key if present, otherwise leave it
     // empty and the backend routes through the Skipi server proxy (no key needed).
     if(!local){try{key=await invoke('get_effective_api_key');}catch(e){}}
@@ -13180,14 +13469,11 @@ var _aiRec=async function(id,local){
     var model=localStorage.getItem('skipi-ollama-model')||'qwen2.5vl:32b';
     var endpoint=localStorage.getItem('skipi-ollama-endpoint')||'http://127.0.0.1:11434';
     try{
-        await invoke('ai_recognize',{docId:id,apiKey:key,useLocal:local,ollamaModel:model,ollamaEndpoint:endpoint,docTitle:docTitle});
-        st.textContent='Done!'+(hasTpl?' (template used)':'');st.style.color='var(--green)';
-        allDocs=await invoke('get_documents');
-        var afterDoc=allDocs.find(function(x){return x.id===id;});
-        if(afterDoc){
-            lastAiResult[id]={doc_number:afterDoc.doc_number||'',issued_by:afterDoc.issued_by||'',valid_from:afterDoc.valid_from||'',valid_to:afterDoc.valid_to||''};
-        }
-        renderTree();if(afterDoc)await renderDoc(afterDoc);
+        // Дело № 228: nothing is written here — the seafarer confirms the result first.
+        var result=await invoke('ai_preview_recognize',{docId:id,apiKey:key,useLocal:local,ollamaModel:model,ollamaEndpoint:endpoint,docTitle:docTitle});
+        if(st){st.textContent='Done!'+(hasTpl?' (template used)':'');st.style.color='var(--green)';}
+        docRecognized={docId:id,result:result||{}};
+        docRecognizedRender();
     }catch(e){st.textContent='Error: '+e;st.style.color='var(--red)';logError('ai_recognize',e);}
 };
 var aiRec=guardOp('ai_recognize',_aiRec);
