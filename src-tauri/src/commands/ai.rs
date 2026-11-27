@@ -371,7 +371,7 @@ async fn ai_recognize_fields(
     ollama_endpoint: Option<String>,
     doc_title: Option<String>,
 ) -> Result<AiRecognizeResult, String> {
-    let (file_path, ext, prompt): (PathBuf, String, String) = {
+    let (file_path, ext, prompt, known, account_token): (PathBuf, String, String, Vec<(String, String, String)>, Option<String>) = {
         let vault_lock = state.vault_path.lock().unwrap_or_else(|e| e.into_inner());
         let vault_path = vault_lock.as_ref().ok_or("No vault open")?;
 
@@ -421,6 +421,10 @@ async fn ai_recognize_fields(
             file_path,
             ext,
             format!("{}{}{}", template_text, base_prompt, corrections_text),
+            // Дело № 247: the card's Recognize knows the same corrected kinds of
+            // documents as the green «+» (own rows here, shared ones below).
+            db::get_corrections(conn, INTAKE_PATTERN_DOC_TYPE).unwrap_or_default(),
+            crate::commands::app_login::stored_user_token(conn),
         )
     };
 
@@ -467,6 +471,15 @@ async fn ai_recognize_fields(
                 .timeout(std::time::Duration::from_secs(120))
                 .build()
                 .map_err(|e| e.to_string())?;
+            // Cloud only: the local model keeps its short prompt and nothing leaves the device.
+            let prompt = if use_local {
+                prompt
+            } else {
+                let mut known = known;
+                let shared = exchange_known_documents(account_token, &known);
+                known.extend(shared);
+                slot_prompt(&prompt, &known_documents_block(&known))
+            };
 
             let result = if use_local {
                 // Ollama API (local)
@@ -782,6 +795,20 @@ fn known_documents_block(rows: &[(String, String, String)]) -> String {
          template_id and read issued_by the confirmed way. Numbers and dates \
          always come from this page.\n{}==== END KNOWN DOCUMENTS ====",
         lines.concat()
+    )
+}
+
+/// The prompt of a recognition INTO a known slot (the card's Recognize, the
+/// phone's «Recognize fields») plus the same KNOWN DOCUMENTS block the «+»
+/// intake uses. The slot is already chosen, so only issued_by is taken from it.
+fn slot_prompt(prompt: &str, known: &str) -> String {
+    if known.is_empty() {
+        return prompt.to_string();
+    }
+    format!(
+        "{}{}\nThe document type is already chosen here: return no template_id, \
+         use the block above only to read issued_by the confirmed way.",
+        prompt, known
     )
 }
 
@@ -1258,6 +1285,24 @@ mod tests {
         let block = known_documents_block(&rows);
         assert_eq!(block.lines().filter(|l| l.starts_with("- A page")).count(), MAX_KNOWN_DOCUMENTS);
         assert!(block.contains("Kind 0'") && !block.contains("Kind 20'"), "own (first) rows win over later ones");
+    }
+
+    #[test]
+    fn slot_prompt_carries_the_known_documents_of_the_intake() {
+        // Дело № 247: a correction made on the «+» confirmation screen is told to
+        // the card's Recognize too.
+        let rows = vec![(
+            "pattern".to_string(),
+            r#"{"title":"Certificate of Proficiency","issued_by":"Ukraine","template_id":null}"#.to_string(),
+            r#"{"template_id":"coc_master","issued_by":"Maritime Administration of Ukraine"}"#.to_string(),
+        )];
+        let prompt = slot_prompt(BASE_PROMPT, &known_documents_block(&rows));
+        assert!(prompt.starts_with(BASE_PROMPT));
+        assert!(prompt.contains("==== KNOWN DOCUMENTS ===="));
+        assert!(prompt.contains("the issuing authority of this kind of document is 'Maritime Administration of Ukraine'"));
+        assert!(prompt.contains("return no template_id"));
+        // Nothing corrected yet: the prompt is exactly what it was.
+        assert_eq!(slot_prompt(BASE_PROMPT, &known_documents_block(&[])), BASE_PROMPT);
     }
 
     #[test]
