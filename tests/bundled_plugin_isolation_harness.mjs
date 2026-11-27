@@ -161,6 +161,10 @@ ok(sha256Text(BRIDGE) === HOST_RUNTIME_BRIDGE_SHA256, 'plugin-host-bridge.js mat
   const RS = fs.readFileSync(path.join(DIST, '..', 'src-tauri', 'src', 'commands', 'plugin_reviews.rs'), 'utf8');
   ok(/stored_user_token/.test(RS) && /assistant_api_base\(\)/.test(RS) && /fn valid_slug/.test(RS), 'the native commands take the token from the app session, talk to the account server and validate the slug');
 }
+// @skipi/plugin-host-ui 1.3.1 (case 248): a plugin that needs a newer app says «Обновите Skipi…» instead of
+// «host … < minHostVersion …», and the «Installing…» toast is dismissed through the function showToast returns.
+ok(/function pluginNeedsAppVersion\(/.test(HOST_UI_MODULE) && /Обновите Skipi до версии /.test(HOST_UI_MODULE) && /var installing = showToast\(/.test(HOST_UI_MODULE), '@skipi/plugin-host-ui 1.3.1: «Update Skipi» in words, «Installing…» is dismissed when the install ends');
+ok(/setTimeout\(dismiss,type==='error'\?6000:3500\);\s*return dismiss;\s*\}/.test(HTML), 'the home showToast returns the function that dismisses the toast');
 ok(/function showApps\(/.test(HOST_UI_MODULE) && /function renderMobileApps\(/.test(HOST_UI_MODULE) && /function pluginMountInto\(/.test(HOST_UI_MODULE), 'desktop + mobile Apps entry points still exist (in @skipi/plugin-host-ui)');
 
 // ------------------------------------------------------------------ mount
