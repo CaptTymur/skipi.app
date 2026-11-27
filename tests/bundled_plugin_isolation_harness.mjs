@@ -1124,11 +1124,20 @@ function bootMobile(opts) {
   // (hidden under body.mobile-mode) to body level, after .statusbar. The pin is re-based again
   // and kept honest the same way: put ONLY that block back where it was (one indent deeper,
   // before <!-- Center -->) and the previous pin 584d4448 must come back byte for byte.
-  ok(sha256Text(region) === '04f751938d97b1638ba5d0d9286ceb1e259e70a019c452e24a55d4fa27c6242c', 'desktop static markup region sha256 == the re-based pin');
-  const acStart = region.indexOf('<!-- Add Custom Certificate modal -->\n');
-  const acEnd = region.indexOf('</div>\n\n', acStart) + '</div>\n\n'.length;
-  const acBlock = acStart >= 0 ? region.slice(acStart, acEnd) : '';
-  const pre259Region = acStart < 0 ? region : (region.slice(0, acStart) + region.slice(acEnd))
+  // 2026-11-26 (app name): the app is called just «Skipi» — the stack label, the welcome title and the
+  // update banner in this region lost «Seafarer»/«Моряк». The pin is re-based and kept honest the same
+  // way: put ONLY those three names back and the previous pin 04f75193 must come back byte for byte.
+  ok(sha256Text(region) === '0c994a168599defecfb93c0dd52dd3ccda055e2ca2ab0b2425d87bd1cad6bfcc', 'desktop static markup region sha256 == the re-based pin');
+  const preNameRegion = region
+    .replace('data-qa="desktop-stack-label">Skipi · Stack', 'data-qa="desktop-stack-label">Skipi Seafarer · Stack')
+    .replace('<h1 id="welcome-title">Skipi</h1>', '<h1 id="welcome-title">Скипи Моряк</h1>')
+    .replace('A new version of Skipi is available!', 'A new version of Skipi Seafarer is available!');
+  ok(sha256Text(preNameRegion) === '04f751938d97b1638ba5d0d9286ceb1e259e70a019c452e24a55d4fa27c6242c',
+    'undoing ONLY the app-name change restores the previous pin 04f75193 byte for byte — nothing else in the desktop markup was touched by the rename');
+  const acStart = preNameRegion.indexOf('<!-- Add Custom Certificate modal -->\n');
+  const acEnd = preNameRegion.indexOf('</div>\n\n', acStart) + '</div>\n\n'.length;
+  const acBlock = acStart >= 0 ? preNameRegion.slice(acStart, acEnd) : '';
+  const pre259Region = acStart < 0 ? preNameRegion : (preNameRegion.slice(0, acStart) + preNameRegion.slice(acEnd))
     .replace('    <!-- Center -->', acBlock.split('\n').map((l) => (l ? '    ' + l : l)).join('\n') + '    <!-- Center -->');
   ok(acStart >= 0 && /id="add-custom-overlay"/.test(acBlock) && sha256Text(pre259Region) === '584d444887da3e713d2363caa8a845c6d34c60f3e4ee3ed3ed5dcaddd0a8afbc',
     'undoing ONLY the №259 overlay relocation restores the previous pin 584d4448 byte for byte — nothing else in the desktop markup was touched by A2');
@@ -2877,8 +2886,15 @@ const rustCode = (src) => String(src || '')
   const i = HTML.indexOf('async function showPackages(){');
   const j = HTML.indexOf('var settingsTab = ');
   ok(i > 0 && j > i, 'the desktop packages region is locatable');
-  ok(sha256Text(HTML.slice(i, j)) === DESKTOP_PKG_SHA,
-    'showPackages/startPkg/doPkg/emailPkg/exportPkg/delPkg unchanged (sha ' + sha256Text(HTML.slice(i, j)).slice(0, 12) + ' vs baseline ' + DESKTOP_PKG_SHA.slice(0, 12) + ')');
+  // 2026-11-26 (app name): the one empty-state sentence here now says «Skipi»; put back ONLY the old
+  // name and the baseline must come back byte for byte — the rename touched nothing else.
+  const pkgRegion = HTML.slice(i, j);
+  ok(sha256Text(pkgRegion) === '0ee8387b6183f66b9bb93b0548eaa0b82e4bb92481f026ddab3251fd0602f4d4', 'the desktop packages region == the re-based pin (app name «Skipi»)');
+  const pkgPreName = pkgRegion
+    .replace('После этого Skipi сможет создать пакет', 'После этого Скипи Моряк сможет создать пакет')
+    .replace('Then Skipi can create a package', 'Then Skipi Seafarer can create a package');
+  ok(sha256Text(pkgPreName) === DESKTOP_PKG_SHA,
+    'showPackages/startPkg/doPkg/emailPkg/exportPkg/delPkg unchanged but for the app name (sha ' + sha256Text(pkgPreName).slice(0, 12) + ' vs baseline ' + DESKTOP_PKG_SHA.slice(0, 12) + ')');
   ok(/<table class="pkg-table">/.test(HTML), 'the desktop list still uses its table — the phone got its own UI, the desktop was not refactored');
 }
 
@@ -6540,7 +6556,7 @@ for (const lang of ['en','ru']) {
     app.doc._ids.delete('developer-group-invite-overlay');
     let modal='';app.doc.body.insertAdjacentHTML=(_pos,h)=>{modal=h;};
     app.sandbox.showDeveloperGroupInviteNotice(state);
-    const title=lang==='ru'?'Доступна группа разработчиков Скипи Моряк':'Skipi Seafarer builders group is open';
+    const title=lang==='ru'?'Доступна группа разработчиков Skipi':'Skipi builders group is open';
     for(const [site,h] of [['card',card],['modal',modal]]){
       ok(h.includes(title),'A5II Builders title '+lang+' '+site);
       ok(h.includes(lang==='ru'?'Вступить в Telegram':'Join Telegram'),'A5II Builders join '+lang+' '+site);

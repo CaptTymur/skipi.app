@@ -26,8 +26,8 @@ ok(html.includes("stack_id: 'SKIPI-2026.08-R1'"), 'build-metadata input carries 
 ok(html.includes("source_identifier: 'unknown'"), 'source identifier starts honest and is not a candidate SHA literal');
 ok(html.includes('function setBuildMetadata(info)'), 'runtime build metadata is accepted through one input function');
 ok(html.includes("invoke('get_build_info')"), 'build metadata comes from the exact binary at runtime');
-ok(html.includes('Skipi Seafarer · Stack SKIPI-2026.08-R1'), 'main header exposes the exact Stack label without Settings');
-ok(html.includes('data-qa="desktop-stack-label">Skipi Seafarer · Stack SKIPI-2026.08-R1</div>'), 'loaded desktop main shell exposes the exact Stack label inline');
+ok(html.includes('Skipi · Stack SKIPI-2026.08-R1'), 'main header exposes the exact Stack label without Settings');
+ok(html.includes('data-qa="desktop-stack-label">Skipi · Stack SKIPI-2026.08-R1</div>'), 'loaded desktop main shell exposes the exact Stack label inline');
 ok(html.includes('stackAboutSummary()'), 'Settings About is bound to the build-metadata summary');
 ok(html.includes('Stack verification unavailable'), 'UI has the required fail-closed verification label');
 ok(!/manifest_(?:sha|digest)\s*:\s*['"][0-9a-f]{64}['"]/i.test(html), 'future manifest digest is not hardcoded');
