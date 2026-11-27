@@ -11877,9 +11877,24 @@ function charteringDeps(){
             removeItem: function(kind, id){ return invoke('chartering_item_remove', { kind: kind, itemId: id }); }
         } };
 }
+// tasks/032: the workplace is open while the account's access lasts. When it is paused the
+// server keeps the records and answers nothing else, so the page says so instead of mounting
+// the module. Any other answer — or none (no connection) — opens the module, which speaks for itself.
+function charteringPausedHtml(){
+    var ru=getUiLang()==='ru';
+    return '<div class="role-stub" data-qa="chartering-paused"><h2>'+(ru?'Доступ к рабочему месту приостановлен':'Access to the workplace is paused')+'</h2>'
+        +'<div>'+(ru?'Ваши записи сохранены. Продолжить можно в аккаунте Skipi на сайте assistant.skipi.app.':'Your records are kept. You can continue from your Skipi account at assistant.skipi.app.')+'</div>'
+        +(isNativeMobile()?'':'<div style="margin-top:18px;"><button class="btn btn-outline" data-qa="chartering-open-account" onclick="openExternalUrlSafe(\'https://assistant.skipi.app/app/account\')">'+(ru?'Открыть аккаунт Skipi':'Open Skipi account')+'</button></div>')
+        +'</div>';
+}
 function charteringMount(){
     var el=document.getElementById('chartering-root');
-    if(el&&window.SkipiChartering)window.SkipiChartering.mount(el, charteringDeps());
+    if(!el||!window.SkipiChartering)return;
+    invoke('chartering_access').then(function(st){ return !!st&&st.state==='paused'; },function(){ return false; }).then(function(paused){
+        if(document.getElementById('chartering-root')!==el)return; // the user has already gone elsewhere
+        if(paused){ el.innerHTML=charteringPausedHtml(); return; }
+        window.SkipiChartering.mount(el, charteringDeps());
+    });
 }
 // The account cache of a crewing / broker account: created empty, without the seafarer
 // questionnaire and without the seafarer profile restore. One cache per e-mail and role.

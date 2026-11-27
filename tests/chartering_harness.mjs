@@ -44,19 +44,26 @@ const COMMANDS = ['chartering_cargoes', 'chartering_cargo', 'chartering_cargo_sa
   'chartering_pair_save', 'chartering_pair_remove', 'chartering_event_add', 'chartering_positions',
   'chartering_position_save', 'chartering_position_remove', 'chartering_items', 'chartering_item_save',
   'chartering_item_remove'];
-ok([...COMMANDS, 'chartering_open_mail'].every((c) => lib.includes('chartering::' + c + ',')), 'every chartering command is registered natively');
+ok([...COMMANDS, 'chartering_open_mail', 'chartering_access'].every((c) => lib.includes('chartering::' + c + ',')), 'every chartering command is registered natively');
 
 const start = html.indexOf('function charteringDeps(){');
 const end = html.indexOf('// The account cache of a crewing / broker account');
 ok(start > 0 && end > start, 'the wiring block was located in dist/index.html');
 const calls = [];
+let access = 'trial', mobile = false;
 const el = { innerHTML: '', isConnected: true, className: '', classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
   addEventListener() {}, querySelector: () => null, querySelectorAll: () => [], clientWidth: 1200, offsetWidth: 1200 };
 const sandbox = {
   console, Promise, Date, setTimeout, clearTimeout,
   getUiLang: () => 'ru',
   showToast: () => {},
-  invoke: (cmd, args) => { calls.push([cmd, args]); return Promise.resolve({ cargoes: [], positions: [], items: [] }); },
+  isNativeMobile: () => mobile,
+  openExternalUrlSafe: () => {},
+  invoke: (cmd, args) => {
+    calls.push([cmd, args]);
+    if (cmd === 'chartering_access') return access === 'offline' ? Promise.reject('offline') : Promise.resolve({ state: access, until: '2026-12-11' });
+    return Promise.resolve({ cargoes: [], positions: [], items: [] });
+  },
   document: { getElementById: (id) => (id === 'chartering-root' ? el : null), addEventListener() {}, createElement: () => el, body: el, documentElement: el },
 };
 sandbox.window = sandbox;
@@ -66,9 +73,26 @@ vm.runInContext(html.slice(start, end), sandbox);
 ok(typeof sandbox.SkipiChartering.mount === 'function', 'the module registers window.SkipiChartering.mount');
 
 sandbox.charteringMount();
-await tick(); await tick();
-ok(calls.length > 0 && calls.every((c) => c[0].startsWith('chartering_')), 'opening the screen reads the account\'s records through native commands (' + calls.map((c) => c[0]).filter((c, i, a) => a.indexOf(c) === i).join(', ') + ')');
+await tick(); await tick(); await tick();
+ok(calls[0][0] === 'chartering_access', 'opening the screen first asks whether the workplace is open to this account');
+ok(calls.length > 1 && calls.every((c) => c[0].startsWith('chartering_')), 'opening the screen reads the account\'s records through native commands (' + calls.map((c) => c[0]).filter((c, i, a) => a.indexOf(c) === i).join(', ') + ')');
 ok(el.innerHTML.includes('Базар') && el.innerHTML.includes('Грузы') && el.innerHTML.includes('Настройки'), 'and draws the workplace in the language of the interface');
+
+// ---- access: trial / active / no answer open the workplace, paused does not ----
+for (const state of ['active', 'none', 'offline']) {
+  access = state; calls.length = 0; el.innerHTML = '';
+  sandbox.charteringMount(); await tick(); await tick(); await tick();
+  ok(calls.length > 1 && el.innerHTML.includes('Базар'), 'access «' + state + '»: the workplace opens');
+}
+access = 'paused'; calls.length = 0; el.innerHTML = '';
+sandbox.charteringMount(); await tick(); await tick(); await tick();
+ok(calls.length === 1 && calls[0][0] === 'chartering_access', 'access «paused»: the module is not mounted and no record is asked for');
+ok(el.innerHTML.includes('data-qa="chartering-paused"') && el.innerHTML.includes('Доступ к рабочему месту приостановлен') && el.innerHTML.includes('Ваши записи сохранены'),
+  'the page says the access is paused and the records are kept');
+ok(el.innerHTML.includes("openExternalUrlSafe('https://assistant.skipi.app/app/account')"), 'on a computer a button opens the Skipi account in the browser');
+mobile = true; sandbox.charteringMount(); await tick(); await tick();
+ok(el.innerHTML.includes('data-qa="chartering-paused"') && !el.innerHTML.includes('openExternalUrlSafe'), 'on a phone the same words, without a link out of the app');
+mobile = false; access = 'trial';
 
 const deps = sandbox.charteringDeps();
 const api = deps.api;

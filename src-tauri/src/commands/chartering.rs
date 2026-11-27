@@ -62,6 +62,15 @@ async fn save(state: State<'_, AppState>, collection: String, body: Value) -> Re
     }
 }
 
+/// `{state: none | trial | active | paused, until}` — whether the workplace is open to this
+/// account right now. While it is paused the server keeps the records and refuses every
+/// other call with `access_paused`; the page then shows that instead of the workplace.
+#[tauri::command]
+pub async fn chartering_access(state: State<'_, AppState>) -> Result<Value, String> {
+    let token = token_or_err(&state)?;
+    run(format!("{}/access", BASE), Call::Get, Some(token)).await
+}
+
 /// `{cargoes: [cargo]}` — newest first, archived ones included.
 #[tauri::command]
 pub async fn chartering_cargoes(state: State<'_, AppState>) -> Result<Value, String> {

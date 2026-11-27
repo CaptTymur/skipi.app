@@ -179,6 +179,7 @@ pub fn run() {
             vessel_space::vessel_notice_post,
             vessel_space::vessel_notice_delete,
             vessel_space::vessel_notice_report,
+            chartering::chartering_access,
             chartering::chartering_cargoes,
             chartering::chartering_cargo,
             chartering::chartering_cargo_save,
