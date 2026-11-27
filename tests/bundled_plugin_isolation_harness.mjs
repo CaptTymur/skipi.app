@@ -165,6 +165,27 @@ ok(sha256Text(BRIDGE) === HOST_RUNTIME_BRIDGE_SHA256, 'plugin-host-bridge.js mat
 // «host … < minHostVersion …», and the «Installing…» toast is dismissed through the function showToast returns.
 ok(/function pluginNeedsAppVersion\(/.test(HOST_UI_MODULE) && /Обновите Skipi до версии /.test(HOST_UI_MODULE) && /var installing = showToast\(/.test(HOST_UI_MODULE), '@skipi/plugin-host-ui 1.3.1: «Update Skipi» in words, «Installing…» is dismissed when the install ends');
 ok(/setTimeout\(dismiss,type==='error'\?6000:3500\);\s*return dismiss;\s*\}/.test(HTML), 'the home showToast returns the function that dismisses the toast');
+// Case 223: the «Check the document» screen (after the green «+») must not end up under the
+// «Complete your Seafarer Profile» window — its buttons could not be pressed until the profile window was closed.
+{
+  const profileZ = Number((/<div id="forced-profile-overlay" style="[^"]*z-index:(\d+)/.exec(HTML) || [])[1]);
+  const intakeZ = Number((/<div id="doc-intake-overlay" data-qa="doc-intake-overlay" class="modal-overlay open" style="z-index:(\d+);?">/.exec(HTML) || [])[1]);
+  ok(profileZ > 0 && intakeZ > profileZ, 'case 223: the document check screen is above the profile window (' + intakeZ + ' > ' + profileZ + ')');
+}
+// Case 262 (owner 27.11.2026: «десктоп и саас боковое меню плиток вместо вкладок»; «это никуда не годится» о верхней
+// полосе вкладок; «будем использовать плитки», «расположим их как тут» — узкая рейка слева): on the desktop and in the
+// web version the module tabs are a left rail of icon tiles. The markup of the bar is untouched (its pin stays);
+// the rail is CSS for wide screens plus the phone tiles' own icons copied into the tabs.
+{
+  const rail = (/\/\* case 262: left rail \*\/[\s\S]*?\/\* end case 262 \*\//.exec(HTML) || [''])[0];
+  ok(/@media \(min-width: ?721px\)/.test(rail) && /body:not\(\.mobile-mode\) \.modules-bar\s*\{[^}]*position:fixed[^}]*left:0[^}]*flex-direction:column/.test(rail), 'case 262: on a wide screen the modules bar is a column fixed to the left edge');
+  ok(/#modules-bar:not\(\[style\*="none"\]\) ~ \.app\s*\{[^}]*margin-left:/.test(rail), 'case 262: the page moves right only while the rail is shown (welcome and sign-in screens keep the full width)');
+  ok(/\.mod-tab \.mod-ico/.test(rail) && /function desktopRailIcons\(/.test(HTML) && /desktopRailIcons\(\);/.test(HTML), 'case 262: each tab gets an icon tile');
+  const fn = (/function desktopRailIcons\(\)\{[\s\S]*?\n\}/.exec(HTML) || [''])[0];
+  ok(fn.includes("getElementById('mobile-home-modules-tpl')") && fn.includes('cloneNode(true)'), 'case 262: the icons are the phone tiles\' own, not a second set');
+  const map = (/var DESKTOP_RAIL_ICONS=\{[^}]*\}/.exec(HTML) || [''])[0];
+  ok(['mt-files', 'mt-exp', 'mt-cv', 'mt-pkg', 'mt-disp', 'mt-jobs', 'mt-info', 'mt-vessels', 'mt-ports', 'mt-myvessel', 'mt-apps'].every((id) => map.includes("'" + id + "'")), 'case 262: every visible module tab has its icon');
+}
 ok(/function showApps\(/.test(HOST_UI_MODULE) && /function renderMobileApps\(/.test(HOST_UI_MODULE) && /function pluginMountInto\(/.test(HOST_UI_MODULE), 'desktop + mobile Apps entry points still exist (in @skipi/plugin-host-ui)');
 
 // ------------------------------------------------------------------ mount
@@ -907,7 +928,7 @@ function bootMobile(opts) {
   const mm = mobileHtml(doc);
   ok(mm.includes('data-qa="mobile-menu-screen"') && !mm.includes('data-qa="mobile-menu-btn"'), 'home (no consent) IS the menu screen — the grid, and no ☰ (nothing left for it to open)');
   ok(!mm.includes('id="mobile-assistant-input"'), 'home (no consent) shows no composer — consent is asked in the Assistant section, not on home');
-  ok((mm.match(/fam-app-tile/g) || []).length === 13 && !mm.includes('data-qa="home-hero"'), 'home injects the 13-icon grid (12 modules + Profile) and no family hero');
+  ok((mm.match(/fam-app-tile/g) || []).length === 14 && !mm.includes('data-qa="home-hero"'), 'home injects the 14-icon grid (13 modules + Profile) and no family hero');
   ok(doc.getElementById('mobile-bottom-nav').style.display === 'none', 'bottom rail hidden on the native home');
   const consented = bootMobile({ seed: { 'skipi-assistant-consent': '1' } });
   await settleVm();
@@ -998,7 +1019,7 @@ function bootMobile(opts) {
 }
 
 {
-  section('family UI base — module grid covers all 12 modules — on the MENU screen behind ☰ (owner 05.09, sketch 2)');
+  section('family UI base — module grid covers all 13 modules — on the MENU screen behind ☰ (owner 05.09, sketch 2)');
   const { sandbox, doc } = bootMobile({ seed: {} });
   await settleVm();
   sandbox.mobileShow('menu');
@@ -1009,7 +1030,7 @@ function bootMobile(opts) {
     ok(mm.includes(`data-mview="${v}"`) && mm.includes(`mobileShow('${v}')`), `menu grid routes '${v}' through mobileShow`);
   }
   ok(mm.includes('id="mobile-home-packages"'), 'Packages keeps its tile id (the presence drills mount on it) and now opens the real module — see PKG1');
-  ok((mm.match(/fam-app-tile/g) || []).length === 13, 'exactly 13 icons: 12 module icons + Profile (Feedback and Language moved behind the header gear, owner 24.11 — see LANG1)');
+  ok((mm.match(/fam-app-tile/g) || []).length === 14, 'exactly 14 icons: 13 module icons + Profile (Feedback and Language moved behind the header gear, owner 24.11 — see LANG1)');
   ok(mm.includes('data-qa="menu-tile-profile"') && mm.includes("mobileShow('profile')"), 'Profile tile routes to the profile screen (its only other entry, the rail meter, is hidden natively)');
   ok(!mm.includes('data-qa="menu-tile-feedback"') && !mm.includes('data-qa="mobile-menu-language"'), 'no Feedback and no Language tile on the menu (owner 24.11: both are behind the header gear)');
   const idx = (v) => mm.indexOf(`data-mview="${v}"`);
@@ -1063,7 +1084,7 @@ function bootMobile(opts) {
   sandbox.mobileShow('home');
   const mm = mobileHtml(doc);
   ok(mm.includes('data-qa="assistant-demo-banner"') && mm.includes('mobileCreateProfile()'), 'demo banner with «create my profile» renders on home (through step 0 since 06.09 — see ONB1)');
-  ok(mm.includes('data-qa="mobile-menu-screen"') && (mm.match(/fam-app-tile/g) || []).length === 13, 'demo home keeps the full 13-icon grid under the banner (no dead end)');
+  ok(mm.includes('data-qa="mobile-menu-screen"') && (mm.match(/fam-app-tile/g) || []).length === 14, 'demo home keeps the full 14-icon grid under the banner (no dead end)');
   sandbox.mobileIsDemo = false;
   sandbox.mobileShow('home');
   ok(!mobileHtml(doc).includes('data-qa="assistant-demo-banner"'), 'no demo banner on a real vault');
@@ -1090,7 +1111,7 @@ function bootMobile(opts) {
   const ma = mobileHtml(off.doc);
   ok(ma.includes('data-qa="assistant-offline"') && ma.includes('data-qa="mobile-menu-btn"') && ma.includes('id="mobile-assistant-input"'), 'the Assistant section offline: honest offline banner, ☰ and composer still there');
   off.sandbox.mobileShow('menu');
-  ok((mobileHtml(off.doc).match(/fam-app-tile/g) || []).length === 13, 'menu renders all icons offline');
+  ok((mobileHtml(off.doc).match(/fam-app-tile/g) || []).length === 14, 'menu renders all icons offline');
   const on = bootMobile({ seed: consent, onLine: true });
   await settleVm();
   on.sandbox.mobileShow('home');
@@ -1118,7 +1139,8 @@ function bootMobile(opts) {
   const start = startComment - 2; // BASELINE :1444 = the </div> closing .mobile-shell, then a blank line
   const end = lines.findIndex((l) => l === '<script src="skipi-assistant.js"></script>');
   ok(startComment > 0 && lines[start] === '</div>' && lines[start + 1] === '' && end > start, 'desktop region boundaries found by markers (</div> of .mobile-shell … skipi-assistant.js script tag)');
-  const region = lines.slice(start, end + 1).join('\n') + '\n';
+  // `region` is the markup WITHOUT the Port DB tab (see 26.11.2026 below); the older pins chain from it.
+  const region = (lines.slice(start, end + 1).join('\n') + '\n').replace(`    <div class="mod-tab" onclick="showView('ports')" id="mt-ports" title="Port DB — find a port, read and leave reviews"><span>Port DB</span></div>\n`, '');
   // 2026-09-06 (iOS blockers slice): this frozen region carries #login-gate-overlay and
   // #forced-profile-overlay, and BOTH had to take safe-area padding + flex-start scroll
   // (audit 5cfff5b3 Н7). The pin is re-based — and the old pin is kept honest: revert
@@ -1131,7 +1153,14 @@ function bootMobile(opts) {
   // 2026-11-26 (app name): the app is called just «Skipi» — the stack label, the welcome title and the
   // update banner in this region lost «Seafarer»/«Моряк». The pin is re-based and kept honest the same
   // way: put ONLY those three names back and the previous pin 04f75193 must come back byte for byte.
-  ok(sha256Text(region) === '0c994a168599defecfb93c0dd52dd3ccda055e2ca2ab0b2425d87bd1cad6bfcc', 'desktop static markup region sha256 == the re-based pin');
+  // 2026-11-26 (Port DB, owner: «нужно дать пользователям найти порт и оставить по нему отзыв»):
+  // the top modules bar gained ONE tab, #mt-ports. The pin is re-based once more and kept honest
+  // the same way: take ONLY that line out and the previous pin 0c994a16 must come back byte for byte.
+  const liveRegion = lines.slice(start, end + 1).join('\n') + '\n';
+  const PORTS_TAB = `    <div class="mod-tab" onclick="showView('ports')" id="mt-ports" title="Port DB — find a port, read and leave reviews"><span>Port DB</span></div>\n`;
+  ok(sha256Text(liveRegion) === 'b6618d0e0f53863ac7eac93bd1c5c605c15bc72509f226d76fece8a6bf374a07', 'desktop static markup region sha256 == the re-based pin');
+  ok(liveRegion.split(PORTS_TAB).length === 2 && sha256Text(region) === '0c994a168599defecfb93c0dd52dd3ccda055e2ca2ab0b2425d87bd1cad6bfcc',
+    'undoing ONLY the Port DB tab restores the previous pin 0c994a16 byte for byte — nothing else in the desktop markup was touched');
   const preNameRegion = region
     .replace('data-qa="desktop-stack-label">Skipi · Stack', 'data-qa="desktop-stack-label">Skipi Seafarer · Stack')
     .replace('<h1 id="welcome-title">Skipi</h1>', '<h1 id="welcome-title">Скипи Моряк</h1>')
@@ -1174,7 +1203,7 @@ function bootMobile(opts) {
   ok(doc.body.classList.contains('mobile-mode') && !doc.body.classList.contains('mobile-native'), 'mobile-mode without mobile-native on linux');
   sandbox.mobileShow('home');
   const mm = mobileHtml(doc);
-  ok(mm.includes('data-qa="home-hero"') && (mm.match(/fam-app-tile/g) || []).length === 12, 'old home: hero + the same 12-icon grid');
+  ok(mm.includes('data-qa="home-hero"') && (mm.match(/fam-app-tile/g) || []).length === 13, 'old home: hero + the same 13-icon grid');
   ok(!mm.includes('data-qa="mobile-menu-btn"'), 'no ☰ on the old shell');
   ok(doc.getElementById('mobile-bottom-nav').style.display === 'flex', 'old shell keeps the 5-slot rail visible');
   sandbox.mobileShow('assistant');
@@ -1584,9 +1613,9 @@ function installNavHistory(app) {
   section('module icon grid (IG1) — 11 icons, order and navigation unchanged (owner 06.09, DECISIONS 302)');
   ok(MODULE_TPL.length > 200, '#mobile-home-modules-tpl extracted from dist/index.html');
   const btns = tplButtons();
-  ok(btns.length === 12, 'template holds exactly 12 module buttons (got ' + btns.length + ')');
+  ok(btns.length === 13, 'template holds exactly 13 module buttons (got ' + btns.length + ')');
   ok(/class="fam-app-grid"/.test(MODULE_TPL), 'grid container uses fam-app-grid');
-  ok((MODULE_TPL.match(/fam-app-tile/g) || []).length === 12, 'each of the 12 buttons is a fam-app-tile');
+  ok((MODULE_TPL.match(/fam-app-tile/g) || []).length === 13, 'each of the 13 buttons is a fam-app-tile');
   ok(MODULE_TPL.includes('id="mobile-module-rail"'), 'container keeps the mobile-module-rail id the presence contract mounts on');
   for (const v of MODULE_KEYS.filter((k) => k !== 'packages')) {
     ok(MODULE_TPL.includes(`data-mview="${v}"`) && MODULE_TPL.includes(`mobileShow('${v}')`), `'${v}' keeps data-mview + the same mobileShow route`);
@@ -1600,8 +1629,8 @@ function installNavHistory(app) {
 {
   section('module icon grid (IG2) — short label stays, description moves to data-hint, status chips gone');
   const btns = tplButtons();
-  ok(btns.length === 12 && btns.every((b) => /data-hint="[^"]{3,}"/.test(b)), 'every icon carries a non-empty data-hint (the old description)');
-  ok(btns.length === 12 && btns.every((b) => /class="fam-app-label"[^>]*>[^<]{1,18}</.test(b)), 'every icon carries a visible short fam-app-label');
+  ok(btns.length === 13 && btns.every((b) => /data-hint="[^"]{3,}"/.test(b)), 'every icon carries a non-empty data-hint (the old description)');
+  ok(btns.length === 13 && btns.every((b) => /class="fam-app-label"[^>]*>[^<]{1,18}</.test(b)), 'every icon carries a visible short fam-app-label');
   ok(!/fam-module-desc/.test(MODULE_TPL), 'no fam-module-desc left in the template');
   ok(!/fam-chip/.test(MODULE_TPL), 'no fam-chip left in the template');
   ok(!/ready/.test(MODULE_TPL), "no 'ready' readiness marker left in the template (owner: «указатель готовности спрятать»)");
@@ -1613,8 +1642,8 @@ function installNavHistory(app) {
 {
   section('module icon grid (IG3) — one outline icon style, no letter/emoji placeholders');
   const btns = tplButtons();
-  ok(btns.length === 12 && btns.every((b) => /<svg viewBox="0 0 24 24"/.test(b)), 'every icon is an inline 24×24 SVG');
-  ok((MODULE_TPL.match(/<svg /g) || []).length === 12, 'exactly 12 icon SVGs, one per module');
+  ok(btns.length === 13 && btns.every((b) => /<svg viewBox="0 0 24 24"/.test(b)), 'every icon is an inline 24×24 SVG');
+  ok((MODULE_TPL.match(/<svg /g) || []).length === 13, 'exactly 13 icon SVGs, one per module');
   ok(!/&#9633;|&#9873;|&#9993;|&#9872;|&#9875;|&#9638;|&#128172;/.test(MODULE_TPL), 'the old symbol placeholders (▢ ⚑ ✉ ⚓ ▨ 💬) are gone');
   ok(!/fam-module-icon/.test(MODULE_TPL), 'the old letter placeholders (CV / P / J / i) in fam-module-icon boxes are gone');
   const icon = cssRule('.fam-app-tile .fam-app-icon-box svg');
@@ -1634,8 +1663,8 @@ function installNavHistory(app) {
     const hint = doc.getElementById('mobile-module-hint');
     ok(!!btn && !!hint, 'icon button + the single hint node exist in the shell');
     ok((HTML.match(/id="mobile-module-hint"/g) || []).length === 1, 'exactly ONE hint node on the screen (not one per icon)');
-    ok((MODULE_TPL.match(/onpointerdown="mobileHintPress\(this\)"/g) || []).length === 12, 'every icon arms the long-press on pointerdown');
-    ok((MODULE_TPL.match(/onpointerup="mobileHintRelease\(\)"/g) || []).length === 12 && (MODULE_TPL.match(/onpointercancel="mobileHintRelease\(\)"/g) || []).length === 12, 'every icon releases the hint on pointerup/pointercancel');
+    ok((MODULE_TPL.match(/onpointerdown="mobileHintPress\(this\)"/g) || []).length === 13, 'every icon arms the long-press on pointerdown');
+    ok((MODULE_TPL.match(/onpointerup="mobileHintRelease\(\)"/g) || []).length === 13 && (MODULE_TPL.match(/onpointercancel="mobileHintRelease\(\)"/g) || []).length === 13, 'every icon releases the hint on pointerup/pointercancel');
     app.timers.length = 0;
     sandbox.mobileHintPress(btn);
     ok(hint.style.display !== 'block', 'hint stays hidden while the press is still short');
@@ -1677,7 +1706,7 @@ function installNavHistory(app) {
   const btns = tplButtons();
   const labelOf = (b) => { const m = /class="fam-app-label"[^>]*>([^<]+)</.exec(b); return m ? m[1] : ''; };
   const ariaOf = (b) => { const m = /aria-label="([^"]+)"/.exec(b); return m ? m[1] : ''; };
-  ok(btns.length === 12 && btns.every((b) => ariaOf(b) && ariaOf(b) === labelOf(b)), 'aria-label equals the visible label on every icon');
+  ok(btns.length === 13 && btns.every((b) => ariaOf(b) && ariaOf(b) === labelOf(b)), 'aria-label equals the visible label on every icon');
   ok(btns.every((b) => !/aria-describedby/.test(b)), 'no icon carries a permanent aria-describedby to an empty node (Supervisor Н5)');
   ok(cssNum('.fam-app-tile', 'min-height') >= 48, 'icon tap target is at least 48 px tall (got ' + cssNum('.fam-app-tile', 'min-height') + ')');
   ok(cssNum('.fam-app-tile .fam-app-icon-box', 'width') >= 48 && cssNum('.fam-app-tile .fam-app-icon-box', 'height') >= 48, 'icon box itself is at least 48×48 px');
@@ -1686,7 +1715,7 @@ function installNavHistory(app) {
 }
 
 {
-  section('module icon grid (IG6) — real menu render: 12 module icons + Profile/Feedback/Language; RU keeps the i18n keys');
+  section('module icon grid (IG6) — real menu render: 13 module icons + Profile/Feedback/Language; RU keeps the i18n keys');
   try {
     const app = installNavHistory(bootMobile({ seed: { 'skipi-ui-language': 'ru' } }));
     await settleVm();
@@ -1695,7 +1724,7 @@ function installNavHistory(app) {
     app.runTimers(0);
     const mm = mobileHtml(doc);
     ok(mm.includes('data-qa="mobile-menu-screen"'), 'menu screen renders');
-    ok((mm.match(/fam-app-tile/g) || []).length === 13, 'exactly 13 icons on the menu: 12 modules + Profile');
+    ok((mm.match(/fam-app-tile/g) || []).length === 14, 'exactly 14 icons on the menu: 13 modules + Profile');
     ok(!mm.includes('fam-module-desc') && !mm.includes('fam-chip'), 'the rendered menu carries no descriptions and no status chips at all');
     const docsBtn = doc.getElementById('mhb-docs');
     const label = doc.getElementById('mhn-docs');
@@ -1795,11 +1824,12 @@ function installNavHistory(app) {
     sandbox.mobileShow('home'); app.runTimers(0);
     const home = mobileHtml(doc);
     ok(sandbox.mobileView === 'home' && home.includes('data-qa="mobile-menu-screen"'), 'HG1a: the native home renders the menu screen — the module grid');
-    ok((home.match(/fam-app-tile/g) || []).length === 13 && home.includes('data-qa="menu-tile-profile"') && !home.includes('data-qa="menu-tile-feedback"') && !home.includes('data-qa="mobile-menu-language"'), 'HG1a: 13 icons on the home: 12 modules + Profile');
+    ok((home.match(/fam-app-tile/g) || []).length === 14 && home.includes('data-qa="menu-tile-profile"') && !home.includes('data-qa="menu-tile-feedback"') && !home.includes('data-qa="mobile-menu-language"'), 'HG1a: 14 icons on the home: 13 modules + Profile');
     ok(!home.includes('id="mobile-assistant-input"') && !home.includes('data-qa="mobile-menu-btn"') && !home.includes('data-qa="home-hero"'), 'HG1a: no chat composer, no ☰ and no family hero on the native home');
     ok(doc.getElementById('mobile-bottom-nav').style.display === 'none' && doc.getElementById('mobile-top-back').style.display === 'none', 'HG1a: no bottom rail and no ‹ at the root');
     ok(/function renderMobileHome\(\)\{[\s\S]{0,1200}?if\(isNativeMobile\(\)\)\{[\s\S]{0,200}?renderMobileMenu\(\);/.test(HTML), 'HG1a: one markup source — renderMobileHome delegates to renderMobileMenu on native (no second copy of the grid)');
-    ok((HTML.match(/getElementById\('mobile-home-modules-tpl'\)/g) || []).length === 2, 'HG1a: the module template still has exactly two consumers (family home + menu), none added');
+    // Case 262 (27.11.2026): a third reader, desktopRailIcons, copies the tiles' ICONS into the desktop rail — it renders no grid.
+    ok((HTML.match(/getElementById\('mobile-home-modules-tpl'\)/g) || []).length === 3 && (HTML.match(/tpl\.innerHTML\)\?tpl\.innerHTML/g) || []).length === 2, 'HG1a: the module grid is still rendered by exactly two consumers (family home + menu); the desktop rail only copies icons from the template');
     // (b) a module → ‹ / system Back / ⌂ → the grid
     sandbox.mobileShow('docs'); app.runTimers(0);
     ok(sandbox.mobileView === 'docs' && JSON.stringify(sandbox._mobileNavStack) === JSON.stringify(['home', 'docs']), 'HG1b: Documents opened straight from the home grid');
@@ -1828,7 +1858,7 @@ function installNavHistory(app) {
     web.sandbox.applyMobileMode();
     web.sandbox.mobileShow('home');
     const wh = mobileHtml(web.doc);
-    ok(web.sandbox.isNativeMobile() === false && wh.includes('data-qa="home-hero"') && (wh.match(/fam-app-tile/g) || []).length === 12 && !wh.includes('data-qa="mobile-menu-screen"'), 'HG1d: web ≤720px (isNativeMobile=false) keeps the family home: hero + 12 icons, no menu wrapper');
+    ok(web.sandbox.isNativeMobile() === false && wh.includes('data-qa="home-hero"') && (wh.match(/fam-app-tile/g) || []).length === 13 && !wh.includes('data-qa="mobile-menu-screen"'), 'HG1d: web ≤720px (isNativeMobile=false) keeps the family home: hero + 13 icons, no menu wrapper');
   } catch (e) { ok(false, 'mobile home grid (HG1) crashed before it could assert: ' + e.message); }
 }
 
@@ -2200,8 +2230,8 @@ const appsTileTag = (h, id) => {
     const { sandbox, doc } = app;
     sandbox.mobileShow('menu'); app.runTimers(0);
     const mm = mobileHtml(doc);
-    ok((mm.match(/fam-app-tile/g) || []).length === 13, 'menu still shows 13 icons: 12 modules + Profile (got ' + (mm.match(/fam-app-tile/g) || []).length + ')');
-    ok(tplButtons().length === 12 && !/apps-icon-tile/.test(MODULE_TPL), 'the module template itself is not touched by the Apps restyle');
+    ok((mm.match(/fam-app-tile/g) || []).length === 14, 'menu still shows 14 icons: 13 modules + Profile (got ' + (mm.match(/fam-app-tile/g) || []).length + ')');
+    ok(tplButtons().length === 13 && !/apps-icon-tile/.test(MODULE_TPL), 'the module template itself is not touched by the Apps restyle');
     ok(mm.includes('data-qa="menu-tile-profile"'), 'Profile tile still there');
   } catch (e) { ok(false, 'AG5 crashed before it could assert: ' + e.message); }
 }
@@ -3536,6 +3566,8 @@ const SHIPPED_EXPECTED = [
   'skipi-assistant.css', 'skipi-assistant.js',
   'skipi-settings.css', 'skipi-settings.js',
   'vessel-db.css', 'vessel-db.js',
+  // Port DB (owner 26.11.2026): the screen, its styles, and the vendored @skipi/ports with its pin.
+  'PORTS_VERSION', 'port-db.css', 'port-db.js', 'skipi-ports.data.js', 'skipi-ports.js',
 ];
 const DIST_ALL = [];
 (function walk(dir) {
@@ -3575,6 +3607,12 @@ const NOPAY_WORDS_ALLOW = [
     why: 'intelligence.js career guidance «Check internet access, joining window, relief plan, and repatriation terms before accepting» — the RELIEF plan is when a crew replacement comes aboard so the seafarer can go home, a contract term to check with an employer and not a tariff sold here' },
   { re: /offered monthly salary/gi,
     why: 'the Offer Check card in intelligence.js says «Type an offered monthly salary» — the wage an employer offered THIS seafarer, typed in locally and compared with the market band; it is income to him, not a charge from us' },
+  // Port DB (26.11.2026): dist/skipi-ports.data.js is the UN/LOCODE port list — place names and
+  // five-character codes. Two of its 17 600 rows read like purchase copy and are not.
+  { re: /"USD5W","Dagsboro"/g,
+    why: 'a row of the vendored UN/LOCODE port list: USD5W is the location code of Dagsboro, Delaware (country US + location D5W) — a place code that happens to start like a currency, not a price' },
+  { re: /"USYP5","Purchase"/g,
+    why: 'a row of the vendored UN/LOCODE port list: Purchase is a hamlet in New York State (code US YP5) — the name of a place on the map, and nothing is bought there through this app' },
   // (The «unlock» rule had two exceptions, both in the bundled BNWAS plugin; with no bundled
   // plugins since 24.11.2026 it has none.)
 ];
@@ -3980,6 +4018,7 @@ const nopayScan = (files, family) => NOPAY_RULES.filter(([fam]) => fam === famil
     // one key, and this home replaces that key through host.getI18n before the module
     // can ever render it. Fixing the vendored bundle itself belongs to the Assistant
     // Lead track; a home may not patch a vendored module in place.
+    { re: /"Free Port"|Free Zone/g, why: 'place names in the vendored UN/LOCODE port list (dist/skipi-ports.data.js): Free Port, Jebel Ali Free Zone, Hamriya Free Zone Port, Mersin-Free Zone — customs free zones on the map, not a price claim' },
     { re: /today’s free limit/gi, why: '@skipi/assistant built-in default for assistant.error.limit — overridden by this home (proved below), never rendered here' },
     { re: /лимит бесплатных запросов/gi, why: 'the RU half of the same @skipi/assistant default for assistant.error.limit — same override, same proof' },
   ];
@@ -6538,6 +6577,119 @@ for (const lang of ['en','ru']) {
     const listHtml=app.doc.getElementById('mobile-main').innerHTML;
     ok(listHtml.indexOf('data-qa="doc-intake-plus"')>=0&&listHtml.indexOf('data-qa="doc-intake-plus"')<listHtml.indexOf('mobile-search')&&listHtml.includes("mobileShow('add')"),'016B the mobile Documents list starts with the green plus '+lang);
   }catch(e){ok(false,'016B green plus '+e.message);}
+  // Дела № 228 / 247: «в любом случае моряк должен подтвердить результат распознания» —
+  // (1) распознавание в карточке на десктопе ничего не пишет до «Подтверждаю»;
+  // (2) скан нескольких страниц через «+» идёт тем же путём: распознавание → подтверждение → слот;
+  // (3) правка «Кем выдан» в карточке запоминается как вид документа, как у зелёной «+».
+  try {
+    const ru=lang==='ru';
+    const names=s=>s.map(c=>c[0]);
+    const boot=async(docs)=>{
+      const app=await bootA5II(lang);
+      let modal='';app.doc.body.insertAdjacentHTML=(_p,h)=>{modal=String(h);};
+      const values={};app.sandbox.docIntakeValue=id=>String(values[id]||'');
+      const sent=[];app.sandbox.allDocs=docs;
+      app.sandbox.renderMobileShell=()=>{};app.sandbox.renderTree=()=>{};app.sandbox.updateStatus=()=>{};app.sandbox.renderDoc=async()=>{};app.sandbox.renderMobileDoc=()=>{};
+      const toasts=[];app.sandbox.showToast=(m,k)=>toasts.push([m,k]);
+      return {app,values,sent,toasts,modal:()=>modal};
+    };
+    // (1) desktop card
+    {
+      const doc={id:'d1',template_id:'passport',title:'Passport (Travel)',category:'Passport',file_name:'p.pdf',doc_number:'OLD1',issued_by:'',valid_from:'',valid_to:'2030-01-01',field_statuses:'{}'};
+      const c=await boot([doc]);
+      c.app.doc.getElementById('ai-st');
+      c.app.sandbox.invoke=async(cmd,args)=>{c.sent.push([cmd,args]);
+        if(cmd==='ai_preview_recognize')return {doc_number:'AB123',issued_by:'Ukraine',valid_from:'2021-01-02',valid_to:null,title_suggestion:'Passport'};
+        if(cmd==='get_documents')return c.app.sandbox.allDocs;return {};};
+      await c.app.sandbox._aiRec('d1',false);
+      ok(names(c.sent).includes('ai_preview_recognize')&&!names(c.sent).includes('ai_recognize'),'228 the desktop card recognises without writing (ai_preview_recognize) '+lang);
+      ok(!names(c.sent).some(n=>['update_doc_field','update_field_statuses'].includes(n)),'228 nothing is saved before Confirm '+lang);
+      ok(c.modal().includes('data-qa="doc-recognized-overlay"')&&c.modal().includes('value="AB123"')&&c.modal().includes(ru?'Проверьте распознанные поля':'Check the recognised fields'),'228 the recognised fields are shown for confirmation '+lang);
+      ok(c.modal().includes(ru?'Не распознано. Останется прежнее: 2030-01-01':'Not recognised. The current value stays: 2030-01-01'),'228 a field that was not read keeps its current value, and says so '+lang);
+      Object.assign(c.values,{'doc-recognized-doc_number':'AB123','doc-recognized-issued_by':'State Migration Service of Ukraine','doc-recognized-valid_from':'2021-01-02','doc-recognized-valid_to':''});
+      c.sent.length=0;
+      await c.app.sandbox.docRecognizedConfirm();
+      const fields=c.sent.filter(x=>x[0]==='update_doc_field').map(x=>x[1].field+'='+x[1].value);
+      ok(JSON.stringify(fields)===JSON.stringify(['doc_number=AB123','issued_by=State Migration Service of Ukraine','valid_from=2021-01-02']),'228 Confirm saves what the seafarer confirmed, an empty field is left alone ('+fields.join(',')+') '+lang);
+      const st=c.sent.find(x=>x[0]==='update_field_statuses');
+      ok(st&&JSON.stringify(JSON.parse(st[1].statuses))===JSON.stringify({doc_number:'verified',issued_by:'verified',valid_from:'verified'}),'228 confirmed fields are verified, not «ai» '+lang);
+      const kept=c.sent.filter(x=>x[0]==='save_ai_correction');
+      ok(kept.length===1&&kept[0][1].docType==='doc_intake'&&kept[0][1].fieldName==='pattern'&&kept[0][1].aiValue===JSON.stringify({title:'Passport',issued_by:'Ukraine',template_id:'passport'})&&kept[0][1].correctValue===JSON.stringify({template_id:'passport',issued_by:'State Migration Service of Ukraine'}),'247 a corrected issuer in the card is remembered as a kind of document '+lang);
+      ok(!c.toasts.some(x=>x[1]==='error'),'228 no error on the way '+lang);
+      // cancel writes nothing
+      await c.app.sandbox._aiRec('d1',false);c.sent.length=0;
+      c.app.sandbox.docRecognizedCancel();await c.app.sandbox.docRecognizedConfirm();
+      ok(c.sent.length===0,'228 Cancel saves nothing '+lang);
+    }
+    // (3) the phone card: same memory
+    {
+      const doc={id:'m1',template_id:'sso',title:'Ship Security Officer',category:'Safety',file_name:'s.pdf',field_statuses:'{}'};
+      const c=await boot([doc]);
+      const inputs={'mobile-ocr-doc_number':'S-1','mobile-ocr-issued_by':'Republic of Cyprus','mobile-ocr-valid_from':'','mobile-ocr-valid_to':''};
+      const realGet=c.app.doc.getElementById.bind(c.app.doc);
+      c.app.doc.getElementById=id=>Object.prototype.hasOwnProperty.call(inputs,id)?{value:inputs[id]}:realGet(id);
+      c.app.sandbox.invoke=async(cmd,args)=>{c.sent.push([cmd,args]);return cmd==='get_documents'?c.app.sandbox.allDocs:{};};
+      vm.runInContext('mobileOcrState={docId:"m1",status:"result",result:{doc_number:"S-1",issued_by:"Russian Federation",title_suggestion:"Endorsement"}};',c.app.sandbox);
+      await c.app.sandbox.mobileConfirmOcr('m1');
+      const kept=c.sent.filter(x=>x[0]==='save_ai_correction'&&x[1].fieldName==='pattern');
+      ok(kept.length===1&&kept[0][1].correctValue===JSON.stringify({template_id:'sso',issued_by:'Republic of Cyprus'}),'247 the phone card remembers a corrected issuer the same way '+lang);
+      c.sent.length=0;inputs['mobile-ocr-issued_by']='Russian Federation';
+      vm.runInContext('mobileOcrState={docId:"m1",status:"result",result:{doc_number:"S-1",issued_by:"Russian Federation",title_suggestion:"Endorsement"}};',c.app.sandbox);
+      await c.app.sandbox.mobileConfirmOcr('m1');
+      ok(!c.sent.some(x=>x[0]==='save_ai_correction'&&x[1].fieldName==='pattern'),'247 nothing is remembered when the issuer was read right '+lang);
+    }
+    // (2) several pages scanned from «+» (no slot chosen)
+    {
+      const slot={id:'slot-passport',template_id:'passport',title:'Passport (Travel)',category:'Passport',file_name:null,field_statuses:'{}'};
+      const c=await boot([slot]);
+      c.app.sandbox.invoke=async(cmd,args)=>{c.sent.push([cmd,args]);
+        if(cmd==='get_document_catalog')return [{id:'passport',title:'Passport (Travel)',category:'Passport',has_expiry:true}];
+        if(cmd==='ai_classify_file')return {template_id:'passport',doc_number:'AB123'};
+        if(cmd==='get_documents')return c.app.sandbox.allDocs;return {};};
+      const pages=[{fileName:'p1.jpg',dataBase64:'QQ=='},{fileName:'p2.jpg',dataBase64:'Qg=='}];
+      vm.runInContext('docIntakeCatalog=null;mobilePdfBuilder={docId:null,pages:'+JSON.stringify(pages)+'};',c.app.sandbox);
+      await c.app.sandbox.mobileSavePdfBuilder();
+      await new Promise(r=>setTimeout(r,0));
+      const cls=c.sent.find(x=>x[0]==='ai_classify_file');
+      ok(cls&&cls[1].dataBase64==='QQ=='&&!names(c.sent).includes('attach_pdf_pages'),'228 a scan of several pages from «+» is recognised first (page 1), nothing is attached yet '+lang);
+      ok(c.modal().includes('data-qa="doc-intake-overlay"')&&c.modal().includes('value="AB123"'),'228 and goes to the same confirmation screen '+lang);
+      ok(vm.runInContext('mobileAddMode',c.app.sandbox)!=='attach_pdf','228 the seafarer is not sent to pick a slot from a list '+lang);
+      Object.assign(c.values,{'doc-intake-type':'passport','doc-intake-doc_number':'AB123'});
+      c.sent.length=0;
+      await c.app.sandbox.docIntakeConfirm();
+      const att=c.sent.find(x=>x[0]==='attach_pdf_pages');
+      ok(att&&att[1].docId==='slot-passport'&&att[1].pages.length===2&&/\.pdf$/.test(att[1].fileName)&&!names(c.sent).includes('attach_file_bytes'),'228 on Confirm all pages become one PDF in the slot of the confirmed type '+lang);
+      ok(!c.toasts.some(x=>x[1]==='error'),'228 scan: no error on the way '+lang);
+    }
+  }catch(e){ok(false,'228 confirmation everywhere '+e.message);}
+  // Owner 27.11.2026: «возможность сгруппировать значки плиток. чтобы можно было зацепить пальцем и двигать»;
+  // ряды моряка по умолчанию: документы, опыт, CV, пакеты / работа, рассылки, информация / база судов,
+  // база портов, моё судно / приложения, профиль, Claude-ChatGPT.
+  try {
+    const app=await bootA5II(lang);
+    const sb=app.sandbox;
+    const store={};sb.localStorage={getItem:k=>(k in store?store[k]:null),setItem:(k,v)=>{store[k]=String(v);},removeItem:k=>{delete store[k];}};
+    const J=x=>JSON.stringify(x);
+    const DEF=[['docs','experience','cv','packages'],['jobs','dispatch','information'],['vessels','ports','myvessel'],['apps','profile','aiconnect','assistant']];
+    ok(J(sb.mobileHomeLayoutLoad())===J(DEF),'tiles: the seafarer default rows are the owner\'s '+lang);
+    let rows=sb.mobileHomeLayoutMove(DEF,'jobs','docs',0);
+    ok(J(rows[0])===J(['jobs','docs','experience','cv','packages'])&&J(rows[1])===J(['dispatch','information']),'tiles: a tile dropped on another one stands before it '+lang);
+    rows=sb.mobileHomeLayoutMove(DEF,'cv',null,2);
+    ok(J(rows[0])===J(['docs','experience','packages'])&&J(rows[2])===J(['vessels','ports','myvessel','cv']),'tiles: a tile dropped on a row\'s empty space joins that row '+lang);
+    rows=sb.mobileHomeLayoutMove(DEF,'ports',null,99);
+    ok(rows.length===5&&J(rows[4])===J(['ports'])&&J(rows[2])===J(['vessels','myvessel']),'tiles: a tile dropped below the rows starts a new row '+lang);
+    rows=sb.mobileHomeLayoutMove([['docs'],['cv']],'docs','cv',1);
+    ok(J(rows)===J([['docs','cv']]),'tiles: a row left empty disappears '+lang);
+    ok(J(sb.mobileHomeLayoutMove(DEF,'nope','docs',0))===J(DEF)&&J(sb.mobileHomeLayoutMove(DEF,'docs','docs',0))===J(DEF),'tiles: an unknown tile or a drop on itself changes nothing '+lang);
+    sb.mobileHomeLayoutSave(sb.mobileHomeLayoutMove(DEF,'jobs','docs',0));
+    ok(sb.mobileHomeLayoutLoad()[0][0]==='jobs','tiles: the order is remembered on the device '+lang);
+    store['skipi-mobile-home-layout-v1']=J([['cv','docs','cv','ghost'],[],['apps']]);
+    rows=sb.mobileHomeLayoutLoad();
+    const flat=[].concat(...rows);
+    ok(J(rows[0])===J(['cv','docs'])&&J(rows[1].slice(0,1))===J(['apps'])&&flat.length===14&&new Set(flat).size===14&&!flat.includes('ghost'),'tiles: a stored order is repaired — no duplicates, no unknown tiles, every module still on the screen '+lang);
+    store['skipi-mobile-home-layout-v1']='{broken';
+    ok(J(sb.mobileHomeLayoutLoad())===J(DEF),'tiles: a broken stored order falls back to the default '+lang);
+  }catch(e){ok(false,'tiles layout '+e.message);}
   try {
     const app=await bootA5Experience({lang,work:A5_WORK});
     const labels=lang==='ru'?['Опыт','Добавить стаж','Записи','С IMO','Оценено','Оценить','База судов']:['Experience','Add sea service','Records','With IMO','Assessed','Assess','Vessel DB'];
@@ -7301,8 +7453,8 @@ async function s1Boot(map, consent, opts) {
     'HA7: and the assistant view still manages the bottom rail exactly as before');
   nat.sandbox.mobileNavBack(); nat.runTimers(0);
   ok(nat.sandbox.mobileView === 'home', 'HA7: ‹ from the assistant still returns to the home grid');
-  ok((natHome.match(/fam-app-tile/g) || []).length === 13,
-    'HA8: hiding changed no count — the menu grid still renders 13 tiles (12 modules + Profile)');
+  ok((natHome.match(/fam-app-tile/g) || []).length === 14,
+    'HA8: hiding changed no count — the menu grid still renders 14 tiles (13 modules + Profile)');
   ok(/https:\/\/assistant\.skipi\.app\/register/.test(HTML),
     'HA8: the SaaS side is untouched — the register route still points at assistant.skipi.app');
   } catch (e) { ok(false, 'hide-assistant proof crashed before it could assert: ' + e.message); }

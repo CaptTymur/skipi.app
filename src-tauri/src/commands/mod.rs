@@ -17,6 +17,7 @@ pub mod motion;
 pub mod packages;
 pub mod plugin_device;
 pub mod plugin_reviews;
+pub mod port_reviews;
 pub mod profile;
 pub mod review;
 pub mod vault;
