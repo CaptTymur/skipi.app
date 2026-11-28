@@ -111,7 +111,7 @@ pub(crate) fn base64_encode(data: &[u8]) -> String {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     use commands::{
-        account_sync, agency_mailing, ai, app_login, assistant, cv_commands, documents, email,
+        account_sync, agency_mailing, ai, app_login, assistant, chartering, cv_commands, documents, email,
         jobs, mail_intent, messaging, motion, packages, plugin_device, plugin_reviews, port_reviews, profile, review, vault, vessel_space,
         work_history,
     };
@@ -179,6 +179,21 @@ pub fn run() {
             vessel_space::vessel_notice_post,
             vessel_space::vessel_notice_delete,
             vessel_space::vessel_notice_report,
+            chartering::chartering_access,
+            chartering::chartering_cargoes,
+            chartering::chartering_cargo,
+            chartering::chartering_cargo_save,
+            chartering::chartering_cargo_remove,
+            chartering::chartering_pair_save,
+            chartering::chartering_pair_remove,
+            chartering::chartering_event_add,
+            chartering::chartering_positions,
+            chartering::chartering_position_save,
+            chartering::chartering_position_remove,
+            chartering::chartering_items,
+            chartering::chartering_item_save,
+            chartering::chartering_item_remove,
+            chartering::chartering_open_mail,
             vault::install_deb_update,
             vault::set_window_title,
             vault::create_vault,

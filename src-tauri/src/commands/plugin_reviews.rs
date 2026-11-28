@@ -81,6 +81,7 @@ pub(crate) fn session_token(state: &State<'_, AppState>) -> Option<String> {
 pub(crate) enum Call {
     Get,
     Put(Value),
+    Patch(Value),
     Delete,
     Post(Value),
 }
@@ -91,6 +92,7 @@ fn send(path: String, call: Call, token: Option<String>) -> Result<Value, String
     let mut request = match call {
         Call::Get => client.get(&url),
         Call::Put(body) => client.put(&url).json(&body),
+        Call::Patch(body) => client.patch(&url).json(&body),
         Call::Delete => client.delete(&url),
         Call::Post(body) => client.post(&url).json(&body),
     };

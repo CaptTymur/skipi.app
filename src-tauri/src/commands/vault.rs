@@ -554,6 +554,9 @@ pub fn create_vault(
     // Generate framework documents
     let docs = match account_type.as_str() {
         "seafarer" => frameworks::get_seafarer_framework(rank.as_deref()),
+        // Account caches of the crewing / broker roles (tasks/018) start empty:
+        // their modules are not document frameworks.
+        "crewing" | "broker" => Vec::new(),
         _ => frameworks::get_vessel_framework(vessel_type.as_deref()),
     };
 
