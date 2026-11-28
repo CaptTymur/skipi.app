@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="vessel-db.css">
 <link rel="stylesheet" href="port-db.css">
 <link rel="stylesheet" href="skipi-vessel.css">
+<link rel="stylesheet" href="skipi-chartering.css">
 <link rel="stylesheet" href="intelligence.css">
 <!-- @skipi/settings v0.3.0 — unified Settings shell (vendored from skipi-settings 9caeff6) -->
 <link rel="stylesheet" href="skipi-settings.css">
@@ -250,6 +251,7 @@ var ACCOUNT_TYPE_LABELS={
     ship_manager:'Ship Manager',
     vessel:'Vessel',
     crewing:'Crewing',
+    broker:'Chartering',
     port_agent:'Port Agent',
 };
 function updateTitlebar(vaultName,accountType){
@@ -373,6 +375,12 @@ body.mobile-mode .desktop-stack-label { display:none; }
 .modules-bar .mod-tab:hover { color:var(--text); background:var(--hover); }
 .modules-bar .mod-tab.active { color:#fff; background:var(--accent); font-weight:600; box-shadow:0 1px 0 var(--accent); }
 .modules-bar .mod-tab .mi { font-size:14px; }
+/* tasks/018 — one app, modules by account role: a crewing / broker account sees only its own module tabs. */
+.modules-bar.role-shell .mod-tab:not(.mod-tab-role), .modules-bar.role-shell .profile-completion-chip, .modules-bar.role-shell .salary-index-chip { display:none !important; }
+.role-stub { max-width:520px; margin:72px auto; padding:0 24px; text-align:center; color:var(--text2); line-height:1.5; }
+.role-stub h2 { color:var(--text); margin:0 0 10px; font-size:20px; }
+/* tasks/031 — the chartering workplace takes the whole content area, edge to edge. */
+.editor:has(> #scr-content > #chartering-root) { padding:0; }
 .modules-bar .mb-spacer { flex:1; }
 /* case 262: left rail */
 /* Icons only, like the reference the owner gave; the tab's name is its tooltip (title). */
@@ -1863,6 +1871,7 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
 <script src="skipi-ports.js"></script>
 <script src="port-db.js"></script>
 <script src="skipi-vessel.js"></script>
+<script src="skipi-chartering.js"></script>
 <script src="intelligence.js"></script>
 <script src="plugin-host-ui.js"></script>
 <script>
@@ -2511,8 +2520,8 @@ async function renderCareerCompassPanel(profile,uploadedDocs){
     var vesselConfidence=workCount?compassText('IMO confirmed where present','IMO подтверждается, если указан'):compassText('Add sea service with IMO','Добавьте Sea Service с IMO');
     var h='<div class="compass-panel">';
     h+='<div class="compass-head">';
-    h+='<div><div class="compass-title">'+esc(compassText('Career Compass','Career Compass'))+'</div><div class="compass-sub">'+esc(compassText('Your private vault, CV, applications, vessel context, and first market references in one place.','Ваш приватный архив, CV, рассылки, контекст судов и первые рыночные ориентиры в одном месте.'))+'</div></div>';
-    h+='<div class="compass-pill accent">'+esc(compassText('private vault','приватный архив'))+'</div>';
+    h+='<div><div class="compass-title">'+esc(compassText('Career Compass','Career Compass'))+'</div><div class="compass-sub">'+esc(compassText('Your documents, CV, applications, vessel context, and first market references in one place.','Ваши документы, CV, рассылки, контекст судов и первые рыночные ориентиры в одном месте.'))+'</div></div>';
+    h+='<div class="compass-pill accent">'+esc(compassText('private','приватно'))+'</div>';
     h+='</div>';
     h+='<div class="compass-grid">';
     h+='<div class="compass-card action" onclick="openSettings(\'seafarer\')"><div class="compass-kicker">'+esc(compassText('Profile signal','Сигнал профиля'))+'</div><h3>'+esc(rank)+' / '+esc(vessel)+'</h3><p>'+esc(compassText('Documents, CV and application sender are connected locally. Profile quality controls how much of Skipi is available to you.','Документы, CV и рассылка связаны локально. Качество профиля определяет, сколько возможностей открывает Skipi.'))+'</p><div class="compass-row"><span>'+esc(docsCount)+' '+esc(compassText('documents','документов'))+'</span><span class="compass-pill '+(pct>=85?'ok':'warn')+'">'+pct+'%</span></div></div>';
@@ -4210,6 +4219,15 @@ async function initNoVaultLanding(hadVaultPath){
     // before restore (№193); the web shell keeps the old landing (no Tauri invoke without the shim).
     if(window.__SKIPI_WEBDESKTOP__){showWelcome();return;}
     var outcome=null;
+    // tasks/018: a crewing / broker account has no seafarer profile to restore — it goes
+    // straight into the cache of its role.
+    var role='seafarer';
+    try{var rst=await invoke('app_login_status');role=String((rst&&rst.role)||'seafarer');}catch(e){}
+    if(ROLE_MODULES[role]){
+        try{await openRoleAccountCache(role);return;}
+        catch(e){logError('role_account_cache',e);accountRestoreLastError=String((e&&e.message)||e||'');outcome='error';}
+    }
+    else
     try{outcome=await accountRestoreLanding();}
     catch(e){
         // N-A: this landing is called without await from init() and _loginGateNext — it must never reject.
@@ -5098,7 +5116,8 @@ function applyMobileMode(){
         return;
     }
     if(on){
-        if(allDocs&&allDocs.length)renderMobileShell();
+        // tasks/018: a crewing / broker cache has no documents and is still an open account.
+        if((allDocs&&allDocs.length)||(typeof roleModules==='function'&&roleModules()))renderMobileShell();
         else renderMobileWelcome();
     }
 }
@@ -5108,7 +5127,7 @@ function mobileEsc(s){return esc(s);}
 function mobileVaultLabel(){
     var el=document.getElementById('pf-vault-name');
     var txt=el&&el.textContent?el.textContent.trim():'';
-    return txt&&txt!=='Vault'?txt:'Mobile seafarer vault';
+    return txt&&txt!=='Vault'?txt:'Seafarer profile';
 }
 function mobileSetSub(text){
     var el=document.getElementById('mobile-vault-sub');
@@ -7899,6 +7918,15 @@ function renderMobileShell(){
     mobileSetSub(mobileVaultLabel());
     // Owner 05.09: the native build never shows the 5-slot rail (modules live behind ☰ → menu).
     mobileSetBottomNav(isNativeMobile()?false:mobileView!=='dispatch');
+    if(roleModules()){
+        // tasks/018: a role cache shows only the role's modules on the phone too.
+        mobileSetBottomNav(false);
+        if(mobileView==='vessels')return renderMobileVessels();
+        if(mobileView==='apps')return renderMobileApps();
+        if(mobileView==='rolestub')return renderMobileRoleStub();
+        mobileView='home';
+        return renderMobileRoleMenu();
+    }
     if(mobileView==='docs')return renderMobileDocs();
     if(mobileView==='add')return renderMobileAdd();
     if(mobileView==='profile')return renderMobileProfile();
@@ -8758,21 +8786,27 @@ function renderMobileProfile(){
     mobileProfileSummary=null;
     mobileProfileSummaryError=false;
     mobileProfileMissingExpanded=false;
-    var h='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(mobileVaultLabel())+'</div><div class="mobile-card-sub">Local-first seafarer vault on this device.</div></div>';
-    if(mobilePostCreateVaultHint){
+    // Дела № 297, № 277 (слово владельца 28.11.2026): «волта» в архитектуре нет — данные на сервере,
+    // на устройстве кэш. С экрана профиля убраны подпись «local-first vault», блок «Identity looks
+    // unique» и блок «Vault» (экспорт ZIP, переключение, удаление волта); вместо него — аккаунт.
+    var h='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(mobileVaultLabel())+'</div><div class="mobile-card-sub">'+mobileSetupText('Your data is kept in your Skipi account. This phone holds a copy.','Данные хранятся в аккаунте Skipi. На телефоне — их копия.')+'</div></div>';
+    if(false&&mobilePostCreateVaultHint){
         h+='<div class="mobile-card"><div class="mobile-card-title">Vault created</div><div class="mobile-card-sub">To open this profile on desktop, export a ZIP backup and import it in Skipi desktop from Settings -> Vaults -> Import vault backup.</div><div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-accent mobile-grow" type="button" onclick="mobileExportVaultBackup(true)">Share to desktop</button><button class="btn btn-outline mobile-grow" type="button" onclick="mobilePostCreateVaultHint=false;mobileShow(\'docs\')">Continue</button></div></div>';
     }
     h+='<div class="mobile-stats"><div class="mobile-stat"><strong>'+st.total+'</strong><span>Total</span></div><div class="mobile-stat"><strong>'+st.uploaded+'</strong><span>Files</span></div><div class="mobile-stat"><strong>'+st.missing+'</strong><span>Missing</span></div></div>';
     h+='<button class="mobile-card" id="mobile-profile-completeness-card" type="button" onclick="mobileToggleProfileMissing()" aria-expanded="false" aria-controls="mobile-profile-missing" style="width:100%;text-align:left;color:inherit;"><span class="mobile-row"><span><span class="mobile-card-title" style="display:block;">'+mobileSetupText('Profile completeness','Полнота профиля')+'</span><span class="mobile-card-sub" style="display:block;">'+mobileSetupText('Show missing required documents','Показать недостающие обязательные документы')+'</span></span><span class="mobile-pill ok" id="mobile-profile-card-pct">'+pct+'</span></span></button><div class="mobile-card" id="mobile-profile-missing" hidden></div>';
-    h+='<div id="mobile-identity-trust"></div>';
+    // Блок «Identity looks unique» человеку больше не показывается (дело № 297). Скрытый хост
+    // остаётся: через него харнес jobs_profile_visibility (X14f) проверяет, что карточка не
+    // предлагает регистрацию личности; уйдёт вместе с полным удалением волта (дело № 310).
+    h+='<div id="mobile-identity-trust" hidden></div>';
     if(trustContributionEnabled()){
         h+='<button class="mobile-primary-action" type="button" data-qa="my-contribution-mobile-entry" onclick="mobileShow(\'contribution\')"><span class="mobile-action-icon">&#10003;</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(getUiLang()==='ru'?'Мой вклад':'My contribution')+'</span><span class="mobile-action-sub">'+mobileEsc(getUiLang()==='ru'?'Приватный прогресс по подтверждённым событиям.':'Private progress from confirmed events.')+'</span></span></button>';
     }
     h+='<button class="mobile-primary-action" type="button" onclick="mobileShow(\'add\')"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">Add more documents</span><span class="mobile-action-sub">Scan or attach files from this phone.</span></span></button>';
-    h+='<div class="mobile-card"><div class="mobile-card-title">Vault</div><div class="mobile-card-sub">Stored locally on this phone. Export a ZIP backup to open this profile on desktop.</div><div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-accent mobile-grow" onclick="mobileExportVaultBackup(true)">Export / share backup</button><button class="btn btn-outline mobile-grow" onclick="mobileOpenExistingVault()">Switch vault</button><button class="btn btn-outline mobile-grow" onclick="openSettings()">Settings</button></div><div class="mobile-actions" style="margin-top:8px;"><button class="btn btn-outline btn-red mobile-grow" onclick="mobileDeleteCurrentVault()">Delete this vault</button></div></div>';
+    h+='<div class="mobile-card" data-qa="mobile-profile-account"><div class="mobile-card-title">'+mobileSetupText('Skipi account','Аккаунт Skipi')+'</div><div class="mobile-card-sub" data-account-email>…</div><div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-outline mobile-grow" onclick="openSettings()">'+mobileSetupText('Settings','Настройки')+'</button><button class="btn btn-outline mobile-grow" type="button" data-account-logout onclick="appLogoutToGate()">'+mobileSetupText('Sign out','Выйти')+'</button></div><div class="mobile-actions" style="margin-top:8px;"><button class="btn btn-outline btn-red mobile-grow" type="button" onclick="openAccountDelete()">'+mobileEsc(accountDeleteTexts().deleteBtn)+'</button></div></div>';
     mobileMainHtml(h);
     mobileRefreshProfileSummary();
-    mobileRefreshIdentityTrust();
+    refreshAppAccountControls();
 }
 async function mobileRefreshProfileSummary(){
     var request=++mobileProfileSummaryRequest;
@@ -11206,12 +11240,19 @@ async function doAppLogin(){
     if(btn){btn.disabled=true;btn.textContent=t.signing;}
     _lgError('');
     try{
-        await invoke('app_login',{email:em,password:pw});
+        var res=await invoke('app_login',{email:em,password:pw});
         // Success: clear the password field, hide the gate, resume the shell.
         var pwEl=document.getElementById('lg-password');if(pwEl){pwEl.value='';pwEl.type='password';}
         hideLoginGate();
         var resume=_loginGatePending;_loginGatePending=null;
         var next=_loginGateNext;_loginGateNext=null;
+        // tasks/018: the account's role differs from the cache that was open behind the gate
+        // (a crewing account after a seafarer one, or back). That cache is closed — its data
+        // stays on disk — and the cache of this account's role opens instead.
+        if(res&&res.profile_mismatch){
+            try{ await invoke('close_vault',{forget:true}); }catch(e){}
+            resume=null; next=function(){ return initNoVaultLanding(true); };
+        }
         if(resume){ await loadVault(resume); }
         else if(next){ await next(); }
         else { showWelcome(); }
@@ -11780,6 +11821,173 @@ async function accountFirstSignIn(){
 // always answers on screen (REG1). Step 0 stays up: the user comes back and signs in.
 function accountFirstRegister(){ openRegisterPage(); }
 
+// ========== One app, modules by account role (tasks/018, owner 25.11.2026) ==========
+// The app is one; the module set follows the role of the signed-in account (seafarer /
+// crewing / broker — «фрахтование»). The role lives in the account cache as account_type.
+// The seafarer role keeps its full shell untouched; the other roles get the tabs below.
+// `view` = a module that already exists in this code base and does not depend on a seafarer
+// profile; a module without `view` is not carried over yet and says so honestly.
+var ROLE_MODULES={
+    // Owner 25.11.2026 (after the first sign-in): for now crewing is three modules — Crew Flow,
+    // Compliance Profile, Seafarers DB — and Vessel DB stays. Documents is a viewer of a
+    // seafarer's documents opened from inside those modules, not a tab; Port DB is not built yet.
+    crewing:[
+        {k:'crewflow',ru:'Crew Flow',en:'Crew Flow',from:'Skipi Crewing'},
+        {k:'compliance',ru:'Профиль соответствия',en:'Compliance Profile',from:'Skipi Crewing'},
+        {k:'seafarers',ru:'База моряков',en:'Seafarers DB',from:'Skipi Crewing'},
+        {k:'vessels',view:'vessels',ru:'База судов',en:'Vessel DB'}
+    ],
+    // tasks/031 (owner 27.11.2026): the chartering workplace is the module @skipi/chartering —
+    // Bazar, Mail, Contacts, Cargo, Fleet, Documents, Voyages, Calculator, Markets, Ports, Settings.
+    broker:[
+        {k:'chartering',ru:'Фрахтование',en:'Chartering'},
+        {k:'vessels',view:'vessels',ru:'База судов',en:'Vessel DB'},
+        {k:'ports',ru:'База портов',en:'Port DB'},
+        {k:'apps',view:'apps',ru:'Приложения',en:'Apps'}
+    ]
+};
+var ROLE_MODULE_ICON='<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>';
+var roleStubKey='';
+function roleModules(){ return ROLE_MODULES[currentAccountType]||null; }
+function roleModule(k){
+    var mods=roleModules()||[];
+    for(var i=0;i<mods.length;i++){ if(mods[i].k===k)return mods[i]; }
+    return null;
+}
+function roleModuleLabel(m){ return getUiLang()==='ru'?m.ru:m.en; }
+function roleStubHtml(m){
+    var ru=getUiLang()==='ru';
+    var text=m.from
+        ?(ru?'Модуль переносится в единое приложение Skipi. Пока он работает в отдельном приложении '+m.from+'.'
+            :'This module is being moved into the single Skipi app. For now it works in the separate '+m.from+' app.')
+        :(ru?'Модуль появится в одном из следующих обновлений Skipi.':'This module arrives in one of the next Skipi updates.');
+    return '<div class="role-stub" data-qa="role-stub-'+m.k+'"><h2>'+esc(roleModuleLabel(m))+'</h2><div>'+esc(text)+'</div></div>';
+}
+// The tile icon of a role module on the desktop rail: the icon of the seafarer tab of the same
+// view when there is one (desktopRailIcons has put it there), the generic module icon otherwise.
+function roleModuleIconSvg(m){
+    var tab=document.getElementById('mt-'+(m.view||m.k));
+    var ico=tab&&typeof tab.querySelector==='function'?tab.querySelector('.mod-ico'):null;
+    return ico&&ico.innerHTML?ico.innerHTML:'<svg viewBox="0 0 24 24">'+ROLE_MODULE_ICON+'</svg>';
+}
+// Desktop: swap the seafarer tabs for the role's tabs (or back, when a seafarer cache opens).
+function roleShellApply(){
+    var bar=document.getElementById('modules-bar');
+    if(!bar)return;
+    bar.querySelectorAll('.mod-tab-role').forEach(function(el){ el.remove(); });
+    var mods=roleModules();
+    bar.classList.toggle('role-shell',!!mods);
+    if(!mods)return;
+    var spacer=bar.querySelector('.mb-spacer');
+    mods.forEach(function(m){
+        var el=document.createElement('div');
+        el.className='mod-tab mod-tab-role';
+        el.id='mt-role-'+m.k;
+        el.setAttribute('data-qa','role-tab-'+m.k);
+        el.title=roleModuleLabel(m);
+        el.innerHTML='<i class="mod-ico" aria-hidden="true">'+roleModuleIconSvg(m)+'</i><span>'+esc(roleModuleLabel(m))+'</span>';
+        el.onclick=function(){ roleShowModule(m.k); };
+        bar.insertBefore(el,spacer);
+    });
+}
+function roleShowModule(k){
+    var m=roleModule(k);
+    if(!m)return;
+    if(shouldUseMobileShell()){
+        if(m.view){ mobileShow(m.view); }
+        else { roleStubKey=k; mobileShow('rolestub'); }
+        return;
+    }
+    if(m.view){ showView(m.view); }
+    else {
+        document.querySelectorAll('.modules-bar .mod-tab').forEach(function(el){ el.classList.remove('active'); });
+        var lp=document.getElementById('left-panel'); if(lp)lp.style.display='none';
+        var host=document.getElementById('scr-content');
+        if(host){ host.innerHTML=k==='chartering'?'<div id="chartering-root"></div>':roleStubHtml(m); show('scr-content'); }
+        if(k==='chartering')charteringMount();
+    }
+    var tab=document.getElementById('mt-role-'+k);
+    if(tab)tab.classList.add('active');
+}
+// First screen of a role cache: the first module of the role.
+function roleOpenDefault(){
+    var mods=roleModules();
+    if(!mods)return;
+    if(shouldUseMobileShell()){ mobileShow('home'); return; }
+    hide('statusbar'); // the document counters belong to the seafarer shell
+    roleShowModule(mods[0].k);
+}
+function renderMobileRoleMenu(){
+    var h='<div class="mobile-menu" data-qa="mobile-role-menu"><div class="fam-app-grid">';
+    roleModules().forEach(function(m){
+        h+=mobileMenuIconTile('role-tile-'+m.k,"roleShowModule('"+m.k+"')",roleModuleLabel(m),roleModuleLabel(m),ROLE_MODULE_ICON);
+    });
+    h+='</div></div>';
+    mobileMainHtml(h);
+}
+function renderMobileRoleStub(){
+    var m=roleModule(roleStubKey);
+    if(!m){ mobileView='home'; return renderMobileRoleMenu(); }
+    if(m.k==='chartering'){ mobileMainHtml('<div id="chartering-root" class="scm-mobile"></div>'); return charteringMount(); }
+    mobileMainHtml(roleStubHtml(m));
+}
+// «Фрахтование» (owner 27.11.2026, case 280, tasks/031): the workplace of a chartering account is
+// the module @skipi/chartering (dist/skipi-chartering.js + css, pin dist/CHARTERING_VERSION). The
+// page never holds the account token — the native commands (commands/chartering.rs) do; the
+// records live with the account on the server. A letter opens as a draft in the user's own mail
+// program: a mailto: link, or — on a computer, when the letter is too long for a link — an .eml file
+// (commands/chartering.rs decides).
+function charteringDeps(){
+    return { lang: getUiLang, toast: showToast,
+        openMail: function(mail){ return invoke('chartering_open_mail', { mail: mail }); },
+        api: {
+            list: function(){ return invoke('chartering_cargoes'); },
+            get: function(id){ return invoke('chartering_cargo', { cargoId: id }); },
+            saveCargo: function(body){ return invoke('chartering_cargo_save', { body: body }); },
+            removeCargo: function(id){ return invoke('chartering_cargo_remove', { cargoId: id }); },
+            savePair: function(cargoId, body){ return invoke('chartering_pair_save', { cargoId: cargoId, body: body }); },
+            removePair: function(cargoId, pairId){ return invoke('chartering_pair_remove', { cargoId: cargoId, pairId: pairId }); },
+            addEvent: function(cargoId, pairId, event){ return invoke('chartering_event_add', { cargoId: cargoId, pairId: pairId, event: event }); },
+            positions: function(){ return invoke('chartering_positions'); },
+            savePosition: function(body){ return invoke('chartering_position_save', { body: body }); },
+            removePosition: function(id){ return invoke('chartering_position_remove', { positionId: id }); },
+            items: function(kind){ return invoke('chartering_items', { kind: kind }); },
+            saveItem: function(kind, body){ return invoke('chartering_item_save', { kind: kind, body: body }); },
+            removeItem: function(kind, id){ return invoke('chartering_item_remove', { kind: kind, itemId: id }); }
+        } };
+}
+// tasks/032: the workplace is open while the account's access lasts. When it is paused the
+// server keeps the records and answers nothing else, so the page says so instead of mounting
+// the module. Any other answer — or none (no connection) — opens the module, which speaks for itself.
+function charteringPausedHtml(){
+    var ru=getUiLang()==='ru';
+    return '<div class="role-stub" data-qa="chartering-paused"><h2>'+(ru?'Доступ к рабочему месту приостановлен':'Access to the workplace is paused')+'</h2>'
+        +'<div>'+(ru?'Ваши записи сохранены. Продолжить можно в аккаунте Skipi на сайте assistant.skipi.app.':'Your records are kept. You can continue from your Skipi account at assistant.skipi.app.')+'</div>'
+        +(isNativeMobile()?'':'<div style="margin-top:18px;"><button class="btn btn-outline" data-qa="chartering-open-account" onclick="openExternalUrlSafe(\'https://assistant.skipi.app/app/account\')">'+(ru?'Открыть аккаунт Skipi':'Open Skipi account')+'</button></div>')
+        +'</div>';
+}
+function charteringMount(){
+    var el=document.getElementById('chartering-root');
+    if(!el||!window.SkipiChartering)return;
+    invoke('chartering_access').then(function(st){ return !!st&&st.state==='paused'; },function(){ return false; }).then(function(paused){
+        if(document.getElementById('chartering-root')!==el)return; // the user has already gone elsewhere
+        if(paused){ el.innerHTML=charteringPausedHtml(); return; }
+        window.SkipiChartering.mount(el, charteringDeps());
+    });
+}
+// The account cache of a crewing / broker account: created empty, without the seafarer
+// questionnaire and without the seafarer profile restore. One cache per e-mail and role.
+async function openRoleAccountCache(role){
+    var email='';
+    try{var st=await invoke('app_login_status');email=String((st&&st.email)||'').trim();}catch(e){}
+    var kind=role==='crewing'?'Crewing':'Chartering';
+    var path=await defaultVaultPath(vaultFolderName(kind,email||'Account'));
+    var info;
+    try{info=await invoke('open_vault',{path:path});}
+    catch(e){info=await invoke('create_vault',{path:path,accountType:role,name:email||('Skipi '+kind),rank:null,vesselType:null});}
+    await loadVault(info);
+}
+
 async function loadVault(info){
     // HARD LOGIN GATE (№117): block the entire shell until a valid token
     // exists in this vault. A cached token → offline reopen allowed. First
@@ -11799,6 +12007,7 @@ async function loadVault(info){
     hide('scr-welcome');hide('scr-setup');show('scr-content');show('left-panel');hide('tabs');show('statusbar');
     var mb=document.getElementById('modules-bar');if(mb)mb.style.display='flex';
     currentAccountType=info.account_type||'';
+    roleShellApply();
     mobileIsDemo=String((info&&info.is_demo)||'')==='1';
     try{demoSignInBarSync(info).catch(function(){});}catch(e){}
     mobileProfileEmpty=!(info&&(info.rank||info.position));
@@ -11843,8 +12052,12 @@ async function loadVault(info){
     await loadConditionalTemplateIds();
     await loadActiveTemplateIds();
     allDocs=await invoke('get_documents');
-    renderTree();showDashboard();updateStatus();
+    renderTree();
+    // tasks/018: the seafarer dashboard is not a screen of the crewing / broker roles.
+    if(!roleModules())showDashboard();
+    updateStatus();
     renderMobileShell();
+    roleOpenDefault();
     // Check for updates silently after vault loads
     setTimeout(function(){checkForUpdate(true);},3000);
 	    if(isSeafarer){
@@ -12064,7 +12277,7 @@ function renderDeveloperGroupInviteCard(state){
     h+='<div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);font-weight:800;margin-bottom:5px;">Skipi builders</div>';
     h+='<div style="font-size:16px;font-weight:700;margin-bottom:5px;">'+mobileSetupText('Skipi builders group is open','Доступна группа разработчиков Skipi')+'</div>';
     h+='<div style="font-size:12px;color:var(--text2);line-height:1.45;">'+mobileEsc(mobileSetupText('You have filled your profile to '+pct+'% and added sea service ('+workCount+'). Join the Telegram group where active seafarers help shape Skipi.','Вы заполнили профиль на '+pct+'% и добавили стаж ('+workCount+'). Можно вступить в Telegram-группу, где активные моряки помогают формировать развитие Skipi.'))+'</div>';
-    h+='<div style="font-size:11px;color:var(--text2);margin-top:7px;">'+mobileSetupText('Eligibility is checked locally. Your profile is not sent to Telegram or the Skipi server.','Проверка выполняется локально. Ваш профиль не отправляется в Telegram или на сервер Skipi.')+'</div>';
+    h+='<div style="font-size:11px;color:var(--text2);margin-top:7px;">'+mobileSetupText('Eligibility is checked in the app. Your profile is not sent to Telegram.','Проверка выполняется в приложении. Ваш профиль не отправляется в Telegram.')+'</div>';
     h+='</div>';
     h+='<div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;flex:0 0 auto;">';
     h+='<button class="btn btn-accent btn-sm" onclick="openDeveloperGroupInvite()">'+mobileSetupText('Join Telegram','Вступить в Telegram')+'</button>';
@@ -19243,7 +19456,7 @@ async function loadMobileSettingsVaultSummary(){
     var nameEl = document.getElementById('mobile-settings-vault-name');
     var subEl = document.getElementById('mobile-settings-vault-sub');
     if(nameEl) nameEl.textContent = currentPath ? mobileVaultNameFromPath(currentPath) : 'No vault open';
-    if(subEl) subEl.textContent = currentPath ? 'Stored locally on this phone.' : 'Create or open a vault to begin.';
+    if(subEl) subEl.textContent = currentPath ? 'Kept in your Skipi account.' : 'Sign in to begin.';
     mobileRenderSettingsRecentVaults(recent, currentPath);
 }
 
@@ -21031,6 +21244,13 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
 
             onError: function(err, context){ try{ logError('settings:'+context,err); }catch(e){} }
         };
+        // tasks/018: the seafarer profile editor and the seafarer profile sync are not
+        // sections of a crewing / broker account.
+        if(typeof roleModules==='function' && roleModules()){
+            host.appSpecificSections=host.appSpecificSections.filter(function(sec){
+                return sec.id!=='seafarer-profile' && sec.id!=='account-sync';
+            });
+        }
         return host;
     }
 

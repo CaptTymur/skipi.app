@@ -3678,6 +3678,8 @@ const SHIPPED_EXPECTED = [
   'PORTS_VERSION', 'port-db.css', 'port-db.js', 'skipi-ports.data.js', 'skipi-ports.js',
   // My Vessel (owner 27.11.2026, case 265): the vendored @skipi/vessel — screen, styles and pin.
   'VESSEL_VERSION', 'skipi-vessel.css', 'skipi-vessel.js',
+  // Chartering (owner 27.11.2026, case 280): the vendored @skipi/chartering — screen, styles and pin.
+  'CHARTERING_VERSION', 'skipi-chartering.css', 'skipi-chartering.js',
 ];
 const DIST_ALL = [];
 (function walk(dir) {
@@ -3694,6 +3696,8 @@ const SHIPPED_ASSETS = SHIPPED_FILES.map((f) => path.join(DIST, f));
 const SHIPPED_TEXT = SHIPPED_FILES.map((f) => ({ file: f, text: fs.readFileSync(path.join(DIST, f), 'utf8') }));
 
 const NOPAY_WORDS_ALLOW = [
+  { re: /USD 4[02] per mt|4[02] USD за тонну/g,
+    why: 'the placeholders of the freight-rate fields in the vendored @skipi/chartering («e.g. USD 40 per mt») — an example of what a shipowner quotes per tonne of cargo, typed by the user into their own cargo book; not a price of anything this app sells' },
   { re: /Minimum salary per month/g,
     why: 'the label of the seafarer’s own salary EXPECTATION field (desktop form, mobile form, summary) — the figure the user asks an employer for, not a price this app charges' },
   { re: /\(sp\.min_salary_currency\|\|'USD'\)\+'\/month'/g,
@@ -4121,6 +4125,7 @@ const nopayScan = (files, family) => NOPAY_RULES.filter(([fam]) => fam === famil
   // claim about price. Anything not listed is red.
   const NOPAY_ALLOW = [
     { re: /free[\s-]text/gi, why: '«Free text (optional)» is the LABEL of the free-text review field and the comments around it — it describes an input, not a price' },
+    { re: /free of expense to the ship/g, why: 'a standard charter-party clause in the vendored @skipi/chartering document templates («Cargo to be loaded, stowed and discharged free of expense to the ship» — FIOS terms): who bears the cost of cargo handling, not a claim about what Skipi costs' },
     { re: /free[\s-]form/gi, why: '«free-form edits» describes how a field may be filled in — again an input, not a price' },
     { re: /framework-free/gi, why: '«Framework-free (vanilla)» in the @skipi/assistant header comment is a statement about dependencies, and it is a comment, not screen copy' },
     // The ONLY allowlisted user-facing strings, and they are allowed on a condition
@@ -7828,6 +7833,24 @@ async function s1Boot(map, consent, opts) {
     ok(opened.length === 1 && opened[0] === 'https://assistant.skipi.app/reset', 'a click opens assistant.skipi.app/reset in the system browser');
     ok(!/id="lg-forgot"/.test(HTML), 'the link is created in JS (the frozen gate markup is untouched)');
   } catch (e) { ok(false, 'forgot password drill crashed: ' + e.message); }
+}
+
+{
+  // Cases 297 / 277 (owner, 28.11.2026): there is no «vault» in the architecture — data lives on the
+  // server, the device holds a cache. The profile screen speaks about the account, not a vault.
+  section('Profile screen — account instead of «vault»');
+  const at = HTML.indexOf('data-qa="mobile-profile-account"');
+  const screen = at > 0 ? HTML.slice(HTML.lastIndexOf('mobileProfileSummary=null;', at), HTML.indexOf('mobileMainHtml(h);', at)) : '';
+  ok(at > 0, 'the profile screen carries an account card');
+  ok(/data-account-email/.test(screen) && /appLogoutToGate\(\)/.test(screen) && /openAccountDelete\(\)/.test(screen), 'the card shows the account and offers Sign out and Delete account');
+  ['Local-first seafarer vault', 'Stored locally on this phone', 'Export / share backup', 'Switch vault', 'Delete this vault'].forEach((gone) => {
+    ok(screen.indexOf(gone) === -1, 'the profile screen no longer says «' + gone + '»');
+  });
+  ok(!/mobileRefreshIdentityTrust\(\);\s*\}\s*async function mobileRefreshProfileSummary/.test(HTML), 'the «Identity looks unique» block is not loaded on the profile screen');
+  ok(/<div id="mobile-identity-trust" hidden><\/div>/.test(screen), 'its host stays hidden (identity harness drives it directly)');
+  ['Your private vault, CV', "compassText('private vault'", 'Your profile is not sent to Telegram or the Skipi server', 'Create or open a vault to begin'].forEach((gone) => {
+    ok(HTML.indexOf(gone) === -1, 'the page no longer says «' + gone + '»');
+  });
 }
 
 console.log('\n' + (fail === 0 ? 'ALL GREEN' : 'FAILURES') + ': ' + pass + ' passed, ' + fail + ' failed');
