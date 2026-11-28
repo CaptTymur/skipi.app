@@ -2527,8 +2527,8 @@ async function renderCareerCompassPanel(profile,uploadedDocs){
     var vesselConfidence=workCount?compassText('IMO confirmed where present','IMO подтверждается, если указан'):compassText('Add sea service with IMO','Добавьте Sea Service с IMO');
     var h='<div class="compass-panel">';
     h+='<div class="compass-head">';
-    h+='<div><div class="compass-title">'+esc(compassText('Career Compass','Career Compass'))+'</div><div class="compass-sub">'+esc(compassText('Your private vault, CV, applications, vessel context, and first market references in one place.','Ваш приватный архив, CV, рассылки, контекст судов и первые рыночные ориентиры в одном месте.'))+'</div></div>';
-    h+='<div class="compass-pill accent">'+esc(compassText('private vault','приватный архив'))+'</div>';
+    h+='<div><div class="compass-title">'+esc(compassText('Career Compass','Career Compass'))+'</div><div class="compass-sub">'+esc(compassText('Your documents, CV, applications, vessel context, and first market references in one place.','Ваши документы, CV, рассылки, контекст судов и первые рыночные ориентиры в одном месте.'))+'</div></div>';
+    h+='<div class="compass-pill accent">'+esc(compassText('private','приватно'))+'</div>';
     h+='</div>';
     h+='<div class="compass-grid">';
     h+='<div class="compass-card action" onclick="openSettings(\'seafarer\')"><div class="compass-kicker">'+esc(compassText('Profile signal','Сигнал профиля'))+'</div><h3>'+esc(rank)+' / '+esc(vessel)+'</h3><p>'+esc(compassText('Documents, CV and application sender are connected locally. Profile quality controls how much of Skipi is available to you.','Документы, CV и рассылка связаны локально. Качество профиля определяет, сколько возможностей открывает Skipi.'))+'</p><div class="compass-row"><span>'+esc(docsCount)+' '+esc(compassText('documents','документов'))+'</span><span class="compass-pill '+(pct>=85?'ok':'warn')+'">'+pct+'%</span></div></div>';
@@ -5110,7 +5110,7 @@ function mobileEsc(s){return esc(s);}
 function mobileVaultLabel(){
     var el=document.getElementById('pf-vault-name');
     var txt=el&&el.textContent?el.textContent.trim():'';
-    return txt&&txt!=='Vault'?txt:'Mobile seafarer vault';
+    return txt&&txt!=='Vault'?txt:'Seafarer profile';
 }
 function mobileSetSub(text){
     var el=document.getElementById('mobile-vault-sub');
@@ -8776,21 +8776,27 @@ function renderMobileProfile(){
     mobileProfileSummary=null;
     mobileProfileSummaryError=false;
     mobileProfileMissingExpanded=false;
-    var h='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(mobileVaultLabel())+'</div><div class="mobile-card-sub">Local-first seafarer vault on this device.</div></div>';
-    if(mobilePostCreateVaultHint){
+    // Дела № 297, № 277 (слово владельца 28.11.2026): «волта» в архитектуре нет — данные на сервере,
+    // на устройстве кэш. С экрана профиля убраны подпись «local-first vault», блок «Identity looks
+    // unique» и блок «Vault» (экспорт ZIP, переключение, удаление волта); вместо него — аккаунт.
+    var h='<div class="mobile-card"><div class="mobile-card-title">'+mobileEsc(mobileVaultLabel())+'</div><div class="mobile-card-sub">'+mobileSetupText('Your data is kept in your Skipi account. This phone holds a copy.','Данные хранятся в аккаунте Skipi. На телефоне — их копия.')+'</div></div>';
+    if(false&&mobilePostCreateVaultHint){
         h+='<div class="mobile-card"><div class="mobile-card-title">Vault created</div><div class="mobile-card-sub">To open this profile on desktop, export a ZIP backup and import it in Skipi desktop from Settings -> Vaults -> Import vault backup.</div><div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-accent mobile-grow" type="button" onclick="mobileExportVaultBackup(true)">Share to desktop</button><button class="btn btn-outline mobile-grow" type="button" onclick="mobilePostCreateVaultHint=false;mobileShow(\'docs\')">Continue</button></div></div>';
     }
     h+='<div class="mobile-stats"><div class="mobile-stat"><strong>'+st.total+'</strong><span>Total</span></div><div class="mobile-stat"><strong>'+st.uploaded+'</strong><span>Files</span></div><div class="mobile-stat"><strong>'+st.missing+'</strong><span>Missing</span></div></div>';
     h+='<button class="mobile-card" id="mobile-profile-completeness-card" type="button" onclick="mobileToggleProfileMissing()" aria-expanded="false" aria-controls="mobile-profile-missing" style="width:100%;text-align:left;color:inherit;"><span class="mobile-row"><span><span class="mobile-card-title" style="display:block;">'+mobileSetupText('Profile completeness','Полнота профиля')+'</span><span class="mobile-card-sub" style="display:block;">'+mobileSetupText('Show missing required documents','Показать недостающие обязательные документы')+'</span></span><span class="mobile-pill ok" id="mobile-profile-card-pct">'+pct+'</span></span></button><div class="mobile-card" id="mobile-profile-missing" hidden></div>';
-    h+='<div id="mobile-identity-trust"></div>';
+    // Блок «Identity looks unique» человеку больше не показывается (дело № 297). Скрытый хост
+    // остаётся: через него харнес jobs_profile_visibility (X14f) проверяет, что карточка не
+    // предлагает регистрацию личности; уйдёт вместе с полным удалением волта (дело № 310).
+    h+='<div id="mobile-identity-trust" hidden></div>';
     if(trustContributionEnabled()){
         h+='<button class="mobile-primary-action" type="button" data-qa="my-contribution-mobile-entry" onclick="mobileShow(\'contribution\')"><span class="mobile-action-icon">&#10003;</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(getUiLang()==='ru'?'Мой вклад':'My contribution')+'</span><span class="mobile-action-sub">'+mobileEsc(getUiLang()==='ru'?'Приватный прогресс по подтверждённым событиям.':'Private progress from confirmed events.')+'</span></span></button>';
     }
     h+='<button class="mobile-primary-action" type="button" onclick="mobileShow(\'add\')"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">Add more documents</span><span class="mobile-action-sub">Scan or attach files from this phone.</span></span></button>';
-    h+='<div class="mobile-card"><div class="mobile-card-title">Vault</div><div class="mobile-card-sub">Stored locally on this phone. Export a ZIP backup to open this profile on desktop.</div><div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-accent mobile-grow" onclick="mobileExportVaultBackup(true)">Export / share backup</button><button class="btn btn-outline mobile-grow" onclick="mobileOpenExistingVault()">Switch vault</button><button class="btn btn-outline mobile-grow" onclick="openSettings()">Settings</button></div><div class="mobile-actions" style="margin-top:8px;"><button class="btn btn-outline btn-red mobile-grow" onclick="mobileDeleteCurrentVault()">Delete this vault</button></div></div>';
+    h+='<div class="mobile-card" data-qa="mobile-profile-account"><div class="mobile-card-title">'+mobileSetupText('Skipi account','Аккаунт Skipi')+'</div><div class="mobile-card-sub" data-account-email>…</div><div class="mobile-actions" style="margin-top:12px;"><button class="btn btn-outline mobile-grow" onclick="openSettings()">'+mobileSetupText('Settings','Настройки')+'</button><button class="btn btn-outline mobile-grow" type="button" data-account-logout onclick="appLogoutToGate()">'+mobileSetupText('Sign out','Выйти')+'</button></div><div class="mobile-actions" style="margin-top:8px;"><button class="btn btn-outline btn-red mobile-grow" type="button" onclick="openAccountDelete()">'+mobileEsc(accountDeleteTexts().deleteBtn)+'</button></div></div>';
     mobileMainHtml(h);
     mobileRefreshProfileSummary();
-    mobileRefreshIdentityTrust();
+    refreshAppAccountControls();
 }
 async function mobileRefreshProfileSummary(){
     var request=++mobileProfileSummaryRequest;
@@ -12196,7 +12202,7 @@ function renderDeveloperGroupInviteCard(state){
     h+='<div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);font-weight:800;margin-bottom:5px;">Skipi builders</div>';
     h+='<div style="font-size:16px;font-weight:700;margin-bottom:5px;">'+mobileSetupText('Skipi builders group is open','Доступна группа разработчиков Skipi')+'</div>';
     h+='<div style="font-size:12px;color:var(--text2);line-height:1.45;">'+mobileEsc(mobileSetupText('You have filled your profile to '+pct+'% and added sea service ('+workCount+'). Join the Telegram group where active seafarers help shape Skipi.','Вы заполнили профиль на '+pct+'% и добавили стаж ('+workCount+'). Можно вступить в Telegram-группу, где активные моряки помогают формировать развитие Skipi.'))+'</div>';
-    h+='<div style="font-size:11px;color:var(--text2);margin-top:7px;">'+mobileSetupText('Eligibility is checked locally. Your profile is not sent to Telegram or the Skipi server.','Проверка выполняется локально. Ваш профиль не отправляется в Telegram или на сервер Skipi.')+'</div>';
+    h+='<div style="font-size:11px;color:var(--text2);margin-top:7px;">'+mobileSetupText('Eligibility is checked in the app. Your profile is not sent to Telegram.','Проверка выполняется в приложении. Ваш профиль не отправляется в Telegram.')+'</div>';
     h+='</div>';
     h+='<div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;flex:0 0 auto;">';
     h+='<button class="btn btn-accent btn-sm" onclick="openDeveloperGroupInvite()">'+mobileSetupText('Join Telegram','Вступить в Telegram')+'</button>';
@@ -19375,7 +19381,7 @@ async function loadMobileSettingsVaultSummary(){
     var nameEl = document.getElementById('mobile-settings-vault-name');
     var subEl = document.getElementById('mobile-settings-vault-sub');
     if(nameEl) nameEl.textContent = currentPath ? mobileVaultNameFromPath(currentPath) : 'No vault open';
-    if(subEl) subEl.textContent = currentPath ? 'Stored locally on this phone.' : 'Create or open a vault to begin.';
+    if(subEl) subEl.textContent = currentPath ? 'Kept in your Skipi account.' : 'Sign in to begin.';
     mobileRenderSettingsRecentVaults(recent, currentPath);
 }
 

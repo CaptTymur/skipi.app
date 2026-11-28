@@ -7727,5 +7727,23 @@ async function s1Boot(map, consent, opts) {
   } catch (e) { ok(false, 'forgot password drill crashed: ' + e.message); }
 }
 
+{
+  // Cases 297 / 277 (owner, 28.11.2026): there is no «vault» in the architecture — data lives on the
+  // server, the device holds a cache. The profile screen speaks about the account, not a vault.
+  section('Profile screen — account instead of «vault»');
+  const at = HTML.indexOf('data-qa="mobile-profile-account"');
+  const screen = at > 0 ? HTML.slice(HTML.lastIndexOf('mobileProfileSummary=null;', at), HTML.indexOf('mobileMainHtml(h);', at)) : '';
+  ok(at > 0, 'the profile screen carries an account card');
+  ok(/data-account-email/.test(screen) && /appLogoutToGate\(\)/.test(screen) && /openAccountDelete\(\)/.test(screen), 'the card shows the account and offers Sign out and Delete account');
+  ['Local-first seafarer vault', 'Stored locally on this phone', 'Export / share backup', 'Switch vault', 'Delete this vault'].forEach((gone) => {
+    ok(screen.indexOf(gone) === -1, 'the profile screen no longer says «' + gone + '»');
+  });
+  ok(!/mobileRefreshIdentityTrust\(\);\s*\}\s*async function mobileRefreshProfileSummary/.test(HTML), 'the «Identity looks unique» block is not loaded on the profile screen');
+  ok(/<div id="mobile-identity-trust" hidden><\/div>/.test(screen), 'its host stays hidden (identity harness drives it directly)');
+  ['Your private vault, CV', "compassText('private vault'", 'Your profile is not sent to Telegram or the Skipi server', 'Create or open a vault to begin'].forEach((gone) => {
+    ok(HTML.indexOf(gone) === -1, 'the page no longer says «' + gone + '»');
+  });
+}
+
 console.log('\n' + (fail === 0 ? 'ALL GREEN' : 'FAILURES') + ': ' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail === 0 ? 0 : 1);
