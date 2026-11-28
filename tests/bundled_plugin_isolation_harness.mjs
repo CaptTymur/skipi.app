@@ -1506,6 +1506,32 @@ const efGateMarkup = () => HTML.slice(HTML.indexOf('id="login-gate-overlay"'), H
   ok(!doc.body.classList.contains('mobile-mode') && !doc.body.classList.contains('mobile-native'), 'D12: no mobile-mode on desktop');
   sandbox.entryForkSignIn(); await efSettle();
   ok(efGateShown(doc) && !efForkShown(doc) && !!doc.getElementById('lg-back'), 'D12: Sign in opens the form with «← Back» to the entry screen');
+  // Owner 28.11.2026: «как мы узнаем, какое демо показывать… нужно дать ему развилку — моряковское, чартеринг
+  // или крюинг», the same on the phone and the desktop.
+  for (const platform of ['linux', 'android']) {
+    const app = await efBoot({ create_demo_vault_auto: () => ({ ...EF_DEMO }), get_profile_status: { is_demo: '1' } }, { platform });
+    const fork0 = String(efFork(app.doc).innerHTML);
+    ok(/data-qa="demo" onclick="entryForkDemoChoice\(\)"/.test(fork0), platform + ' demo choice: the Demo door opens the choice, not a demo');
+    app.sandbox.entryForkDemoChoice(); await efSettle();
+    const h = String(efFork(app.doc).innerHTML);
+    ok(efForkShown(app.doc) && efCalled(app.calls, 'create_demo_vault_auto').length === 0, platform + ' demo choice: nothing is opened until a profile is chosen');
+    ok(['demo-seafarer', 'demo-crewing', 'demo-chartering'].every((qa) => h.includes('data-qa="' + qa + '"')) && (h.match(/class="mobile-primary-action"/g) || []).length === 3,
+      platform + ' demo choice: exactly three doors — Seafarer, Crewing, Chartering');
+    ok(/data-qa="demo-seafarer" onclick="entryForkDemo\(\)"/.test(h) && h.includes('data-qa="demo-choice-back"') && !/Broker|брокер/i.test(h), platform + ' demo choice: the seafarer door is the in-app demo; «← Back» is there; no «Broker» wording');
+    await app.sandbox.entryForkDemoOpen('crewing'); await app.sandbox.entryForkDemoOpen('chartering'); await efSettle();
+    const opened = efCalled(app.calls, 'open_external_url').map(([, a]) => a && a.url);
+    ok(opened.length === 2 && opened[0] === 'https://account.skipi.app/app/crewing/demo' && opened[1] === 'https://account.skipi.app/app/broker/demo' && efForkShown(app.doc),
+      platform + ' demo choice: Crewing and Chartering open their web demos in the browser, the choice stays on screen');
+    app.sandbox.entryForkDemoBack(); await efSettle();
+    ok(String(efFork(app.doc).innerHTML) === fork0, platform + ' demo choice: «← Back» returns to the entry screen');
+    app.sandbox.entryForkDemoChoice(); await app.sandbox.entryForkDemo(); await efSettle();
+    ok(efCalled(app.calls, 'create_demo_vault_auto').length === 1 && !efForkShown(app.doc) && !efGateShown(app.doc), platform + ' demo choice: Seafarer opens the demo without a sign-in form');
+    if (platform === 'linux') {
+      const phone = await efBoot({});
+      app.sandbox.showEntryFork(); app.sandbox.entryForkDemoChoice(); phone.sandbox.entryForkDemoChoice();
+      ok(String(efFork(phone.doc).innerHTML) === String(efFork(app.doc).innerHTML), 'demo choice: the phone and the desktop render it byte for byte the same');
+    }
+  }
   const web = bootApp({ platform: 'linux' });
   web.sandbox.__SKIPI_WEBDESKTOP__ = true;
   ok(web.sandbox._efEntryHere() === false && web.sandbox._efDemoNoLogin({ is_demo: '1' }) === false && sandbox._efEntryHere() === true,
