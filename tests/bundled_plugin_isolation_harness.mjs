@@ -1139,8 +1139,18 @@ function bootMobile(opts) {
   const start = startComment - 2; // BASELINE :1444 = the </div> closing .mobile-shell, then a blank line
   const end = lines.findIndex((l) => l === '<script src="skipi-assistant.js"></script>');
   ok(startComment > 0 && lines[start] === '</div>' && lines[start + 1] === '' && end > start, 'desktop region boundaries found by markers (</div> of .mobile-shell … skipi-assistant.js script tag)');
+  // 2026-11-28 (дело № 310, owner: «этот экран напоминает старую архитектуру»): #scr-welcome lost the
+  // «Create / Open existing / Load demo» choice of a local profile. The pin is re-based and kept honest the
+  // same way: put ONLY that block back and the previous pin b6618d0e must come back byte for byte.
+  const liveNow = lines.slice(start, end + 1).join('\n') + '\n';
+  const WELCOME_CHOICE = "                <button class=\"btn btn-accent\" id=\"btn-create-vault\" onclick=\"showSetup()\">Create Seafarer Vault</button>\n                <button class=\"btn btn-outline\" id=\"btn-open-vault\" onclick=\"openExisting()\">Open Existing Vault</button>\n                <div id=\"welcome-recent\" style=\"margin-top:14px;max-width:420px;width:100%;\"></div>\n                <div id=\"welcome-folder-hint\" style=\"margin-top:12px;font-size:11px;color:var(--text2);line-height:1.45;max-width:360px;\">\n                    New vault folders are named clearly, for example <code>Skipi Seafarer - Tymur Rudov</code>. When opening a vault, select that named folder.\n                </div>\n                <div style=\"display:flex;align-items:center;gap:10px;max-width:360px;width:100%;margin:18px 0 10px;color:var(--text2);opacity:.65;font-size:11px;\">\n                    <span style=\"flex:1;height:1px;background:var(--border);\"></span><span id=\"welcome-demo-prefix\">Just exploring?</span><span style=\"flex:1;height:1px;background:var(--border);\"></span>\n                </div>\n                <button class=\"btn btn-outline\" id=\"welcome-demo-link\" onclick=\"loadDemoVault();return false;\" style=\"border-color:var(--accent);color:var(--accent);\"><span style=\"margin-right:6px;\">🎬</span><span id=\"welcome-demo-link-text\">Load demo seafarer</span></button>\n";
+  const WELCOME_ANCHOR = '            </div>\n            <div id="scr-setup"';
+  const liveRegion = liveNow.replace(WELCOME_ANCHOR, WELCOME_CHOICE + WELCOME_ANCHOR);
+  ok(sha256Text(liveNow) === '1dfb6fbc6e7cc7d1cb1ae04c0ab0615ca33612b96061f471016389f9249506ef', 'desktop static markup region sha256 == the re-based pin (дело № 310: no create/open/demo choice)');
+  ok(liveNow.split(WELCOME_ANCHOR).length === 2 && !/btn-create-vault|btn-open-vault|welcome-demo-link|welcome-recent|showSetup\(\)|openExisting\(\)|loadDemoVault\(\)/.test(liveNow),
+    'дело № 310: the desktop markup carries no «Create / Open existing / Load demo» controls');
   // `region` is the markup WITHOUT the Port DB tab (see 26.11.2026 below); the older pins chain from it.
-  const region = (lines.slice(start, end + 1).join('\n') + '\n').replace(`    <div class="mod-tab" onclick="showView('ports')" id="mt-ports" title="Port DB — find a port, read and leave reviews"><span>Port DB</span></div>\n`, '');
+  const region = liveRegion.replace(`    <div class="mod-tab" onclick="showView('ports')" id="mt-ports" title="Port DB — find a port, read and leave reviews"><span>Port DB</span></div>\n`, '');
   // 2026-09-06 (iOS blockers slice): this frozen region carries #login-gate-overlay and
   // #forced-profile-overlay, and BOTH had to take safe-area padding + flex-start scroll
   // (audit 5cfff5b3 Н7). The pin is re-based — and the old pin is kept honest: revert
@@ -1156,9 +1166,8 @@ function bootMobile(opts) {
   // 2026-11-26 (Port DB, owner: «нужно дать пользователям найти порт и оставить по нему отзыв»):
   // the top modules bar gained ONE tab, #mt-ports. The pin is re-based once more and kept honest
   // the same way: take ONLY that line out and the previous pin 0c994a16 must come back byte for byte.
-  const liveRegion = lines.slice(start, end + 1).join('\n') + '\n';
   const PORTS_TAB = `    <div class="mod-tab" onclick="showView('ports')" id="mt-ports" title="Port DB — find a port, read and leave reviews"><span>Port DB</span></div>\n`;
-  ok(sha256Text(liveRegion) === 'b6618d0e0f53863ac7eac93bd1c5c605c15bc72509f226d76fece8a6bf374a07', 'desktop static markup region sha256 == the re-based pin');
+  ok(sha256Text(liveRegion) === 'b6618d0e0f53863ac7eac93bd1c5c605c15bc72509f226d76fece8a6bf374a07', 'undoing ONLY the дело № 310 removal restores the previous pin b6618d0e byte for byte — nothing else in the desktop markup was touched');
   ok(liveRegion.split(PORTS_TAB).length === 2 && sha256Text(region) === '0c994a168599defecfb93c0dd52dd3ccda055e2ca2ab0b2425d87bd1cad6bfcc',
     'undoing ONLY the Port DB tab restores the previous pin 0c994a16 byte for byte — nothing else in the desktop markup was touched');
   const preNameRegion = region
@@ -1481,19 +1490,59 @@ const efGateMarkup = () => HTML.slice(HTML.indexOf('id="login-gate-overlay"'), H
 }
 
 {
-  section('entry fork (D12) — desktop (linux): no fork, the plain gate as today; PRESERVE sha unchanged (checked above)');
-  const { doc, spies } = await efBoot({}, { platform: 'linux' });
-  ok(spies.showEntryFork.length === 0 && !efFork(doc), 'D12: no fork on desktop');
-  ok(spies.showLoginGate.length === 1 && efGateShown(doc), 'D12: desktop still raises the login gate first');
+  // Дело № 310 (owner 28.11.2026: «тот экран войти, регистрация, демо актуален для всех профилей… унификация»):
+  // the desktop used to raise the bare sign-in form; the entry screen is now ONE for the phone and the desktop.
+  section('entry fork (D12, дело № 310) — desktop (linux): the SAME entry screen Sign in · Register · Demo; only the web shell keeps the plain gate');
+  const { doc, spies, sandbox } = await efBoot({}, { platform: 'linux' });
+  ok(spies.showEntryFork.length === 1 && efForkShown(doc), 'D12: the entry screen is the first screen on desktop');
+  ok(spies.showLoginGate.length === 0 && !efGateShown(doc), 'D12: the sign-in form is not raised until Sign in is chosen');
+  ok(['sign-in', 'register', 'demo'].every((qa) => String(efFork(doc).innerHTML).includes('data-qa="' + qa + '"')), 'D12: three doors — Sign in, Register, Demo');
+  // owner 28.11.2026: «на телефоне выглядит лучше всего… писать one app for seafarers, crewing and charterers не нужно»
+  ok(!/mobile-entry-fork-sub|One app for|Одно приложение/.test(String(efFork(doc).innerHTML)) && /<div class="mobile-entry-fork-title"[^>]*>Skipi<\/div>/.test(String(efFork(doc).innerHTML)), 'D12: the entry screen is the name and the three doors — no line under the name');
+  {
+    const phone = await efBoot({});
+    ok(String(efFork(phone.doc).innerHTML) === String(efFork(doc).innerHTML), 'D12: the phone and the desktop render the entry screen byte for byte the same');
+  }
   ok(!doc.body.classList.contains('mobile-mode') && !doc.body.classList.contains('mobile-native'), 'D12: no mobile-mode on desktop');
-  ok(!doc.getElementById('lg-back'), 'D12: no «← Back» link on the desktop gate (nothing to go back to)');
+  sandbox.entryForkSignIn(); await efSettle();
+  ok(efGateShown(doc) && !efForkShown(doc) && !!doc.getElementById('lg-back'), 'D12: Sign in opens the form with «← Back» to the entry screen');
+  // Owner 28.11.2026: «как мы узнаем, какое демо показывать… нужно дать ему развилку — моряковское, чартеринг
+  // или крюинг», the same on the phone and the desktop.
+  for (const platform of ['linux', 'android']) {
+    const app = await efBoot({ create_demo_vault_auto: () => ({ ...EF_DEMO }), get_profile_status: { is_demo: '1' } }, { platform });
+    const fork0 = String(efFork(app.doc).innerHTML);
+    ok(/data-qa="demo" onclick="entryForkDemoChoice\(\)"/.test(fork0), platform + ' demo choice: the Demo door opens the choice, not a demo');
+    app.sandbox.entryForkDemoChoice(); await efSettle();
+    const h = String(efFork(app.doc).innerHTML);
+    ok(efForkShown(app.doc) && efCalled(app.calls, 'create_demo_vault_auto').length === 0, platform + ' demo choice: nothing is opened until a profile is chosen');
+    ok(['demo-seafarer', 'demo-crewing', 'demo-chartering'].every((qa) => h.includes('data-qa="' + qa + '"')) && (h.match(/class="mobile-primary-action"/g) || []).length === 3,
+      platform + ' demo choice: exactly three doors — Seafarer, Crewing, Chartering');
+    ok(/data-qa="demo-seafarer" onclick="entryForkDemo\(\)"/.test(h) && h.includes('data-qa="demo-choice-back"') && !/Broker|брокер/i.test(h), platform + ' demo choice: the seafarer door is the in-app demo; «← Back» is there; no «Broker» wording');
+    await app.sandbox.entryForkDemoOpen('crewing'); await app.sandbox.entryForkDemoOpen('chartering'); await efSettle();
+    const opened = efCalled(app.calls, 'open_external_url').map(([, a]) => a && a.url);
+    ok(opened.length === 2 && opened[0] === 'https://account.skipi.app/app/crewing/demo' && opened[1] === 'https://account.skipi.app/app/broker/demo' && efForkShown(app.doc),
+      platform + ' demo choice: Crewing and Chartering open their web demos in the browser, the choice stays on screen');
+    app.sandbox.entryForkDemoBack(); await efSettle();
+    ok(String(efFork(app.doc).innerHTML) === fork0, platform + ' demo choice: «← Back» returns to the entry screen');
+    app.sandbox.entryForkDemoChoice(); await app.sandbox.entryForkDemo(); await efSettle();
+    ok(efCalled(app.calls, 'create_demo_vault_auto').length === 1 && !efForkShown(app.doc) && !efGateShown(app.doc), platform + ' demo choice: Seafarer opens the demo without a sign-in form');
+    if (platform === 'linux') {
+      const phone = await efBoot({});
+      app.sandbox.showEntryFork(); app.sandbox.entryForkDemoChoice(); phone.sandbox.entryForkDemoChoice();
+      ok(String(efFork(phone.doc).innerHTML) === String(efFork(app.doc).innerHTML), 'demo choice: the phone and the desktop render it byte for byte the same');
+    }
+  }
+  const web = bootApp({ platform: 'linux' });
+  web.sandbox.__SKIPI_WEBDESKTOP__ = true;
+  ok(web.sandbox._efEntryHere() === false && web.sandbox._efDemoNoLogin({ is_demo: '1' }) === false && sandbox._efEntryHere() === true,
+    'D12: the web shell is the one exception — it signs in on account.skipi.app, no entry screen and no session-less demo there');
 }
 
 {
   // Owner 24.11 (desktop): signed in and landed in «Skipi Demo» with an empty profile and «Open your own profile
   // to enable synchronization». init() handed a remembered DEMO to loadVault(); the gate went up OVER it, Sign in
   // resumed the demo and app_login wrote the token into it — so even later starts reopened the demo, «signed in».
-  section('desktop cold start with last vault = DEMO: the demo is never resumed → close_vault{forget:true} → gate → Sign in downloads the account');
+  section('desktop cold start with last vault = DEMO: the demo is never resumed → close_vault{forget:true} → entry screen → Sign in downloads the account');
   for (const tokenInDemo of [false, true]) {
     const tag = tokenInDemo ? '(token already written into the demo)' : '(no token)';
     let closed = false;
@@ -1504,14 +1553,73 @@ const efGateMarkup = () => HTML.slice(HTML.indexOf('id="login-gate-overlay"'), H
       app_login_status: () => ({ logged_in: tokenInDemo && !closed }),
     }, { platform: 'linux' });
     ok(efCalled(calls, 'close_vault', (a) => a && a.forget === true).length === 1, 'desktop demo ' + tag + ': the remembered demo is closed AND forgotten');
-    ok(spies.showLoginGate.length === 1 && efGateShown(doc), 'desktop demo ' + tag + ': the login gate is shown');
+    ok(spies.showEntryFork.length === 1 && efForkShown(doc) && spies.showLoginGate.length === 0, 'desktop demo ' + tag + ': the entry screen is shown (дело № 310)');
     ok(sandbox._loginGatePending === null, 'desktop demo ' + tag + ': nothing is parked — Sign in does not resume the demo');
     ok(typeof sandbox._loginGateNext === 'function' && /initNoVaultLanding\(/.test(String(sandbox._loginGateNext)), 'desktop demo ' + tag + ': after Sign in → the account landing (download from the account)');
     ok(spies.initNoVaultLanding.length === 0, 'desktop demo ' + tag + ': nothing is downloaded before Sign in');
   }
   {
     const { spies, sandbox, calls } = await efBoot({ get_last_vault: '/v', open_vault: EF_REAL, get_profile_status: { is_demo: '' }, app_login_status: { logged_in: false } }, { platform: 'linux' });
-    ok(efCalled(calls, 'close_vault').length === 0 && sandbox._loginGatePending === EF_REAL && spies.showLoginGate.length === 1, 'PRESERVE: a remembered REAL vault on desktop is kept and resumed after Sign in');
+    ok(efCalled(calls, 'close_vault').length === 0 && sandbox._loginGatePending === EF_REAL && spies.showEntryFork.length === 1 && spies.showLoginGate.length === 0, 'PRESERVE: a remembered REAL vault on desktop is kept (parked behind the entry screen) and resumed after Sign in');
+  }
+}
+
+{
+  // Дело № 310, шаг 1 (owner 28.11.2026): the «Create profile / Open existing profile / Load demo seafarer» screen
+  // is gone. showWelcome() keeps its name for the call sites and only routes.
+  section('дело № 310 — showWelcome(): signed in → «Retry» / «Sign out»; no session → the entry screen; never create / open / demo of a local profile');
+  const OLD = /mobileCreateProfile\(\)|mobileOpenExistingVault\(|loadDemoVault\(\)|showSetup\(\)|openExisting\(\)|Create profile|Open existing profile|Создать профиль|Открыть существующий профиль/;
+  const fnSrc = (name) => { const i = HTML.indexOf('function ' + name + '('); return i < 0 ? '' : HTML.slice(i, HTML.indexOf('\n}', i)); };
+  ok(fnSrc('renderMobileWelcome').length > 0 && !OLD.test(fnSrc('renderMobileWelcome')) && !OLD.test(fnSrc('showWelcome')), 'the phone and desktop welcome renderers carry no create / open / demo doors');
+  for (const platform of ['linux', 'android']) {
+    {
+      const app = await efBoot({ app_login_status: { logged_in: true, email: 'synthetic@example.invalid' }, get_account_sync_status: { logged_in: true, profile_open: false, restore_context: null } }, { platform });
+      app.sandbox.showWelcome(); await efSettle();
+      const h = platform === 'linux' ? String((app.doc.getElementById('welcome-account-controls') || {}).innerHTML || '') : mobileHtml(app.doc);
+      ok(h.includes('data-account-restore-retry') && h.includes('accountRestoreRetry()') && h.includes('appLogoutToGate()') && !OLD.test(h), platform + ': signed in → the account screen with Retry and Sign out');
+      ok(!efForkShown(app.doc), platform + ': signed in → no entry screen');
+    }
+    {
+      const app = await efBoot({}, { platform });
+      app.sandbox.hideEntryFork(); app.spies.showEntryFork.length = 0; app.sandbox._loginGateNext = null;
+      app.sandbox.showWelcome(); await efSettle();
+      ok(efForkShown(app.doc) && app.spies.showEntryFork.length === 1 && app.sandbox._loginGatePending === null && /initNoVaultLanding\(/.test(String(app.sandbox._loginGateNext)), platform + ': no session → the entry screen; Sign in continues into the account');
+    }
+    {
+      // a profile that opens before the session answer arrives must not be painted over by the late route:
+      // every app_login_status asked BY showWelcome() is held back until loadVault() has finished
+      const app = await efBoot({ app_login_status: { logged_in: true, email: 'synthetic@example.invalid' } }, { platform });
+      const inner = app.sandbox.invoke; const held = []; let holding = true;
+      app.sandbox.invoke = (cmd, args) => (cmd === 'app_login_status' && holding) ? new Promise((r) => { held.push(() => r({ logged_in: true, email: 'synthetic@example.invalid' })); }) : inner(cmd, args);
+      app.sandbox.showWelcome(); holding = false;
+      await app.sandbox.loadVault({ ...EF_REAL }); await efSettle();
+      held.forEach((r) => r()); await efSettle();
+      // desktop: the boot's own account screen stays in the (hidden) welcome node — the late repaint would re-show it
+      const repainted = platform === 'linux' ? app.doc.getElementById('scr-welcome').style.display !== 'none' : mobileHtml(app.doc).includes('data-account-restore-retry');
+      ok(held.length >= 1 && !repainted, platform + ': a profile opened meanwhile cancels the late repaint');
+    }
+  }
+  {
+    const web = await efBoot({ app_login_status: { logged_in: true, email: 'synthetic@example.invalid' } }, { platform: 'linux' });
+    web.sandbox.__SKIPI_WEBDESKTOP__ = true;
+    let reloads = 0; web.sandbox.location = { reload() { reloads++; } };
+    web.sandbox.showWelcome();
+    const h = String((web.doc.getElementById('welcome-account-controls') || {}).innerHTML || '') + mobileHtml(web.doc);
+    ok(h.includes('data-account-restore-retry') && h.includes('appLogoutToGate()') && !OLD.test(h) && !efForkShown(web.doc), 'web shell: a failed load lands on Retry and Sign out — at once, no entry screen');
+    web.calls.length = 0; web.sandbox.accountRestoreRetry(); await efSettle();
+    ok(reloads === 1 && !web.calls.some(([c]) => c === 'get_account_sync_status' || c === 'restore_account_profile'), 'web shell: Retry reloads the page (the server reads the account again)');
+  }
+  {
+    // the desktop demo opens from the entry screen without a session and carries its own way back
+    const app = await efBoot({ create_demo_vault_auto: () => ({ ...EF_DEMO }), get_profile_status: { is_demo: '1' } }, { platform: 'linux' });
+    await app.sandbox.entryForkDemo(); await efSettle();
+    const bar = app.doc.getElementById('demo-signin-bar');
+    ok(!efGateShown(app.doc) && !efForkShown(app.doc) && app.spies.showLoginGate.length === 0, 'desktop demo: opens with no sign-in form');
+    ok(!!bar && bar.style.display === 'flex' && String(bar.innerHTML).includes('entryForkLeaveDemo()'), 'desktop demo: the «Sign in» bar is on screen');
+    await app.sandbox.entryForkLeaveDemo(); await efSettle();
+    ok(efForkShown(app.doc) && bar.style.display === 'none' && efCalled(app.calls, 'close_vault', (a) => a && a.forget === true).length === 1, 'desktop demo: Sign in closes and forgets the demo and returns to the entry screen');
+    const real = await efBoot({ app_login_status: { logged_in: true, email: 'synthetic@example.invalid' }, get_last_vault: '/v', open_vault: { ...EF_REAL } }, { platform: 'linux' });
+    ok(!real.doc.getElementById('demo-signin-bar') || real.doc.getElementById('demo-signin-bar').style.display === 'none', 'a real signed-in profile shows no demo bar');
   }
 }
 
@@ -7099,7 +7207,7 @@ async function s1Boot(map, consent, opts) {
   const web = await s1Boot({ app_login_status: { logged_in: true, pending: true }, get_account_sync_status: () => s1Status() }, () => true);
   web.sandbox.__SKIPI_WEBDESKTOP__ = true; web.calls.length = 0; web.consents.length = 0;
   await web.sandbox.initNoVaultLanding(false); await efSettle();
-  ok(web.spies.showWelcome.length === 1 && web.consents.length === 0 && !web.calls.some(([c]) => c === 'get_account_sync_status' || c === 'restore_account_profile'), 'S1-8: the web shell alone still shows the old landing, without touching the native sync commands');
+  ok(web.spies.showWelcome.length === 1 && web.consents.length === 0 && !web.calls.some(([c]) => c === 'get_account_sync_status' || c === 'restore_account_profile'), 'S1-8: the web shell alone goes through showWelcome() (дело № 310: Retry / Sign out), without touching the native sync commands');
   const bare = await s1Boot({ app_login_status: { logged_in: true, pending: true } }, () => true);
   ok(bare.spies.showWelcome.length === 0 && bare.consents.length === 0 && !(s1Restores(bare.calls).length > 0) && mobileHtml(bare.doc).includes('data-account-restore-retry') && !mobileHtml(bare.doc).includes('mobileCreateProfile()'), 'S1-9 (№976): a parked login without restore_context lands on the account screen with Retry (D5 shape)');
 }

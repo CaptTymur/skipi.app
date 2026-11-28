@@ -143,7 +143,10 @@ if (loadVault !== null) {
 const demoPredicate = fnBody(html, '_efDemoNoLogin');
 ok(demoPredicate !== null, 'G4: _efDemoNoLogin(info) exists (the demo exception predicate)');
 if (demoPredicate !== null) {
-  ok(/^\s*return\s+isNativeMobile\(\)\s*&&\s*String\(\(info\s*&&\s*info\.is_demo\)\|\|''\)\s*===\s*'1';\s*$/.test(demoPredicate), 'G4: the demo exception is EXACTLY native && info.is_demo === "1" — no other flag, store or platform');
+  // Дело № 310 (owner 28.11.2026: the entry screen is one for every profile type and build): the exception
+  // now covers the phone AND the desktop — every build that signs in itself; the web shell stays out.
+  ok(/^\s*return\s+_efEntryHere\(\)\s*&&\s*String\(\(info\s*&&\s*info\.is_demo\)\|\|''\)\s*===\s*'1';\s*$/.test(demoPredicate), 'G4: the demo exception is EXACTLY _efEntryHere() && info.is_demo === "1" — no other flag or store');
+  ok(/^\s*return\s+!\s*window\.__SKIPI_WEBDESKTOP__;\s*$/.test(fnBody(html, '_efEntryHere') || ''), 'G4 (дело № 310): _efEntryHere() is exactly «not the web shell»');
 }
 const demoStamps = html.match(/\.is_demo\s*=\s*'1'/g) || [];
 const demoLoader = fnBody(html, 'loadDemoVault') || '';
@@ -191,10 +194,10 @@ ok(/getUiLang\(\)/.test(fnBody(html, '_efTxt') || ''), 'G7: _efTxt() switches on
 if (init !== null) {
   const calls = init.replace(/_loginGateNext\s*=\s*function\s*\(\)\s*\{[^}]*\};?/g, '');
   // S1 (init, no vault): the native fork sits INSIDE the negative token check, BEFORE the kept desktop gate.
-  ok(/if\s*\(\s*!\s*\(\s*await\s+_hasLoginToken\(\)\s*\)\s*\)\s*\{[^}]*?if\s*\(\s*isNativeMobile\(\)\s*\)\s*\{\s*showEntryFork\(\);\s*return;\s*\}[^}]*?showLoginGate\(\)/.test(calls), 'G7: S1 — init() shows the fork natively INSIDE the no-token branch, BEFORE the (kept) desktop gate');
+  ok(/if\s*\(\s*!\s*\(\s*await\s+_hasLoginToken\(\)\s*\)\s*\)\s*\{[^}]*?if\s*\(\s*_efEntryHere\(\)\s*\)\s*\{\s*showEntryFork\(\);\s*return;\s*\}[^}]*?showLoginGate\(\)/.test(calls), 'G7: S1 — init() shows the entry screen INSIDE the no-token branch, BEFORE the gate kept for the web shell');
   // S2-cold (init, remembered vault): token checked natively BEFORE loadVault(); vault parked for Sign in; a remembered DEMO is closed + forgotten (demo is not a session).
   const s2 = init.slice(init.indexOf("invoke('open_vault'"), init.indexOf('shouldUseMobileShell()'));
-  ok(s2.length > 0 && /isNativeMobile\(\)\s*&&\s*!\s*\(\s*await\s+_hasLoginToken\(\)\s*\)/.test(s2), 'G7: S2-cold — init() checks the token natively before handing the remembered vault to loadVault()');
+  ok(s2.length > 0 && /_efEntryHere\(\)\s*&&\s*!\s*\(\s*await\s+_hasLoginToken\(\)\s*\)/.test(s2), 'G7: S2-cold — init() checks the token before handing the remembered vault to loadVault()');
   ok(/_loginGatePending\s*=\s*info;\s*showEntryFork\(\);\s*return;/.test(s2), 'G7: S2-cold — the vault is parked (_loginGatePending=info) and the fork shown; Sign in resumes the SAME vault');
   ok(/close_vault',\s*\{\s*forget\s*:\s*true\s*\}/.test(s2) && /_efOpenVaultIsDemo\(\)/.test(s2), 'G7: S2-cold — a remembered DEMO vault is closed + forgotten (close_vault{forget:true}), never auto-opened');
   ok(/\}\s*else\s*\{\s*await\s+loadVault\(info\);\s*return;\s*\}/.test(s2), 'G7: S2-cold — with a session (or on desktop) a remembered REAL vault still loads as today');
@@ -206,13 +209,13 @@ if (init !== null) {
   // into the demo. Structural, not cosmetic: BOTH loadVault() sites in init() are guarded, and no
   // third one may appear.
   const s3 = init.slice(init.indexOf("get_recent_vaults"), init.indexOf('checkForUpdate('));
-  ok(s3.length > 0 && /isNativeMobile\(\)\s*&&\s*!\s*\(\s*await\s+_hasLoginToken\(\)\s*\)/.test(s3), 'G8: S3 — the recent-vaults loop checks the token natively BEFORE handing a vault to loadVault()');
+  ok(s3.length > 0 && /_efEntryHere\(\)\s*&&\s*!\s*\(\s*await\s+_hasLoginToken\(\)\s*\)/.test(s3), 'G8: S3 — the recent-vaults loop checks the token BEFORE handing a vault to loadVault()');
   ok(/_loginGatePending\s*=\s*rinfo;\s*showEntryFork\(\);\s*return;/.test(s3), 'G8: S3 — a token-less recent vault is parked and the fork shown (Sign in resumes the SAME vault)');
   ok(/_efOpenVaultIsDemo\(\)/.test(s3) && /close_vault',\s*\{\s*forget\s*:\s*true\s*\}/.test(s3), 'G8: S3 — a recent DEMO is closed + forgotten (checked against the vault on disk, get_profile_status.is_demo), never auto-opened');
   ok(!/showLoginGate\(/.test(s3), 'G8: S3 — the recent path never raises the bare login gate (Н1: it used to, over an open demo vault)');
   const initCode = init.replace(/^\s*\/\/.*$/gm, ''); // prose mentions loadVault() too
   ok((initCode.match(/loadVault\(/g) || []).length === 2, 'G8: init() hands a vault to loadVault() from EXACTLY two sites (remembered + recent) — a third, unguarded one would bypass the fork');
-  ok((initCode.match(/isNativeMobile\(\)\s*&&\s*!\s*\(\s*await\s+_hasLoginToken\(\)\s*\)/g) || []).length === 2, 'G8: BOTH loadVault() sites in init() sit behind the same native no-session guard');
+  ok((initCode.match(/_efEntryHere\(\)\s*&&\s*!\s*\(\s*await\s+_hasLoginToken\(\)\s*\)/g) || []).length === 2, 'G8: BOTH loadVault() sites in init() sit behind the same no-session guard');
 }
 ok((html.match(/'https:\/\/assistant\.skipi\.app\/register'/g) || []).length === 1, 'G7: exactly one Register URL literal in dist (the fork reuses openRegisterPage)');
 ok(/openRegisterPage\(\)/.test(fnBody(html, 'entryForkRegister') || ''), 'G7: the Register door calls openRegisterPage()');
@@ -228,7 +231,7 @@ const banner = fnBody(html, 'mobileAssistantDemoBannerHtml') || '';
 ok(/isNativeMobile\(\)\s*\?[^:]*data-qa="assistant-demo-signin"[^:]*entryForkLeaveDemo\(\)/.test(banner), 'G7: the demo banner offers the way back (assistant-demo-signin → entryForkLeaveDemo) natively only');
 ok(/mobileAssistantDemoBannerHtml\(\)/.test(fnBody(html, 'mobileRenderAssistantChat') || '') && /mobileAssistantDemoBannerHtml\(\)/.test(fnBody(html, 'renderMobileHome') || ''), 'G7: that single banner is what both the chat and the native home grid render (one source, owner 07.10)');
 const logout = fnBody(html, 'appLogoutToGate') || '';
-ok(/if\s*\(\s*isNativeMobile\(\)\s*\)\s*\{[\s\S]*?showEntryFork\(\);[\s\S]*?return;[\s\S]*?\}[\s\S]*?showLoginGate\(\)/.test(logout), 'G7: Sign out → fork natively (one rule: no session → fork), the gate on desktop');
+ok(/if\s*\(\s*_efEntryHere\(\)\s*\)\s*\{[\s\S]*?showEntryFork\(\);[\s\S]*?return;[\s\S]*?\}[\s\S]*?showLoginGate\(\)/.test(logout), 'G7: Sign out → the entry screen (one rule: no session → entry screen), the gate only in the web shell');
 ok(/_efOpenVaultIsDemo\(\)/.test(logout) && /close_vault',\s*\{\s*forget\s*:\s*true\s*\}/.test(logout), 'G7: Sign out while the demo is open closes + forgets it (no token into the demo)');
 const gateMarkup = html.slice(html.indexOf('id="login-gate-overlay"'), html.indexOf('id="update-banner"'));
 ok(!/lg-back|entry-fork/.test(gateMarkup), 'G7: the gate static markup is untouched — «← Back» is inserted by JS (PRESERVE sha region)');
@@ -350,7 +353,13 @@ if (landing !== null) {
   ok(waitScreen !== null && /Загружаю профиль из аккаунта/.test(waitScreen) && /Downloading your profile from the account/.test(waitScreen), 'G9: the RU/EN waiting screen exists');
   ok(waitScreen !== null && !/vault/i.test(waitScreen.replace(/^\s*\/\/.*$/gm, '')), 'G9 (vocabulary): the new strings carry no "vault"');
   ok(/paintAccountRestoreScreen\(/.test(waitScreen || '') && /paintAccountRestoreScreen\(/.test(retryScreen), 'G9 (№976): waiting and account screens share ONE painter (mobile main / desktop account block)');
-  ok(/accountRestoreLandingReset\(\)/.test(fnBody(html, 'showWelcome') || ''), 'G9: showWelcome() still clears the waiting state (web shell / last-resort path)');
+  ok(/accountRestoreLandingReset\(\)/.test(fnBody(html, 'showWelcomeShell') || '') && /^\s*showWelcomeShell\(\);/.test(fnBody(html, 'showWelcome') || ''), 'G9: showWelcome() still clears the waiting state first (through showWelcomeShell)');
+  // Дело № 310: showWelcome() only routes — the account screen (Retry / Sign out) or the entry screen.
+  {
+    const sw = fnBody(html, 'showWelcome') || '';
+    ok(/showAccountRestoreRetry\('error'\)/.test(sw) && /showEntryFork\(\)/.test(sw) && !/showSetup|openExisting|loadDemoVault|mobileCreateProfile|mobileOpenExistingVault/.test(sw), 'G9 (дело № 310): showWelcome() routes to Retry / Sign out or to the entry screen — no create / open / demo of a local profile');
+    ok(!/id="btn-create-vault"|id="btn-open-vault"|id="welcome-demo-link"/.test(html), 'G9 (дело № 310): the create / open / demo controls are gone from the markup');
+  }
   // №976: the one invitation on the native home — fill the profile INSIDE the app.
   const home = fnBody(html, 'renderMobileHome') || '';
   const banner = fnBody(html, 'mobileEmptyProfileBannerHtml') || '';
