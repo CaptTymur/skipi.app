@@ -220,7 +220,7 @@ function applyI18nChrome(){
     document.documentElement.lang=getUiLang();
     var pairs=[
         ['mt-files','nav.files'],['mt-exp','nav.experience'],['mt-cv','nav.cv'],['mt-pkg','nav.packages'],['mt-disp','nav.dispatch'],['mt-jobs','nav.jobs'],['mt-info','nav.information'],['mt-vessels','nav.vessels'],['mt-ports','nav.ports'],['mt-myvessel','nav.myvessel'],
-        ['welcome-subtitle','welcome.subtitle'],['btn-create-vault','welcome.create'],['btn-open-vault','welcome.open'],['welcome-folder-hint','welcome.hint'],['welcome-demo-prefix','welcome.demo_prefix'],['welcome-demo-link-text','welcome.demo']
+        ['welcome-subtitle','welcome.subtitle']
     ];
     pairs.forEach(function(p){
         var el=document.getElementById(p[0]);
@@ -1006,7 +1006,10 @@ body.mobile-native .mobile-brand-wrap, body.mobile-native #mobile-feedback-btn, 
 .mobile-entry-fork-title { font-size:22px; font-weight:600; margin:0 0 6px; color:var(--text); }
 .mobile-entry-fork-sub { color:var(--text2); font-size:13px; margin:0 0 18px; }
 .mobile-entry-fork-back { position:absolute; top:calc(14px + env(safe-area-inset-top,0px)); left:16px; color:var(--accent); text-decoration:none; font-size:14px; padding:8px; }
+.mobile-entry-fork .mobile-primary-action { cursor:pointer; font:inherit; }
 /* /mobile-entry-fork */
+/* Дело № 310: the desktop demo runs without a session — its own way to the entry screen. */
+.demo-signin-bar { display:none; position:fixed; left:50%; transform:translateX(-50%); bottom:34px; z-index:900; align-items:center; gap:12px; padding:8px 10px 8px 14px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); font-size:12px; box-shadow:0 4px 18px rgba(0,0,0,.18); }
 
 /* Mobile app shell */
 .mobile-shell { display:none; min-height:100dvh; background:var(--bg); color:var(--text); flex-direction:column; overflow:hidden; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); }
@@ -1722,16 +1725,6 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
                 <h1 id="welcome-title">Skipi</h1>
                 <p id="welcome-subtitle">Skipi - United Seafarers</p>
                 <p style="margin-top:-4px;margin-bottom:14px;font-size:11px;color:var(--text2);opacity:0.7;">version <span id="welcome-version">EMBED-TEST</span></p>
-                <button class="btn btn-accent" id="btn-create-vault" onclick="showSetup()">Create Seafarer Vault</button>
-                <button class="btn btn-outline" id="btn-open-vault" onclick="openExisting()">Open Existing Vault</button>
-                <div id="welcome-recent" style="margin-top:14px;max-width:420px;width:100%;"></div>
-                <div id="welcome-folder-hint" style="margin-top:12px;font-size:11px;color:var(--text2);line-height:1.45;max-width:360px;">
-                    New vault folders are named clearly, for example <code>Skipi Seafarer - Tymur Rudov</code>. When opening a vault, select that named folder.
-                </div>
-                <div style="display:flex;align-items:center;gap:10px;max-width:360px;width:100%;margin:18px 0 10px;color:var(--text2);opacity:.65;font-size:11px;">
-                    <span style="flex:1;height:1px;background:var(--border);"></span><span id="welcome-demo-prefix">Just exploring?</span><span style="flex:1;height:1px;background:var(--border);"></span>
-                </div>
-                <button class="btn btn-outline" id="welcome-demo-link" onclick="loadDemoVault();return false;" style="border-color:var(--accent);color:var(--accent);"><span style="margin-right:6px;">🎬</span><span id="welcome-demo-link-text">Load demo seafarer</span></button>
             </div>
             <div id="scr-setup" style="display:none;"></div>
             <div id="scr-content" style="display:none;"></div>
@@ -4154,7 +4147,7 @@ async function init() {
             // Sign in resumed the demo and wrote the token into it — the seafarer landed in «Skipi Demo»
             // instead of the account. The demo is never resumed: forgotten, then the no-vault path below
             // (gate → Sign in → the account is downloaded, initNoVaultLanding).
-            if(isNativeMobile()&&!(await _hasLoginToken())){
+            if(_efEntryHere()&&!(await _hasLoginToken())){
                 if(await _efOpenVaultIsDemo()){ try{await invoke('close_vault',{forget:true});}catch(_){} }
                 else { _loginGatePending=info; showEntryFork(); return; }
             }else if(await _efOpenVaultIsDemo()){ try{await invoke('close_vault',{forget:true});}catch(_){} }
@@ -4176,7 +4169,7 @@ async function init() {
                 // into the demo (which the next Demo tap wipes with remove_dir_all). The demo is checked
                 // against the vault on disk (get_profile_status.is_demo), not against a JS stamp.
                 try{var rinfo=await invoke('open_vault',{path:rp});
-                    if(isNativeMobile()&&!(await _hasLoginToken())){
+                    if(_efEntryHere()&&!(await _hasLoginToken())){
                         if(await _efOpenVaultIsDemo()){ try{await invoke('close_vault',{forget:true});}catch(_){} continue; }
                         _loginGatePending=rinfo;showEntryFork();return;
                     }
@@ -4200,7 +4193,7 @@ async function init() {
         _loginGateNext=function(){ initNoVaultLanding(hadVaultPath); };
         // Canon «entry fork» (OWNER 06.09, DECISIONS (295)): natively the first
         // screen is Sign in · Register · Demo; the gate below stays for desktop/web.
-        if(isNativeMobile()){showEntryFork();return;}
+        if(_efEntryHere()){showEntryFork();return;}
         showLoginGate();
         return;
     }
@@ -4230,6 +4223,7 @@ async function initNoVaultLanding(hadVaultPath){
 // «Retry» on the error screen: the one automatic attempt per sign-in context (D7) is
 // re-armed by the user's tap, never by a timer.
 function accountRestoreRetry(){
+    if(window.__SKIPI_WEBDESKTOP__){try{window.location.reload();}catch(e){}return;}
     _accountRestoreAutoTried=null;accountRestoreLastError='';
     initNoVaultLanding(true);
 }
@@ -5061,7 +5055,30 @@ async function onType(v){
     // All other entity types are disabled in v0.4.11; no-op.
     showToast('This entity type is coming soon — only Seafarer is available right now.','info');
 }
-function showWelcome(){accountRestoreLandingReset();show('scr-welcome');hide('scr-setup');hide('scr-content');hide('ribbon');hide('left-panel');hide('tabs');hide('statusbar');var mb=document.getElementById('modules-bar');if(mb)mb.style.display='none';renderWelcomeRecent();renderMobileWelcome();renderWelcomeAccount();}
+// Дело № 310, шаг 1 (владелец 28.11.2026: «этот экран напоминает старую архитектуру»): the
+// «Create profile / Open existing profile / Load demo» choice of a LOCAL profile is gone. This
+// name stays for its call sites and now only routes: a signed-in account that could not be
+// opened → the honest «Retry» / «Sign out» screen; no session → the one entry screen
+// (Sign in · Register · Demo), the same for every profile type and every build.
+function showWelcomeShell(){accountRestoreLandingReset();demoSignInBarHide();show('scr-welcome');hide('scr-setup');hide('scr-content');hide('ribbon');hide('left-panel');hide('tabs');hide('statusbar');var mb=document.getElementById('modules-bar');if(mb)mb.style.display='none';}
+var _welcomeRouteSeq=0;
+function showWelcome(){
+    showWelcomeShell();
+    var signedIn=function(){try{showAccountRestoreRetry('error');}catch(e){logError('welcome_account_screen',e);}};
+    // The web shell is signed in by account.skipi.app before this page is served.
+    if(window.__SKIPI_WEBDESKTOP__){signedIn();return;}
+    // Painted at once (account, Sign out, download from the account); the session decides the rest.
+    // A profile that opens meanwhile (loadVault) cancels the late repaint.
+    renderMobileWelcome();renderWelcomeAccount();
+    var seq=++_welcomeRouteSeq;
+    _hasLoginToken().then(function(yes){
+        if(seq!==_welcomeRouteSeq)return;
+        if(yes){signedIn();return;}
+        _loginGatePending=null;
+        _loginGateNext=function(){ initNoVaultLanding(true); };
+        showEntryFork();
+    });
+}
 
 function mobileViewportLikely(){return window.matchMedia&&window.matchMedia('(max-width: 720px)').matches;}
 function shouldUseMobileShell(){return hostPlatform==='android'||hostPlatform==='ios'||mobileViewportLikely();}
@@ -5635,23 +5652,16 @@ function renderMobileVaultWizard(){
         if(nameEl)nameEl.focus();
     }
 }
+// Дело № 310: the phone's «Create profile / Open existing profile / Open demo» doors are gone.
+// What stays is the neutral no-profile placeholder (account, Sign out, download from the account);
+// showWelcome() paints it first and then routes by the session.
 function renderMobileWelcome(){
     if(!shouldUseMobileShell())return;
     mobileView='home';
     try{updateTitlebar();}catch(e){}
-    var ru=getUiLang()==='ru';
-    mobileSetSub(ru?'Мобильный профиль моряка':'Mobile seafarer vault');
+    mobileSetSub('');
     mobileSetBottomNav(false);
-    var h='<div class="mobile-hero">';
-    h+='<h1>'+mobileEsc(tr('app.name'))+'</h1>';
-    h+='<p>'+mobileEsc(ru?'Создайте или откройте профиль моряка на этом устройстве. Затем включите синхронизацию, чтобы подключить данные аккаунта. Перед заменой данных можно выбрать, какую версию сохранить.':'Create or open your seafarer profile on this device. Then enable sync to connect account data. Before replacing data, you can choose which version to keep.')+'</p>';
-    h+=appAccountControlsHtml()+accountRestoreActionHtml();
-    h+='<div class="mobile-stack">';
-    h+='<button class="mobile-primary-action" type="button" onclick="mobileCreateProfile()"><span class="mobile-action-icon">+</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(ru?'Создать профиль':'Create profile')+'</span><span class="mobile-action-sub">'+mobileEsc(ru?'Сначала выберите департамент, тип судна и должность.':'Choose department, vessel type and rank first.')+'</span></span></button>';
-    h+='<button class="btn btn-outline" onclick="mobileOpenExistingVault()">'+mobileEsc(ru?'Открыть существующий профиль':'Open existing profile')+'</button>';
-    h+='<button class="btn btn-outline" onclick="loadDemoVault()">'+mobileEsc(ru?'Открыть демо':'Open demo vault')+'</button>';
-    h+='</div></div>';
-    mobileMainHtml(h);
+    mobileMainHtml('<div class="mobile-hero"><h1>'+mobileEsc(tr('app.name'))+'</h1>'+appAccountControlsHtml()+accountRestoreActionHtml()+'</div>');
     refreshAppAccountControls();
 }
 async function mobileQuickCreateVault(){
@@ -11254,7 +11264,7 @@ async function appLogoutToGate(){
     // welcome screen instead of a blank shell (№162b continuation).
     _loginGatePending=null;
     _loginGateNext=function(){ initNoVaultLanding(true); };
-    if(isNativeMobile()){
+    if(_efEntryHere()){
         // Canon «entry fork» (295): no session → the fork, raised FIRST (nothing may
         // stay on screen), then the vault is re-bound so Sign in resumes it — unless
         // it is the demo, which is closed + forgotten (the demo is not a session and
@@ -11489,16 +11499,16 @@ var _efHistMark=false; // ONE History entry while the gate is open FROM the fork
 function _efTxt(){
     var ru=false; try{ ru=getUiLang()==='ru'; }catch(e){}
     return ru ? {
-        title:'Skipi', sub:'Профиль моряка, документы и ассистент.',
+        title:'Skipi', sub:'Одно приложение для моряков, крюинга и фрахтования.',
         signin:'Войти', signinSub:'У меня уже есть аккаунт Skipi.',
         register:'Регистрация', registerSub:'Создать аккаунт по e-mail.',
-        demo:'Демо', demoSub:'Посмотреть приложение на демо-данных, без регистрации.',
+        demo:'Демо', demoSub:'Посмотреть рабочее место моряка на демо-данных, без регистрации.',
         back:'\u2190 Назад'
     } : {
-        title:'Skipi', sub:'Your seafarer profile, documents and assistant.',
+        title:'Skipi', sub:'One app for seafarers, crewing and chartering.',
         signin:'Sign in', signinSub:'I already have a Skipi account.',
         register:'Register', registerSub:'Create an account with your e-mail.',
-        demo:'Demo', demoSub:'Try the app on demo data, no account needed.',
+        demo:'Demo', demoSub:'Look around the seafarer workspace on demo data, no account needed.',
         back:'\u2190 Back'
     };
 }
@@ -11507,8 +11517,11 @@ function _efTxt(){
 // loadDemoVault() stamps info.is_demo right after create_demo_vault_auto — the only
 // demo-creating path (Rust always writes is_demo=1 there).
 function _efDemoNoLogin(info){
-    return isNativeMobile()&&String((info&&info.is_demo)||'')==='1';
+    return _efEntryHere()&&String((info&&info.is_demo)||'')==='1';
 }
+// Дело № 310: the entry screen (Sign in · Register · Demo) is one for the phone and the desktop
+// builds. Only the web shell is excluded — it is signed in on account.skipi.app, not here.
+function _efEntryHere(){ return !window.__SKIPI_WEBDESKTOP__; }
 async function _efOpenVaultIsDemo(){
     try{ var sp=await invoke('get_profile_status'); return String((sp&&sp.is_demo)||'')==='1'; }catch(e){ return false; }
 }
@@ -11516,6 +11529,7 @@ function _efDoorHtml(qa,onclick,icon,title,sub){
     return '<button class="mobile-primary-action" type="button" data-qa="'+qa+'" onclick="'+onclick+'"><span class="mobile-action-icon">'+icon+'</span><span class="mobile-action-copy"><span class="mobile-action-title">'+mobileEsc(title)+'</span><span class="mobile-action-sub">'+mobileEsc(sub)+'</span></span></button>';
 }
 function showEntryFork(){
+    demoSignInBarHide();
     var t=_efTxt();
     var o=document.getElementById('mobile-entry-fork');
     if(!o){
@@ -11533,6 +11547,30 @@ function showEntryFork(){
         +_efDoorHtml('demo','entryForkDemo()','&#9679;',t.demo,t.demoSub)
         +'</div>';
     o.style.display='flex';
+}
+// Дело № 310: on the desktop the demo opens from the entry screen without a session (as on the
+// phone, where the demo banner carries «Sign in»). This bar is the desktop way back: it closes
+// and forgets the demo and returns to the entry screen (entryForkLeaveDemo).
+function demoSignInBarHide(){
+    var b=document.getElementById('demo-signin-bar');
+    if(b)b.style.display='none';
+}
+async function demoSignInBarSync(info){
+    demoSignInBarHide();
+    if(String((info&&info.is_demo)||'')!=='1'||!_efEntryHere()||shouldUseMobileShell())return;
+    if(await _hasLoginToken())return;
+    var ru=false; try{ ru=getUiLang()==='ru'; }catch(e){}
+    var b=document.getElementById('demo-signin-bar');
+    if(!b){
+        b=document.createElement('div');
+        b.setAttribute('id','demo-signin-bar');
+        b.setAttribute('class','demo-signin-bar');
+        b.setAttribute('data-qa','demo-signin-bar');
+        (document.body||document.documentElement).appendChild(b);
+    }
+    b.innerHTML='<span>'+esc(ru?'Это демо-данные. Войдите, чтобы работать со своим аккаунтом.':'This is demo data. Sign in to work with your own account.')+'</span>'
+        +'<button class="btn btn-accent btn-sm" type="button" data-qa="demo-signin" onclick="entryForkLeaveDemo()">'+esc(ru?'Войти':'Sign in')+'</button>';
+    b.style.display='flex';
 }
 function hideEntryFork(){
     var o=document.getElementById('mobile-entry-fork');
@@ -11699,7 +11737,7 @@ async function accountFirstSignIn(){
     // The user asked to CREATE A PROFILE, so a successful sign-in must finish that errand
     // instead of parking on a landing screen. A vault parked for resume is its own
     // continuation (doAppLogin resumes it) and is not overridden.
-    if(!_loginGatePending){ _loginGateNext=function(){ showWelcome(); setTimeout(function(){ mobileStartVaultWizard(); },0); }; }
+    if(!_loginGatePending){ _loginGateNext=function(){ showWelcomeShell(); setTimeout(function(){ mobileStartVaultWizard(); },0); }; }
     if(isNativeMobile()){ entryForkSignIn(); return; }
     showLoginGate();
 }
@@ -11722,10 +11760,12 @@ async function loadVault(info){
         return;
     }
     hideLoginGate();
+    _welcomeRouteSeq++;
     hide('scr-welcome');hide('scr-setup');show('scr-content');show('left-panel');hide('tabs');show('statusbar');
     var mb=document.getElementById('modules-bar');if(mb)mb.style.display='flex';
     currentAccountType=info.account_type||'';
     mobileIsDemo=String((info&&info.is_demo)||'')==='1';
+    try{demoSignInBarSync(info).catch(function(){});}catch(e){}
     mobileProfileEmpty=!(info&&(info.rank||info.position));
     try{invoke('get_profile_status').then(function(sp){mobileIsDemo=String((sp&&sp.is_demo)||'')==='1';}).catch(function(){});}catch(e){}
     var prevPosition = currentWizardPosition;
@@ -20267,7 +20307,7 @@ function resetToWelcome(){
     var content=document.getElementById('scr-content');if(content)content.innerHTML='';
     hide('scr-content');hide('ribbon');hide('left-panel');hide('tabs');hide('statusbar');hide('scr-setup');
     var mb=document.getElementById('modules-bar');if(mb)mb.style.display='none';
-    show('scr-welcome');
+    show('scr-welcome');demoSignInBarHide();
     renderWelcomeAccount();
     updateTitlebar();
 }
