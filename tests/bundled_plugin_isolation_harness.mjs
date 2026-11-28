@@ -1497,6 +1497,12 @@ const efGateMarkup = () => HTML.slice(HTML.indexOf('id="login-gate-overlay"'), H
   ok(spies.showEntryFork.length === 1 && efForkShown(doc), 'D12: the entry screen is the first screen on desktop');
   ok(spies.showLoginGate.length === 0 && !efGateShown(doc), 'D12: the sign-in form is not raised until Sign in is chosen');
   ok(['sign-in', 'register', 'demo'].every((qa) => String(efFork(doc).innerHTML).includes('data-qa="' + qa + '"')), 'D12: three doors — Sign in, Register, Demo');
+  // owner 28.11.2026: «на телефоне выглядит лучше всего… писать one app for seafarers, crewing and charterers не нужно»
+  ok(!/mobile-entry-fork-sub|One app for|Одно приложение/.test(String(efFork(doc).innerHTML)) && /<div class="mobile-entry-fork-title"[^>]*>Skipi<\/div>/.test(String(efFork(doc).innerHTML)), 'D12: the entry screen is the name and the three doors — no line under the name');
+  {
+    const phone = await efBoot({});
+    ok(String(efFork(phone.doc).innerHTML) === String(efFork(doc).innerHTML), 'D12: the phone and the desktop render the entry screen byte for byte the same');
+  }
   ok(!doc.body.classList.contains('mobile-mode') && !doc.body.classList.contains('mobile-native'), 'D12: no mobile-mode on desktop');
   sandbox.entryForkSignIn(); await efSettle();
   ok(efGateShown(doc) && !efForkShown(doc) && !!doc.getElementById('lg-back'), 'D12: Sign in opens the form with «← Back» to the entry screen');

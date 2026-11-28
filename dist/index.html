@@ -1003,7 +1003,7 @@ body.mobile-native .mobile-brand-wrap, body.mobile-native #mobile-feedback-btn, 
 /* mobile-entry-fork (owner 06.09, canon (295)) — native-only first screen: Sign in · Register · Demo. Gate-class overlay (same z-index as #login-gate-overlay), rendered by JS. */
 .mobile-entry-fork { display:none; position:fixed; inset:0; z-index:100000; background:var(--bg); align-items:flex-start; justify-content:center; overflow:auto; padding:calc(32px + env(safe-area-inset-top,0px)) 20px calc(32px + env(safe-area-inset-bottom,0px)); }
 .mobile-entry-fork-card { width:100%; max-width:400px; }
-.mobile-entry-fork-title { font-size:22px; font-weight:600; margin:0 0 6px; color:var(--text); }
+.mobile-entry-fork-title { font-size:22px; font-weight:600; margin:0 0 18px; color:var(--text); }
 .mobile-entry-fork-sub { color:var(--text2); font-size:13px; margin:0 0 18px; }
 .mobile-entry-fork-back { position:absolute; top:calc(14px + env(safe-area-inset-top,0px)); left:16px; color:var(--accent); text-decoration:none; font-size:14px; padding:8px; }
 .mobile-entry-fork .mobile-primary-action { cursor:pointer; font:inherit; }
@@ -11499,16 +11499,16 @@ var _efHistMark=false; // ONE History entry while the gate is open FROM the fork
 function _efTxt(){
     var ru=false; try{ ru=getUiLang()==='ru'; }catch(e){}
     return ru ? {
-        title:'Skipi', sub:'Одно приложение для моряков, крюинга и фрахтования.',
+        title:'Skipi', sub:'',
         signin:'Войти', signinSub:'У меня уже есть аккаунт Skipi.',
         register:'Регистрация', registerSub:'Создать аккаунт по e-mail.',
-        demo:'Демо', demoSub:'Посмотреть рабочее место моряка на демо-данных, без регистрации.',
+        demo:'Демо', demoSub:'Посмотреть приложение на демо-данных, без регистрации.',
         back:'\u2190 Назад'
     } : {
-        title:'Skipi', sub:'One app for seafarers, crewing and chartering.',
+        title:'Skipi', sub:'',
         signin:'Sign in', signinSub:'I already have a Skipi account.',
         register:'Register', registerSub:'Create an account with your e-mail.',
-        demo:'Demo', demoSub:'Look around the seafarer workspace on demo data, no account needed.',
+        demo:'Demo', demoSub:'Try the app on demo data, no account needed.',
         back:'\u2190 Back'
     };
 }
@@ -11541,7 +11541,7 @@ function showEntryFork(){
     }
     o.innerHTML='<div class="mobile-entry-fork-card">'
         +'<div class="mobile-entry-fork-title">'+mobileEsc(t.title)+'</div>'
-        +'<div class="mobile-entry-fork-sub">'+mobileEsc(t.sub)+'</div>'
+        +(t.sub?'<div class="mobile-entry-fork-sub">'+mobileEsc(t.sub)+'</div>':'')
         +_efDoorHtml('sign-in','entryForkSignIn()','&#10140;',t.signin,t.signinSub)
         +_efDoorHtml('register','entryForkRegister()','+',t.register,t.registerSub)
         +_efDoorHtml('demo','entryForkDemo()','&#9679;',t.demo,t.demoSub)
