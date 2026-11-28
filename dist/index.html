@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="vessel-db.css">
 <link rel="stylesheet" href="port-db.css">
 <link rel="stylesheet" href="skipi-vessel.css">
+<link rel="stylesheet" href="skipi-chartering.css">
 <link rel="stylesheet" href="intelligence.css">
 <!-- @skipi/settings v0.3.0 — unified Settings shell (vendored from skipi-settings 9caeff6) -->
 <link rel="stylesheet" href="skipi-settings.css">
@@ -250,6 +251,7 @@ var ACCOUNT_TYPE_LABELS={
     ship_manager:'Ship Manager',
     vessel:'Vessel',
     crewing:'Crewing',
+    broker:'Chartering',
     port_agent:'Port Agent',
 };
 function updateTitlebar(vaultName,accountType){
@@ -373,6 +375,12 @@ body.mobile-mode .desktop-stack-label { display:none; }
 .modules-bar .mod-tab:hover { color:var(--text); background:var(--hover); }
 .modules-bar .mod-tab.active { color:#fff; background:var(--accent); font-weight:600; box-shadow:0 1px 0 var(--accent); }
 .modules-bar .mod-tab .mi { font-size:14px; }
+/* tasks/018 — one app, modules by account role: a crewing / broker account sees only its own module tabs. */
+.modules-bar.role-shell .mod-tab:not(.mod-tab-role), .modules-bar.role-shell .profile-completion-chip, .modules-bar.role-shell .salary-index-chip { display:none !important; }
+.role-stub { max-width:520px; margin:72px auto; padding:0 24px; text-align:center; color:var(--text2); line-height:1.5; }
+.role-stub h2 { color:var(--text); margin:0 0 10px; font-size:20px; }
+/* tasks/031 — the chartering workplace takes the whole content area, edge to edge. */
+.editor:has(> #scr-content > #chartering-root) { padding:0; }
 .modules-bar .mb-spacer { flex:1; }
 /* case 262: left rail */
 /* Icons only, like the reference the owner gave; the tab's name is its tooltip (title). */
@@ -1870,6 +1878,7 @@ body.mobile-mode .trust-contribution-event{grid-template-columns:1fr;}
 <script src="skipi-ports.js"></script>
 <script src="port-db.js"></script>
 <script src="skipi-vessel.js"></script>
+<script src="skipi-chartering.js"></script>
 <script src="intelligence.js"></script>
 <script src="plugin-host-ui.js"></script>
 <script>
@@ -4217,6 +4226,15 @@ async function initNoVaultLanding(hadVaultPath){
     // before restore (№193); the web shell keeps the old landing (no Tauri invoke without the shim).
     if(window.__SKIPI_WEBDESKTOP__){showWelcome();return;}
     var outcome=null;
+    // tasks/018: a crewing / broker account has no seafarer profile to restore — it goes
+    // straight into the cache of its role.
+    var role='seafarer';
+    try{var rst=await invoke('app_login_status');role=String((rst&&rst.role)||'seafarer');}catch(e){}
+    if(ROLE_MODULES[role]){
+        try{await openRoleAccountCache(role);return;}
+        catch(e){logError('role_account_cache',e);accountRestoreLastError=String((e&&e.message)||e||'');outcome='error';}
+    }
+    else
     try{outcome=await accountRestoreLanding();}
     catch(e){
         // N-A: this landing is called without await from init() and _loginGateNext — it must never reject.
@@ -5081,7 +5099,8 @@ function applyMobileMode(){
         return;
     }
     if(on){
-        if(allDocs&&allDocs.length)renderMobileShell();
+        // tasks/018: a crewing / broker cache has no documents and is still an open account.
+        if((allDocs&&allDocs.length)||(typeof roleModules==='function'&&roleModules()))renderMobileShell();
         else renderMobileWelcome();
     }
 }
@@ -7889,6 +7908,15 @@ function renderMobileShell(){
     mobileSetSub(mobileVaultLabel());
     // Owner 05.09: the native build never shows the 5-slot rail (modules live behind ☰ → menu).
     mobileSetBottomNav(isNativeMobile()?false:mobileView!=='dispatch');
+    if(roleModules()){
+        // tasks/018: a role cache shows only the role's modules on the phone too.
+        mobileSetBottomNav(false);
+        if(mobileView==='vessels')return renderMobileVessels();
+        if(mobileView==='apps')return renderMobileApps();
+        if(mobileView==='rolestub')return renderMobileRoleStub();
+        mobileView='home';
+        return renderMobileRoleMenu();
+    }
     if(mobileView==='docs')return renderMobileDocs();
     if(mobileView==='add')return renderMobileAdd();
     if(mobileView==='profile')return renderMobileProfile();
@@ -11196,12 +11224,19 @@ async function doAppLogin(){
     if(btn){btn.disabled=true;btn.textContent=t.signing;}
     _lgError('');
     try{
-        await invoke('app_login',{email:em,password:pw});
+        var res=await invoke('app_login',{email:em,password:pw});
         // Success: clear the password field, hide the gate, resume the shell.
         var pwEl=document.getElementById('lg-password');if(pwEl){pwEl.value='';pwEl.type='password';}
         hideLoginGate();
         var resume=_loginGatePending;_loginGatePending=null;
         var next=_loginGateNext;_loginGateNext=null;
+        // tasks/018: the account's role differs from the cache that was open behind the gate
+        // (a crewing account after a seafarer one, or back). That cache is closed — its data
+        // stays on disk — and the cache of this account's role opens instead.
+        if(res&&res.profile_mismatch){
+            try{ await invoke('close_vault',{forget:true}); }catch(e){}
+            resume=null; next=function(){ return initNoVaultLanding(true); };
+        }
         if(resume){ await loadVault(resume); }
         else if(next){ await next(); }
         else { showWelcome(); }
@@ -11707,6 +11742,173 @@ async function accountFirstSignIn(){
 // always answers on screen (REG1). Step 0 stays up: the user comes back and signs in.
 function accountFirstRegister(){ openRegisterPage(); }
 
+// ========== One app, modules by account role (tasks/018, owner 25.11.2026) ==========
+// The app is one; the module set follows the role of the signed-in account (seafarer /
+// crewing / broker — «фрахтование»). The role lives in the account cache as account_type.
+// The seafarer role keeps its full shell untouched; the other roles get the tabs below.
+// `view` = a module that already exists in this code base and does not depend on a seafarer
+// profile; a module without `view` is not carried over yet and says so honestly.
+var ROLE_MODULES={
+    // Owner 25.11.2026 (after the first sign-in): for now crewing is three modules — Crew Flow,
+    // Compliance Profile, Seafarers DB — and Vessel DB stays. Documents is a viewer of a
+    // seafarer's documents opened from inside those modules, not a tab; Port DB is not built yet.
+    crewing:[
+        {k:'crewflow',ru:'Crew Flow',en:'Crew Flow',from:'Skipi Crewing'},
+        {k:'compliance',ru:'Профиль соответствия',en:'Compliance Profile',from:'Skipi Crewing'},
+        {k:'seafarers',ru:'База моряков',en:'Seafarers DB',from:'Skipi Crewing'},
+        {k:'vessels',view:'vessels',ru:'База судов',en:'Vessel DB'}
+    ],
+    // tasks/031 (owner 27.11.2026): the chartering workplace is the module @skipi/chartering —
+    // Bazar, Mail, Contacts, Cargo, Fleet, Documents, Voyages, Calculator, Markets, Ports, Settings.
+    broker:[
+        {k:'chartering',ru:'Фрахтование',en:'Chartering'},
+        {k:'vessels',view:'vessels',ru:'База судов',en:'Vessel DB'},
+        {k:'ports',ru:'База портов',en:'Port DB'},
+        {k:'apps',view:'apps',ru:'Приложения',en:'Apps'}
+    ]
+};
+var ROLE_MODULE_ICON='<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>';
+var roleStubKey='';
+function roleModules(){ return ROLE_MODULES[currentAccountType]||null; }
+function roleModule(k){
+    var mods=roleModules()||[];
+    for(var i=0;i<mods.length;i++){ if(mods[i].k===k)return mods[i]; }
+    return null;
+}
+function roleModuleLabel(m){ return getUiLang()==='ru'?m.ru:m.en; }
+function roleStubHtml(m){
+    var ru=getUiLang()==='ru';
+    var text=m.from
+        ?(ru?'Модуль переносится в единое приложение Skipi. Пока он работает в отдельном приложении '+m.from+'.'
+            :'This module is being moved into the single Skipi app. For now it works in the separate '+m.from+' app.')
+        :(ru?'Модуль появится в одном из следующих обновлений Skipi.':'This module arrives in one of the next Skipi updates.');
+    return '<div class="role-stub" data-qa="role-stub-'+m.k+'"><h2>'+esc(roleModuleLabel(m))+'</h2><div>'+esc(text)+'</div></div>';
+}
+// The tile icon of a role module on the desktop rail: the icon of the seafarer tab of the same
+// view when there is one (desktopRailIcons has put it there), the generic module icon otherwise.
+function roleModuleIconSvg(m){
+    var tab=document.getElementById('mt-'+(m.view||m.k));
+    var ico=tab&&typeof tab.querySelector==='function'?tab.querySelector('.mod-ico'):null;
+    return ico&&ico.innerHTML?ico.innerHTML:'<svg viewBox="0 0 24 24">'+ROLE_MODULE_ICON+'</svg>';
+}
+// Desktop: swap the seafarer tabs for the role's tabs (or back, when a seafarer cache opens).
+function roleShellApply(){
+    var bar=document.getElementById('modules-bar');
+    if(!bar)return;
+    bar.querySelectorAll('.mod-tab-role').forEach(function(el){ el.remove(); });
+    var mods=roleModules();
+    bar.classList.toggle('role-shell',!!mods);
+    if(!mods)return;
+    var spacer=bar.querySelector('.mb-spacer');
+    mods.forEach(function(m){
+        var el=document.createElement('div');
+        el.className='mod-tab mod-tab-role';
+        el.id='mt-role-'+m.k;
+        el.setAttribute('data-qa','role-tab-'+m.k);
+        el.title=roleModuleLabel(m);
+        el.innerHTML='<i class="mod-ico" aria-hidden="true">'+roleModuleIconSvg(m)+'</i><span>'+esc(roleModuleLabel(m))+'</span>';
+        el.onclick=function(){ roleShowModule(m.k); };
+        bar.insertBefore(el,spacer);
+    });
+}
+function roleShowModule(k){
+    var m=roleModule(k);
+    if(!m)return;
+    if(shouldUseMobileShell()){
+        if(m.view){ mobileShow(m.view); }
+        else { roleStubKey=k; mobileShow('rolestub'); }
+        return;
+    }
+    if(m.view){ showView(m.view); }
+    else {
+        document.querySelectorAll('.modules-bar .mod-tab').forEach(function(el){ el.classList.remove('active'); });
+        var lp=document.getElementById('left-panel'); if(lp)lp.style.display='none';
+        var host=document.getElementById('scr-content');
+        if(host){ host.innerHTML=k==='chartering'?'<div id="chartering-root"></div>':roleStubHtml(m); show('scr-content'); }
+        if(k==='chartering')charteringMount();
+    }
+    var tab=document.getElementById('mt-role-'+k);
+    if(tab)tab.classList.add('active');
+}
+// First screen of a role cache: the first module of the role.
+function roleOpenDefault(){
+    var mods=roleModules();
+    if(!mods)return;
+    if(shouldUseMobileShell()){ mobileShow('home'); return; }
+    hide('statusbar'); // the document counters belong to the seafarer shell
+    roleShowModule(mods[0].k);
+}
+function renderMobileRoleMenu(){
+    var h='<div class="mobile-menu" data-qa="mobile-role-menu"><div class="fam-app-grid">';
+    roleModules().forEach(function(m){
+        h+=mobileMenuIconTile('role-tile-'+m.k,"roleShowModule('"+m.k+"')",roleModuleLabel(m),roleModuleLabel(m),ROLE_MODULE_ICON);
+    });
+    h+='</div></div>';
+    mobileMainHtml(h);
+}
+function renderMobileRoleStub(){
+    var m=roleModule(roleStubKey);
+    if(!m){ mobileView='home'; return renderMobileRoleMenu(); }
+    if(m.k==='chartering'){ mobileMainHtml('<div id="chartering-root" class="scm-mobile"></div>'); return charteringMount(); }
+    mobileMainHtml(roleStubHtml(m));
+}
+// «Фрахтование» (owner 27.11.2026, case 280, tasks/031): the workplace of a chartering account is
+// the module @skipi/chartering (dist/skipi-chartering.js + css, pin dist/CHARTERING_VERSION). The
+// page never holds the account token — the native commands (commands/chartering.rs) do; the
+// records live with the account on the server. A letter opens as a draft in the user's own mail
+// program: a mailto: link, or — on a computer, when the letter is too long for a link — an .eml file
+// (commands/chartering.rs decides).
+function charteringDeps(){
+    return { lang: getUiLang, toast: showToast,
+        openMail: function(mail){ return invoke('chartering_open_mail', { mail: mail }); },
+        api: {
+            list: function(){ return invoke('chartering_cargoes'); },
+            get: function(id){ return invoke('chartering_cargo', { cargoId: id }); },
+            saveCargo: function(body){ return invoke('chartering_cargo_save', { body: body }); },
+            removeCargo: function(id){ return invoke('chartering_cargo_remove', { cargoId: id }); },
+            savePair: function(cargoId, body){ return invoke('chartering_pair_save', { cargoId: cargoId, body: body }); },
+            removePair: function(cargoId, pairId){ return invoke('chartering_pair_remove', { cargoId: cargoId, pairId: pairId }); },
+            addEvent: function(cargoId, pairId, event){ return invoke('chartering_event_add', { cargoId: cargoId, pairId: pairId, event: event }); },
+            positions: function(){ return invoke('chartering_positions'); },
+            savePosition: function(body){ return invoke('chartering_position_save', { body: body }); },
+            removePosition: function(id){ return invoke('chartering_position_remove', { positionId: id }); },
+            items: function(kind){ return invoke('chartering_items', { kind: kind }); },
+            saveItem: function(kind, body){ return invoke('chartering_item_save', { kind: kind, body: body }); },
+            removeItem: function(kind, id){ return invoke('chartering_item_remove', { kind: kind, itemId: id }); }
+        } };
+}
+// tasks/032: the workplace is open while the account's access lasts. When it is paused the
+// server keeps the records and answers nothing else, so the page says so instead of mounting
+// the module. Any other answer — or none (no connection) — opens the module, which speaks for itself.
+function charteringPausedHtml(){
+    var ru=getUiLang()==='ru';
+    return '<div class="role-stub" data-qa="chartering-paused"><h2>'+(ru?'Доступ к рабочему месту приостановлен':'Access to the workplace is paused')+'</h2>'
+        +'<div>'+(ru?'Ваши записи сохранены. Продолжить можно в аккаунте Skipi на сайте assistant.skipi.app.':'Your records are kept. You can continue from your Skipi account at assistant.skipi.app.')+'</div>'
+        +(isNativeMobile()?'':'<div style="margin-top:18px;"><button class="btn btn-outline" data-qa="chartering-open-account" onclick="openExternalUrlSafe(\'https://assistant.skipi.app/app/account\')">'+(ru?'Открыть аккаунт Skipi':'Open Skipi account')+'</button></div>')
+        +'</div>';
+}
+function charteringMount(){
+    var el=document.getElementById('chartering-root');
+    if(!el||!window.SkipiChartering)return;
+    invoke('chartering_access').then(function(st){ return !!st&&st.state==='paused'; },function(){ return false; }).then(function(paused){
+        if(document.getElementById('chartering-root')!==el)return; // the user has already gone elsewhere
+        if(paused){ el.innerHTML=charteringPausedHtml(); return; }
+        window.SkipiChartering.mount(el, charteringDeps());
+    });
+}
+// The account cache of a crewing / broker account: created empty, without the seafarer
+// questionnaire and without the seafarer profile restore. One cache per e-mail and role.
+async function openRoleAccountCache(role){
+    var email='';
+    try{var st=await invoke('app_login_status');email=String((st&&st.email)||'').trim();}catch(e){}
+    var kind=role==='crewing'?'Crewing':'Chartering';
+    var path=await defaultVaultPath(vaultFolderName(kind,email||'Account'));
+    var info;
+    try{info=await invoke('open_vault',{path:path});}
+    catch(e){info=await invoke('create_vault',{path:path,accountType:role,name:email||('Skipi '+kind),rank:null,vesselType:null});}
+    await loadVault(info);
+}
+
 async function loadVault(info){
     // HARD LOGIN GATE (№117): block the entire shell until a valid token
     // exists in this vault. A cached token → offline reopen allowed. First
@@ -11725,6 +11927,7 @@ async function loadVault(info){
     hide('scr-welcome');hide('scr-setup');show('scr-content');show('left-panel');hide('tabs');show('statusbar');
     var mb=document.getElementById('modules-bar');if(mb)mb.style.display='flex';
     currentAccountType=info.account_type||'';
+    roleShellApply();
     mobileIsDemo=String((info&&info.is_demo)||'')==='1';
     mobileProfileEmpty=!(info&&(info.rank||info.position));
     try{invoke('get_profile_status').then(function(sp){mobileIsDemo=String((sp&&sp.is_demo)||'')==='1';}).catch(function(){});}catch(e){}
@@ -11768,8 +11971,12 @@ async function loadVault(info){
     await loadConditionalTemplateIds();
     await loadActiveTemplateIds();
     allDocs=await invoke('get_documents');
-    renderTree();showDashboard();updateStatus();
+    renderTree();
+    // tasks/018: the seafarer dashboard is not a screen of the crewing / broker roles.
+    if(!roleModules())showDashboard();
+    updateStatus();
     renderMobileShell();
+    roleOpenDefault();
     // Check for updates silently after vault loads
     setTimeout(function(){checkForUpdate(true);},3000);
 	    if(isSeafarer){
@@ -20956,6 +21163,13 @@ try{init().catch(function(e){if(window.__earlyErr)window.__earlyErr('init() reje
 
             onError: function(err, context){ try{ logError('settings:'+context,err); }catch(e){} }
         };
+        // tasks/018: the seafarer profile editor and the seafarer profile sync are not
+        // sections of a crewing / broker account.
+        if(typeof roleModules==='function' && roleModules()){
+            host.appSpecificSections=host.appSpecificSections.filter(function(sec){
+                return sec.id!=='seafarer-profile' && sec.id!=='account-sync';
+            });
+        }
         return host;
     }
 
